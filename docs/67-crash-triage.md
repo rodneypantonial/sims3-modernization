@@ -972,7 +972,7 @@ No CC with the #80 shape was at hand, so the test made one. It took LOD 3 of the
 
 | Arm | Result |
 |---|---|
-| `GeomNoMaterial=1` | From world load on, 8 log lines (the cap): `GEOM … (key 015A1849:009B6C36:C014AA218DAFEEA9, builder LOD 3) has no embedded material: part skipped`. 20 minutes of play, saved, no script errors |
+| `GeomNoMaterial=1` | From world load on, 8 log lines (the cap): `GEOM … (key 015A1849:009B6C36:C014AA218DAFEEA9, builder LOD 3) has no embedded material: part skipped`. 20 minutes of play, saved, no script errors. A second session from that save: 30 minutes, the same 8 lines, saved, no errors |
 | `GeomNoMaterial=0` | Crash during world load: ACCESS_VIOLATION reading `0x00000004` at `0x5DDFBD`, main thread, `eax` = 0, `edx` = `0x580420` (the getter). This is the fault in the #80 report |
 
-This is I-411-3's check: the skip is logged and the crash does not happen. Nobody looked at the Sim at that distance, so whether it looks right is not checked. With the hair's LOD 3 skipped before the skin pass, `GeomBoneIndex` logged a different filler mesh instead: `015A1849:00BEE823:93A4E607E5383AFE`, bone 2 of 2, from the install's merged overrides package. The scan finds 59 such meshes in `Mods\Overrides`, all with weight 0.
+This is I-411-3's check: the skip is logged and the crash does not happen. Nobody looked at the Sim at that distance, so whether it looks right is not checked. With the hair's LOD 3 skipped before the skin pass, `GeomBoneIndex` logged a different filler mesh instead: `015A1849:00BEE823:93A4E607E5383AFE`, bone 2 of 2, from the install's merged overrides package. The second session logged a third one, `015A1849:00BEE823:00000000ECC7C68B`, also bone 2 of 2. The scan finds 59 such meshes in `Mods\Overrides`, all with weight 0.
