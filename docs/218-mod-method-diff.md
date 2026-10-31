@@ -1,4 +1,4 @@
-# 215. Per-method mod guard: which replaced game methods the worker closures reach
+# 218. Per-method mod guard: which replaced game methods the worker closures reach
 
 Written 2026-10-30. Static only: no build, no game run, no queue. Contributor research task (Rodney, round 2, task 1).
 

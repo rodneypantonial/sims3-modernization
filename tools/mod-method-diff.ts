@@ -1,4 +1,4 @@
-// docs/215: per-method IL diff of replaced game script assemblies against the game's own (Steam 1.67), and which differing
+// docs/218: per-method IL diff of replaced game script assemblies against the game's own (Steam 1.67), and which differing
 // methods the [AutShadow] worker closures reach (docs/122 v0 + implementors + meta base path, docs/126 tier 2, both with the
 // docs/127 overrides up to 5 hops). Input for a per-method mod guard in place of the session MVID check (docs/122 §12.4 item G).
 // Reads every .package READ-ONLY (Steam install, Documents\...\Mods) plus each --pkg file, pulls S3SA assemblies, and for each
@@ -75,7 +75,7 @@ async function main() {
 
   // ---------- game modules and replaced copies ----------
   const game = new Map(readdirSync(ASM).filter((f) => f.endsWith('.dll')).map((f) => { const n = f.replace(/\.dll$/, ''); return [n, loadStandalone(join(ASM, f), n)] as const; }));
-  // By bytes, not MVID: tiny-ui-fix's patched UI and Sims3StoreObjects keep the game's MVIDs (docs/215 §2).
+  // By bytes, not MVID: tiny-ui-fix's patched UI and Sims3StoreObjects keep the game's MVIDs (docs/218 §2).
   const gameBytes = new Map([...game.keys()].map((n) => [n, readFileSync(join(ASM, n + '.dll'))]));
   const walk = (dir: string): string[] => !existsSync(dir) ? [] : readdirSync(dir, { withFileTypes: true })
     .flatMap((e) => e.isDirectory() ? walk(join(dir, e.name)) : /\.package$/i.test(e.name) ? [join(dir, e.name)] : []);
