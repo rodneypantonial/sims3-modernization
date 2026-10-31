@@ -57,6 +57,14 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kHoursMemo value="False" />
     <kVenueMemo value="False" />
     <kAutLive value="False" />
+    <kAutLiveGuard value="True" />
+    <kAutLiveGuardOffPm value="1000" />
+    <kAutLiveGuardOnPm value="800" />
+    <kAutLiveGuardMinSearches value="40" />
+    <kAutLiveGuardMinFrames value="300" />
+    <kAutLiveLate value="False" />
+    <kAutLiveLateTicks value="3" />
+    <kAutLiveGuardHold value="600" />
     <kSafeSpotReuse value="False" />
     <kWildflowerProbe value="False" />
     <kWildflowerTask value="False" />

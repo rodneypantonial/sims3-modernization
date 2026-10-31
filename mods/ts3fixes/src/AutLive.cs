@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using Sims3.Gameplay;
@@ -12,6 +13,7 @@ using Sims3.Gameplay.Careers;
 using Sims3.Gameplay.Core;
 using Sims3.Gameplay.Interactions;
 using Sims3.Gameplay.Interfaces;
+using Sims3.Gameplay.Utilities;
 using Sims3.SimIFace;
 using AutonomyT = Sims3.Gameplay.Autonomy.Autonomy;
 
@@ -34,7 +36,8 @@ namespace Ts3Fixes
     //   5. after B13 (still in the manager task, before D2): the §16.1 bands through C1 (AutLiveCore.Bands).
     // Dry=1 (G7): steps 1-3 as live, then the game's own B13 unchanged; its C1 calls are recorded and replayed with and
     // without what consume would hold back (AutLiveCore.Heap), compared with the game's queue: top-10 set and top 1.
-    // Counters: ts3native ts3native_autshadow.al[] (LiveStat, slots kS* below). Records: autshadow.jsonl live-drop, dry-diff.
+    // Counters: ts3native ts3native_autshadow.al[] (LiveStat, slots kS* below). Records: autshadow.jsonl live-drop, dry-diff,
+    // dry-sim-mis, dry-nocmp.
     public static partial class Fixes
     {
         // al[] slots (docs/124 §17.3, docs/registry.md autshadow v20)
@@ -45,13 +48,22 @@ namespace Ts3Fixes
             kSBandFull = 28, kSWhyCount = 29, kSWhyMargin = 30, kSDrift0 = 31 /* 31-35: drift bins */, kSDryTop10 = 36, kSDryTop1 = 37,
             kSDrySimMis = 38, kSApplyUs = 39, kSWaitTicks = 40, kSVerifyOff = 41, kSCandidates = 42, kSDropHead = 43,
             kSDryMissStale = 44, kSDryMissBand = 45, kSGuardOff = 46, kSVerifyRuns = 47, kSVerifyTop1 = 48, kSVerifyTop10 = 49,
-            kSPairsFilterDiff = 50, kSDropOther = 51, kSDryOffList = 52, kSDryMissOther = 53;
-        const int kLiveMaxLogPerReason = 20, kDryMaxLog = 50;
+            kSPairsFilterDiff = 50, kSDropOther = 51, kSDryOffList = 52, kSDryMissOther = 53, kSC2Rehomed = 54, kSDryTop1Tie = 55;
+        // Dry only: kSDryRuns searches whose compare never ran (game B13 returned 1/2 = interrupted/destroyed, or a compare
+        // exception), and our predicted top-10 entries the game's queue does not hold (the set differs with no missed pair).
+        // shortcut: they reuse acting-only slots (Consumed, PairsBand1: never counted with Dry=1) because al[] is fixed at 56 in
+        // ts3native autshadow v20; give them own slots at the next autshadow layout bump.
+        const int kSDryNoCmp = kSConsumed, kSDryExtra = kSPairsBand1;
+        const int kLiveMaxLogPerReason = 20, kDryMaxLog = 50, kDryDiffFirst = 200, kDryDiffEvery = 16, kLogMaxChars = 1100;
 
         public sealed class LiveSearch
         {
-            public bool InUse, Ready, Ok, Abandoned, Dry, Late;
+            public bool InUse, Ready, Ok, Abandoned, Dry, Late, Active;  // Active: its game B13 or bands run (may be parked in a B13 yield)
             public int Id, LastRun, Objs, Pairs, CutEpoch, CutFrame, PostFrame, ReadyFrame, ResumeFrame;
+            // docs/217 L1 (switch autlivelate, read at the resume): frame of the slice last checked, its verdict
+            public bool LateOn, LateOk;
+            public int Feat;  // per-search feature mask (AutLiveCore.Feat), set at the finish, late bit at a late consume
+            public int SliceFrame;
             public AutonomyT Aut;
             public Sim Actor;
             public IMetaObject[] Obj = new IMetaObject[64];
@@ -110,14 +122,42 @@ namespace Ts3Fixes
 
         static readonly LiveSearch[] sLive = new LiveSearch[8];
         static LiveSearch sLiveCur;     // the search whose game B13 runs now with the consumer on (sim thread)
+        static int sLiveActive;         // searches with Active set
+
+        // the active search of this autonomy: sLiveCur, else the short list (a B13 that yielded lost sLiveCur to another
+        // search; its later C2 / B14 calls still belong to it)
+        static LiveSearch LiveOf(object aut)
+        {
+            LiveSearch L = sLiveCur;
+            if (L != null && (object)L.Aut == aut) return L;
+            if (sLiveActive == 0) return null;
+            for (int i = 0; i < sLive.Length; i++)
+            {
+                L = sLive[i];
+                if (L != null && L.Active && (object)L.Aut == aut) return L;
+            }
+            return null;
+        }
+        static void LiveActive(LiveSearch L, bool on) { if (L.Active != on) { L.Active = on; sLiveActive += on ? 1 : -1; } }
         static bool sLiveMode, sLiveOff, sB14Ok, sLiveGuardOk;
         static int sLiveTopN = 10, sLiveBands = 3, sLiveMaxWait = 3;
         static float sLiveMargin;
         static bool sLiveDry;
         static readonly int[] sLiveLogged = new int[64];
-        static int sDryLogged;
+        static int sDryLogged, sDryUnequal, sDryNoCmpLogged;  // dry-sim-mis records; unequal searches (dry-diff sampling); dry-nocmp records
         static FieldInfo fInterrupted, fInspection, fBestScores;
-        static StopWatch sLiveSw;
+        static StopWatch sLiveSw, sLiveB14Sw;
+        // docs/124 §17.10 crowd cost guard (AutLiveCore.CostGuard; switch autliveguard, default kAutLiveGuard = on); acting only
+        static readonly AutLiveCore.CostGuard sGuard = new AutLiveCore.CostGuard();
+        static bool sGuardNative;  // ts3native answers the cost keys (Config 24 = 1)
+        static int sGuardLogged;
+        const int kGuardMinRefRuns = 3, kCWindows = 538, kCSkipWindows = 539, kCSkipped = 540, kCRatioPm = 541;
+        // docs/217 L1 autlivelate (fixes-550): later B13 slices checked, refused by reason, late objects consumed / stale,
+        // consumed late objects by age (1, 2, 3+ ticks after the resume), B14 us by class (consumed, game's B14 for late, for
+        // invalid/stale/ident objects; counted only with autlivelate on)
+        const int kCLateSlices = 550, kCLateRefAge = 551, kCLateRefEpoch = 552, kCLateRefState = 553, kCLateRefLot = 554, kCLateRefHead = 555,
+            kCLateRefActor = 556, kCLateRefOther = 557, kCLateConsumed = 558, kCLateStale = 559, kCLateAge1 = 560, kCConsumedUs = 563,
+            kCLateGameUs = 564, kCInvalidGameUs = 565;
 
         static void LiveStat(int slot) { AutShadowNative.LiveStat(slot, 1); }
 
@@ -126,7 +166,7 @@ namespace Ts3Fixes
         {
             sLiveMode = AutShadowNative.Config(0) == 3;
             Array.Clear(sLiveLogged, 0, sLiveLogged.Length);
-            sDryLogged = 0;
+            sDryLogged = sDryUnequal = sDryNoCmpLogged = 0;
             if (!sLiveMode) return;
             sLiveTopN = AutShadowNative.Config(13);
             sLiveBands = AutShadowNative.Config(14);
@@ -144,8 +184,18 @@ namespace Ts3Fixes
                 return;
             }
             if (sLiveSw == null) sLiveSw = StopWatch.Create(StopWatch.TickStyles.Microseconds);
+            if (sLiveB14Sw == null) sLiveB14Sw = StopWatch.Create(StopWatch.TickStyles.Microseconds);
+            sGuard.Reset();
+            sGuard.OffPm = Instantiator.kAutLiveGuardOffPm; sGuard.OnPm = Instantiator.kAutLiveGuardOnPm;
+            sGuard.MinSearches = Instantiator.kAutLiveGuardMinSearches; sGuard.MinFrames = Instantiator.kAutLiveGuardMinFrames;
+            sGuard.Hold = Instantiator.kAutLiveGuardHold;
+            sGuardNative = AutShadowNative.Config(24) == 1;
+            sGuardLogged = 0;
+            PatchCounters()[kCRatioPm] = -1;
             AppliedLog().Add("AutShadow: go-live Mode 3 (" + (sLiveDry ? "dry" : "acting") + ") TopN " + sLiveTopN + " Bands " + sLiveBands + " Margin "
-                + sLiveMargin + " MaxWait " + sLiveMaxWait + (sB14Ok ? "" : "; B14 hook missing: off") + (sLiveGuardOk ? "" : "; consumer path swapped: off"));
+                + sLiveMargin + " MaxWait " + sLiveMaxWait + "; cost guard " + (sLiveDry ? "n/a (dry)" : !sGuardNative ? "off (ts3native without cost keys)"
+                : "Off " + sGuard.OffPm + " On " + sGuard.OnPm + " MinSearches " + sGuard.MinSearches + " MinFrames " + sGuard.MinFrames + " Hold " + sGuard.Hold)
+                + (sB14Ok ? "" : "; B14 hook missing: off") + (sLiveGuardOk ? "" : "; consumer path swapped: off"));
         }
 
         // 1 = consume, -1 = Mode 3 with autlive off (the game's search, no request), 0 = not Mode 3 (shadow modes as before)
@@ -197,6 +247,7 @@ namespace Ts3Fixes
             L.ObjIndex.Clear(); L.PairIndex.Clear(); L.OtherId.Clear();
             L.Aut = null; L.Actor = null; L.LotCur = L.LotHome = null; L.Household = L.Role = L.Occ = L.Job = null; L.Career = null;
             L.Ready = L.Ok = L.Abandoned = L.Late = false; L.EvN = 0; L.Objs = L.Pairs = 0;
+            LiveActive(L, false);
             L.InUse = false;
         }
         static void LiveAbandon(LiveSearch L) { if (L.Ready) LiveRelease(L); else L.Abandoned = true; }
@@ -206,7 +257,7 @@ namespace Ts3Fixes
         {
             L.Size(q.Objs, q.Pairs);
             L.Id = q.Id; L.Aut = q.Aut; L.Actor = q.Actor; L.Objs = q.Objs; L.Pairs = q.Pairs;
-            L.Ready = L.Ok = L.Abandoned = L.Late = false; L.Dry = sLiveDry; L.EvN = 0;
+            L.Ready = L.Ok = L.Abandoned = L.Late = false; L.Dry = sLiveDry; L.EvN = 0; L.Feat = 0;
             L.ObjIndex.Clear(); L.PairIndex.Clear(); L.OtherId.Clear();
             for (int o = 0; o < q.Objs; o++)
             {
@@ -255,6 +306,7 @@ namespace Ts3Fixes
             for (int p = 0; p < L.Pairs; p++) { L.Code[p] = w.Code[p]; L.W[p] = w.Score[p]; }
             L.LastRun = lastRun;
             L.Ok = valid && w.Id == q.Id;
+            L.Feat = AutLiveCore.Feat.Build(sFeatNative ? AutShadowNative.Config(33) : 0, w.RainUsed, true, sGuard.Probation, w.Partial);
             L.CutEpoch = AutShadowNative.Config(21);
             L.CutFrame = AutShadowNative.Config(22);
             L.ReadyFrame = AutShadowNative.Config(19);
@@ -274,6 +326,7 @@ namespace Ts3Fixes
         {
             if (!LiveEligible(a)) return h.MetaOrig(c);
             LiveStat(kSEligible);
+            if (!GuardAllow()) return h.MetaOrig(c);
             LiveSearch L = null;
             try
             {
@@ -282,6 +335,7 @@ namespace Ts3Fixes
             }
             catch (Exception e) { PatchCounters()[121]++; AutNote("go-live request: " + e.Message); }
             if (L == null) { LiveStat(kSNotPosted); return h.MetaOrig(c); }
+            double share = 0;  // guard: consumed share of the allow-listed pairs (0 = dropped)
             LiveStat(kSPosted);
             int waited = 0;
             while (true)
@@ -292,7 +346,7 @@ namespace Ts3Fixes
                 if ((bool)fInterrupted.GetValue(a)) { fInterrupted.SetValue(a, false); LiveAbandon(L); LiveStat(kSInterrupted); return 1; }
                 if (a.Actor == null || a.Actor.HasBeenDestroyed) { LiveAbandon(L); LiveStat(kSDestroyed); return 2; }
                 if (L.Ready) break;
-                if (waited >= sLiveMaxWait) { LiveAbandon(L); LiveDrop(L, kSDropWait); AutShadowNative.LiveStat(kSWaitTicks, waited); return h.MetaOrig(c); }
+                if (waited >= sLiveMaxWait) { LiveAbandon(L); LiveDrop(L, kSDropWait); AutShadowNative.LiveStat(kSWaitTicks, waited); sGuard.Add(0, 0); return h.MetaOrig(c); }
             }
             AutShadowNative.LiveStat(kSWaitTicks, waited);
             uint us = 0;
@@ -301,12 +355,16 @@ namespace Ts3Fixes
             try { why = LiveCheck(L, a); if (why == 0) LiveSelect(L); }
             catch (Exception e) { why = kSDropOther; PatchCounters()[121]++; AutNote("go-live check: " + e.Message); }
             us += sLiveSw.GetElapsedTime();
-            if (why != 0) { LiveDrop(L, why); LiveRelease(L); AutShadowNative.LiveStat(kSApplyUs, (int)us); return h.MetaOrig(c); }
+            if (why != 0) { LiveDrop(L, why); LiveRelease(L); AutShadowNative.LiveStat(kSApplyUs, (int)us); sGuard.Add(us, 0); return h.MetaOrig(c); }
             BestScores bs = (BestScores)fBestScores.GetValue(a);
             AutLiveCore.Heap before = L.Dry ? Snapshot(L, bs) : null;
-            L.ResumeFrame = AutShadowNative.Config(19);
+            L.ResumeFrame = L.SliceFrame = AutShadowNative.Config(19);
+            L.LateOn = ShortcutOn("autlivelate"); L.LateOk = false;
             sLiveCur = L;
-            int r;
+            LiveActive(L, true);  // cleared by LiveRelease
+            int r, req = L.Id, feat = 0;
+            bool dry = L.Dry, compared = false;
+            string exc = null;
             try
             {
                 r = h.MetaOrig(c);
@@ -316,28 +374,98 @@ namespace Ts3Fixes
                     sLiveSw.Restart();
                     try
                     {
-                        if (L.Dry) DryCompare(L, bs, before);
+                        if (L.Dry) { DryCompare(L, bs, before); compared = true; }
                         else LiveBands(L, a, bs);
                     }
-                    catch (Exception e) { PatchCounters()[121]++; AutNote("go-live bands: " + e.Message); }
+                    catch (Exception e) { PatchCounters()[121]++; exc = e.GetType().Name + ": " + e.Message; AutNote("go-live bands: " + e.Message); }
                     us += sLiveSw.GetElapsedTime();
                 }
             }
             finally
             {
                 if (sLiveCur == L) sLiveCur = null;
+                if (!dry) share = ConsumedShare(L);
+                feat = L.Feat;
+                try { SearchEnd(L, dry, share); } catch (Exception) { PatchCounters()[121]++; }
                 LiveRelease(L);
             }
-            LiveStat(L.Dry ? kSDryRuns : kSConsumed);
+            LiveStat(dry ? kSDryRuns : kSConsumed);
+            // a dry search counted without a compare would read as unequal in the G7 rates: count and record it on its own
+            if (dry && !compared)
+            {
+                LiveStat(kSDryNoCmp);
+                AutLiveCore.Feat.Count(PatchCounters(), kCFeatDrop, feat);
+                if (sDryNoCmpLogged++ < kDryMaxLog)
+                    AutShadowNative.Log("{\"t\":\"dry-nocmp\",\"req\":" + req + ",\"r\":" + r + AutLiveCore.Feat.Json(feat) + ",\"exc\":\""
+                        + (exc == null ? "" : JsonEsc(exc.Length > 300 ? exc.Substring(0, 300) : exc)) + "\"}");
+            }
             AutShadowNative.LiveStat(kSApplyUs, (int)us);
+            if (!dry) sGuard.Add(us, share);
             return r;
+        }
+
+        // docs/124 §17.10: false = skip this eligible search (no post: the game's B13). Measures in both switch states; skips
+        // only with autliveguard on. Dry (G7) and a ts3native without the cost keys: always post.
+        static bool GuardAllow()
+        {
+            if (sLiveDry || !sGuardNative) return true;
+            int[] k = PatchCounters();
+            bool act = ShortcutOn("autliveguard");
+            int now = AutShadowNative.Config(19);
+            if (!sGuard.Allow(now, act)) { k[kCSkipped]++; return false; }
+            int refRuns = AutShadowNative.Config(30);
+            double refPer = refRuns >= kGuardMinRefRuns ? (uint)AutShadowNative.Config(29) / (double)refRuns : 0;
+            int r = sGuard.Tick(now, AutShadowNative.Config(25), AutShadowNative.Config(27), AutShadowNative.Config(28), refPer, act);
+            if (r == 0) return true;
+            k[kCWindows]++; k[kCRatioPm] = sGuard.LastPm;
+            if (r == 1) return true;
+            k[kCSkipWindows]++; k[kCSkipped]++;
+            if (sGuardLogged++ < kLiveMaxLogPerReason)
+                AutShadowNative.Log("{\"t\":\"live-guard\",\"pm\":" + sGuard.LastPm + ",\"holdFrames\":" + (sGuard.Until - now) + ",\"frame\":" + now + "}");
+            return false;
+        }
+
+        // the share of the request's allow-listed pairs whose object the B14 hook consumed (the game did not score them itself;
+        // band pairs it re-scored are in the consumer time)
+        static double ConsumedShare(LiveSearch L)
+        {
+            int all = 0, used = 0;
+            for (int p = 0; p < L.Pairs; p++)
+                if (L.Def[p] >= 0) { all++; if (L.Consumed[L.PairObj[p]]) used++; }
+            return all > 0 ? used / (double)all : 0;
         }
 
         static void LiveDrop(LiveSearch L, int why)
         {
             LiveStat(why);
+            int[] k = PatchCounters();
+            AutLiveCore.Feat.Count(k, kCFeatSearches, L.Feat);
+            AutLiveCore.Feat.Count(k, kCFeatDrop, L.Feat);
+            if (sFeatNative) AutShadowNative.SearchMark(L.Id, L.Feat, null);
             if (why < sLiveLogged.Length && sLiveLogged[why]++ < kLiveMaxLogPerReason)
-                AutShadowNative.Log("{\"t\":\"live-drop\",\"why\":" + why + ",\"req\":" + L.Id + ",\"lastRun\":" + L.LastRun + "}");
+                AutShadowNative.Log("{\"t\":\"live-drop\",\"why\":" + why + ",\"req\":" + L.Id + ",\"lastRun\":" + L.LastRun + AutLiveCore.Feat.Json(L.Feat) + "}");
+        }
+
+        // ---- per-search feature mask (AutLiveCore.Feat; fixes-575: 575-583 searches, 584-592 mismatches, 593-601 give-ups, per bit) ----
+        const int kCFeatSearches = 575, kCFeatMis = 584, kCFeatDrop = 593, kLiveUseMaxLog = 50;
+        static bool sFeatNative;  // ts3native 0.36.148+: Config(33) job bits, SearchMark
+        static int sLiveUseLogged;
+        // a used search's end (sim thread): per-bit search count, the crash-log mark (top worker pick's definition), and for an
+        // acting search a capped live-use record with its mask (the dry records carry the mask themselves)
+        static void SearchEnd(LiveSearch L, bool dry, double share)
+        {
+            AutLiveCore.Feat.Count(PatchCounters(), kCFeatSearches, L.Feat);
+            int top = -1;
+            for (int p = 0; p < L.Pairs; p++)
+                if (L.Code[p] == AutShadowCore.kPass && (top < 0 || L.W[p] > L.W[top])) top = p;
+            string def = top >= 0 && L.Pair[top] != null && L.Pair[top].InteractionDefinition != null ? L.Pair[top].InteractionDefinition.GetType().Name : null;
+            if (sFeatNative) AutShadowNative.SearchMark(L.Id, L.Feat, def);
+            if (!dry && sLiveUseLogged < kLiveUseMaxLog)
+            {
+                sLiveUseLogged++;
+                AutShadowNative.Log("{\"t\":\"live-use\",\"req\":" + L.Id + ",\"share\":" + share.ToString("0.###", CultureInfo.InvariantCulture)
+                    + ",\"top\":\"" + JsonEsc(def ?? "") + "\"" + AutLiveCore.Feat.Json(L.Feat) + "}");
+            }
         }
 
         // §3.1 result level; 0 = use it
@@ -388,16 +516,24 @@ namespace Ts3Fixes
             int o;
             if (m == null || !L.ObjIndex.TryGetValue(m, out o)) { LiveStat(kSObjNotInReq); h.B14Orig(m, c); return; }
             L.Visited[o] = true;
-            // B13 yielded (Y2) since the resume: the rest of this search is older than one tick
-            if (L.Late || AutShadowNative.Config(19) != L.ResumeFrame) { L.Late = true; LiveStat(kSObjLate); h.B14Orig(m, c); return; }
+            // B13 yielded (Y2) since the resume: the rest of this search is older than one tick. autlivelate (docs/217 L1):
+            // a later slice still consumes when it passes the resume checks again and is at most kAutLiveLateTicks old
+            int f = AutShadowNative.Config(19);
+            bool late = L.Late || f != L.ResumeFrame;
+            if (late && !(L.LateOn && LateSliceOk(L, a, f))) { L.Late = true; LiveStat(kSObjLate); B14Timed(L, m, c, h, kCLateGameUs); return; }
             int why = L.ObjWhy[o];
+            // the resume-time ObjStale answer is older than this slice: ask again (object, then its lot)
+            if (late && why == 0 && (AutShadowNative.ObjStale(L.ObjKey[o], 0, L.CutFrame) != 0
+                || (L.LotKey[o] != 0UL && AutShadowNative.ObjStale(L.LotKey[o], 1, L.CutFrame) != 0))) { why = kSObjStale; PatchCounters()[kCLateStale]++; }
             if (why == 0 && !SameAds(L, o, m.MetaAds)) why = kSObjIdent;
-            if (why != 0) { LiveStat(why); h.B14Orig(m, c); return; }
+            if (why != 0) { LiveStat(why); B14Timed(L, m, c, h, kCInvalidGameUs); return; }
             L.Consumed[o] = true;
             LiveStat(kSObjConsumed);
+            if (late) { L.Feat |= 1 << AutLiveCore.Feat.Late; int[] k = PatchCounters(); k[kCLateConsumed]++; k[kCLateAge1 + Math.Min(f - L.ResumeFrame, 3) - 1]++; }
             for (int p = L.Start[o]; p < L.Start[o + 1]; p++)
                 if (L.Def[p] >= 0 && L.Code[p] == AutShadowCore.kPass) L.Eligible[p] = true;
-            if (L.Dry) { h.B14Orig(m, c); return; }  // the game scores every ad; the C2 hook records what consume would have sent
+            if (L.Dry) { B14Timed(L, m, c, h, kCConsumedUs); return; }  // the game scores every ad; the C2 hook records what consume would have sent
+            sLiveB14Sw.Restart();
             for (int p = L.Start[o]; p < L.Start[o + 1]; p++)
             {
                 InteractionObjectPair iop = L.Pair[p];
@@ -406,6 +542,40 @@ namespace Ts3Fixes
                 else if (L.Code[p] == AutShadowCore.kFiltered) { LiveStat(kSPairsFilterDiff); a.CalculateScoreAndAddToCandidates(iop); }
                 else if (L.Sel[p]) { L.Sent[p] = true; LiveStat(kSPairsBand1); a.CalculateScoreAndAddToCandidates(iop); }
             }
+            uint us = sLiveB14Sw.GetElapsedTime();
+            sGuard.CostUs += us;  // the band-1 / off-list C1 calls: a consume cost outside kSApplyUs
+            if (L.LateOn) PatchCounters()[kCConsumedUs] += (int)us;
+        }
+
+        // docs/217 L1: the slice verdict, once per B13 time slice (its first B14 call); a refusal is sticky (L.Late)
+        static bool LateSliceOk(LiveSearch L, AutonomyT a, int f)
+        {
+            if (f == L.SliceFrame) return L.LateOk;
+            L.SliceFrame = f;
+            int[] k = PatchCounters();
+            k[kCLateSlices]++;
+            int chk = 0;
+            if (!L.Late && f - L.ResumeFrame >= 0 && f - L.ResumeFrame <= Instantiator.kAutLiveLateTicks)
+            {
+                try { chk = LiveCheck(L, a); }
+                catch (Exception e) { chk = kSDropOther; k[121]++; AutNote("go-live late check: " + e.Message); }
+            }
+            int v = AutLiveCore.LateSlice(L.Late, f, L.ResumeFrame, Instantiator.kAutLiveLateTicks, chk);
+            L.LateOk = v == AutLiveCore.kLateOk;
+            if (v == AutLiveCore.kLateAge) k[kCLateRefAge]++;
+            else if (v == AutLiveCore.kLateCheck)
+                k[chk == kSDropEpoch ? kCLateRefEpoch : chk == kSDropState ? kCLateRefState : chk == kSDropLot ? kCLateRefLot
+                    : chk == kSDropHead ? kCLateRefHead : chk == kSDropActor ? kCLateRefActor : kCLateRefOther]++;
+            return L.LateOk;
+        }
+
+        // the game's B14, timed into a ts3fixes us slot when autlivelate is on (B14 cost by class, docs/217 §4)
+        static void B14Timed(LiveSearch L, IMetaObject m, CommodityKind c, AutB14Hook h, int slot)
+        {
+            if (!L.LateOn) { h.B14Orig(m, c); return; }
+            sLiveB14Sw.Restart();
+            h.B14Orig(m, c);
+            PatchCounters()[slot] += (int)sLiveB14Sw.GetElapsedTime();
         }
 
         // B14's own commodity filter (the same as the worker driver's ScorePair)
@@ -437,6 +607,9 @@ namespace Ts3Fixes
             if (p >= 0) { L.Live[p] = s; L.LiveHas[p] = true; }
             if (L.Dry)
             {
+                // AlwaysChooseBest pairs go to BestScores' side list, never the queue [verified, decompiled BestScores.Add]
+                InteractionTuning tun = iop != null ? iop.Tuning : null;
+                if (tun != null && tun.AlwaysChooseBest) return;
                 int id = p;
                 if (p < 0)
                 {
@@ -499,6 +672,14 @@ namespace Ts3Fixes
             return x;
         }
 
+        // [[id,score],...] in slot order
+        static StringBuilder Entries(StringBuilder s, AutLiveCore.Heap h)
+        {
+            s.Append('[');
+            for (int i = 0; i < h.N; i++) s.Append(i > 0 ? ",[" : "[").Append(h.Id[i]).Append(',').Append(h.S[i].ToString("R")).Append(']');
+            return s.Append(']');
+        }
+
         static void DryCompare(LiveSearch L, BestScores bs, AutLiveCore.Heap before)
         {
             AutLiveCore.Heap game = Snapshot(L, bs), van = Copy(before), pred = Copy(before);
@@ -523,20 +704,48 @@ namespace Ts3Fixes
             if (fired > 0) LiveStat(L.Bands.LastWhy == 1 ? kSWhyCount : kSWhyMargin);  // the last band's rule
             LiveStat(kSDrift0 + AutLiveCore.DriftBin(L.Bands.DriftMax));
             AutShadowNative.LiveStat(kSDryOffList, offList);
-            if (!van.SameSet(game)) LiveStat(kSDrySimMis);
-            bool top10 = pred.SameSet(game), top1 = pred.TopId() == game.TopId();
+            bool mis = false;
+            if (!van.SameSet(game))
+            {
+                mis = true;
+                LiveStat(kSDrySimMis);
+                if (sDryLogged < kDryMaxLog)
+                {
+                    sDryLogged++;
+                    StringBuilder m = new StringBuilder(512);
+                    m.Append("{\"t\":\"dry-sim-mis\",\"req\":").Append(L.Id).Append(AutLiveCore.Feat.Json(L.Feat)).Append(",\"events\":").Append(L.EvN).Append(",\"before\":");
+                    Entries(m, before).Append(",\"van\":");
+                    Entries(m, van).Append(",\"game\":");
+                    Entries(m, game).Append('}');
+                    AutShadowNative.Log(m.ToString());
+                }
+            }
+            // top 1 up to ties: same top score and the game's top entry among ours at that score (which of several equal tops
+            // sits first in slot order is heap order, not a different pick) [inferred: the choice weighs entries by score only]
+            bool top10 = pred.SameSet(game), top1 = pred.SameTop(game);
             if (top10) LiveStat(kSDryTop10);
             if (top1) LiveStat(kSDryTop1);
+            if (top1 && pred.TopId() != game.TopId()) LiveStat(kSDryTop1Tie);
+            if (mis || !(top10 && top1)) AutLiveCore.Feat.Count(PatchCounters(), kCFeatMis, L.Feat);  // once per search
             if (top10 && top1) return;
-            StringBuilder s = sDryLogged < kDryMaxLog ? new StringBuilder(512) : null;
+            // every unequal search is counted by cause (game entries we miss, our entries the game lacks); records: the first
+            // kDryDiffFirst per load, then 1 in kDryDiffEvery, each under the native line limit (AsIcLog drops >= 1300 chars)
+            sDryUnequal++;
+            StringBuilder s = sDryUnequal <= kDryDiffFirst || sDryUnequal % kDryDiffEvery == 0 ? new StringBuilder(1024) : null;
             if (s != null)
             {
-                sDryLogged++;
-                s.Append("{\"t\":\"dry-diff\",\"req\":").Append(L.Id).Append(",\"actor\":").Append(L.Actor.ObjectId.Value)
-                 .Append(",\"top1\":").Append(top1 ? 1 : 0).Append(",\"drift\":").Append(L.Bands.DriftMax.ToString("R"))
-                 .Append(",\"bands\":").Append(fired).Append(",\"miss\":[");
+                s.Append("{\"t\":\"dry-diff\",\"n\":").Append(sDryUnequal).Append(",\"req\":").Append(L.Id).Append(AutLiveCore.Feat.Json(L.Feat))
+                 .Append(",\"actor\":").Append(L.Actor != null ? L.Actor.ObjectId.Value : 0UL)
+                 .Append(",\"top10\":").Append(top10 ? 1 : 0).Append(",\"top1\":").Append(top1 ? 1 : 0)
+                 .Append(",\"predTop\":[").Append(pred.TopId()).Append(',').Append(pred.TopScore().ToString("R"))
+                 .Append("],\"gameTop\":[").Append(game.TopId()).Append(',').Append(game.TopScore().ToString("R"))
+                 .Append("],\"ties\":").Append(game.CountAt(game.TopScore())).Append(",\"predTies\":").Append(pred.CountAt(pred.TopScore()))
+                 .Append(",\"drift\":").Append(L.Bands.DriftMax.ToString("R")).Append(",\"bands\":").Append(fired).Append(",\"pred\":");
+                Entries(s, pred).Append(",\"game\":");
+                Entries(s, game).Append(",\"miss\":[");
             }
-            bool first = true;
+            int cause = 0, extra = 0;
+            bool first = true, trunc = false;
             for (int i = 0; i < game.N; i++)
             {
                 int id = game.Id[i];
@@ -544,17 +753,49 @@ namespace Ts3Fixes
                 int why = id < 0 ? kSDryMissOther : L.Code[id] == AutShadowCore.kTestFailed ? kSDryMissStale
                     : L.Code[id] == AutShadowCore.kPass && !L.Sent[id] ? kSDryMissBand : kSDryMissOther;
                 LiveStat(why);
+                if (cause == 0) cause = why;
                 if (s == null) continue;
+                if (s.Length > kLogMaxChars) { trunc = true; continue; }
                 if (!first) s.Append(',');
                 first = false;
                 s.Append("{\"id\":").Append(id).Append(",\"live\":").Append(game.S[i].ToString("R"));
-                if (id >= 0)
-                    s.Append(",\"def\":\"").Append(L.Pair[id].InteractionDefinition != null ? L.Pair[id].InteractionDefinition.GetType().Name : "?")
-                     .Append("\",\"code\":").Append(L.Code[id]).Append(",\"work\":").Append(L.W[id].ToString("R")).Append(",\"sel\":").Append(L.Sel[id] ? 1 : 0);
+                if (id >= 0) PairFields(s, L, id);
                 s.Append('}');
             }
-            if (s != null) { s.Append("]}"); AutShadowNative.Log(s.ToString()); }
+            if (s != null) s.Append("],\"extra\":[");
+            first = true;
+            for (int i = 0; i < pred.N; i++)
+            {
+                int id = pred.Id[i];
+                if (game.Has(id)) continue;
+                extra++;
+                LiveStat(kSDryExtra);
+                if (s == null) continue;
+                if (s.Length > kLogMaxChars) { trunc = true; continue; }
+                if (!first) s.Append(',');
+                first = false;
+                s.Append("{\"id\":").Append(id).Append(",\"pred\":").Append(pred.S[i].ToString("R"));
+                if (id >= 0) PairFields(s, L, id);
+                s.Append('}');
+            }
+            if (s == null) return;
+            // cause: the first missed pair's bucket, else extra (our set holds entries the game's lacks), else top1 (same set)
+            s.Append("],\"cause\":\"").Append(cause == kSDryMissStale ? "stale" : cause == kSDryMissBand ? "band" : cause != 0 ? "other"
+                : extra > 0 ? "extra" : "top1").Append('"');
+            if (trunc) s.Append(",\"trunc\":1");
+            AutShadowNative.Log(s.Append('}').ToString());
         }
+
+        static void PairFields(StringBuilder s, LiveSearch L, int id)
+        {
+            string def = L.Pair[id] != null && L.Pair[id].InteractionDefinition != null ? L.Pair[id].InteractionDefinition.GetType().Name : "?";
+            if (def.Length > 48) def = def.Substring(0, 48);
+            s.Append(",\"def\":\"").Append(def).Append("\",\"code\":").Append(L.Code[id]).Append(",\"work\":").Append(L.W[id].ToString("R"))
+             .Append(",\"sel\":").Append(L.Sel[id] ? 1 : 0).Append(",\"sent\":").Append(L.Sent[id] ? 1 : 0)
+             .Append(",\"lv\":").Append(L.LiveHas[id] ? L.Live[id].ToString("R") : "null");
+        }
+
+        static string JsonEsc(string v) { return v.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " "); }
 
         // AutFinish in Mode 3 on a cut that ran the reference (VerifyEvery): top picks of worker vs reference over the pairs both
         // answered; an A2/A3 from CompareR turns go-live off for the session
@@ -581,13 +822,90 @@ namespace Ts3Fixes
             if (Count(tw) == Count(tr) && SameSet(tw, tr, k)) LiveStat(kSVerifyTop10);
         }
 
+        // ---- docs/124 §8 G8 behaviour counters (kAutLive packages, both autlive arms; fixes-550 slots 566-574) ----
+        // ConsiderPerformingAutonomousAction (private, one caller: RunAutonomy with addToQueue) passes through; after it:
+        // pushes, searches with no pick, the MakeSimGoHome fallback RunAutonomy takes next (its own condition, read-only
+        // getters), Sim-hours (instantiated Sims x sim hours, x100, sampled per sim hour), request-to-push latency in ticks from
+        // the B13 entry (Mode 3 searches only; bins 0, 1, 2, 3, 4+), and a {"t":"picks"} autshadow.jsonl line (cumulative pushes
+        // per definition type, most first) every kPicksEvery pushes.
+        const int kCPushes = 566, kCNullPicks = 567, kCGoHome = 568, kCSimHours100 = 569, kCLatency0 = 570, kPicksEvery = 500;
+        static readonly Dictionary<object, int> sMetaStart = new Dictionary<object, int>();  // autonomy -> frame of its B13 entry
+        static readonly Dictionary<string, int> sPicks = new Dictionary<string, int>();
+        static float sG8Hours = -1f;
+        static int sPushN;
+
+        static void MetaStart(AutonomyT a)
+        {
+            if (!sLiveMode) return;
+            if (sMetaStart.Count > 256) sMetaStart.Clear();  // searches that never reached the push (destroyed Sims) keep no autonomy alive
+            sMetaStart[a] = AutShadowNative.Config(19);
+        }
+
+        static void G8Note(AutonomyT a, InteractionInstance best, bool pushed)
+        {
+            int[] k = PatchCounters();
+            float h = SimClock.ElapsedTime(TimeUnit.Hours);
+            if (sG8Hours < 0f || h < sG8Hours) sG8Hours = h;
+            else if (h - sG8Hours >= 1f)
+            {
+                int n = 0;
+                foreach (Sim s in LotManager.Actors) if (s != null) n++;
+                k[kCSimHours100] += (int)(n * (h - sG8Hours) * 100f);
+                sG8Hours = h;
+            }
+            int f0;
+            bool timed = sMetaStart.TryGetValue(a, out f0);
+            if (timed) sMetaStart.Remove(a);
+            Sim actor = a.Actor;
+            if (best == null)
+            {
+                k[kCNullPicks]++;
+                if (actor != null && !actor.HasBeenDestroyed && actor.LotCurrent != null && actor.Service == null && !actor.IsSelectable
+                    && !actor.IsSimInSituationWhichRulesOutMetaAutonomy) k[kCGoHome]++;
+                return;
+            }
+            if (!pushed) return;
+            k[kCPushes]++;
+            if (timed) k[kCLatency0 + Math.Max(0, Math.Min(AutShadowNative.Config(19) - f0, 4))]++;
+            string def = best.InteractionDefinition != null ? best.InteractionDefinition.GetType().Name : "?";
+            int c;
+            sPicks[def] = sPicks.TryGetValue(def, out c) ? c + 1 : 1;
+            if (++sPushN % kPicksEvery == 0 && sProbe > 0) LogPicks();
+        }
+
+        static void LogPicks()
+        {
+            List<KeyValuePair<string, int>> all = new List<KeyValuePair<string, int>>(sPicks);
+            all.Sort(delegate (KeyValuePair<string, int> x, KeyValuePair<string, int> y) { return y.Value.CompareTo(x.Value); });
+            StringBuilder b = new StringBuilder(1300);
+            b.Append("{\"t\":\"picks\",\"n\":").Append(sPushN).Append(",\"def\":[");
+            for (int i = 0; i < all.Count; i++)
+            {
+                string d = all[i].Key.Length > 48 ? all[i].Key.Substring(0, 48) : all[i].Key;
+                if (b.Length + d.Length + 16 > 1250) break;  // native line limit 1300 (AsIcLog)
+                b.Append(i > 0 ? ",[\"" : "[\"").Append(JsonEsc(d)).Append("\",").Append(all[i].Value).Append(']');
+            }
+            AutShadowNative.Log(b.Append("]}").ToString());
+        }
+
+        public class AutPushHook
+        {
+            public bool PushHook(InteractionInstance best)
+            {
+                bool r = PushOrig(best);
+                try { G8Note((AutonomyT)(object)this, best, r); } catch (Exception) { PatchCounters()[121]++; }
+                return r;
+            }
+            public bool PushOrig(InteractionInstance best) { return false; } // receives Autonomy.ConsiderPerformingAutonomousAction's original header
+        }
+
         // B14 (private, void, one caller: B13). Passes through unless a live search of this autonomy is in its game B13.
         public class AutB14Hook
         {
             public void B14Hook(IMetaObject m, CommodityKind c)
             {
-                LiveSearch L = sLiveCur;
-                if (L == null || (object)this != (object)L.Aut) { B14Orig(m, c); return; }
+                LiveSearch L = LiveOf(this);
+                if (L == null) { B14Orig(m, c); return; }
                 LiveB14(L, (AutonomyT)(object)this, m, c, this);
             }
             public void B14Orig(IMetaObject m, CommodityKind c) { } // receives Autonomy.ScoreInteractionsForMetaObject's original header

@@ -109,6 +109,16 @@ If you use NRaas Overwatch and notice a half-second freeze about once per game d
 
 Tested together with DXVK, Sims 3 Settings Setter, NRaas (ErrorTrap, Overwatch), the Smooth Patch and the Sims 3 Performance Patch. If something looks wrong, remove our files first and see if it goes away, then [open an issue](https://github.com/rodneypantonial/sims3-modernization/issues) with what you saw.
 
+## Help port to the EA app version
+
+The fixes are built for the Steam edition only. If you own The Sims 3 from the **EA app or Origin**, you can help port them without sending any game files:
+
+1. Download `Sims3PortProbe.ps1`, `port-sigs.txt` and `Run-PortProbe.cmd` from `tools/port-probe/` (or the release zip) into one folder.
+2. Start the game and wait for the **main menu**. Then double-click `Run-PortProbe.cmd` (no admin needed). It reads the running game's code in memory, read only, and after about a minute writes `Sims3PortReport-xxxxxxxx.zip` to your Desktop. Close the game afterwards as usual.
+3. Send the zip to Rodney: [open a port report](https://github.com/rodneypantonial/sims3-modernization/issues/new?template=port-report.yml) and drag the zip in, or send it in a Discord DM.
+
+The report holds only numbers, names and hashes (addresses, function sizes, imported function names, string texts the game uses, script method sizes and hashes, your installed pack folders and Windows version). It holds no game code, no paths, no user or machine name. The script is plain PowerShell you can read; it uses no AI and sends nothing by itself. Windows only (it reads another program's memory). Rarely Rodney may send back a small `questions.json`: run `powershell -ExecutionPolicy Bypass -File Sims3PortProbe.ps1 -Questions questions.json` with the game at the main menu and send the answers zip the same way.
+
 ## For testers and developers: setting names
 
 You don't need anything in this section to play. It maps the list above to the settings that are on in the shipped files, so testers can tell what is what. Technical notes per release: `docs/release-notes/`.

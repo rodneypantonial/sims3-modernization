@@ -165,8 +165,10 @@ static __declspec(naked) void MtSimReturn() {
     }
 }
 
+static DWORD g_mtHostThis;  // MonoScriptHost `this` (thiscall: ecx at the slot call), read by satb.cpp for the tick statics (+0xC20/+0xC24)
 static __declspec(naked) void MtSimulateStub() {
     __asm {
+        mov dword ptr [g_mtHostThis], ecx
         pushad
         pushfd
         call MtTick

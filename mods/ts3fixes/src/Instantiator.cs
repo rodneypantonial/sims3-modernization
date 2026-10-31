@@ -57,7 +57,15 @@ namespace Ts3Fixes
         [Tunable] public static bool kOverwatchChain = false;      // opt-in until measured: NRaas Overwatch's nightly cleanups one sim tick apart in its own order and task, its inventory cleanup as our sliced pass; overwatchspread and a spreading Overwatch build win (OverwatchSpread.cs, docs/145 §10)
         [Tunable] public static bool kErrorTrapSpread = false;     // opt-in until measured: NRaas ErrorTrap's load-up inventory check skips the name lookup for objects without an inventory and spreads over ticks; off by itself with a spreading ErrorTrap build (ErrorTrapSpread.cs, docs/146)
         [Tunable] public static bool kVenueMemo = false;           // opt-in until measured: meta venue score with GetTuning kept per world and the rain/hail list scanned without boxing (VenueMemo.cs, docs/122 §14.24)
-        [Tunable] public static bool kAutLive = false;             // test packages only: patch B14 (Autonomy.ScoreInteractionsForMetaObject) at startup for the [AutShadow] Mode=3 go-live consumer; the runtime switch is autlive (AutLive.cs, docs/124 §17)
+        [Tunable] public static bool kAutLive = false;             // test packages only: patch B14 (Autonomy.ScoreInteractionsForMetaObject) once the tuning is set (Fixes.ApplyTuned) for the [AutShadow] Mode=3 go-live consumer; the runtime switch is autlive (AutLive.cs, docs/124 §17)
+        [Tunable] public static bool kAutLiveGuard = true;         // go-live crowd cost guard (docs/124 §17.10): with autlive acting, skip posting for a while when a window's sim-side cost tops the scoring it saved; runtime switch autliveguard (A/B off arm)
+        [Tunable] public static int kAutLiveGuardOffPm = 1000;     // ... skip when cost > this per mille of the scoring saved
+        [Tunable] public static int kAutLiveGuardOnPm = 800;       // ... the window after a skip must come in at or under this (hysteresis)
+        [Tunable] public static int kAutLiveGuardMinSearches = 40; // ... a window holds at least this many eligible searches
+        [Tunable] public static int kAutLiveGuardMinFrames = 300;  // ... and at least this many frames
+        [Tunable] public static bool kAutLiveLate = false;         // docs/217 L1: go-live keeps consuming after B13 yields (resume checks re-run per slice, ObjStale per object); runtime switch autlivelate
+        [Tunable] public static int kAutLiveLateTicks = 3;         // ... a later slice consumes only up to this many ticks after the resume
+        [Tunable] public static int kAutLiveGuardHold = 600;       // ... frames without posting after a skip window, doubled per skip in a row (16 x max)
         [Tunable] public static bool kHoursMemo = false;           // opt-in until measured: a lot's opening hours are worked out once per sim tick (ScriptHotSpots.cs, docs/74)
         [Tunable] public static bool kUnseenEnvThrottle = false;   // opt-in until measured: unseen high-LOD Sims score their surroundings one time in kUnseenThrottleEvery (UnseenThrottle.cs, docs/144)
         [Tunable] public static bool kUnseenMotiveThrottle = false; // opt-in until measured: unseen high-LOD Sims update needs, moodlets and mood every kUnseenThrottleEvery sim-minutes, same totals (docs/144)
@@ -124,10 +132,16 @@ namespace Ts3Fixes
 
         public const string Version = "0.1.1";
 
+        // True once the tuning loader has written the fields (every ts3fixes tuning sets kInstantiator True). The static
+        // constructor runs before that, so Fixes.Apply sees C# defaults only (docs/124 §17.8): tuning-gated patches go in
+        // Fixes.ApplyTuned, at app startup when the tuning is already set, else at the first world load.
+        internal static bool TuningSet { get { return kInstantiator; } }
+
         static Instantiator()
         {
             try { Fixes.Apply(); } catch (Exception) { } // never take the game down at startup
-            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartPlayTrace(); } catch (Exception) { } try { Fixes.StartViewerPush(); } catch (Exception) { } try { Fixes.StartUfSitesPush(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.StartDeadRefSweep(); } catch (Exception) { }try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } try { Fixes.ApplyTripSubclasses(); } catch (Exception) { } try { Fixes.ApplyOverwatchSpread(true); Fixes.OverwatchSpreadWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchNotice(true); Fixes.OverwatchNoticeWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchProbe(true); } catch (Exception) { } try { Fixes.ApplyErrorTrapSpread(true); Fixes.ErrorTrapSpreadWorldLoad(); } catch (Exception) { } Fixes.ClearNameCache(); Fixes.AutShadowWorldLoad(); Fixes.SeasonMarkerWorldLoad(); try { Fixes.DiagWorldLoad(); } catch (Exception) { } try { Fixes.MemSusWorldLoad(); } catch (Exception) { } try { Fixes.CompactionWorldLoad(); } catch (Exception) { } try { Fixes.WakeParkWorldLoad(); } catch (Exception) { } try { Fixes.VacationWorldLoad(); } catch (Exception) { } };
+            World.OnStartupAppEventHandler += delegate { try { if (kInstantiator) Fixes.ApplyTuned("app startup"); } catch (Exception) { } };
+            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.ApplyTuned("first world load"); } catch (Exception) { } try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartPlayTrace(); } catch (Exception) { } try { Fixes.StartViewerPush(); } catch (Exception) { } try { Fixes.StartUfSitesPush(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.StartDeadRefSweep(); } catch (Exception) { }try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } try { Fixes.ApplyTripSubclasses(); } catch (Exception) { } try { Fixes.ApplyOverwatchSpread(true); Fixes.OverwatchSpreadWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchNotice(true); Fixes.OverwatchNoticeWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchProbe(true); } catch (Exception) { } try { Fixes.ApplyErrorTrapSpread(true); Fixes.ErrorTrapSpreadWorldLoad(); } catch (Exception) { } Fixes.ClearNameCache(); Fixes.AutShadowWorldLoad(); Fixes.SeasonMarkerWorldLoad(); try { Fixes.DiagWorldLoad(); } catch (Exception) { } try { Fixes.MemSusWorldLoad(); } catch (Exception) { } try { Fixes.CompactionWorldLoad(); } catch (Exception) { } try { Fixes.WakeParkWorldLoad(); } catch (Exception) { } try { Fixes.VacationWorldLoad(); } catch (Exception) { } };
         }
     }
 }

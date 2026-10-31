@@ -56,13 +56,21 @@ namespace Ts3Fixes
             PropertyInfo p = typeof(Lot).GetProperty("NumSimsGoingToOrAtThisLot", inst);
             sVmNumSims = p != null ? p.GetGetMethod(true) : null;
             sVmCelebs = typeof(Lot).GetMethod("GetNumberOfCelebritiesAtThisLot", inst, null, Type.EmptyTypes, null);
-            // Patched only when the tuning is on at startup: [AutShadow]'s direct-callee guard (AllL3Ok with kLotCallees) reads
-            // any swap of this method, ours included, as a mod and skips every Lot meta object (docs/122 §14.24.7).
-            // shortcut: tuning-gated, upgrade to always-patched once AllL3Ok accepts our own swaps (sPatched) as ClosureSweep does
-            if (!Instantiator.kVenueMemo) AppliedLog().Add("VenueMemo: venue score hook not patched (kVenueMemo off at startup)");
-            else if (sVmRandom == null || sVmNumSims == null || sVmCelebs == null) AppliedLog().Add("VenueMemo: Lot private members not found, venue score hook not patched");
+            if (sTuningMemoReady) World.OnWorldQuitEventHandler += delegate { VmClear(); };
+        }
+
+        // The venue score hook, patched only with kVenueMemo on: [AutShadow]'s direct-callee guard (AllL3Ok with kLotCallees)
+        // reads any swap of this method, ours included, as a mod and skips every Lot meta object (docs/122 §14.24.7).
+        // Called by ApplyTuned once the tuning is set (docs/124 §17.8: Apply only sees C# defaults); meta venue scores run
+        // only in a world [inferred], so the method is not compiled before the first world load.
+        // shortcut: tuning-gated, upgrade to always-patched once AllL3Ok accepts our own swaps (sPatched) as ClosureSweep does
+        static void ApplyVenueScore()
+        {
+            if (!Instantiator.kVenueMemo) return;
+            if (sVmRandom == null || sVmNumSims == null || sVmCelebs == null) AppliedLog().Add("VenueMemo: Lot private members not found, venue score hook not patched");
             else sVenueScoreReady = Patch(typeof(Lot), "HowMuchItWantsSimToCome", new Type[] { typeof(MetaAutonomyVenueType), typeof(Sim), typeof(float) }, typeof(VenueScoreHook), "ScoreHook", "ScoreOrig");
-            if (sTuningMemoReady || sVenueScoreReady) World.OnWorldQuitEventHandler += delegate { VmClear(); };
+            if (sVenueScoreReady && !sTuningMemoReady) World.OnWorldQuitEventHandler += delegate { VmClear(); };
+            TunedLog("kVenueMemo", sVenueScoreReady, "venue score hook");
         }
 
         static void VmClear()

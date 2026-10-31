@@ -23,7 +23,7 @@ namespace Ts3Fixes
     //               (camera jump, active household or selected Sim, leaving live mode); the verdict is re-asked at every wake.
     //   wakepoll  : an unseen Sim's WaitForExitReason sleeps up to kWakePollTicks per poll, never past its deadline, and is woken
     //               by Sim.AddExitReason (the only script writer that sets a reason), so it returns on the same tick as the game.
-    // Hooks are patched only with kWakeHooks, kWakePark or kWakePoll on at startup (test package: build-fixes.ts --on kWakeHooks):
+    // Hooks are patched only with kWakeHooks, kWakePark or kWakePoll on, once the tuning is set (Fixes.ApplyTuned; test package: build-fixes.ts --on kWakeHooks):
     // the SimUpdate and IsActiveSim hooks add a call on every pass. Seen Sims run the game's code path unchanged.
     // Counters: [491-494] SimUpdate passes by class (seen high-LOD, seen low-LOD, unseen high-LOD, unseen low-LOD), [495-498] their
     // timed us, [530-533] timed passes, [499-502] exit-reason polls by class, [503-504] waits seen / unseen, [505-508] idle passes by
@@ -54,21 +54,31 @@ namespace Ts3Fixes
         static uint sWpT0;
         static long sWpT0Tick = -1, sWpArmTick;
 
+        // Called by ApplyTuned once the tuning is set (docs/124 §17.8: Apply only sees C# defaults). All seven or none: wakepoll
+        // parks in WaitForExitReason and needs the AddExitReason hook to wake it. If the game already compiled any target (the
+        // first world load ran it), nothing is patched and the MISSING line fails the job.
         static void ApplyWakePark()
         {
-            if (!Instantiator.kWakeHooks && !Instantiator.kWakePark && !Instantiator.kWakePoll)
+            if (!Instantiator.kWakeHooks && !Instantiator.kWakePark && !Instantiator.kWakePoll) return;
+            Type[] f = { typeof(float) }, none = Type.EmptyTypes, er = { typeof(ExitReason) }, wf = { typeof(float), typeof(ExitReason) }, rf = { typeof(float), typeof(bool) };
+            string late = NotPatchable(typeof(InteractionQueue), "UpdateTimer", f) ?? NotPatchable(typeof(Sim), "get_IsActiveSim", none)
+                ?? NotPatchable(typeof(Sim), "DoInteraction", none) ?? NotPatchable(typeof(Sim), "WaitForExitReason", wf)
+                ?? NotPatchable(typeof(Sim), "AddExitReason", er) ?? NotPatchable(typeof(Autonomy), "get_IsRunningHighLODSimulation", none)
+                ?? NotPatchable(typeof(Lot), "UpdateReactions", rf);
+            if (late != null)
             {
-                AppliedLog().Add("WakePark: hooks not patched (kWakeHooks, kWakePark, kWakePoll off at startup)");
+                TunedLog("kWakeHooks/kWakePark/kWakePoll", false, "WakePark hooks (" + late + " missing or already compiled, none patched)");
                 return;
             }
-            Patch(typeof(InteractionQueue), "UpdateTimer", new Type[] { typeof(float) }, typeof(WpTimerHook), "TimerHook", "TimerOrig");
-            Patch(typeof(Sim), "get_IsActiveSim", Type.EmptyTypes, typeof(WpSimHook), "ActiveHook", "ActiveOrig");
-            Patch(typeof(Sim), "DoInteraction", Type.EmptyTypes, typeof(WpSimHook), "DoHook", "DoOrig");
-            Patch(typeof(Sim), "WaitForExitReason", new Type[] { typeof(float), typeof(ExitReason) }, typeof(WpSimHook), "WaitHook", "WaitOrig");
-            Patch(typeof(Sim), "AddExitReason", new Type[] { typeof(ExitReason) }, typeof(WpSimHook), "AddHook", "AddOrig");
-            Patch(typeof(Autonomy), "get_IsRunningHighLODSimulation", Type.EmptyTypes, typeof(WpAutHook), "LodHook", "LodOrig");
-            Patch(typeof(Lot), "UpdateReactions", new Type[] { typeof(float), typeof(bool) }, typeof(WpLotHook), "ReactHook", "ReactOrig");
+            bool ok = Patch(typeof(InteractionQueue), "UpdateTimer", f, typeof(WpTimerHook), "TimerHook", "TimerOrig")
+                & Patch(typeof(Sim), "get_IsActiveSim", none, typeof(WpSimHook), "ActiveHook", "ActiveOrig")
+                & Patch(typeof(Sim), "DoInteraction", none, typeof(WpSimHook), "DoHook", "DoOrig")
+                & Patch(typeof(Sim), "WaitForExitReason", wf, typeof(WpSimHook), "WaitHook", "WaitOrig")
+                & Patch(typeof(Sim), "AddExitReason", er, typeof(WpSimHook), "AddHook", "AddOrig")
+                & Patch(typeof(Autonomy), "get_IsRunningHighLODSimulation", none, typeof(WpAutHook), "LodHook", "LodOrig")
+                & Patch(typeof(Lot), "UpdateReactions", rf, typeof(WpLotHook), "ReactHook", "ReactOrig");
             World.OnWorldQuitEventHandler += delegate { WakeParkWorldLoad(); };
+            TunedLog("kWakeHooks/kWakePark/kWakePoll", ok, "WakePark hooks");
         }
 
         // World load and quit: every task of the old world is gone; drop the tables.

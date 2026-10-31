@@ -67,6 +67,27 @@ namespace Ts3Fixes
             return (w == rain || w == hail) && !p.TargetIsSim() && p.TargetOutside();
         }
 
+        // H11 shelter answer (docs/127 §4.1): instead of aborting, the worker answers the branch from a bit taken on the sim
+        // thread at the cut. The branch asks IsShelteredFromPrecipitation(target, instance), which uses the instance only
+        // for ICanCountAsBeingIndoors targets [verified, decompiled SeasonsManager]; for every other target it is the
+        // position test, so one bit per meta object stands for it. 0 = no bit (Sim, indoors-capable, not outside, no rain):
+        // the worker aborts `rain` as before; 1 sheltered; 2 not sheltered.
+        public const byte kShelterNone = 0, kSheltered = 1, kUnsheltered = 2;
+        public static byte ShelterBit(bool rainOrHail, bool isSim, bool countsIndoors, bool outside, bool sheltered)
+        {
+            if (!rainOrHail || isSim || countsIndoors || !outside) return kShelterNone;
+            return sheltered ? kSheltered : kUnsheltered;
+        }
+        // the hooked IsShelteredFromPrecipitation(obj, ii) on the worker: 1 / 0 = answer, -1 = abort `rain`. Only the armed
+        // target's skipped call (no instance) is answered; anything else on the worker never had a cut bit.
+        public static int ShelterAnswer(bool instanceNull, bool armedTarget, byte bit)
+        {
+            if (!instanceNull || !armedTarget || bit == kShelterNone) return -1;
+            return bit == kSheltered ? 1 : 0;
+        }
+        // after the score: the pair counts only if exactly the one CreateInstance call was skipped and the hook answered it
+        public static bool ShelterDone(int skips, bool answered) { return skips == 1 && answered; }
+
         // ---- docs/128 G-M4 / G-M5: method keys in the call-graph index format (tools/managed-callgraph.ts sigType) ----
 
         static string Alias(string full)

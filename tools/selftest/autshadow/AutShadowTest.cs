@@ -176,6 +176,20 @@ static class AutShadowTest
         pr2.Outside = true; pr2.W = 1;
         Check(AutShadowCore.RainShelter(true, pr2, 1, 2), "H11: rain, outdoor object: abort");
 
+        // H11 shelter answer (docs/127 §4.1): cut bit, worker answer, done rule
+        Check(AutShadowCore.ShelterBit(false, false, false, true, false) == AutShadowCore.kShelterNone, "shelter bit: dry weather: none");
+        Check(AutShadowCore.ShelterBit(true, true, false, true, false) == AutShadowCore.kShelterNone, "shelter bit: Sim: none");
+        Check(AutShadowCore.ShelterBit(true, false, true, true, true) == AutShadowCore.kShelterNone, "shelter bit: ICanCountAsBeingIndoors: none (needs the instance)");
+        Check(AutShadowCore.ShelterBit(true, false, false, false, false) == AutShadowCore.kShelterNone, "shelter bit: indoors: none (branch not taken)");
+        Check(AutShadowCore.ShelterBit(true, false, false, true, true) == AutShadowCore.kSheltered, "shelter bit: outside under a roof: sheltered");
+        Check(AutShadowCore.ShelterBit(true, false, false, true, false) == AutShadowCore.kUnsheltered, "shelter bit: outside, open sky: unsheltered");
+        Check(AutShadowCore.ShelterAnswer(true, true, AutShadowCore.kSheltered) == 1, "shelter answer: sheltered");
+        Check(AutShadowCore.ShelterAnswer(true, true, AutShadowCore.kUnsheltered) == 0, "shelter answer: unsheltered (multiplier applies)");
+        Check(AutShadowCore.ShelterAnswer(false, true, AutShadowCore.kSheltered) == -1, "shelter answer: a real instance: abort");
+        Check(AutShadowCore.ShelterAnswer(true, false, AutShadowCore.kSheltered) == -1, "shelter answer: another object: abort");
+        Check(AutShadowCore.ShelterAnswer(true, true, AutShadowCore.kShelterNone) == -1, "shelter answer: no cut bit: abort");
+        Check(AutShadowCore.ShelterDone(1, true) && !AutShadowCore.ShelterDone(0, true) && !AutShadowCore.ShelterDone(1, false) && !AutShadowCore.ShelterDone(2, true), "shelter done: one skip and one answer only");
+
         Console.WriteLine(sFails == 0 ? "autshadow selftest: PASS" : "autshadow selftest: " + sFails + " FAIL");
         return sFails == 0 ? 0 : 1;
     }

@@ -4,8 +4,10 @@ namespace Ts3Fixes
 {
     // docs/124 §16-§17 go-live consume, the part with no game types (selftest: node tools/selftest/autlive/run.ts):
     //  - Heap: the game's BestScores queue as the meta phase uses it (BestScores.Add with AllowZeroScore off: scores > 0 only;
-    //    PriorityQueue capacity 10: add while not full, else replace the smallest only when strictly greater) [verified,
-    //    decompiled BestScores.Add / PriorityQueue.Add]. Used by the dry compare (G7) to replay the game's own C1 calls.
+    //    PriorityQueue capacity 10: add while not full, else replace the root minimum only when strictly greater; slot order
+    //    and tie rules as the game's heap) [verified, decompiled BestScores.Add / PriorityQueue]. AlwaysChooseBest pairs never
+    //    reach the queue (BestScores keeps them on a side list): callers leave them out. Used by the dry compare (G7) to replay
+    //    the game's own C1 calls.
     //  - Order: the worker's passing pairs by worker score, highest first, ties in request order (B13 object order, then
     //    MetaAds order).
     //  - Bands: the §16.1 rule. Band 1 = the first TopN of Order (sent at B14). Band k+1 fires when (a) fewer than 10 entries
@@ -16,6 +18,43 @@ namespace Ts3Fixes
     {
         public const int kCap = 10;
 
+        // Per-search feature mask (Rodney 2026-10-31: a wrong pick or crash names the feature without bisecting). One bit per
+        // feature that touched this search. Native bits come from Config(33) (ts3native AS_FEAT_*: 1 PreLearn rows at the cut,
+        // 2 TierReqLots refresh at the cut, 4 Satb redirected loads in the job, 8 cold give-up in the job).
+        public static class Feat
+        {
+            public const int Late = 0, PreLearn = 1, TierReqLots = 2, Rain = 3, DesireSkip = 4, Satb = 5, Guard = 6, Cold = 7, Partial = 8, N = 9;
+            public static readonly string[] Names = { "late", "prelearn", "tierreqlots", "rain", "desirefn", "satb", "guard", "cold", "partial" };
+            // at the finish: native = Config(33); rain = pairs answered from the cut's shelter bit; mode3 = the desirefn skip ran
+            // (Mode 3 never scores the driver's meta); guard = posted in the cost guard's probation window; partial = KeepPartial
+            public static int Build(int native, int rainPairs, bool mode3, bool guardProbation, bool partial)
+            {
+                int m = 0;
+                if ((native & 1) != 0) m |= 1 << PreLearn;
+                if ((native & 2) != 0) m |= 1 << TierReqLots;
+                if ((native & 4) != 0) m |= 1 << Satb;
+                if ((native & 8) != 0) m |= 1 << Cold;
+                if (rainPairs > 0) m |= 1 << Rain;
+                if (mode3) m |= 1 << DesireSkip;
+                if (guardProbation) m |= 1 << Guard;
+                if (partial) m |= 1 << Partial;
+                return m;
+            }
+            public static string Text(int mask)
+            {
+                string t = "";
+                for (int b = 0; b < N; b++) if ((mask & (1 << b)) != 0) t += (t.Length > 0 ? "|" : "") + Names[b];
+                return t;
+            }
+            // JSON fields for a record: ,"feat":"0x109","feats":"late|rain|partial"
+            public static string Json(int mask) { return ",\"feat\":\"0x" + mask.ToString("X3") + "\",\"feats\":\"" + Text(mask) + "\""; }
+            // one count per set bit into c[slot + bit] (counter blocks of N slots)
+            public static void Count(int[] c, int slot, int mask)
+            {
+                for (int b = 0; b < N; b++) if ((mask & (1 << b)) != 0 && slot + b < c.Length) c[slot + b]++;
+            }
+        }
+
         public sealed class Heap
         {
             public readonly int[] Id;
@@ -24,17 +63,42 @@ namespace Ts3Fixes
             readonly int mCap;
             public Heap(int cap) { mCap = cap; Id = new int[cap]; S = new float[cap]; }
             public void Clear() { N = 0; }
+            // the game's PriorityQueue in the same slot order: a binary min-heap [verified, decompiled PriorityQueue +
+            // InteractionCandidate.CompareTo]: insert sifts up only while strictly smaller than the parent; full = replace the
+            // root only when strictly greater, then sift down to the smaller child (left only when strictly smaller than right),
+            // swapping only while that child is strictly smaller. Which of several equal minimums goes depends on this order.
             public void Add(int id, float s)
             {
                 if (!(s > 0f)) return;
-                if (N < mCap) { Id[N] = id; S[N] = s; N++; return; }
-                int m = MinAt();
-                if (s > S[m]) { Id[m] = id; S[m] = s; }
+                int i;
+                if (N < mCap)
+                {
+                    i = N++;
+                    Id[i] = id; S[i] = s;
+                    while (i > 0) { int p = (i - 1) >> 1; if (!(S[i] < S[p])) break; Swap(i, p); i = p; }
+                    return;
+                }
+                if (!(s > S[0])) return;
+                Id[0] = id; S[0] = s;
+                i = 0;
+                while (2 * i + 1 < N)
+                {
+                    int c = 2 * i + 1;
+                    if (c + 1 < N && !(S[c] < S[c + 1])) c++;
+                    if (!(S[c] < S[i])) break;
+                    Swap(i, c); i = c;
+                }
             }
-            public int MinAt() { int m = 0; for (int i = 1; i < N; i++) if (S[i] < S[m]) m = i; return m; }
-            public float Min() { return N == 0 ? 0f : S[MinAt()]; }
+            void Swap(int a, int b) { int t = Id[a]; Id[a] = Id[b]; Id[b] = t; float u = S[a]; S[a] = S[b]; S[b] = u; }
+            public float Min() { return N == 0 ? 0f : S[0]; }
+            public float TopScore() { float m = 0f; for (int i = 0; i < N; i++) if (S[i] > m) m = S[i]; return m; }
+            // entries at exactly score s (top-1 ties: CountAt(TopScore()))
+            public int CountAt(float s) { int k = 0; for (int i = 0; i < N; i++) if (S[i] == s) k++; return k; }
+            public bool HasAt(int id, float s) { for (int i = 0; i < N; i++) if (Id[i] == id && S[i] == s) return true; return false; }
             // id of the best entry (ties: the first in slot order); int.MinValue when empty
             public int TopId() { if (N == 0) return int.MinValue; int m = 0; for (int i = 1; i < N; i++) if (S[i] > S[m]) m = i; return Id[m]; }
+            // top 1 equal up to ties: same top score and o's top id is one of this heap's entries at that score
+            public bool SameTop(Heap o) { if (N == 0 || o.N == 0) return N == o.N; float t = TopScore(); return t == o.TopScore() && HasAt(o.TopId(), t); }
             public bool Has(int id) { for (int i = 0; i < N; i++) if (Id[i] == id) return true; return false; }
             public bool SameSet(Heap o)
             {
@@ -61,6 +125,18 @@ namespace Ts3Fixes
         }
         // histogram bins: 0 exact, < 1%, < 5%, < 20%, more
         public static int DriftBin(float d) { return d <= 0f ? 0 : d < 0.01f ? 1 : d < 0.05f ? 2 : d < 0.2f ? 3 : 4; }
+
+        // docs/217 L1 late consume: the verdict at the first B14 of a B13 time slice after the resume. late = sticky give-up
+        // of an earlier slice; age = frames since the resume; check = LiveCheck's reason at this slice (0 = still valid).
+        // 0 = consume this slice, 1 = too old (lateTicks), 2 = the resume checks failed now, 3 = already given up.
+        public const int kLateOk = 0, kLateAge = 1, kLateCheck = 2, kLateSticky = 3;
+        public static int LateSlice(bool late, int frame, int resumeFrame, int lateTicks, int check)
+        {
+            if (late) return kLateSticky;
+            int age = frame - resumeFrame;
+            if (age < 0 || age > lateTicks) return kLateAge;
+            return check != 0 ? kLateCheck : kLateOk;
+        }
 
         // candidate pair indexes by score, highest first, ties by index; returns the count (insertion sort: 5-40 a search)
         public static int Order(float[] score, bool[] cand, int n, int[] order)
@@ -136,6 +212,63 @@ namespace Ts3Fixes
                 if (b.Full) break;
             }
             return b.Fired;
+        }
+
+        // docs/124 §17.10 crowd cost guard. A window (>= MinSearches eligible searches and >= MinFrames frames) sets the
+        // sim-side cost go-live adds (cut + snapshot, the sim's GC lock waits, the sim's locked GC entries x EntryNs, our
+        // consumer time incl. the band-1 C1 calls) against the scoring it saved (reference us per request x the consumed share
+        // of each used search's allow-listed pairs). Cost above OffPm per mille of saved: no posting for Hold frames, so the
+        // game's own B13 runs (the existing fallback); Hold doubles on each skip in a row, up to 2^kMaxShift x. The window after
+        // a skip must come in at or under OnPm (hysteresis) or it skips again. No reference yet (refUsPerReq <= 0): no
+        // decision. act false (switch autliveguard off): measured and reported, never skips.
+        public sealed class CostGuard
+        {
+            public const int kMaxShift = 4;
+            public int OffPm = 1000, OnPm = 800, MinSearches = 40, MinFrames = 300, Hold = 600;
+            public double EntryNs = 68;          // docs/30 §15 selftest ns per locked GC entry [inferred, as mono-cost-report.ts]
+            public bool Skipping, Probation;     // Probation: the first window after a skip (OnPm applies)
+            public int Shift, Until, WinStart = -1, Searches, LastPm = -1, Windows, Skips;
+            public double CostUs, SavedReq;      // SavedReq: requests' worth of reference scoring saved in the window
+            int mCut0, mWait0, mEnt0;
+
+            public void Reset() { Skipping = Probation = false; Shift = 0; WinStart = -1; LastPm = -1; }
+
+            // an eligible search at frame now: false = skip it (the game's B13)
+            public bool Allow(int now, bool act)
+            {
+                if (Skipping && act && now - Until < 0) return false;
+                if (Skipping) { Skipping = false; Probation = true; WinStart = -1; }
+                return true;
+            }
+
+            // per posted search: consumer us, share of its allow-listed pairs the game did not score itself (0 = dropped)
+            public void Add(double consumerUs, double savedShare) { CostUs += consumerUs; SavedReq += savedShare; }
+
+            // per allowed search, before it posts; cut/wait/entries = the native cumulative words (wrapping ints). Returns 0 =
+            // window running, 1 = closed and stays on, 2 = closed and skips from now
+            public int Tick(int now, int cutUs, int waitUs, int entries, double refUsPerReq, bool act)
+            {
+                if (WinStart < 0) { WinStart = now; mCut0 = cutUs; mWait0 = waitUs; mEnt0 = entries; Searches = 0; CostUs = SavedReq = 0; }
+                Searches++;
+                if (Searches < MinSearches || now - WinStart < MinFrames) return 0;
+                Windows++;
+                double cost = CostUs + unchecked(cutUs - mCut0) + unchecked(waitUs - mWait0) + unchecked(entries - mEnt0) * EntryNs / 1000;
+                double saved = refUsPerReq * SavedReq;
+                int r = 1;
+                if (refUsPerReq <= 0) LastPm = -1;  // no reference yet: no decision
+                else
+                {
+                    LastPm = saved > 0 ? (int)Math.Min(cost * 1000 / saved, 1e6) : 1000000;
+                    if (LastPm > (Probation ? OnPm : OffPm) && act)
+                    {
+                        Skipping = true; Until = now + (Hold << Shift); Skips++; r = 2;
+                        if (Shift < kMaxShift) Shift++;
+                    }
+                    else { Probation = false; Shift = 0; }  // passed (or guard off): the next skip starts at Hold again
+                }
+                WinStart = now; mCut0 = cutUs; mWait0 = waitUs; mEnt0 = entries; Searches = 0; CostUs = SavedReq = 0;
+                return r;
+            }
         }
     }
 }

@@ -160,6 +160,8 @@ static bool AsInvoke(void* m, LONG* us) {
 static void AsFinish(LONG status) {
     Ts3nAutShadow& k = ts3native_autshadow;
     g_asLast = status;
+    g_asLastJobBits = g_asJobBits | (k.satbWLoads != g_asJobLoads0 ? AS_FEAT_SATB : 0) | (g_satbColdGiveUps != g_asJobCold0 ? AS_FEAT_COLD : 0);
+    g_asJobBits = 0, g_asJobLoads0 = k.satbWLoads, g_asJobCold0 = g_satbColdGiveUps;
     k.finishRuns++;
     if (g_asMFinish && !AsInvoke(g_asMFinish, NULL)) k.finishExc++;
     InterlockedExchange(&g_asRun, AS_RUN_IDLE);
@@ -324,9 +326,15 @@ static void __cdecl AsSimLeave() {
     }
     if (g_asRun != AS_RUN_IDLE || !g_asReqId) return;
     AsRootOnce();
+    const LONG pl0 = g_asPreLearnRows, t10 = g_asReqLotT1;
     AsCut();
+    // per-search feature mask, native half (ts3fixes AutLiveCore.Feat): this cut's PreLearn / TierReqLots work, and the
+    // job's Satb redirects and cold give-ups as deltas from here (read at AsFinish, Config(33))
+    g_asJobBits = (g_asPreLearnRows != pl0 ? AS_FEAT_PRELEARN : 0) | (g_asReqLotT1 != t10 ? AS_FEAT_TIERREQ : 0);
+    g_asJobLoads0 = k.satbWLoads, g_asJobCold0 = g_satbColdGiveUps;
     g_asRngSeedV[g_asPub] = AsRngCutSeed();
     k.cutReq++;
+    if ((k.cutReq & 255) == 0) AsAbortIcLog();
     k.batchReqs += g_asBatchN;
     if (g_asBatchN > 1) k.batchCuts++;
     AsMax(k.batchMax, g_asBatchN);
@@ -438,20 +446,81 @@ static int __cdecl AsIcConfig(int key) {
         case 21: return g_asRunEpoch;  // world epoch at the last cut
         case 22: return g_asCutFrame;  // frame count at the last cut
         case 23: return g_asLiveRefRan;
+        // docs/124 §17.10 go-live cost guard (ts3fixes AutLiveCore.CostGuard): 24 = 1 marks these keys (older builds answer 0),
+        // then the cumulative sim-side cost and reference words it takes window deltas of (wrap like the LONG counters)
+        case 24: return 1;
+        case 25: return ts3native_autshadow.cutUs;
+        case 26: return ts3native_autshadow.cuts;
+        case 27: return ts3native_mtprobe.simLockWaitUs;
+        case 28: return ts3native_mtprobe.lockedCalls - ts3native_mtprobe.lockedWorker;  // the sim's locked GC entries
+        case 29: return ts3native_autshadow.refUs;
+        case 30: return ts3native_autshadow.refRuns;
+        case 31: return 1;  // 0.36.147: AddRow kind 3 (a request's scored LotId) is understood (older builds read kind != 0 as a Sim)
+        case 32: return g_satbMode == SATB_ACT ? 1 : 0;  // 0.36.148: RainArm is registered and can skip (docs/127 H11 shelter answer)
+        case 33: return g_asLastJobBits;  // 0.36.148: native feature bits of the last finished job (AS_FEAT_*, ts3fixes AutLiveCore.Feat)
+        case 34: return 1;  // 0.36.148: SearchMark registered, Config(33) answers
         default: return AsLgConfig(key);  // 5-10: ledger probe (autledger.cpp)
     }
 }
 static int __cdecl AsIcIsWorker() { return g_asWorkerTid && GetCurrentThreadId() == g_asWorkerTid; }
-static void __cdecl AsIcAbort(int reason) { AsManagedAbort(reason); }
+// worker only, like Aborted/ResetAbort/Stopped: a sim-thread call is a no-op, so ts3fixes can warm the IC up on the sim at
+// load (docs/206 §15: Abort was one of the 7 cold give-ups); every ts3fixes caller is already behind OnWorker()
+static void __cdecl AsIcAbort(int reason) { if (AsIcIsWorker()) AsManagedAbort(reason); }
 // the abort word and the stop flag belong to the worker's run: on any other thread they read as clear
 static int __cdecl AsIcAborted() { return AsIcIsWorker() ? AsAborted() : -1; }
 static void __cdecl AsIcResetAbort() { if (AsIcIsWorker()) AsResetAbort(); }
 static int __cdecl AsIcStopped() { return AsIcIsWorker() && g_asStop != 0; }
+// per-search feature mask (sim thread, at a search's end): the last search's request id, mask and top definition, kept for
+// the crash log (AsCrashLine from XcptLog): a fault during or right after a search names the features it used
+static void __cdecl AsIcSearchMark(int req, int mask, const DWORD* def) {
+    if (AsIcIsWorker()) return;
+    g_asMarkReq = req, g_asMarkMask = mask;
+    int n = 0;
+    if (def && def[1] > 0)  // EA's MonoString {vtable, length, UTF-16 at +8}
+        for (const WORD* w = (const WORD*)(def + 2); n < (int)def[1] && n < (int)sizeof(g_asMarkDef) - 1; n++) g_asMarkDef[n] = w[n] < 128 ? (char)w[n] : '?';
+    g_asMarkDef[n] = 0;
+}
+static const char* const kAsFeatNames[] = {"late", "prelearn", "tierreqlots", "rain", "desirefn", "satb", "guard", "cold", "partial"};
+static int AsFeatText(int mask, char* out, int cap) {
+    int n = 0;
+    out[0] = 0;
+    for (int b = 0; b < 9; b++)
+        if (mask & (1 << b)) n += _snprintf_s(out + n, cap - n, _TRUNCATE, "%s%s", n ? "|" : "", kAsFeatNames[b]);
+    return n;
+}
+// XcptLog (ts3native.cpp, [Crash] Log=1): one line per logged access violation / illegal instruction while [AutShadow] ran
+static void AsCrashLine() {
+    if (g_asMode < 0 || (!g_asMarkReq && !g_asReqId)) return;
+    char names[128];
+    AsFeatText(g_asMarkMask, names, sizeof(names));
+    const int u = g_asRngUnitW;
+    Log("  autshadow search: run %ld, posted req %ld, worker unit obj %d pair %d (thread %s), this cut's native bits 0x%lX; last finished "
+        "search req %ld mask 0x%03lX [%s] top definition %s", (LONG)g_asRun, (LONG)g_asReqId, u >> 16, u & 0xFFFF,
+        AsIcIsWorker() ? "worker" : "sim", g_asJobBits, g_asMarkReq, g_asMarkMask, names, g_asMarkDef[0] ? g_asMarkDef : "-");
+}
+// docs/127 H11 (worker only; -1 elsewhere, so the sim-thread warm-up is a no-op): def != null arms the next callvirt of site
+// on def (satb.cpp SatbRainSkip), 1 armed, 0 not (no Satb act span: ts3fixes aborts the pair `rain` as before); def null
+// disarms and answers the calls skipped since the arm (0 = the branch never made the call: counted rainMiss)
+static int __cdecl AsIcRainArm(void* def, void* site) {
+    if (!AsIcIsWorker()) return -1;
+    Ts3nAutShadow& k = ts3native_autshadow;
+    if (!def) {
+        const int n = g_asRainSkips;
+        if (!n && g_asRainDef) k.rainMiss++;
+        g_asRainDef = 0, g_asRainSkips = 0;
+        return n;
+    }
+    if (g_satbMode != SATB_ACT || !g_satbOn || !site) return 0;
+    g_asRainMm = (DWORD)(uintptr_t)site, g_asRainDef = (DWORD)(uintptr_t)def, g_asRainSkips = 0;
+    k.rainArm++;
+    return 1;
+}
 static int __cdecl AsIcBegin() {
     if (g_asMode < 0 || !g_as || !g_asMFinish || AsIcIsWorker()) return 0;
     if (g_asRun != AS_RUN_IDLE || (g_asReqId && g_asBatchN >= AS_BATCH_MAX)) { ts3native_autshadow.busy++; return 0; }
     if (g_asReqId) { g_asNextActor = true; return 1; }  // joins the posted batch's cut (docs/122 §14.18)
     AsSetClear(g_as->always);  // reachable Sims are per batch
+    AsSetClear(g_as->reqLots);  // scored lots too (TierReqLots, PreLearn)
     g_asActor = 0, g_asActorN = 0, g_asNextActor = false;
     return 1;
 }
@@ -645,6 +714,8 @@ static void AsRegisterIcs() {
         {"Ts3Fixes.AutShadowNative::LiveStat", (const void*)AsIcLiveStat},
         {"Ts3Fixes.AutShadowNative::LiveWatch", (const void*)AsIcLiveWatch},
         {"Ts3Fixes.AutShadowNative::ObjStale", (const void*)AsIcObjStale},
+        {"Ts3Fixes.AutShadowNative::RainArm", (const void*)AsIcRainArm},
+        {"Ts3Fixes.AutShadowNative::SearchMark", (const void*)AsIcSearchMark},
     };
     if (!g_asAddIc) return;
     for (const auto& ic : kIcs) g_asAddIc(ic.name, ic.fn);
@@ -732,6 +803,11 @@ static void AsInstallRun(const wchar_t* ini, bool slotStub) {
     k.idOn = g_asIdsDelta, k.seLearnOn = g_asSimEvLearn, k.seSeatOn = g_asSimEvSeated, k.tcMax = g_asTierClassMax;
     if (ini) Log("autshadow cut17: IdsDelta=%d IdsDeltaCheck=%d SimEvLearn=%d SimEvSeated=%d SimSeatIcs=0x%lX TierClassMax=%d GoneLoose=%d (docs/122 §14.28)",
                  g_asIdsDelta, g_asIdsDeltaCheck, g_asSimEvLearn, g_asSimEvSeated, g_asSimSeatIcs, g_asTierClassMax, g_asGoneLoose);
+    // docs/216 rows 1 and 5 (0.36.147): PreLearn=1 learned parent/GetTask rows for objects placed on listed or scored lots;
+    // TierReqLots=1 tier-2 Sims on the request's scored lots refresh at the cut
+    g_asPreLearn = ini ? (GetPrivateProfileIntW(L"AutShadow", L"PreLearn", 0, ini) ? 1 : 0) : 0;
+    g_asTierReqLots = ini ? (GetPrivateProfileIntW(L"AutShadow", L"TierReqLots", 0, ini) ? 1 : 0) : 0;
+    if (ini) Log("autshadow r7: PreLearn=%d TierReqLots=%d (docs/216 row, simstale)", g_asPreLearn, g_asTierReqLots);
     g_asPrintUsPerTick = g_asUsPerTick;
     if (g_asWaitUs < 0 || g_asWaitUs > 20000) g_asWaitUs = g_asWaitUs < 0 ? 0 : 20000;  // a test knob: never more than 20 ms per frame
     if (ini) {
@@ -765,9 +841,9 @@ static void AsInstallRun(const wchar_t* ini, bool slotStub) {
     if (satb > 0 && slotStub && g_asMode >= 1) {
         g_satbRtSwapped = SatbInstallRt();
         const int m = SatbInstall(satb);
-        Log("%s autshadow satb: Satb=%d -> mode %d (%s), %d runtime icall entries wrapped, %d EA ICs with byref/array arguments logged per argument, %d cold-path detours (act)",
+        Log("%s autshadow satb: Satb=%d -> mode %d (%s), %d runtime icall entries wrapped, %d EA ICs with byref/array arguments logged per argument, %d cold-path detours, %d native-writer detours (act: binder bodies, static helpers; docs/206 §15)",
             m > 0 && g_satbRtSwapped > 0 ? "OK  " : "FAIL", satb, m, m == SATB_ACT ? "act: concurrent worker, read redirect" :
-            m == SATB_PROBE ? "probe: store counts, no concurrency" : "off", g_satbRtSwapped, g_satbIcMapped, g_satbColdN);
+            m == SATB_PROBE ? "probe: store counts, no concurrency" : "off", g_satbRtSwapped, g_satbIcMapped, g_satbColdN, g_satbNativeN);
     }
     g_satbWorkerBusy = AsSatbBusy;
     if (!slotStub) return;
