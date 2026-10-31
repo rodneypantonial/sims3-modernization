@@ -12313,6 +12313,7 @@ static void TestP5() {
 #include "crashfx-test.h"  // TestCrashForensics ([CrashForensics], docs/157 §11.7)
 #include "apex-test.h"  // TestApex ([Compat] ApexStandDown, docs/148 §7)
 #include "compaction-test.h"  // TestCompaction ([Compaction], docs/204)
+#include "saveslim-test.h"  // TestSaveSlim ([SaveSlim], docs/15 phase 11)
 #include "rctrim-test.h"  // TestRcTrim ([ResourceCache] TrimAfterCleanup, docs/198 §6)
 #include "eafix-test.h"   // TestEaCrashFixes ([EaCrashFixes] ConformActor + ThumbPose, docs/67 §26.4 / §27.5)
 #include "earlyout-test.h"  // TestEarlyOut ([RouteEarlyOut] probe, docs/142)
@@ -13546,6 +13547,7 @@ int main() {
     TestAlloc();
     TestWaterJps();
     TestSaveCompress();
+    TestSaveSlim();
     TestHeightCache();
     TestTerrainGrave();
     TestIcLock();
