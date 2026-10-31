@@ -950,7 +950,7 @@ Static, plus the contributor's two full dumps (described in the issue; none is c
 | Report | ACCESS_VIOLATION reading `0x00000004` at `0x5DDFBD`, main thread, `eax` = 0. Signature `crashsig-95ce882e`. The nearest symbol names it `ModelBuilder_Dtor+0x1B6D`, but it is a separate function: the Sim builder's per-part step `0x5DDB30`, called once per part from the loop at `0x5DE4CA` |
 | Site | `0x5DDFA9`-`0x5DDFB0` calls the part's GEOM slot `+0x58`. For the GEOM vtable `0xFE32C0` that slot is `0x580420` (`mov eax,[ecx+0x28]; ret`): the embedded material. `0x5DDFBD` then reads the shader hash at `[eax+4]` with no null check. `0x5DE009`-`0x5DE01C` calls the slot again and copies 16 bytes from it |
 | Every path | The step reads the material on every path. When the part joins an existing group it reads it at `0x5DDC45`-`0x5DDC5A`. When it starts a new group it reads it at `0x5DDFB0`-`0x5DDFBD`. No branch between the start check and those reads leaves the function |
-| Cause | A CAS VPXY LOD 1-3 entry names a GEOM with shader 0 and vertices: a custom-content morph mesh used as a LOD. Such a GEOM has no embedded material (MTNF). In both dumps it was the same CC hair. EA's own CAS parts have no such entry (the contributor's scan of the install) |
+| Cause | A CAS VPXY LOD 1-3 entry names a GEOM with shader 0 and vertices: a custom-content morph mesh used as a LOD. Such a GEOM has no embedded material (MTNF). In both dumps it was the same CC hair. EA's own CAS parts have no such entry (the contributor's scan of the install). The VPXY must be the part's mesh VPXY: morph VPXYs (fat, fit, thin, special) name only shader-0 meshes with position, normal and vertex-id data, by design, and are not built through this step [verified: VPXY LOD lists of an EA Store library package] |
 
 ### 29.2 Fix: `[EaCrashFixes] GeomNoMaterial` (0.36.143, eafix.cpp, off by default; ledger docs/51 §411)
 
@@ -962,7 +962,17 @@ Because every path reads the material, the fix changes only parts that crash tod
 |---|---|
 | Counters | none. The first 8 skips are logged as `ea fix: GeomNoMaterial: GEOM <p> (key <type>:<group>:<instance>, builder LOD <n>) has no embedded material` |
 | Tests (offline) | selftest `TestEaCrashFixes` runs the stub with landing pads in place of the two targets. Four cases: a GEOM with a material continues, a GEOM without one is skipped and counted, another type with the same field 0 continues, and a null mesh takes the game's skip without being counted. `ebx`, `esi`, `edi` and `ebp` are unchanged at both pads. The game's getter bytes run on the fake GEOM. The patch on a stand-in site: a foreign slot or foreign site bytes mean nothing is written, and the site is patched only once |
-| Repro | none in game: it needs the CC part, worn by a Sim the builder builds at LOD 2 or 3 |
+| Repro | `node tools/cc-mesh-scan.ts --repro <package> <GEOM instance> <out>` (PR #119) writes a copy of one GEOM without its material; in `Mods\Overrides` for one session it reproduces the fault (§29.3) |
 | Conflicts | none with S3SS / S3PP / Apex at `0x5DDB63` / `0xFE3318` / `0x580420` (docs/68). Apex's nearest site is `CasTriSort 0x5D1960` |
 | Open | Whether a Sim with the part skipped at one LOD shows anything wrong besides the missing part at that distance [inferred: the same as a part whose mesh failed to load] |
 
+### 29.3 Live A/B with a made repro (2026-10-31) [verified]
+
+No CC with the #80 shape was at hand, so the test made one. It took LOD 3 of the EA Store hair from §28.4 (`015A1849:009B6C36:C014AA218DAFEEA9`), cut its material, set shader 0, and loaded it as a one-resource package from `Mods\Overrides`, one session per arm. The hair's mesh VPXY still names LOD 0-2 with a material, so the part has the §29.1 shape. Both arms used the same contributor save, CI build `a7572875` (0.36.143 plus key logging) and `GeomBoneIndex=1`:
+
+| Arm | Result |
+|---|---|
+| `GeomNoMaterial=1` | From world load on, 8 log lines (the cap): `GEOM … (key 015A1849:009B6C36:C014AA218DAFEEA9, builder LOD 3) has no embedded material: part skipped`. 20 minutes of play, saved, no script errors |
+| `GeomNoMaterial=0` | Crash during world load: ACCESS_VIOLATION reading `0x00000004` at `0x5DDFBD`, main thread, `eax` = 0, `edx` = `0x580420` (the getter). This is the fault in the #80 report |
+
+This is I-411-3's check: the skip is logged and the crash does not happen. Nobody looked at the Sim at that distance, so whether it looks right is not checked. With the hair's LOD 3 skipped before the skin pass, `GeomBoneIndex` logged a different filler mesh instead: `015A1849:00BEE823:93A4E607E5383AFE`, bone 2 of 2, from the install's merged overrides package. The scan finds 59 such meshes in `Mods\Overrides`, all with weight 0.
