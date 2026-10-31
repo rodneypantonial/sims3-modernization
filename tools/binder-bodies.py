@@ -1,4 +1,4 @@
-"""docs/217 (contributor research round 2, task 2): what each of EA's 1,085 binder native bodies writes.
+"""docs/220 (contributor research round 2, task 2): what each of EA's 1,085 binder native bodies writes.
 
     python tools/binder-bodies.py --hashes <out.txt> [--exe game-copy/bin/TS3W.exe]
     node tools/binder-bodies.ts --asm game-copy/assemblies --index game-copy/analysis/callgraph/index.json \
@@ -25,7 +25,7 @@ Static only (capstone 5 over a copy of the Steam exe; TS3W_EXE overrides the def
    Stores inside Mono, the GC, the EA heap and the binder's own records are runtime bookkeeping and listed apart.
 Limits: indirect calls through unresolved pointers are opaque (listed as handoffs, confidence medium); pointer values are
 tracked 4 loads deep; analysis budget 200,000 instructions per glue function (truncation is flagged). Field offsets come
-from binder-bodies.ts's layout model (gcsort), checked against 859 native `this` stores (docs/217 §2).
+from binder-bodies.ts's layout model (gcsort), checked against 859 native `this` stores (docs/220 §2).
 """
 import argparse
 import ast
@@ -575,7 +575,7 @@ CRT_W = {'memcpy', 'memmove', 'memset', 'strcpy', 'wcscpy', 'strncpy', 'wcsncpy'
 
 # Icalls the bodies call through their init globals (global -> managed method id, from binder-bodies.ts `init`; filled
 # before the analysis). Effects of the 92 that occur, from Mono 1.2.3 icall semantics and the EA ScriptCore signatures
-# [inferred, docs/217 §2]; argument indexes count `this` as A0. Icalls in none of the sets stay opaque handoffs.
+# [inferred, docs/220 §2]; argument indexes count `this` as A0. Icalls in none of the sets stay opaque handoffs.
 ICALLS = {}
 ICALL_CONST = {'System.Runtime.CompilerServices.RuntimeHelpers::get_OffsetToStringData()': 8}  # chars after vtable + length
 ICALL_FRESH = {  # return a new object or string, store nothing they are given
@@ -1077,7 +1077,7 @@ def step(ins, st, res, entry, rets):
         return []
     if m in JCC:
         if m == 'je' and ops and ops[0].type == CS_OP_IMM and setjmp_arm(a):
-            return [ops[0].imm]  # the non-zero arm is the longjmp return of a raised exception (docs/217 §2)
+            return [ops[0].imm]  # the non-zero arm is the longjmp return of a raised exception (docs/220 §2)
         return [ins.address + ins.size, ops[0].imm] if ops and ops[0].type == CS_OP_IMM else [ins.address + ins.size]
     if m in ('int3', 'hlt', 'ud2', 'int'):
         return []
@@ -1590,7 +1590,7 @@ def self_check(exe):
     if not os.path.exists(exe):
         print('exe not found (%s): analyzer checks skipped' % exe)
         return 0
-    # analyzer on known bodies (docs/217 §4): ElapsedTimeInMinutes(ref float) writes the float, Curve.Fx writes this.m_x
+    # analyzer on known bodies (docs/220 §4): ElapsedTimeInMinutes(ref float) writes the float, Curve.Fx writes this.m_x
     # (+0x14), PriorityQueue.Add writes this fields, SimClock.get_CurrentTicks only fills its return slot
     load_exe(exe)
     R = regs()
@@ -1613,7 +1613,7 @@ def self_check(exe):
 
 
 def main():
-    ap = argparse.ArgumentParser(description='docs/217: what EA binder native bodies write')
+    ap = argparse.ArgumentParser(description='docs/220: what EA binder native bodies write')
     ap.add_argument('--exe', default=os.environ.get('TS3W_EXE') or os.path.join(REPO, 'game-copy', 'bin', 'TS3W.exe'))
     ap.add_argument('--hashes', help='write the registrations (hash, adapter, body, init) for binder-bodies.ts and stop')
     ap.add_argument('--facts', help='managed facts from tools/binder-bodies.ts')

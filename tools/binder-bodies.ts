@@ -1,4 +1,4 @@
-// docs/217 (contributor research round 2, task 2): managed facts for EA's binder native bodies, input for
+// docs/220 (contributor research round 2, task 2): managed facts for EA's binder native bodies, input for
 // tools/binder-bodies.py. For each hash the binder registers (0xE3E570, list from binder-bodies.py --hashes): the bound method
 // (managed-callgraph.ts bindKeys), static flag, parameter and return kinds, the fields its managed IL writes (index fw/sw:
 // the IL-proxy of docs/212), the [AutShadow] worker reach label, and the instance field layout of every type a body can
@@ -9,7 +9,7 @@
 // Field layout = Mono 1.2 mono_class_layout_fields with this build's 4-byte object header (docs/130 D18): parent fields first;
 // auto-layout classes outside mscorlib place reference fields first (gc-aware layout); structs and sequential classes keep
 // declaration order; explicit layout uses the FieldLayout offsets. --layout decl|gc|gcsort picks a variant for the
-// docs/217 §2 check against the native stores (gcsort = gc-aware with the non-reference fields sorted by alignment).
+// docs/220 §2 check against the native stores (gcsort = gc-aware with the non-reference fields sorted by alignment).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { bindKeys, defRoots, methodIl, resolveFieldToken, resolveMethodToken, typeModel, type Field, type Method, type TypeDef } from './managed-callgraph.ts';
 
@@ -114,7 +114,7 @@ export function layout(t: string): Lay {
 if (process.argv.includes('--self-check')) {
   const off = (t: string, f: string) => layout(t).fields.find((x) => x.name === f)?.off;
   const want: [string, string, number][] = [
-    // offsets the native bodies store to (docs/217 §2): PriorityQueue.Add/SetCapacity 0xE0D450/0xE0D290, Curve.Fx 0xE0AD21
+    // offsets the native bodies store to (docs/220 §2): PriorityQueue.Add/SetCapacity 0xE0D450/0xE0D290, Curve.Fx 0xE0AD21
     ['Sims3.Collections.PriorityQueue', 'mItems', 4], ['Sims3.Collections.PriorityQueue', 'mCapacity', 8], ['Sims3.Collections.PriorityQueue', 'mCount', 12],
     ['Sims3.Gameplay.Utilities.Curve', 'm_x', 0x14],
   ];
@@ -167,7 +167,7 @@ const ix = T.ix as unknown as { methods: { k: string; c: number[]; fw?: number[]
 const ALLOC = /^System\.String::(InternalAllocateStr|FastAllocateString)\(/;
 const byId = new Map<string, number>(); ix.methods.forEach((r, i) => { if (!byId.has(r.k)) byId.set(r.k, i); });
 
-// worker reach labels, most direct first (as tools/mod-method-diff.ts, docs/215): v0 = docs/122 pilot union; -typed / -cha = with
+// worker reach labels, most direct first (as tools/mod-method-diff.ts, docs/218): v0 = docs/122 pilot union; -typed / -cha = with
 // overrides up to 5 hops (docs/127 receiver-typed edges if --typed, else class hierarchy); tier2 = a docs/126 ready or new-rows
 // candidate's closure; tier2-blocked = only through blocked candidates.
 const RANK = ['v0', 'v0-typed', 'v0-cha', 'tier2', 'tier2-typed', 'tier2-cha', 'tier2-blocked', 'tier2-blocked-cha'];

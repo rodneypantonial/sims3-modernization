@@ -1,4 +1,4 @@
-# 217. What EA's binder native bodies write
+# 220. What EA's binder native bodies write
 
 Written 2026-10-30. Static only: no game run, no build. Contributor research round 2, task 2. Updated the same day: the init references are resolved and the store sites are kept per target (§2, §3); 10 rows stay unknown, all through one store.
 
@@ -19,7 +19,7 @@ Output: `docs/data/binder-bodies.csv`, 1,085 rows, one per registration. Tools: 
 
 Confidence: high 588, medium 487, low 10 (the unknown rows). Medium means the row's class may be too low: 471 rows pass a managed pointer to a call the analysis cannot follow (`opaque_handoffs`: mostly indirect calls, 49 truncated GC or allocator callees), and 16 more have a native store whose base pointer was lost (`unresolved_native`).
 
-Reach labels are the ones of docs/215 (PR #112): `v0` = the docs/122 pilot closure, `tier2` = a docs/126 ready or new-rows candidate, `-cha` = through overrides up to 5 hops by class hierarchy, `tier2-blocked` = only through blocked candidates, `no` = not reachable (867 rows).
+Reach labels are the ones of docs/218 (PR #112): `v0` = the docs/122 pilot closure, `tier2` = a docs/126 ready or new-rows candidate, `-cha` = through overrides up to 5 hops by class hierarchy, `tier2-blocked` = only through blocked candidates, `no` = not reachable (867 rows).
 
 What the classes contain [verified, from the CSV]:
 
@@ -93,7 +93,7 @@ Count check against the first version [verified, CSV diff]: unknown -> reader 34
 2. **IC nesting counter `[0x11F2D84]` [verified].** 131 bodies reach a write of it, 29 of them reachable from the worker (`v0` 4, `tier2` 2, `v0-cha` 9, `tier2-cha` 14). A byte scan of the exe finds 121 write instructions (18 `add`, 103 `sub`) in the glue range `0xD9B18D`-`0xE37F5B`, all non-atomic. docs/122 §12 lists only `ParseFormatSpecifier 0xDA9790` as a writer: that holds inside its 78-body closure, not for the binder as a whole. A worker that runs any of these bodies races the sim thread's counter (docs/122 I-56-1). Fix shapes [design]: add these bodies to the F2 abort list, or give the worker its own counter (the binder table can be patched at install, docs/212 §fix shape).
 3. **Fresh or shared [inferred].** The direct worker-reachable writers mostly write a receiver the caller made in the same scoring call (`StringBuilder`, result strings). A receiver that outlives the call is a real race: `Curve.Fx` writes `this.m_x` on a tuning curve shared by every Sim (reach `v0-cha`, 4 `Curve` rows reachable), and `PriorityQueue` bodies write the alarm queue (docs/212). The call sites decide; the next step is a fresh-receiver check per call site in the managed closures (`managed-callgraph.ts` already has `newobj` edges).
 4. **Satb coverage.** The CSV is the list docs/212 §fix shape needs: 708 readers need nothing; the 321 writes-args and writes-other rows need sim-side logging or a worker stop; the 46 native-only rows write EA globals (mostly the IC counter) the worker must not touch; the 10 unknown rows need a stop (none is reachable today).
-5. **Mods and the IL hash guard [verified].** Because each init compares an IL hash before binding (§2), a mod that ships its own copy of an EA assembly with a changed method body gets the managed method interpreted, not EA's native body. docs/215's mod guard can rely on that for changed methods; unchanged methods in a mod copy still bind natively.
+5. **Mods and the IL hash guard [verified].** Because each init compares an IL hash before binding (§2), a mod that ships its own copy of an EA assembly with a changed method body gets the managed method interpreted, not EA's native body. docs/218's mod guard can rely on that for changed methods; unchanged methods in a mod copy still bind natively.
 
 ## 5. Reproduce and limits
 
@@ -118,4 +118,4 @@ Limits:
 - Managed results that come back through `NativeToManaged` are unknown; a body that stores into one stays unknown (the 10 rows of §3).
 - The remoting stub and the `_setjmp3` arm pruning remove paths the game does not take in practice [inferred for remoting, verified scan for the arms]; a script that made a transparent proxy would invalidate the first.
 - `unknown_hint` comes from a hand-read site (`0xD9CCA4`) or the first path to the store.
-- The worker reach labels inherit docs/215's limits (static closures, overrides by class hierarchy unless `--typed` is given).
+- The worker reach labels inherit docs/218's limits (static closures, overrides by class hierarchy unless `--typed` is given).
