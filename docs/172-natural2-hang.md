@@ -97,7 +97,7 @@ The only per-job difference is **legreplanskip off**, which brings back the game
    - then a run with `legreplanskip` on but the fresh-load ordering of bp-natural-2, to test whether the trigger is the switch or the restart.
 
    Turning the frames stage and service probes off is not the first test, because the main thread was healthy.
-4. Optional: add the module name to ts3native's first-chance exception lines (§2), so the next boot-time exception names its DLL.
+4. Optional: add the module name to ts3native's first-chance exception lines (§2), so the next boot-time exception names its DLL. Done for access violations in another module's code (§7).
 
 ## 6. Hang capture before the kill (built 2026-10-23, self-check only, not run)
 
@@ -138,3 +138,18 @@ Self-check (`node tools/harness/game-alive.ts --self-check`, with fake probes) c
 - the ring decode, including a record mid-write.
 
 The `queue.ts --self-check` covers `hangCaptureLine`. Ledger §281.
+
+## 7. First-chance log: other modules once per address, with their name (2026-10-31)
+
+**Problem [verified on a contributor's install with Apex Radiance: 95 archived session logs, 2026-10-29 to 10-31].** In 94 of the 95 sessions, all 16 slots were used before the world loaded: 14 handled access violations plus the two C++ throws (`0xE06D7363`) the logger allows. Every one of those AVs was inside `ApexRadiance.asi`. The process module list put it at `0x67810000`, and the AVs were at offsets `0xE0280`, `0xE02D8`, `0xE02E4`, `0xE99B7` and `0x3BE357`, one to three of them per session. The `0xE02xx` ones were reached from script host code (`0xD7D56D` on the stack). The remaining session had no AVs at all. The count of 14 is the cap at work, not Apex's real count.
+
+The cost: the slots are gone before the world loads, so a later TS3W fault gets no line. In one session that crashed during world load (the issue #80 fault at `0x5DDFBD`), `ts3native.log` had no `exception` line for it. That also means no registers line, no `mono fault:` line (the script stack, which exists only in this logger) and no `P5cRelDump`. The `[CrashReport]` file still had the fault, registers and stack, so only the logger's extra lines were lost.
+
+**Change (`[Crash] Log`, on by default, no switch of its own).**
+- An access violation whose `eip` is in a loaded image other than TS3W.exe and ts3native is logged with `(name+0xoffset)` after the address, for example `exception C0000005 at 0x678F0280 (ApexRadiance.asi+0xE0280) ...`. The name comes from `VirtualQuery` and `K32GetMappedFileNameW`, with no loader lock.
+- Up to 8 such addresses are remembered. A repeat at a remembered address takes no slot and is only counted. The minute counters line prints `crash log: N more AVs at M logged addresses in other modules (not logged)` when the count has moved.
+- TS3W faults, faults with `eip` outside any image (a wild call into the heap) and every other code are logged as before, up to the same 16.
+
+Selftest: `TestCrashReport` checks the name for a kernel32 address, that a heap address is not named, that the second AV at an address takes no slot and is counted, and that a new address gets its line.
+
+Not checked: whether Apex's AVs cost frame time. The skip count will show how many there are per session.

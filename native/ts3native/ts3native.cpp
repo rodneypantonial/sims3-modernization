@@ -133,8 +133,22 @@ static int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; 
 // [Crash] Log=1 (0.12.1): the first 16 first-chance exceptions with code, address, thread and up to 8 code addresses found
 // on the stack (game .text or this module), written unbuffered to ts3native.log. Added after a run died with no EA xcpt
 // report and no WER event (2026-10-17 bp-d-async). C++ exceptions (0xE06D7363) count for 2 lines at most.
-static volatile LONG g_xcptN, g_xcptCpp;
-static DWORD g_selfLo, g_selfHi;
+// docs/172 §7: an AV in another DLL's code is logged once per address, with "module+offset" (Apex Radiance's 14 or more
+// handled AVs at 1-2 addresses before the world loads took every slot, so a later TS3W crash had no line); repeats are counted.
+static volatile LONG g_xcptN, g_xcptCpp, g_xcptOtherN, g_xcptOtherSkip;
+static DWORD g_selfLo, g_selfHi, g_xcptOther[8];
+// "name+0xoffset" when a is in a loaded image other than TS3W.exe (base 0x400000) and this module. No loader lock.
+static bool XcptOtherModule(DWORD a, char* out, int cap) {
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery((const void*)(uintptr_t)a, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || mbi.Type != MEM_IMAGE) return false;
+    const DWORD base = (DWORD)(uintptr_t)mbi.AllocationBase;
+    if (base == 0x00400000 || base == g_selfLo) return false;
+    wchar_t w[MAX_PATH];
+    if (!K32GetMappedFileNameW(GetCurrentProcess(), mbi.AllocationBase, w, MAX_PATH)) wcscpy_s(w, L"?");
+    const wchar_t* s = wcsrchr(w, L'\\');
+    sprintf_s(out, cap, "%ls+0x%lX", s ? s + 1 : w, a - base);
+    return true;
+}
 // up to `max` code addresses (game .text or this module) in the first 512 stack words, as " %08lX" each
 static void XcptRefs(const CONTEXT* c, char* refs, int cap, int max) {
     int len = 0, k = 0;
@@ -192,12 +206,20 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     // [CrashForensics] dump before the 16-line cap; not for our own probes' guarded reads (caught in ts3native)
     // docs/67 §17: an illegal instruction too (a wild call into the heap, Crash M / O)
     if ((code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION) && !(e->ContextRecord->Eip >= g_selfLo && e->ContextRecord->Eip < g_selfHi)) CfOnFault(e);
-    if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
     const CONTEXT* c = e->ContextRecord;
-    char refs[128];
+    if (code == EXCEPTION_ACCESS_VIOLATION)  // docs/172 §7: another module's address already logged
+        for (LONG i = 0, n = g_xcptOtherN < 8 ? g_xcptOtherN : 8; i < n; i++)
+            if (g_xcptOther[i] == c->Eip) return InterlockedIncrement(&g_xcptOtherSkip), EXCEPTION_CONTINUE_SEARCH;
+    if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
+    char refs[128], mod[MAX_PATH + 16] = "", in[MAX_PATH + 24] = "";
+    if (code == EXCEPTION_ACCESS_VIOLATION && XcptOtherModule(c->Eip, mod, sizeof(mod))) {
+        const LONG k = InterlockedIncrement(&g_xcptOtherN);
+        if (k <= 8) g_xcptOther[k - 1] = c->Eip;
+        sprintf_s(in, " (%s)", mod);
+    }
     XcptRefs(c, refs, sizeof(refs), 8);
-    Log("exception %08lX at 0x%08lX (info %08lX %08lX) thread %lu eip %08lX esp %08lX; stack code refs:%s", code,
-        (DWORD)(uintptr_t)r->ExceptionAddress, r->NumberParameters > 0 ? (DWORD)r->ExceptionInformation[0] : 0,
+    Log("exception %08lX at 0x%08lX%s (info %08lX %08lX) thread %lu eip %08lX esp %08lX; stack code refs:%s", code,
+        (DWORD)(uintptr_t)r->ExceptionAddress, in, r->NumberParameters > 0 ? (DWORD)r->ExceptionInformation[0] : 0,
         r->NumberParameters > 1 ? (DWORD)r->ExceptionInformation[1] : 0, GetCurrentThreadId(), c->Eip, c->Esp, refs);
     // docs/67 §15: every register (the 2026-10-25 crash pair logged only eip / esp), for the crash's own exceptions too
     Log("  registers eax %08lX ebx %08lX ecx %08lX edx %08lX esi %08lX edi %08lX ebp %08lX esp %08lX eip %08lX efl %08lX", c->Eax,
@@ -221,7 +243,7 @@ static void InstallXcptLog(const wchar_t* ini) {
     const IMAGE_NT_HEADERS* nt = self ? (const IMAGE_NT_HEADERS*)((const u8*)self + ((const IMAGE_DOS_HEADER*)self)->e_lfanew) : NULL;
     g_selfLo = (DWORD)(uintptr_t)self;
     g_selfHi = nt ? g_selfLo + nt->OptionalHeader.SizeOfImage : g_selfLo;
-    if (AddVectoredExceptionHandler(1, XcptLog)) Log("crash log: first 16 first-chance exceptions (module 0x%08lX-0x%08lX)", g_selfLo, g_selfHi);
+    if (AddVectoredExceptionHandler(1, XcptLog)) Log("crash log: first 16 first-chance exceptions, an AV in another module once per address (module 0x%08lX-0x%08lX)", g_selfLo, g_selfHi);
 }
 
 static void ApplyGc(const wchar_t* ini) {
@@ -2417,6 +2439,9 @@ static void MaybeLogCounters(ULONGLONG now) {
     if (c.p6wReady) P6wLogCounters();  // docs/189 phase 0
     if (c.workerReady || c.asyncReady)
         Log("route plans: off %ld (fails %ld) on %ld (fails %ld) hostCalls %ld", c.planOffCalls, c.planOffFails, c.planOnCalls, c.planOnFails, c.hostCalls);
+    static LONG xcptSkipLogged;  // docs/172 §7: only when the count moved
+    if (const LONG skip = g_xcptOtherSkip; skip != xcptSkipLogged)
+        Log("crash log: %ld more AVs at %ld logged addresses in other modules (not logged)", xcptSkipLogged = skip, g_xcptOtherN < 8 ? g_xcptOtherN : 8);
 }
 
 static LARGE_INTEGER g_qpf;
