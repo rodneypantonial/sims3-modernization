@@ -32,7 +32,7 @@ const CUT = arg('--cut', '').split(',').filter(Boolean);
 // ---------- PE + metadata reader ----------
 export type Asm = {
   name: string; buf: Buffer; mvid: string; sections: { va: number; size: number; raw: number }[];
-  strOff: number; blobOff: number; guidOff: number; rows: number[]; tables: number[][][];
+  strOff: number; blobOff: number; guidOff: number; usOff: number; rows: number[]; tables: number[][][];
   types: TypeDef[]; methods: Method[]; fields: Field[];
 };
 export type TypeDef = { asm: Asm; row: number; ns: string; name: string; full: string; flags: number; extendsCi: number; methods: Method[]; fields: Field[]; enclosing?: TypeDef; ifaces: number[]; base?: TypeDef | null };
@@ -88,7 +88,7 @@ function loadAsm(path: string, name: string): Asm {
     p = (e + 4) & ~3;
   }
   if (streams['#-'] !== undefined) throw new Error(`${name}: uncompressed (#-) metadata not supported`);
-  asm.strOff = streams['#Strings']; asm.blobOff = streams['#Blob']; asm.guidOff = streams['#GUID'];
+  asm.strOff = streams['#Strings']; asm.blobOff = streams['#Blob']; asm.guidOff = streams['#GUID']; asm.usOff = streams['#US'] ?? 0;
   const t = streams['#~'];
   const heap = buf[t + 6];
   const valid = buf.readBigUInt64LE(t + 8);
@@ -760,6 +760,9 @@ export function subtypes(type: string): { full: string; asm: string; abstract: b
   const t = typeByFull.get(type);
   return t ? derivedTypes(t).map((x) => ({ full: x.full, asm: x.asm.name, abstract: (x.flags & 0x80) !== 0 })) : null;
 }
+
+// tools/autshadow-il-hashes.ts: metadata helpers for token names
+export { decodeCi, str as heapString, typeRefName, resolveTdor, blob };
 
 // tools/offload-override-scan.ts: type model over one directory (game + mod assemblies; files sort game first, and the
 // first type of a full name wins resolution). Unreadable assemblies are listed in `skipped`, not fatal.

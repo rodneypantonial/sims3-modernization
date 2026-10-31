@@ -4,7 +4,7 @@
     {
       "id": "bp-vacation-roundtrip",
       "note": "Correctness (12 min): repro bp-vacation-roundtrip. Pass: applied log lists the 12 hooks ok; off compare = fresh dreams / opportunities 0; on compare = dreams and opportunities equal to before (an opportunity truly past its deadline may fail), vacexport_exported = vacexport_dreams = adult count; both arms end with 'no trip'; no ScriptError, crash or hang. If no adult had an opportunity at start, rows 6/7 are unexercised (counters 0): note it, not a fail",
-      "asi": "game-copy/ts3native.asi.rel020",
+      "asi": "tested",
       "save": "Baseline-BP",
       "run": { "profile": { "minutes": 12, "seed": 12345, "noSamplers": true, "repro": "bp-vacation-roundtrip" } },
       "gameArgs": ["-disablestoryprogression"],
@@ -13,7 +13,7 @@
     {
       "id": "bp-vacation-exit",
       "note": "Correctness (10 min): repro bp-vacation-exit. Pass: on arm vacexitreturn_back = adult count and every adult has a Sim after the exit; off arm adults have no Sim after the exit (EA's loss reproduced); no ScriptError or crash",
-      "asi": "game-copy/ts3native.asi.rel020",
+      "asi": "tested",
       "save": "Baseline-BP",
       "run": { "profile": { "minutes": 10, "seed": 12345, "noSamplers": true, "repro": "bp-vacation-exit" } },
       "gameArgs": ["-disablestoryprogression"],
@@ -22,7 +22,7 @@
     {
       "id": "bp-vacation-teendelete",
       "note": "Correctness (10 min): repro bp-vacation-teendelete. Pass: on arm trip stays ParentsAreAway after the delete, vacteendelete_deferred 1, _rejoined >= 1, then a normal return; off arm returns from inside the Dispose (trip exited or ParentsAreBack right after teendelete); no crash; ScriptErrors only in the off arm",
-      "asi": "game-copy/ts3native.asi.rel020",
+      "asi": "tested",
       "save": "Baseline-BP",
       "run": { "profile": { "minutes": 10, "seed": 12345, "noSamplers": true, "repro": "bp-vacation-teendelete" } },
       "gameArgs": ["-disablestoryprogression"],
@@ -31,7 +31,7 @@
     {
       "id": "bp-vacation-orphan",
       "note": "Correctness (10 min): repro bp-vacation-orphan. Pass: on arm vacreturnskip_skipped 1, the other adults back, 'no trip'; off arm one NullReferenceException ScriptError (Motives.CreateMotives) and the trip stuck in ParentsAreBack; no crash",
-      "asi": "game-copy/ts3native.asi.rel020",
+      "asi": "tested",
       "save": "Baseline-BP",
       "run": { "profile": { "minutes": 10, "seed": 12345, "noSamplers": true, "repro": "bp-vacation-orphan" } },
       "gameArgs": ["-disablestoryprogression"],
@@ -40,7 +40,7 @@
     {
       "id": "bp-vacation-saves",
       "note": "Save matrix (22 min): repro bp-vacation-saves on Bridgeport, every vac switch on. Pass: 7 saves ok within 120 s each; reload of Vacation-BP-0 (saved while the taxi was on its way) finishes the pickup and returns; reload of Vacation-BP-1 (stalled trip) logs 'vacstoreguard: load: trip stuck', vacstoreguard_load_bringback 1, adults back within ~60 sim-minutes with their dreams; final save ok; no crash, hang, ScriptError or ts3native.log FAIL line",
-      "asi": "game-copy/ts3native.asi.rel020",
+      "asi": "tested",
       "save": "Baseline-BP",
       "noiseCheck": false,
       "logForbid": { "^FAIL\\b": 0 },
@@ -51,7 +51,7 @@
     {
       "id": "ip-vacation-saves",
       "note": "Save matrix second world (22 min): repro bp-vacation-saves on Isla Paradiso (saves keep the Vacation-BP-* names). Same pass rules as bp-vacation-saves",
-      "asi": "game-copy/ts3native.asi.rel020",
+      "asi": "tested",
       "save": "Baseline-IP",
       "noiseCheck": false,
       "logForbid": { "^FAIL\\b": 0 },

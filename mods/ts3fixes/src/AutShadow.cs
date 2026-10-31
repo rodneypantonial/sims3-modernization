@@ -577,6 +577,7 @@ namespace Ts3Fixes
             if (!ClosureSweep()) for (int k = 0; k < sDefGuardHit.Length; k++) sDefGuardHit[k] = true;
             sLiveGuardOk = LiveGuard();
             Census();
+            ApplyIlOwners();
             sImplVerdict.Clear();
             return true;
         }
@@ -593,19 +594,80 @@ namespace Ts3Fixes
             List<Assembly> asms = new List<Assembly>();
             foreach (string n in kGameModules) { Assembly a = GameAssembly(n); if (a != null) asms.Add(a); }
             Dictionary<string, MethodBase> got = AutShadowCore.Resolve(asms.ToArray(), AutShadowLists.Methods);
-            int foreign = 0;
+            int foreign = 0, hashed = 0, ilBad = 0, knownBad = 0, maskAll = 0, maskUnknown = 0;
+            long ilUs = 0;
+            Dictionary<Module, Dictionary<int, string>> names = new Dictionary<Module, Dictionary<int, string>>();
+            Dictionary<string, bool> known = new Dictionary<string, bool>();
+            foreach (string raw in AutShadowIlHashes.KnownMvids) known[AutShadowCore.GuidNFromRaw(raw)] = true;
             foreach (KeyValuePair<string, MethodBase> e in got)
             {
-                if (L3Ok(e.Value)) continue;
-                if (OwnSwap(e.Value)) continue;
-                if (foreign++ < 10) AppliedLog().Add("AutShadow: mod guard G-M4: " + e.Key + " swapped");
+                if (!L3Ok(e.Value))
+                {
+                    // shortcut: our own swaps are not hashed (the body read is ours); the original under it is not checked
+                    if (!OwnSwap(e.Value) && foreign++ < 10) AppliedLog().Add("AutShadow: mod guard G-M4: " + e.Key + " swapped");
+                    continue;
+                }
+                // G-M6: the body must equal the one in a checked build (MVIDs do not prove it: PR #112, docs/215 §4)
+                long t0 = (long)sw.GetElapsedTime();
+                ulong h = 0;
+                bool ok;
+                try { h = AutShadowCore.MethodIlHash(e.Key, e.Value, names); ok = Array.BinarySearch<ulong>(AutShadowIlHashes.Known, h) >= 0; }
+                catch (Exception) { ok = false; }
+                ilUs += (long)sw.GetElapsedTime() - t0;
+                hashed++;
+                if (ok) continue;
+                Assembly a = e.Value.DeclaringType.Assembly;
+                string mv = Mvid(a);
+                int mi = Array.IndexOf(AutShadowLists.Methods, e.Key), om = mi >= 0 ? AutShadowLists.MethodOwners[mi] : -1;
+                maskAll |= om;
+                if (known.ContainsKey(mv)) knownBad++; else maskUnknown |= om;
+                if (ilBad++ >= 10) continue;
+                AppliedLog().Add("AutShadow: mod guard G-M6: " + e.Key + " in " + a.GetName().Name + " (MVID " + mv + ") differs from every checked build (IL hash "
+                    + h.ToString("x16") + "): skips the definitions whose closure reaches it");
+                if (ilBad > 3 && !ShortcutOn("gm6trace")) continue;
+                // token names as the runtime sees them; compare with ILH_TRACE=<key> node tools/autshadow-il-hashes.ts --one <dir>
+                List<string> tr = new List<string>();
+                try { AutShadowCore.MethodIlHash(e.Key, e.Value, new Dictionary<Module, Dictionary<int, string>>(), tr); } catch (Exception x) { tr.Add("threw " + x.Message); }
+                AppliedLog().Add("AutShadow: G-M6 trace " + e.Key + ": " + string.Join("; ", tr.ToArray()));
+            }
+            // many mismatches on modules whose MVID a checked build has = our hash disagrees with the runtime, not a mod change
+            bool fault = knownBad > 3;
+            if (fault)
+            {
+                c[605]++;
+                AppliedLog().Add("AutShadow: G-M6 GUARD FAULT: " + knownBad + " closure methods on checked-build MVIDs hash differently (hash/runtime disagreement, not a mod): "
+                    + "IL check ignored this load, MVID + L3 guards only; report it");
             }
             sw.Stop();
             c[123] = got.Count; c[124] = (int)sw.GetElapsedTime(); c[125] = foreign;
+            c[602] = hashed; c[603] = ilBad; c[604] = (int)ilUs;
             sw.Dispose();
             if (got.Count != AutShadowLists.Methods.Length)
                 AppliedLog().Add("AutShadow: G-M4 sweep: " + got.Count + " of " + AutShadowLists.Methods.Length + " closure methods found (rest not in these assemblies)");
+            // applied after Census (it resets the implementor marks): only the owners whose closure reaches a miss
+            sIlOwnerMask = fault ? maskUnknown : maskAll;
             return foreign == 0;
+        }
+
+        // G-M6: definitions / implementors whose closure reaches a method not from a checked build; [606] = owners skipped
+        static int sIlOwnerMask;
+        static void ApplyIlOwners()
+        {
+            int n = 0;
+            for (int o = 0; o < AutShadowLists.Owners.Length; o++)
+            {
+                if ((sIlOwnerMask & (1 << o)) == 0) continue;
+                MarkOwner(o);
+                n++;
+                AppliedLog().Add("AutShadow: G-M6 skips " + AutShadowLists.Owners[o] + " (its closure reaches a method not from a checked build)");
+            }
+            PatchCounters()[606] = n;
+        }
+        static void MarkOwner(int o)
+        {
+            int k = Array.IndexOf(kDefNames, AutShadowLists.Owners[o]);
+            if (k >= 0) sDefGuardHit[k] = true;
+            for (int i = 0; i < kImpl.Length; i++) if (kImpl[i].FullName == AutShadowLists.Owners[o]) sImplGuardHit[i] = true;
         }
 
         // G-M5 (docs/128 §5): types from assemblies that are not game modules (and not ts3fixes: our hook holders are never
@@ -655,11 +717,7 @@ namespace Ts3Fixes
                     any = true;
                 }
                 else if (any) AppliedLog().Add("AutShadow: G-M5 skips " + AutShadowLists.Owners[o] + " (overridden closure slot)");
-                if (!any) continue;
-                int k = Array.IndexOf(kDefNames, AutShadowLists.Owners[o]), m = -1;
-                for (int i = 0; i < kImpl.Length; i++) if (kImpl[i].FullName == AutShadowLists.Owners[o]) m = i;
-                if (k >= 0) sDefGuardHit[k] = true;
-                if (m >= 0) sImplGuardHit[m] = true;
+                if (any) MarkOwner(o);
             }
         }
 
@@ -1298,10 +1356,12 @@ namespace Ts3Fixes
         // worker: arm the pair's CreateInstance skip (false = abort `rain`)
         static bool RainArmPair(Request q, int o, InteractionObjectPair iop)
         {
-            if (!sRainAnswer || q == null || iop == null || o < 0 || o >= q.Objs || (object)q.Obj[o] != (object)iop.Target) return false;
-            byte b = q.Shelter[o];
-            if (b == AutShadowCore.kShelterNone) return false;
-            sRainObj = iop.Target; sRainBit = b; sRainUsed = false;
+            if (!sRainAnswer || q == null || iop == null || o < 0 || o >= q.Objs) return false;
+            // armed even with no bit (rain-h11 bp-rain-moder: rainArm 2203, rainSkip 0): the meta definitions' CalculateScore
+            // returns 0 outside local autonomy and never reaches the branch [verified, decompiled MetaInteractionDefinition],
+            // so most rain pairs need no answer at all; the hook aborts `rain` only if the branch is reached with no bit
+            sRainObj = iop.Target; sRainUsed = false;
+            sRainBit = (object)q.Obj[o] == (object)iop.Target ? q.Shelter[o] : AutShadowCore.kShelterNone;
             if (AutShadowNative.RainArm(iop.InteractionDefinition, sCreateSite) == 1) return true;
             sRainObj = null;
             return false;

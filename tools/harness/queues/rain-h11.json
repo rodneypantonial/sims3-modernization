@@ -1,8 +1,46 @@
 {
   "note": "rain-h11 (2026-10-31, docs/127 §4.1 H11 shelter answer, NOT RUN): ts3native 0.36.148 = game-copy/ts3native.asi.rainh11 (SatbRainSkip, RainArm, autshadow counters v21), ts3fixes --on kAutLive = game-copy/ts3fixes.package.rainh11 (AutShelterHook, shelter bit at request and cut). Both jobs BP in forced Moderate rain (repro aut-rain-bp, STRESS label: forced weather; noEnv), Satb=2 (the skip needs the act span). Correctness only (20 min, no smoke). Round-7 verdict: PreLearn off (thrashes the table), TierReqLots on. Order: Mode R exactness first, then Mode 3 Dry. Stop by hand at a FAIL. Same build carries the per-search feature mask (docs/124 §17.11): needs the ts3agent rebuilt from this branch for the feat_* counter names.",
+  "stopQueueOnFail": true,
   "jobs": [
     {
       "id": "bp-rain-moder",
+      "earlyGates": [
+        {
+          "afterSec": 150,
+          "counter": "fixes:autshadow_gm6_faults",
+          "op": "==",
+          "value": 0,
+          "why": "G-M6 guard faults: IL check ignored for the load (registry 605)"
+        },
+        {
+          "afterSec": 150,
+          "counter": "fixes:autshadow_gm6_mismatch",
+          "op": "==",
+          "value": 0,
+          "why": "G-M6 IL hash mismatch: every definition skipped for the load (registry 603)"
+        },
+        {
+          "afterSec": 150,
+          "counter": "autshadow.req",
+          "op": ">",
+          "value": 0,
+          "why": "worker never posted (no [AutShadow] request)"
+        },
+        {
+          "afterSec": 300,
+          "counter": "autshadow.rainArm",
+          "op": ">",
+          "value": 0,
+          "why": "rain branch never armed (H11 rainArm 0)"
+        },
+        {
+          "afterSec": 300,
+          "counter": "fixes:autshadow_a0+fixes:autshadow_a1+fixes:autshadow_a2+fixes:autshadow_a3",
+          "op": ">",
+          "value": 0,
+          "why": "0 compared pairs (A0-A3): Dry / Mode R run void"
+        }
+      ],
       "note": "BP Mode R, Satb=2, 10 min in rain. PASS: 0 crashes; weather reads Rain (agent test_env read lines); A1-A3 = 0; rainArm > 0 (the branch was reached) and rainSkip = rainArm - rainMiss with rainMiss ~0; rain aborts (abort2[0]) ~0 (vs ~6-7% of BP aborts in rain, docs/216 §1); rain pairs now classified (A0 count up vs bp-r7-moder, nothing else in the abort mix up); exceptions (cnt 121) not up. Read: node tools/harness/mono-cost-report.ts --tag rain-h11 (abort mix by reason, A0-A5, G7 dry apply); -native.json autshadow: rainArm, rainSkip, rainMiss (v21), abort2[0] = rain aborts; ts3fixes applied log: \"AutShadow: H11 shelter answer on\"; ts3native.log \"autshadow satb cold transform on the worker\" lines: none for ShelterHook, RainArmPair, RainDisarm, ShelterAnswer, RainArm. Baselines: --tag mono-r7 bp-r7-moder / bp-r7-crowd (dry weather: rain aborts there are 0 by weather, not by fix).",
       "asi": "game-copy/ts3native.asi.rainh11",
       "fixesPackage": "game-copy/ts3fixes.package.rainh11",
@@ -62,6 +100,43 @@
     },
     {
       "id": "bp-rain-dry",
+      "earlyGates": [
+        {
+          "afterSec": 150,
+          "counter": "fixes:autshadow_gm6_faults",
+          "op": "==",
+          "value": 0,
+          "why": "G-M6 guard faults: IL check ignored for the load (registry 605)"
+        },
+        {
+          "afterSec": 150,
+          "counter": "fixes:autshadow_gm6_mismatch",
+          "op": "==",
+          "value": 0,
+          "why": "G-M6 IL hash mismatch: every definition skipped for the load (registry 603)"
+        },
+        {
+          "afterSec": 150,
+          "counter": "autshadow.req",
+          "op": ">",
+          "value": 0,
+          "why": "worker never posted (no [AutShadow] request)"
+        },
+        {
+          "afterSec": 300,
+          "counter": "autshadow.rainArm",
+          "op": ">",
+          "value": 0,
+          "why": "rain branch never armed (H11 rainArm 0)"
+        },
+        {
+          "afterSec": 300,
+          "counter": "fixes:autshadow_a0+fixes:autshadow_a1+fixes:autshadow_a2+fixes:autshadow_a3",
+          "op": ">",
+          "value": 0,
+          "why": "0 compared pairs (A0-A3): Dry / Mode R run void"
+        }
+      ],
       "note": "BP Mode 3 Dry=1, Satb=2, 10 min in rain, autlive + autlivelate. PASS: 0 crashes; report line \"go-live feature mask\" present with rain searches > 0 and rain mismatches 0, every dry-diff / dry-sim-mis / dry-nocmp / live-drop record has feat + feats; VerifyEvery cuts A1-A3 = 0; G7 dry apply top-10 set equal >= 99%, top 1 >= 99.5% (up to ties); game queue replay mismatches (drySimMis) 0; rainArm > 0, rainMiss ~0, rain aborts ~0; consumed objects in rain not down vs bp-r7-crowd share (objects with a rain pair are now consumable). Read: node tools/harness/mono-cost-report.ts --tag rain-h11 (abort mix by reason, A0-A5, G7 dry apply); -native.json autshadow: rainArm, rainSkip, rainMiss (v21), abort2[0] = rain aborts; ts3fixes applied log: \"AutShadow: H11 shelter answer on\"; ts3native.log \"autshadow satb cold transform on the worker\" lines: none for ShelterHook, RainArmPair, RainDisarm, ShelterAnswer, RainArm. Baselines: --tag mono-r7 bp-r7-moder / bp-r7-crowd (dry weather: rain aborts there are 0 by weather, not by fix).",
       "asi": "game-copy/ts3native.asi.rainh11",
       "fixesPackage": "game-copy/ts3fixes.package.rainh11",
