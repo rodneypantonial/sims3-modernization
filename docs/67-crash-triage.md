@@ -899,3 +899,49 @@ Design: the release call at `0xD5B77A` is retargeted to `TpDefer` (same register
 | Tests (offline) | selftest `TestEaCrashFixes`: last reference kept across the evaluation and freed after it, another frame releases nothing, a shared owner is released without `tpLastRef`, an empty RefPtr keeps nothing, full slots release at once; the naked stub run on a real stack (frame match, release, `ecx` = the moved load, `eax`/`ebx`/`esi`/`edi` kept); patch on dummy bytes (foreign bytes: nothing written) |
 | Repro | `tools/harness/repros.json` `ea-thumb-pose-pack-loop`: household thumbnails while 8 spawned Sims are removed, three rounds (the contributor's cross-world thumbnail during pack-up has no agent action). `tpHeld > 0` shows branch (a) ran |
 | Conflicts | none with S3SS / S3PP / Apex at `0xD5B77A` / `0xD5B874` (docs/68) |
+
+## 30. Crash Y (2026-10-31, kit4 Baseline-IP, 5 of 5 sessions): the world A\* follows a neighbour reference outside the routing graph
+
+Live and static (2026-10-31): three kit4 jobs (`ip-locktaker-verify-146`, `ip-venuememo-verify`, `ip-deadrefs-saves`), one control with the v0.2.4 release pair, and one run with only `[RouteAsync] Enabled=0`. The EA crash files' registers and stacks were read; capstone was run on the Steam exe. Issue #132, ledger docs/51 §415.
+
+### 30.1 Sites and what they read
+
+| Session | Fault | Function | Read |
+|---|---|---|---|
+| kit `ip-locktaker-verify-146`, `ip-venuememo-verify` | `0x67664F` | world A\* `0x676260` | the closed-bitset row byte for the neighbour's (chunk + 1, waypoint >> 3) |
+| kit `ip-deadrefs-saves` | `0x67663F` | world A\* | the closed-bitset row-pointer table at index chunk + 1 |
+| control (release pair) | `0x6743FE` | `RouteCost_Mode3 0x674250` | the parent search node's chunk record: `R+8[chunk]` + `R+0xC`, then `recOff[waypoint]` |
+| `[RouteAsync] Enabled=0` | `0x6742B5` | `RouteCost_Mode3` | the same for the neighbour ("to") pair |
+
+All five read past a table's end into pages that are not committed: `MEM_RESERVE` in three sessions, `MEM_FREE` in the two `0x67664F` ones.
+
+### 30.2 The bad pair
+
+- **The A\* decodes a neighbour without a range check [verified, disassembly].** For each reference of the current waypoint (docs/99 §1.3 packing), the A\* computes target chunk = current chunk + (dz - 3) · w + (dx - 3) in 16-bit registers, with w read as a u16 from `R+0`. It masks the waypoint to 10 bits and stores both at `[esp+0x1C]` / `[esp+0x1E]` (`0x67661D`, `0x676622`). The pair then indexes the closed bitset (`0x67663F`, `0x67664F`) and goes to the cost function, which indexes R's tables with it (`0x67429C`, `0x6742B5`). Only `0xFFFF` is tested, in the cost function.
+- **Run 168 holds the bad pair [verified, crash file].** The "to" pair on the A\*'s stack is chunk `0xFFD5` (-43) and waypoint `0x207` (519); the fault register shows the same waypoint. Isla Paradiso is 64 x 64 chunks (4,096), and no shipped chunk has more than 254 waypoints. With w = 64, -43 is one chunk north of chunk 21, which is on the map's north edge [inferred: the word could also be garbage from a wrong record].
+- **Call stack (run 168):** A\* `0x67667F` <- `0x65F80E` <- `0x661B9B` <- `0x81BF7E` <- `0x82C7B2` <- `0x82F09D` <- `0x74BD8D`.
+- **The shipped graph is clean [verified, `tools/rtdata-decode.ts`].** `IslaParadiso.world` reports version 2, 64 x 64 chunks, 42,081 waypoints, 173,104 edges, `refs out of range 0`, `one-way edges 0` and 61 components. So the out-of-map reference, or the wrong current node, appears at runtime. Candidates are a lot update rewriting R (Isla Paradiso is the world where houseboats add lots, docs/200) or a start node built from a position outside the map. The fix's log lines (§30.4) name the current waypoint and the reference word.
+- **Not ours [verified, 1 run].** The `[RouteAsync] Enabled=0` session logs `route async disabled (Enabled=0)` and has no route worker; all 14 route-gate lines are on the sim thread. It crashed 15 s after the world loaded. The release ini has no switch that patches inside the A\*: `[RouteBudget]` replaces the cost-function immediates `0x676340`-`0x676368` only when on, and `[RouteEarlyOut]` is off.
+- **Save-dependent [measured].**
+  - Baseline-IP (kit4) and Baseline-IP-Spring crashed 5 of 5, at 15 s to 5 min.
+  - `BigSave-IP` with v0.2.4 had 0 crashes in 8 sessions (2026-10-30, 4 with release defaults and 4 with RouteAsync / GC / SaveWrite / Decompress off).
+  - The Bridgeport and Sunset Valley kit jobs on the same build had no crash.
+
+### 30.3 Fix: `[EaCrashFixes] WorldAStarRefs` (0.36.150, `wastar.cpp`, counters v145, off by default)
+
+- **Patch.** The 7 bytes at `0x676627` (`mov edx,[esp+1Ch]; movzx ecx,ax`, right after both stores) become `jmp WaStub; nop2`.
+- **The check.** The stub calls `WaRefOk(esp, esi)`, which tests chunk < `w · h` (`R+0`, `R+4`) and waypoint < the chunk's count (the u16 at `R+0xC + R+8[chunk]`, read under SEH).
+- **In range:** it runs the two moved instructions and continues at `0x67662E`.
+- **Out of range:** it jumps to `0x67673F`, the A\*'s own path for an already closed neighbour. That path reloads the neighbour index (`[esp+0x58]`) and the current record (`[esp+0x2C]`) from the stack, so no register state carries over [verified disassembly].
+- **Coverage.** A bad pair then never enters the open list, so the parent-pair site `0x6743FE` is covered as well. Start and goal nodes do not pass through this decode [inferred: no crash at the current-record read `0x6765AF` so far].
+- **Effect.** The search behaves as if that edge were absent: a route that only existed through it fails like any other blocked route. Game state is never written.
+- **Cost.** One call per expanded neighbour [inferred: under 1% of an A\* expansion; not measured].
+- **Counters.** `waOn`; `waSkip[0..2]` = chunk outside the map, waypoint past its chunk's count, record unreadable.
+- **Log.** One line for each of the first 8 skips: neighbour index and count, current (chunk, waypoint), record flags, reference word, decoded pair, map size, chunk count.
+- **Tests.** Selftest `TestWorldAStarRefs` (`wastar-test.h`): patch bytes; in-range and four out-of-range pairs; the stub runs with both exits recorded and the callee-saved registers kept.
+
+### 30.4 Test plan
+
+- **A/B.** Baseline-IP with the CI asi, `[EaCrashFixes] WorldAStarRefs=1` against `=0`, at least 2 clean sessions per arm. The off arm is expected to crash (5 of 5 so far); the on arm is expected to run 12 minutes with `waSkip` > 0.
+- **The skip lines.** They tell whether the bad reference sits in a waypoint's own list (a reference word with dz or dx pointing off the map) or comes from a wrong current node (the record flags, or a count that does not fit).
+- **If the reference is R data:** next is the writer, i.e. which lot update writes a reference across the map edge (docs/91 `ApplyLotUpdate`).
