@@ -945,3 +945,33 @@ All five read past a table's end into pages that are not committed: `MEM_RESERVE
 - **A/B.** Baseline-IP with the CI asi, `[EaCrashFixes] WorldAStarRefs=1` against `=0`, at least 2 clean sessions per arm. The off arm is expected to crash (5 of 5 so far); the on arm is expected to run 12 minutes with `waSkip` > 0.
 - **The skip lines.** They tell whether the bad reference sits in a waypoint's own list (a reference word with dz or dx pointing off the map) or comes from a wrong current node (the record flags, or a count that does not fit).
 - **If the reference is R data:** next is the writer, i.e. which lot update writes a reference across the map edge (docs/91 `ApplyLotUpdate`).
+
+### 30.5 The cause: blocked-flag writes through stale waypoint ids (0.36.151, `[EaCrashFixes] PortalFlagRefs`)
+
+Live (run 173, `WorldAStarRefs=1` on Baseline-IP, 12 minutes, no crash) plus the shipped graph and the exe, 2026-10-31.
+
+- **The skipped references are shipped references with bit 15 cleared [verified, 1 run + file].** All 8 skip lines name two reference words.
+  - Waypoint (1754, 2), neighbour 0: `0x0C0E` at runtime. The file has `1818/14` there, i.e. dz +1, dx 0, which encodes as `0x8C0E`.
+  - Waypoint (1563, 0), neighbour 91: `0x0C17` at runtime. The file has `1627/23` there, i.e. dz +1, which encodes as `0x8C17`.
+
+  With bit 15 cleared, dz + 3 = 4 becomes 0, so dz +1 decodes as dz -3. The targets (1562, 14) and (1371, 23) are in chunks with no waypoints, the case the A\* then reads past.
+- **Two writers clear that bit [verified, disassembly].** Only two instructions in the routing code clear bit 7 of a byte at +1 of a computed address: `0x82A200` and `0x82B6F3` (a scan of the exe for `and byte [m+1], 7Fh`, `and word [m], 7FFFh` and `btr word [m], 15`). Both clear a waypoint's blocked flag (record + 1, bit 0x80), and both have `or ..., 80h` partners.
+  - `RoutingWorld_RestoreLotBlockedBits 0x82A190` (docs/112) walks a lot's portal objects (flag bit 1 at `+0x58`) and decodes each one's stored id at `+0x4C`: chunk = id & 0x3FFF, waypoint = id >> 14 & 0x3FF, bit 29 = blocked.
+  - `RoutingWorld_ApplyLotUpdate 0x82B590` decodes each reference of a lot waypoint with the A\*'s own formula (32-bit chunk here).
+
+  Neither checks the pair. The record address is chunk base + `recOff[waypoint]`, so for a waypoint past its chunk's count the "offset" is whatever the next bytes hold.
+- **The two corrupted words are exactly where two such pairs land [verified, offline on the shipped layout].** `rtdata-decode.ts --mem-image` rebuilds the in-memory R. For every chunk and every waypoint index from the chunk's count to 1023, it computes the record address the writers would use.
+  - Only (1753, 13) lands on the first word. Chunk 1753 has 11 waypoints.
+  - (1563, 20) lands on the second (chunk 1563 has 18), and so does (1478, 737).
+
+  The writers then clear bit 7 of byte + 1, i.e. bit 15 of the reference. Both pairs are 2 past their chunk's count, which fits waypoints a lot update added and later removed while a portal or a lot waypoint kept the stale reference [inferred: the lot update that left them is not identified].
+- **Why only some saves [inferred].** The pair depends on which lots carry portals near which chunks. Baseline-IP and Baseline-IP-Spring (the same town, so presumably the same lots) crash; BigSave-IP and the other worlds' kit saves do not.
+- **Fix: `[EaCrashFixes] PortalFlagRefs`** (off by default, counters `pfOn`, `pfSkip[2]`).
+  - The writer 1 index computation (11 bytes at `0x82A1CF`) becomes a jump to `PfStub1`; the writer 2 one (6 bytes at `0x82B6B1`) becomes a jump to `PfStub2`.
+  - Each stub checks the pair with the same test as `WorldAStarRefs` (chunk < w · h, waypoint < count, R at world + 0x54).
+  - For a pair outside R it skips that write: writer 1 goes on with the next portal (`0x82A204`); writer 2 goes on with the next reference (`0x82B7D5`, which reloads its state from the stack). Writer 2's skip also leaves out that reference's portal bookkeeping (`0x633EA0`, `0x656120`, the bit 29 copy), which would otherwise run on the same bad pair.
+  - The first 8 skips are logged.
+  - `WorldAStarRefs` stays useful as a second line for corruption from other writers.
+- **Test.** Baseline-IP with `PortalFlagRefs=1` and `WorldAStarRefs=0`, at least 2 sessions.
+  - Expected: no crash, `pfSkip` > 0 with the pairs (1753, 13) and (1563, 20) among the skip lines, and with both on, `waSkip` = 0.
+  - A crash, or A\* skips with `PortalFlagRefs` on, would point to a third writer.
