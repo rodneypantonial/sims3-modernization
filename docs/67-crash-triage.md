@@ -1052,3 +1052,25 @@ Live (run 173, `WorldAStarRefs=1` on Baseline-IP, 12 minutes, no crash) plus the
 - **Test.** Baseline-IP with `PortalFlagRefs=1` and `WorldAStarRefs=0`, at least 2 sessions.
   - Expected: no crash, `pfSkip` > 0 with the pairs (1753, 13) and (1563, 20) among the skip lines, and with both on, `waSkip` = 0.
   - A crash, or A\* skips with `PortalFlagRefs` on, would point to a third writer.
+
+### 30.6 In-game A/B (CI asi 0.36.150 / 0.36.151, Baseline-IP, 12-minute sessions, 2026-10-31)
+
+| Run | Switches | Result |
+|---|---|---|
+| 173 | WorldAStarRefs=1 | no crash; 8 A\* skip lines (the two references of §30.5); both end saves returned 12 |
+| 174 | off | crash at `0x6742B5`, 24 s after the world loaded |
+| 175 | WorldAStarRefs=1 | no crash; 8 A\* skip lines (the same two references); both end saves returned 12 |
+| 176 | WorldAStarRefs=1 on BigSave-IP (control, 8 minutes) | no crash, 0 skips, save returned 0 |
+| 177 | PortalFlagRefs=1, WorldAStarRefs=0 | crash at `0x6742B5` (sim thread), 7 minutes after the world loaded |
+| 178 | PortalFlagRefs=1, WorldAStarRefs=0 | no crash; 8 skip lines, all from writer 1 (lot portal ids): (1563, 18) to (1563, 23) with chunk count 18, (1626, 6) and (1626, 7) with chunk count 6; both end saves returned 12 |
+| 179 | off | crash, 3 minutes after the world loaded |
+
+- **`WorldAStarRefs` stops the crash [verified, 2 of 2 sessions; off 8 of 8 crashed].** The off count includes three kit4 jobs, a release-pair control, two `[RouteAsync] Enabled=0` runs and runs 174 / 179.
+- **`PortalFlagRefs` is the right writer but not the whole cause [verified, 2 sessions].**
+  - Writer 1 does write through stale lot portal ids, and (1563, 20) is among them, as §30.5 predicted.
+  - (1753, 13) was not among the 8 logged skips, and run 177 crashed with the switch on. So either more skips came after the 8 logged ones and something else still reaches the A\*, or a third writer clears the first word [inferred; a session with both switches on would show which: A\* skips there mean the corruption still happens].
+  - The stale ids are 1 to 6 past their chunk's count. They are lot portals that kept their ids after the chunk lost waypoints [inferred].
+- **The end-of-session save failure (Error 12) is this save's, not the fix's [inferred].**
+  - BigSave-IP saved normally with `WorldAStarRefs=1`.
+  - Baseline-IP without the fix crashes before its first save, so it cannot be compared directly.
+  - `PortalFlagRefs` did not change it (run 178), so it is not those flag writes [inferred].
