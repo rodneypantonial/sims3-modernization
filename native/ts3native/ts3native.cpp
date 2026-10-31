@@ -136,7 +136,7 @@ static int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; 
 // report and no WER event (2026-10-17 bp-d-async). C++ exceptions (0xE06D7363) count for 2 lines at most.
 // docs/172 §7: an AV in another DLL's code is logged once per address, with "module+offset" (Apex Radiance's 14 or more
 // handled AVs at 1-2 addresses before the world loads took every slot, so a later TS3W crash had no line); repeats are counted.
-static volatile LONG g_xcptN, g_xcptCpp, g_xcptOtherN, g_xcptOtherSkip;
+static volatile LONG g_xcptN, g_xcptCpp, g_xcptOtherN, g_xcptOtherHits[8];
 static DWORD g_selfLo, g_selfHi, g_xcptOther[8];
 // "name+0xoffset" when a is in a loaded image other than TS3W.exe (base 0x400000) and this module. No loader lock.
 static bool XcptOtherModule(DWORD a, char* out, int cap) {
@@ -210,7 +210,7 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     const CONTEXT* c = e->ContextRecord;
     if (code == EXCEPTION_ACCESS_VIOLATION)  // docs/172 §7: another module's address already logged
         for (LONG i = 0, n = g_xcptOtherN < 8 ? g_xcptOtherN : 8; i < n; i++)
-            if (g_xcptOther[i] == c->Eip) return InterlockedIncrement(&g_xcptOtherSkip), EXCEPTION_CONTINUE_SEARCH;
+            if (g_xcptOther[i] == c->Eip) return InterlockedIncrement(&g_xcptOtherHits[i]), EXCEPTION_CONTINUE_SEARCH;
     if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
     char refs[128], mod[MAX_PATH + 16] = "", in[MAX_PATH + 24] = "";
     if (code == EXCEPTION_ACCESS_VIOLATION && XcptOtherModule(c->Eip, mod, sizeof(mod))) {
@@ -2440,10 +2440,13 @@ static void MaybeLogCounters(ULONGLONG now) {
     if (c.p6wReady) P6wLogCounters();  // docs/189 phase 0
     if (c.workerReady || c.asyncReady)
         Log("route plans: off %ld (fails %ld) on %ld (fails %ld) hostCalls %ld", c.planOffCalls, c.planOffFails, c.planOnCalls, c.planOnFails, c.hostCalls);
-    static LONG xcptSkipLogged;  // docs/172 §7: only when the count moved
-    const LONG xcptSkip = g_xcptOtherSkip;
+    static LONG xcptSkipLogged;  // docs/172 §7: repeats per logged address, only when the total moved
+    LONG xcptSkip = 0;
+    char xcptBy[8 * 24] = "";
+    for (int i = 0, n = g_xcptOtherN < 8 ? g_xcptOtherN : 8, len = 0; i < n; i++)
+        xcptSkip += g_xcptOtherHits[i], len += sprintf_s(xcptBy + len, sizeof(xcptBy) - len, " %08lX x%ld", g_xcptOther[i], g_xcptOtherHits[i]);
     if (xcptSkip != xcptSkipLogged)
-        Log("crash log: %ld more AVs at %ld logged addresses in other modules (not logged)", xcptSkipLogged = xcptSkip, g_xcptOtherN < 8 ? g_xcptOtherN : 8);
+        Log("crash log: %ld more AVs at logged addresses in other modules (not logged):%s", xcptSkipLogged = xcptSkip, xcptBy);
 }
 
 static LARGE_INTEGER g_qpf;
