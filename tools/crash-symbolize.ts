@@ -7,7 +7,7 @@
 // from tools/ghidra/symbols/ts3w-1.67.symbols.csv (nearest named function below: its end is not in the CSV, so the name is
 // a hint past 1 KB) or exactly from game-copy/analysis/functions.csv when it is there (local), plus exact address hits in
 // docs/data/*.csv (IC, hook, Mono glue tables). ts3native frames need the link map of the same build: `--build <dir>` takes
-// ts3native.asi + ts3native.map from a folder (CI artifacts `ts3native` + `ts3native-map`, or native/ts3native/out) and
+// ts3native.asi + ts3native.map from a folder (native/ts3native/out, or the CI artifacts once build.yml uploads the map) and
 // checks the asi's version against the log; `--map` alone is used unchecked. Other modules stay name+offset.
 // Short output: every distinct exception with its first 8 frames; --all every frame; last line `needs review: ...`.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
