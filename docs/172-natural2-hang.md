@@ -152,14 +152,14 @@ The cost: the slots are gone before the world loads, so a later TS3W fault gets 
 
 Selftest: `TestCrashReport` checks the name for a kernel32 address, that a heap address is not named, that the second AV at an address takes no slot and is counted, and that a new address gets its line.
 
-**In game [verified, 3 sessions on the same install, Apex Radiance 2.17.1, CI builds of this change].** Each named address got one line, and the remaining slots stayed free. The minute line showed what the old cap had hidden:
+**In game [verified, 3 sessions on the same install, Apex Radiance 2.17.1, CI builds of this change, 15-20 minutes each].** Each named address got one line, and the remaining slots stayed free. The minute line showed what the old cap had hidden:
 
 | Apex offset | Thread | Repeats | Read |
 |---|---|---|---|
-| `+0x14209B` | main | ~24,000 per minute, steady for the whole session (106,094 in one ~5-minute session) | `[entry+0x2C]` with entry `0x1` or `0xB`: a 4×4 table of map-set pointers at `+0x16C` of a lighting object, one slot holding a small integer |
+| `+0x14209B` | main | 20,000-25,000 per minute in one session, 52,000-63,000 in the next (589,312 in ~11 minutes), steady within a session | `[entry+0x2C]` with entry `0x1` or `0xB`: a 4×4 table of map-set pointers at `+0x16C` of a lighting object, one slot holding a small integer |
 | `+0x3BE357` | main | ~300 per minute | CRT `memcpy` with source `0x8` |
 | `+0xE0280`, `+0xE02D8`, `+0xE02E4`, `+0xE99B7` | sim | ~650 in all, during world load only | Night Lights' lot lighting lookups (`LotStoryManager`, `ReadCutExtras` in Apex's `features/level_light_share.cpp`) |
 
-So the first lines of a session pointed at the sim thread, but the hot one is on the main thread. A handled AV costs about 2.7 µs in a 64-bit process with one handler (measured). Under WOW64 with several vectored handlers it costs more, so ~400 per second is roughly 1-4 ms per second of main-thread time [inferred]. A report to Apex Radiance is drafted, not sent: their 2.18.x releases reworked the lamp code, so it needs a check on their current version first.
+So the first lines of a session pointed at the sim thread, but the hot one is on the main thread. A handled AV costs about 2.7 µs in a 64-bit process with one handler (measured). Under WOW64 with several vectored handlers it costs more, so 350-1,000 per second is roughly 1-10 ms per second of main-thread time [inferred]. A report to Apex Radiance is drafted, not sent: their 2.18.x releases reworked the lamp code, so it needs a check on their current version first.
 
 A script-stack line for the first AV on the sim thread was tried and dropped: at these load-time AVs there were no script frames to show.
