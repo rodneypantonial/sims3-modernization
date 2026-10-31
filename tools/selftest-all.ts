@@ -49,7 +49,9 @@ const CSC = { why: 'Windows .NET Framework csc' };
 const LOCAL_ONLY: Record<string, { why: string; needs?: string }> = {
   'tools/harness/machine-load.ts': { why: 'Windows PowerShell counters' },
   'tools/harness/night-run.ts': { why: 'Windows session lock query' },
+  'tools/binder-bodies.ts': { why: 'game script assemblies', needs: 'game-copy/assemblies/mscorlib.dll' },
   'tools/offload-override-scan.ts': { why: 'game script assemblies', needs: 'game-copy/assemblies/ScriptCore.dll' },
+  'tools/mod-method-diff.ts': { why: 'game script assemblies', needs: 'game-copy/assemblies/ScriptCore.dll' },
   'tools/offload3-closure.ts': { why: 'managed call graph index', needs: 'game-copy/analysis/callgraph/index.json' },
   'tools/selftest/autlive/run.ts': CSC,
   'tools/selftest/autoffload/run.ts': CSC,
@@ -147,6 +149,7 @@ const NO_SELF_CHECK: Record<string, string> = {
   'tools/setup/build-overwatch-tuning.ts': 'builder of one tuning package; no logic to test',
   'tools/setup/check-conflicts.ts': 'reads the installed Mods folder; DBPF index covered by the tools/dbpf.ts self-test',
   'tools/setup/install-fixes.ts': 'installer: downloads into the game folder; its content health part is content-health.ts --self-test',
+  'tools/tier2-blockers.ts': ONE_OFF,
 };
 
 const TIMEOUT_S: Record<string, number> = {};

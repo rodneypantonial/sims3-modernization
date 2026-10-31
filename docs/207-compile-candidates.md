@@ -292,3 +292,34 @@ The realistic range straddles the ~30 ms/s rule. It rests on the same offline-to
 3. P1 scope then: lazily built frames for compiled-to-compiled calls (records and `MonoInvocation` written only when an exception, a yield or a native transition needs them: the real "direct call"), Sims3Gameplay accessor coverage measured on a world image (docs/123 M3, so the game's accessors can run offline), inlining tier 2 (null-checked `ldfld` on any base with an exit before any write, value-type `this` through `call`). P2 / P3 (register allocation, wider templates) only after P1's in-game number.
 
 Commands (monohost, `native/monohost/out`): stock `MONOHOST_JIT=on`; fast path `MONOHOST_MINTCALL=fast MONOHOST_JIT=on`; inlining adds `MONOHOST_JITINLINE=1`; verify replaces `on` with `verify`; `MONOHOST_JITREPS=9`; each run: `monohost.exe <repo>\game-copy\monohost\TS3W.exe <repo>\game-copy\assemblies selftest <repo>\game-copy\monohost\hostdata.txt`.
+
+## 9. Gameplay accessors offline: what each needs from the world (2026-10-31)
+
+Round 3, task B5. Static, from the call-graph index (docs/78) and `docs/data/ic-safety.csv`: no build, no host run. Tool: `node tools/offline-accessors.ts [--depth 3] [--top 100] [--write]`, table in `docs/data/offline-accessors.csv` (one row per method: closure size, EA ICs with their ic-safety verdict, Mono ICs, instance fields, static fields, virtual / interface calls, static constructors, effort, fixture recipe).
+
+Scope: the never-yielding (class N / ?) Sims3Gameplay* methods among the top 100 of §3's ranking (mean self ms/s over the three worlds): **19 methods, 26.1 ms/s** [measured: compile-candidates.csv]. P0 ran none of them; §7.5 gave the top nine the `List.get_Item` ratio instead.
+
+| # | Method | ms/s | Needs from the world [verified: call-graph index, closure depth 3] | Fixture |
+|---|---|---|---|---|
+| 1 | `GameObject.GetComponent` | 4.53 | fields mObjComponents (List: _items, _size), RuntimeTypeHandle.value; virtual ObjectComponent.get_BaseType | M |
+| 2 | `InteractionObjectPair.Equals` | 3.70 | fields mInteraction, mTarget; virtual Object.Equals | M |
+| 3 | `GameObject.GetObject` | 3.00 | fields ScriptProxy.mTarget, ObjectGuid.mValue; statics InvalidObjectGuid, gSimulator; IC Simulator_GetTaskImpl (PROXY) | M |
+| 4 | `SimClock.ElapsedTimeInMinutes` | 2.73 | field DateAndTime.Ticks; statics sSimTickCnt, sStartTime, sTicksAdvanced; no IC, no .cctor | S |
+| 5 | `GameObject.get_Parent` | 2.20 | fields mTarget, mParent, mValue; statics InvalidObjectGuid, gSimulator, gSlots; IC Slots_GetParentIdImpl (PROXY); virtual ITask.get_ObjectId | M |
+| 6 | `ScriptObject.get_ObjectId` | 1.73 | field mParent; static InvalidObjectGuid; virtual ITask.get_ObjectId | M |
+| 7 | `GameObject.get_LotCurrent` | 1.47 | fields mTarget, mLotCurrent, mParent, mValue; statics InvalidObjectGuid, gSimulator, gSlots; virtual ITask.get_ObjectId | M |
+| 8 | `Household+Members.GetActorsOfType` | 1.27 | 10 fields (mSimDescriptions, mPetSimDescriptions, SimDescription mSim / mSimFlags, List internals); 6 interface calls over the lists | M |
+| 9 | `RoutingComponent.get_IsRouting` | 0.70 | fields mRouteActions (List._size) | S |
+| 10 | `Lot.get_CommercialLotSubType` | 0.57 | field mCommercialSubType | S |
+
+Effort classes: **S** = hand-built objects only (no EA IC, no virtual call, at most 8 fields, no .cctor that reaches an EA IC); **M** = up to 3 EA ICs with recorded answers, or virtual calls whose receiver class the fixture picks; **L** = more ICs, an UNSAFE / MAIN IC, or a closure over 60 methods (none in the top 19). Totals: S 8 methods (6.3 ms/s), M 11 (19.8 ms/s), L 0.
+
+Findings:
+
+- **No method needs a world image.** The top 19 read a handful of fields on objects the fixture can build, plus at most two EA ICs (`Simulator_GetTaskImpl`, `Slots_GetParentIdImpl`, `World_IsObjectOnScreenImpl`, `Simulator_GetTickCountImpl`; all PROXY in ic-safety.csv, so a recorded answer per call is enough) [verified: index]. The world image of docs/123 M3 is not needed for accessor coverage [inferred].
+- **`SimClock.ElapsedTimeInMinutes` (2.7 ms/s) needs nothing from the world but three static fields**, and `SimClock` has no static constructor [verified: index]. It could have run in P0 with the statics set by reflection.
+- **The ObjectGuid -> object path** (`GetObject`, `get_Parent`, `get_LotCurrent`: 6.7 ms/s together) goes through `Simulator.gSimulator` and `Slots.gSlots`, which the M1.2 service objects already build [verified: monohost.cpp M1.2 b], and one IC each. Answering those two ICs from a table the fixture fills (guid -> object, guid -> parent guid) covers all three [inferred].
+- **Fixture constraints in this game's mscorlib** [verified: index]: `FormatterServices.GetUninitializedObject` does not exist, so objects come from their real constructors (`GameObject` is abstract: a concrete subclass, or a test-assembly class deriving from it); `FieldInfo.SetValue` exists for the private fields and statics.
+- Blind spots: the closure stops at depth 3 (`--depth` raises it); a virtual call is listed by its declared target, so the fixture's receiver class decides which override runs; field reads through `ldflda` on value types count once.
+
+Fixtures: **not built.** This machine has no C++ compiler and the CI does not build `native/monohost`, so nothing could be run, and an unrun fixture would only move the debugging to the next person. The recipe per method is the `fixture` column. For the top 5: rows 2 and 4 (no IC) are JitBench cases on objects from constructors plus `FieldInfo.SetValue`; rows 1, 3 and 5 also need a concrete `GameObject` subclass, and rows 3 and 5 need an M2 answer code that reads the guid table from a static field of the test assembly.

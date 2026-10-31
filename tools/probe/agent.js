@@ -1607,8 +1607,9 @@ rpc.exports = {
       // v143 [MonoFast] CallPath (docs/139 §8, mintcall.cpp)
       if (c.readS32() >= 143) f.push('mcSwitch', 'mcReady', 'mcCall', 'mcCallvirt',
         'mcRet', 'mcBailCall', 'mcBailCallvirt', 'mcBailRet', 'mcVerified', 'mcMismatch', 'mcVSkipped', 'mcVerifyEvery', 'mcFirstBad', ...n('mcSpare', 3));
-      // v144 [EaCrashFixes] MintDivGuard (fix/geom-bone-index), v145 [EaCrashFixes] WorldAStarRefs (docs/67 §30, wastar.cpp)
+      // v144 [EaCrashFixes] MintDivGuard (issue #114, docs/213 §8, eafix.cpp)
       if (c.readS32() >= 144) f.push('mdOn', 'mdDivOverflow', 'mdRemMinus1', 'mdSpare');
+      // v145 [EaCrashFixes] WorldAStarRefs + PortalFlagRefs (docs/67 §30, wastar.cpp)
       if (c.readS32() >= 145) f.push('waOn', ...n('waSkip', 3), 'pfOn', ...n('pfSkip', 2), 'pfSpare');
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));

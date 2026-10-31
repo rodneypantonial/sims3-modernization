@@ -627,7 +627,7 @@ static int SatbRainSkip(DWORD* r, const u8* rm) {
     *(DWORD*)(uintptr_t)at = 0, *(DWORD*)(uintptr_t)(at + 4) = 0;
     r[SR_ESI] = at;
     SatbAdvance(r, 8, 8);  // callvirt is 4 words (op, cache, -, method item)
-    g_asRainDef = 0, g_asRainSkips++;
+    g_asRainSkips++;  // stays armed: every such call in the pair is skipped and counted (ts3fixes accepts exactly one)
     ts3native_autshadow.rainSkip++;
     return 1;
 }
@@ -828,7 +828,9 @@ static int __cdecl SatbWorkerLoad(DWORD* r) {
         const DWORD ip0 = r[SR_EDI], ebp = r[SR_EBP];
         const u8* rm = SatbItem(r, *(const WORD*)(uintptr_t)(ip0 + 6));
         const DWORD recv = *(const DWORD*)(uintptr_t)(r[SR_ESI] - rm[0x40] * 8 - 8);
-        if (g_asRainDef && recv == g_asRainDef && *(const DWORD*)(rm + 8) == g_asRainMm) return SatbRainSkip(r, rm);  // H11
+        // H11: by site, any receiver: while a pair is armed no CreateInstance(5) call runs on the worker (a skip that was not
+        // the branch's own leaves the hook unanswered: ts3fixes aborts the pair)
+        if (g_asRainDef && *(const DWORD*)(rm + 8) == g_asRainMm) return SatbRainSkip(r, rm);
         if (!recv || !*(const DWORD*)(uintptr_t)recv) return 0;  // the handler's null path comes before its cache
         *(DWORD*)(uintptr_t)(*(const DWORD*)(uintptr_t)(ebp - 8) + 0x1C) = ip0;
         *(DWORD*)(uintptr_t)(ebp - 0x24) = (DWORD)(uintptr_t)&((const DWORD*)(uintptr_t)*(const DWORD*)(uintptr_t)(*(const DWORD*)(uintptr_t)(ebp - 0x10) + 0x14))[SatbW1(r)];

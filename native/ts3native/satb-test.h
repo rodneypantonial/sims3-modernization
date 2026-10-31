@@ -307,33 +307,32 @@ static void TestSatbRainSkip() {
     ip[0] = 0xEC, ip[1] = 0, ip[3] = 3, ip[4] = 0x1C1;
     g_satbMode = SATB_ACT, g_satbOn = 1;
     DWORD r[8];
-    for (int round = 0; round < 4; round++) {
+    // round 0: armed, this site: skipped; 1: same again (stays armed, counted twice); 2: another receiver, same site: skipped
+    // too (by site); 3: another site with a null receiver: not skipped (the handler's null path); 4: disarmed: not skipped
+    for (int round = 0; round < 5; round++) {
         for (int i = 0; i < 16; i++) stack[i] = 0xA0 + i;
-        stack[2] = round == 3 ? 0 : (DWORD)(uintptr_t)obj;  // receiver slot (slot 1); slot 0 = the caller's
+        stack[2] = round >= 3 ? 0 : round == 2 ? (DWORD)(uintptr_t)other : (DWORD)(uintptr_t)obj;  // receiver slot (slot 1)
         memset(r, 0, sizeof(r));
         r[SR_EDI] = (DWORD)(uintptr_t)ip, r[SR_ESI] = (DWORD)(uintptr_t)&stack[2 * 7], r[SR_EBP] = ebp, r[SR_EDX] = 0xEC;
-        g_asRainDef = round == 0 ? (DWORD)(uintptr_t)obj : round == 2 ? (DWORD)(uintptr_t)other : 0;
-        g_asRainMm = (DWORD)(uintptr_t)(round == 1 ? other : mm);
-        if (round == 1) g_asRainDef = (DWORD)(uintptr_t)obj;
+        if (round == 0) g_asRainDef = (DWORD)(uintptr_t)obj, g_asRainSkips = 0;
+        g_asRainMm = (DWORD)(uintptr_t)(round == 3 ? other : mm);
+        if (round == 4) g_asRainDef = 0;
         const LONG s0 = g_asRainSkips;
-        if (round == 0) {
+        if (round <= 2) {
             assert(SatbWorkerLoad(r) == 1);
             assert(r[SR_ESI] == (DWORD)(uintptr_t)&stack[4] && stack[2] == 0 && stack[3] == 0 && stack[0] == 0xA0);
             assert(r[SR_EDI] == (DWORD)(uintptr_t)&ip[4] && frame[6 - 1] == r[SR_EDI]);
-            assert(g_asRainDef == 0 && g_asRainSkips == s0 + 1);
-        } else if (round == 3) {  // armed for another receiver, this one null: not skipped, the handler's null path
-            g_asRainDef = (DWORD)(uintptr_t)obj;
-            assert(SatbWorkerLoad(r) == 0 && g_asRainSkips == s0 && g_asRainDef == (DWORD)(uintptr_t)obj);
+            assert(g_asRainDef == (DWORD)(uintptr_t)obj && g_asRainSkips == s0 + 1);
+        } else {
+            assert(SatbWorkerLoad(r) == 0 && g_asRainSkips == s0);
         }
-        // rounds 1-2 (other site, other receiver) would continue into the game's own target lookup: only the match test
-        else assert(!(g_asRainDef && stack[2] == g_asRainDef && *(const DWORD*)(rm + 8) == g_asRainMm));
     }
     g_asRainDef = 0, g_asRainSkips = 0;
     // RainArm
     assert(AsIcRainArm(obj, mm) == -1);  // not the worker
     g_asWorkerTid = GetCurrentThreadId();
     assert(AsIcRainArm(obj, mm) == 1 && g_asRainDef == (DWORD)(uintptr_t)obj && k.rainArm == arm0 + 1);
-    g_asRainDef = 0, g_asRainSkips = 1;  // as SatbRainSkip leaves it
+    g_asRainSkips = 1;  // as SatbRainSkip leaves it (still armed)
     assert(AsIcRainArm(NULL, NULL) == 1 && g_asRainSkips == 0 && k.rainMiss == miss0);
     assert(AsIcRainArm(obj, mm) == 1 && AsIcRainArm(NULL, NULL) == 0 && k.rainMiss == miss0 + 1 && g_asRainDef == 0);
     g_satbOn = 0;
@@ -341,7 +340,7 @@ static void TestSatbRainSkip() {
     g_satbOn = 1, g_satbMode = SATB_PROBE;
     assert(AsIcRainArm(obj, mm) == 0 && AsIcConfig(32) == 0);
     g_satbMode = SATB_ACT;
-    assert(AsIcConfig(32) == 1 && k.rainSkip == skip0 + 1);
+    assert(AsIcConfig(32) == 1 && k.rainSkip == skip0 + 3);
     g_asWorkerTid = wtid0, g_satbMode = mode0, g_satbOn = on0;
     {  // per-search feature mask: names, the crash-log mark (MonoString copied, ASCII), Config(33)
         char t[128];
@@ -358,7 +357,7 @@ static void TestSatbRainSkip() {
         assert(AsIcConfig(33) == 12);
         g_asMarkReq = r0, g_asMarkMask = m0, g_asLastJobBits = lb0, g_asMarkDef[0] = 0;
     }
-    printf("satb rain skip: armed callvirt popped (receiver + 5 args), null pushed, ip +8, once; other site/receiver/null not; RainArm worker+act only, miss counted\n");
+    printf("satb rain skip: armed site popped (receiver + 5 args), null pushed, ip +8, any receiver, counted per call; other site or disarmed not; RainArm worker+act only, miss counted\n");
 }
 
 // docs/206 §15: native writers. Sim: PriorityQueue bodies log the object's fields and its items array, Rehash the fields,

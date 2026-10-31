@@ -506,7 +506,7 @@ static int __cdecl AsIcRainArm(void* def, void* site) {
     Ts3nAutShadow& k = ts3native_autshadow;
     if (!def) {
         const int n = g_asRainSkips;
-        if (!n && g_asRainDef) k.rainMiss++;
+        if (!n) k.rainMiss++;  // armed, no call: the branch was not reached (meta CalculateScore outside local autonomy)
         g_asRainDef = 0, g_asRainSkips = 0;
         return n;
     }

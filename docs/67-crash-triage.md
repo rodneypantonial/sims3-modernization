@@ -900,6 +900,83 @@ Design: the release call at `0xD5B77A` is retargeted to `TpDefer` (same register
 | Repro | `tools/harness/repros.json` `ea-thumb-pose-pack-loop`: household thumbnails while 8 spawned Sims are removed, three rounds (the contributor's cross-world thumbnail during pack-up has no agent action). `tpHeld > 0` shows branch (a) ran |
 | Conflicts | none with S3SS / S3PP / Apex at `0xD5B77A` / `0xD5B874` (docs/68) |
 
+## 28. Crash X (2026-10-30, a contributor's 35-minute test session on v0.2.4 release defaults with Apex Radiance): the Sim builder reads a CAS mesh's bone list past its end
+
+Static only (2026-10-30): the EA crash report and capstone on the Steam exe copy. There is no dump.
+
+### 28.1 Fault [verified: report + disassembly]
+
+| | |
+|---|---|
+| Report | ACCESS_VIOLATION reading `0xA2F900B4` (`MEM_FREE`) at `0x5C6E07`. Main thread. EA's walk shows `0x5D3885`, `0x5DC19C`, `0x5F06C6` (`SimService_Process 0x5EBC50`) and `0x5F120C` (`SimService_Update 0x5F0E50`): the same service path as crash B (§1) |
+| Fault site | `0x5C6E00` (13 bytes, `ret 4`): `eax = [ecx+0x58]`, `ecx = [esp+4]`, `eax = [eax+ecx*4]`. It is slot `+0x54` of vtable `0xFE32C0`, which the `CAS/GeometryResource` name follows in `.rdata`. Slot `+0x50` = `0x5C6DF0` returns `([ecx+0x5C] - [ecx+0x58]) >> 2`. So `+0x58`/`+0x5C` are the begin and end of the mesh's bone-hash vector, and slot `+0x54` returns entry `i` with no bounds check. Only `0x5C6EBB` and `0x5C7045` store the vtable, and nothing calls either getter directly |
+| Registers | `eax` (vector begin) = `0xA2F8FF00`, `ecx` (index) = `0x6D` = 109. The read at `begin + 109 * 4` lands in a free region that starts `0x100` bytes after `begin`. The vector therefore has at most 64 entries, and the index is past its end. The `+0x58` load succeeded, so the GEOM object itself was readable |
+| Caller | `[esp]` = `0x5D1633`. The getter has no frame, so EA's walk skips this frame and shows `0x5D3885` instead (the return of `call 0x5D1010` at `0x5D3880`). `0x5D1010` is the skin pass. It reads each of a vertex's four blend indices as a byte (`0x5D1627`), calls slot `+0x54` at `0x5D1631`, then looks the returned hash up in an EASTL map at `[ebp+0x20]` (the rig's bones). On a miss, `edx` is the map's anchor and the code stores `[anchor+0x14]` (the map's size field) as the bone slot (`0x5D165B`-`0x5D1672`). This is EA's own path for a bone the rig lacks. `edx` is reloaded at `0x5D163B` and `ecx` at `0x5D1633`, so nothing but `eax` is live after the call |
+
+### 28.2 Cause [inferred]
+
+The most likely cause is a GEOM resource whose vertex blend indices name a bone past the mesh's own bone list, probably custom content: a mesh edited without its bone list being updated. The index is a byte, so the getter can read up to 255 entries. Most such reads land in other heap data and return a hash the rig lacks, which takes the miss path above without a crash. The read only crashes when the list sits near the end of a committed region, which is why this crash is rare. The report does not say which mesh it was.
+
+It is not a use-after-free, because the object's own fields were readable. No ts3native hook is on this path. The nearest Apex Radiance site is `CasTriSort 0x5D1960` (docs/data/apex-hooks.csv), and `node tools/hook-sites.ts --check` lists no shared address.
+
+### 28.3 Fix: `[EaCrashFixes] GeomBoneIndex` (0.36.149, eafix.cpp, off by default; ledger docs/51 §411)
+
+The fix points vtable slot `0xFE3314` at `GbGetBone`, which has the same contract: `ecx` = the GEOM, one stack argument, `ret 4`. For an index inside the vector it returns the game's entry. Past the end it returns 0, so the caller's map lookup misses and EA's missing-bone path runs.
+
+A rig bone whose hash is exactly 0 would take that vertex weight instead of missing [inferred: no such bone is known]. The install checks three things before it writes: the slot names `0x5C6E00`, the getter's 13 bytes match, and the count getter's 10 bytes match (they confirm the vector layout). If any check fails, it logs a SKIP and writes nothing. Every virtual caller of slot `+0x54` gets the game's answer for in-range indices.
+
+| | |
+|---|---|
+| Counters | none. The first 8 out-of-range asks are logged as `ea fix: GeomBoneIndex: GEOM <p> (key <type>:<group>:<instance>) asked for bone <i> of <n> (caller <return address>)` |
+| Tests (offline) | selftest `TestEaCrashFixes` covers four cases. (1) In-range bones are unchanged. (2) An index equal to the size, index `0x6D` and an empty list are all answered 0. (3) The game's two getter byte strings run on the fake GEOM, which checks the layout. (4) The patch on a stand-in slot: a foreign count getter means nothing is written, the slot is patched only once, and the patched slot answers like the hook |
+| Repro | none. A repro needs a mesh with a bad blend index. The log line names the GEOM pointer, not its resource key |
+| Conflicts | none with S3SS / S3PP / Apex at `0xFE3314` / `0x5C6E00` (docs/68) |
+| Open | none left from crash X: the mesh is named in §28.4 |
+
+### 28.4 Live check (2026-10-30, one session) [verified]
+
+One 35-minute session on a contributor's test save, with the branch's CI build (then 0.36.143, before the rebase onto 0.36.148) and `GeomBoneIndex=1`. During world load (`ScriptProxy.PostLoad`) it logged 8 lines for one GEOM: `asked for bone 109 / 104 / 113 / 115 of 5 (caller 0x005D1633)`. 109 is crash X's index, and the mesh has 5 bones, so this save loads the bad mesh every time. The game ran on for the whole session. The lines confirm I-409-4: a readable GEOM with a real list (`n` = 5) whose blend indices are past it. Without the fix these reads land past the list; whether they crash depends on the heap layout (§28.2). A second session (same save and switch, plus the other two guards) logged the same 8 asks. Its first line also printed the resource base's fields: instance `0xC014AA218DAFEEA9` at `+8`, type `0x015A1849` (GEOM) at `+0x10`, group `0x009B6C36` at `+0x14`. The CC scan below has exactly that GEOM (5 bones, 512 vertices, filler 115) [verified]. It is a LOD of the EA Store hair `amHairSTORE09FaLayeredSide` (adult male), which the contributor's CC manager had merged into one of its library packages. So store meshes from EA itself carry these filler indices. The log lines now print the key as `<type>:<group>:<instance>`.
+
+A scan of the same install's CC (every GEOM in `Mods\Packages`, read-only) found 251 of 9,856 GEOMs with a bone-assignment index past the mesh's own bone list: 27 with 5 bones, 61 with 1, others up to 58. Their out-of-range values are 115 or 255. **Every out-of-range index sits in a slot whose weight is 0** [verified: scan]: 0 vertices have a weighted index past the list. So these values are filler that the export tool wrote into unused slots, and the skin pass reads all four slots whatever their weight. The fix's answer of 0 changes no weighted bone for any of them (I-409-5). It also means the out-of-range read happens for every such mesh on every build, so crash X can come back on any install with this kind of CC whenever a bone list ends at a free region.
+
+## 29. Issue #80 (2026-10-18 to 10-28, four crashes in about 60 sessions on 0.36.37a, heavy CC): the Sim builder reads a CAS mesh's material through a null pointer
+
+Static, plus the contributor's two full dumps (described in the issue; none is committed).
+
+### 29.1 Fault [verified: dumps + disassembly]
+
+| | |
+|---|---|
+| Report | ACCESS_VIOLATION reading `0x00000004` at `0x5DDFBD`, main thread, `eax` = 0. Signature `crashsig-95ce882e`. The nearest symbol names it `ModelBuilder_Dtor+0x1B6D`, but it is a separate function: the Sim builder's per-part step `0x5DDB30`, called once per part from the loop at `0x5DE4CA` |
+| Site | `0x5DDFA9`-`0x5DDFB0` calls the part's GEOM slot `+0x58`. For the GEOM vtable `0xFE32C0` that slot is `0x580420` (`mov eax,[ecx+0x28]; ret`): the embedded material. `0x5DDFBD` then reads the shader hash at `[eax+4]` with no null check. `0x5DE009`-`0x5DE01C` calls the slot again and copies 16 bytes from it |
+| Every path | The step reads the material on every path. When the part joins an existing group it reads it at `0x5DDC45`-`0x5DDC5A`. When it starts a new group it reads it at `0x5DDFB0`-`0x5DDFBD`. No branch between the start check and those reads leaves the function |
+| Cause | A CAS VPXY LOD 1-3 entry names a GEOM with shader 0 and vertices: a custom-content morph mesh used as a LOD. Such a GEOM has no embedded material (MTNF). In both dumps it was the same CC hair. EA's own CAS parts have no such entry (the contributor's scan of the install). The VPXY must be the part's mesh VPXY: morph VPXYs (fat, fit, thin, special) name only shader-0 meshes with position, normal and vertex-id data, by design, and are not built through this step [verified: VPXY LOD lists of an EA Store library package] |
+
+### 29.2 Fix: `[EaCrashFixes] GeomNoMaterial` (0.36.149, eafix.cpp, off by default; ledger docs/51 §413)
+
+The step already skips a part whose mesh pointer is null or tagged. That check is at `0x5DDB5D` / `0x5DDB67`, which go to the tail `0x5DE0E2`; the tail returns 1, and the caller ignores the result. The fix replaces the 10 bytes at `0x5DDB63` (`mov eax,[ebx]; test eax,eax; je 0x5DE0E2`) with a jump to `GnStub`. The stub keeps the null check. It also takes the same skip when the GEOM's slot `+0x58` is the game's getter `0x580420` and `[GEOM+0x28]` is 0. Every other part continues at `0x5DDB6D`, which reloads `eax`, `ecx` and `edx`.
+
+Because every path reads the material, the fix changes only parts that crash today [verified static]. The skipped part is not built for that LOD, so a CC hair goes missing at that distance instead of crashing the game. The install checks three things first: the 10 site bytes, the slot `0xFE3318` naming `0x580420`, and the getter's 4 bytes. If any check fails, it logs a SKIP and writes nothing. No instruction branches into `0x5DDB64`-`0x5DDB6C` (scan of `.text`).
+
+| | |
+|---|---|
+| Counters | none. The first 8 skips are logged as `ea fix: GeomNoMaterial: GEOM <p> (key <type>:<group>:<instance>, builder LOD <n>) has no embedded material` |
+| Tests (offline) | selftest `TestEaCrashFixes` runs the stub with landing pads in place of the two targets. Four cases: a GEOM with a material continues, a GEOM without one is skipped and counted, another type with the same field 0 continues, and a null mesh takes the game's skip without being counted. `ebx`, `esi`, `edi` and `ebp` are unchanged at both pads. The game's getter bytes run on the fake GEOM. The patch on a stand-in site: a foreign slot or foreign site bytes mean nothing is written, and the site is patched only once |
+| Repro | `node tools/cc-mesh-scan.ts --repro <package> <GEOM instance> <out>` (PR #119) writes a copy of one GEOM without its material; in `Mods\Overrides` for one session it reproduces the fault (§29.3) |
+| Conflicts | none with S3SS / S3PP / Apex at `0x5DDB63` / `0xFE3318` / `0x580420` (docs/68). Apex's nearest site is `CasTriSort 0x5D1960` |
+| Open | Whether a Sim with the part skipped at one LOD shows anything wrong besides the missing part at that distance [inferred: the same as a part whose mesh failed to load] |
+
+### 29.3 Live A/B with a made repro (2026-10-31) [verified]
+
+No CC with the #80 shape was at hand, so the test made one. It took LOD 3 of the EA Store hair from §28.4 (`015A1849:009B6C36:C014AA218DAFEEA9`), cut its material, set shader 0, and loaded it as a one-resource package from `Mods\Overrides`, one session per arm. The hair's mesh VPXY still names LOD 0-2 with a material, so the part has the §29.1 shape. Both arms used the same contributor save, CI build `a7572875` (0.36.149 plus key logging) and `GeomBoneIndex=1`:
+
+| Arm | Result |
+|---|---|
+| `GeomNoMaterial=1` | From world load on, 8 log lines (the cap): `GEOM … (key 015A1849:009B6C36:C014AA218DAFEEA9, builder LOD 3) has no embedded material: part skipped`. 20 minutes of play, saved, no script errors. A second session from that save: 30 minutes, the same 8 lines, saved, no errors |
+| `GeomNoMaterial=0` | Crash during world load: ACCESS_VIOLATION reading `0x00000004` at `0x5DDFBD`, main thread, `eax` = 0, `edx` = `0x580420` (the getter). This is the fault in the #80 report |
+
+This is I-411-3's check: the skip is logged and the crash does not happen. Nobody looked at the Sim at that distance, so whether it looks right is not checked. With the hair's LOD 3 skipped before the skin pass, `GeomBoneIndex` logged a different filler mesh instead: `015A1849:00BEE823:93A4E607E5383AFE`, bone 2 of 2, from the install's merged overrides package. The second session logged a third one, `015A1849:00BEE823:00000000ECC7C68B`, also bone 2 of 2. The scan finds 59 such meshes in `Mods\Overrides`, all with weight 0.
+
 ## 30. Crash Y (2026-10-31, kit4 Baseline-IP, 5 of 5 sessions): the world A\* follows a neighbour reference outside the routing graph
 
 Live and static (2026-10-31): three kit4 jobs (`ip-locktaker-verify-146`, `ip-venuememo-verify`, `ip-deadrefs-saves`), one control with the v0.2.4 release pair, and one run with only `[RouteAsync] Enabled=0`. The EA crash files' registers and stacks were read; capstone was run on the Steam exe. Issue #132, ledger docs/51 §415.
