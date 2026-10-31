@@ -1015,6 +1015,31 @@ function positional(): string[] {
   for (let i = 0; i < a.length; i++) { if (VALUE_FLAGS.has(a[i])) i++; else if (!a[i].startsWith('--')) out.push(a[i]); }
   return out;
 }
+export function bindKeys(): { hash: string; id: string; key: string; m: Method }[] {
+  // docs/122 S0: EA's native-method binder 0xD9A7B0 keys each method by the FNV-1 hash (lowercased bytes, 0x811C9DC5,
+  // prime 0x1000193, multiply then xor) of "<ret> <Class>:<Method>(<arg>,...)" with Mono reflection type names
+  // (0xD9A530). One entry per non-abstract method (the bindkeys command prints them); join with the 1,085 hashes 0xE3E570
+  // registers (tools/binder-bodies.py).
+  if (!asms.length) loadAll(ASM_DIR);
+  const FULL: Record<string, string> = { void: 'Void', bool: 'Boolean', char: 'Char', sbyte: 'SByte', byte: 'Byte', short: 'Int16', ushort: 'UInt16', int: 'Int32', uint: 'UInt32', long: 'Int64', ulong: 'UInt64', float: 'Single', double: 'Double', string: 'String', object: 'Object', IntPtr: 'IntPtr', UIntPtr: 'UIntPtr', typedref: 'TypedReference' };
+  const split = (s: string): string[] => { const o: string[] = []; let d = 0, st = 0; for (let i = 0; i < s.length; i++) { const c = s[i]; if (c === '<') d++; else if (c === '>') d--; else if (c === ',' && !d) { o.push(s.slice(st, i)); st = i + 1; } } if (s) o.push(s.slice(st)); return o; };
+  const rname = (t: string): string => {
+    const m = /^([^<\[&*]+)(?:<(.*)>)?((?:\[,*\]|\*)*)(&?)$/.exec(t);
+    if (!m) return t;
+    const base = FULL[m[1]] ? `System.${FULL[m[1]]}` : m[1];
+    const gen = m[2] ? `[${split(m[2]).map(rname).join(',')}]` : '';
+    return base + gen + m[3] + m[4];
+  };
+  const fnv = (s: string): string => { let h = 0x811c9dc5; for (const c of s.toLowerCase()) h = (Math.imul(h, 0x1000193) ^ c.charCodeAt(0)) >>> 0; return h.toString(16); };
+  const out: { hash: string; id: string; key: string; m: Method }[] = [];
+  for (const m of methods) {
+    if (m.flags & ABSTRACT) continue;
+    const key = `${rname(m.ret)} ${m.type.full}:${m.name}(${split(m.params).map(rname).join(',')})`;
+    out.push({ hash: fnv(key), id: m.id, key, m });
+  }
+  return out;
+}
+
 // Imported as a library (mono-host-ics.ts): no CLI.
 const cmd = /managed-callgraph\.ts$/.test(process.argv[1] ?? '') ? process.argv[2] : 'lib';
 if (cmd === '--self-check' || (cmd !== 'lib' && process.argv.includes('--self-check'))) selfCheck();
@@ -1073,23 +1098,5 @@ else if (cmd === 'hostdata') {
   writeFileSync(arg('--out', 'game-copy/monohost/hostdata.txt'), out.join('\n') + '\n');
   console.log(`${out.filter((l) => l[0] === 'R').length} externs, ${out.filter((l) => l[0] === 'C').length} .cctor types`);
 } else if (cmd === 'bindkeys') {
-  // docs/122 S0: EA's native-method binder 0xD9A7B0 keys each method by the FNV-1 hash (lowercased bytes, 0x811C9DC5,
-  // prime 0x1000193, multiply then xor) of "<ret> <Class>:<Method>(<arg>,...)" with Mono reflection type names
-  // (0xD9A530). Prints "<hash> <method id>" per method; join with the 1,085 hashes 0xE3E570 registers.
-  loadAll(ASM_DIR);
-  const FULL: Record<string, string> = { void: 'Void', bool: 'Boolean', char: 'Char', sbyte: 'SByte', byte: 'Byte', short: 'Int16', ushort: 'UInt16', int: 'Int32', uint: 'UInt32', long: 'Int64', ulong: 'UInt64', float: 'Single', double: 'Double', string: 'String', object: 'Object', IntPtr: 'IntPtr', UIntPtr: 'UIntPtr', typedref: 'TypedReference' };
-  const split = (s: string): string[] => { const o: string[] = []; let d = 0, st = 0; for (let i = 0; i < s.length; i++) { const c = s[i]; if (c === '<') d++; else if (c === '>') d--; else if (c === ',' && !d) { o.push(s.slice(st, i)); st = i + 1; } } if (s) o.push(s.slice(st)); return o; };
-  const rname = (t: string): string => {
-    const m = /^([^<\[&*]+)(?:<(.*)>)?((?:\[,*\]|\*)*)(&?)$/.exec(t);
-    if (!m) return t;
-    const base = FULL[m[1]] ? `System.${FULL[m[1]]}` : m[1];
-    const gen = m[2] ? `[${split(m[2]).map(rname).join(',')}]` : '';
-    return base + gen + m[3] + m[4];
-  };
-  const fnv = (s: string): string => { let h = 0x811c9dc5; for (const c of s.toLowerCase()) h = (Math.imul(h, 0x1000193) ^ c.charCodeAt(0)) >>> 0; return h.toString(16); };
-  for (const m of methods) {
-    if (m.flags & ABSTRACT) continue;
-    const key = `${rname(m.ret)} ${m.type.full}:${m.name}(${split(m.params).map(rname).join(',')})`;
-    console.log(`${fnv(key)}\t${m.id}\t${key}`);
-  }
+  for (const k of bindKeys()) console.log(`${k.hash}\t${k.id}\t${k.key}`);
 } else if (cmd !== 'lib') console.log('usage: build | query <method>... | def <type>... | callers <method> | overrides <method>... | subtypes <type>... | dispatch [--csv out] | hostdata [--out f] | bindkeys | --self-check');
