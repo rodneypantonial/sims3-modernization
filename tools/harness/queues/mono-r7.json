@@ -1,5 +1,6 @@
 {
   "note": "mono-r7 (2026-10-31, mono round 7, NOT RUN): ts3native 0.36.147 = game-copy/ts3native.asi.satb11 (docs/216 PreLearn + TierReqLots, both on here via ini), ts3fixes --on kAutLive = game-copy/ts3fixes.package.golive8 (docs/217 L1 autlivelate runtime switch, ColdWarm for the Mode 3 worker paths, G8 counters 566-574 + picks records). Correctness only (no timing): queue.ts --no-smoke is not needed (the smoke is short). Order: smoke, Mode R exactness, IP Dry L1 proof, crowd Dry. Stop by hand at a FAIL.",
+  "stopQueueOnFail": true,
   "smoke": {
     "id": "bp-r7-smoke",
     "note": "Smoke (4 min BP, Mode R, Satb=2) on satb11/golive8 (0.36.147): PASS = 0 crashes, satbMode 2, satbConc > 0, autshadow runs > 0, A1-A3 0, ini reads back Satb=2, WindowWaitUs=0, PreLearn=1, TierReqLots=1. A FAIL stops the queue.",

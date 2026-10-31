@@ -119,7 +119,10 @@ Source of truth: the comment block above `PatchCounters()` in `mods/ts3fixes/src
 | 550-565 | `AutLive.cs` (`fixes-550`, docs/217 L1), `autlivelate` | late slices checked (`autlivelate_slices`), refused by age / epoch / state / lot / head / actor / other (`_ref_*`), late objects consumed (`_consumed`) / stale (`_stale`), consumed by age 1 / 2 / 3+ ticks (`_age1..3`), B14 us consumed / game late / game invalid (`_us_*`, only with the switch on) |
 | 566-574 | `AutLive.cs` (`fixes-550`, docs/124 §8 G8), kAutLive packages | pushes (`g8_pushes`), no-pick searches (`g8_null_picks`), `MakeSimGoHome` fallbacks (`g8_gohome`), Sim-hours x100 (`g8_simhours_x100`), request-to-push latency 0-4+ ticks (`g8_lat0..4`, Mode 3 searches); array `new int[575]` |
 | 575-601 | reserved (aut-rain-h11, `fixes-575`) | go-live feature mask (9 bits): searches per bit, mismatches per bit (dry unequal/sim-mis/nocmp), give-ups per bit (live-drop/nocmp) |
-| **602+** | next free | reserve here  |
+| 602-604 | `AutShadow.cs` ClosureSweep (`fixes-602`, G-M6, PR #112 / docs/215), `autshadow` | built 2026-10-31 (offline only): 602 closure methods IL-hashed (`autshadow_gm6_methods`), 603 hashes not in `AutShadowIlHashes.Known` (owners whose closure reaches one are skipped, 606) (`autshadow_gm6_mismatch`), 604 hashing us (`autshadow_gm6_us`); array `new int[605]` |
+| 605 | `AutShadow.cs` ClosureSweep (`fixes-605`, G-M6) | guard faults (`autshadow_gm6_faults`): > 3 closure methods on `AutShadowIlHashes.KnownMvids` modules hash differently = hash/runtime disagreement, IL check ignored for the load (MVID + L3 only), loud log line |
+| 606 | `AutShadow.cs` ApplyIlOwners (`fixes-606`, G-M6) | owners (definitions + implementors) skipped this load because their closure reaches a method not from a checked build (`autshadow_gm6_owners_skipped`; `AutShadowLists.MethodOwners`); array `new int[607]` |
+| **607+** | next free | reserve here  |
 
 Adding slots: raise the array size in **both** `Fixes.cs` (`PatchCounters`, `new int[122]`) and `PatchHandlers.cs` (`?? new int[122]`), extend the `Fixes.cs` comment block, and read the new slots in `PatchHandlers.cs` behind `if (c.Length > N)` so an older mod build still answers.
 

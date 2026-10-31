@@ -1,5 +1,5 @@
 // Unattended game-test queue: runs a list of jobs back to back, one game start per job, and records one result row each.
-//   node tools/harness/queue.ts tools/harness/queues/<name>.json [--from <job id>] [--only id,id] [--dry-run] [--no-smoke]
+//   node tools/harness/queue.ts tools/harness/queues/<name>.json [--from <job id>] [--only id,id] [--dry-run] [--no-smoke] [--stop-on-fail]
 //   node tools/harness/queue.ts --self-check          queue parsing, ini merge, verdict and usage parsing, content stash round trip, no game
 //   node tools/harness/queue.ts --restore-content     put CC/Store packages back from the stash manifest of an unfinished run
 // Queue file: a JSON list of jobs (or { "jobs": [...] }):
@@ -8,6 +8,8 @@
 //     | {profile: {minutes, seed?, repro?, mainstack?}} | {routelock: {minutes, speed?}} | {age: {days, checkpoint, keepAlive?, save?}}, gameArgs?: ["-disablestoryprogression"], defaultIni?: { "Config.SimulatorRandomSeed": n },
 //     s3ppIni?: { "Patches.MonoTypeEHashProbe": 0 }, s3ssToml?: { "patches.LotStreamingOptimizations.enabled": false }, minCounters?: 20, timeoutMin?,
 //     pin?: false | { cpus?: "4-15", priority?: "High", others?: boolean | [names] } }   (also queue-level beside "jobs"; pin.ts)
+// pinReason: why a job pins a game-copy asi / fixesPackage (release or baseline arm, published-release check, a job about one old
+// build); without it, an asi older than the source or a game-copy package older than the ts3fixes source gets a WARN pin line.
 // pin (default on, TS3_PIN=off): while the game is up TS3W.exe runs on the game CPUs at High priority and heavy user apps on
 // the rest, put back after each job and on exit (pin.ts). Every job samples machine load (machine-load.ts) into
 // <queue>-<date>-<job>-machine.jsonl: row.machine (full line), row.noise (low|medium|high) and the short form in the md note.
@@ -49,6 +51,11 @@
 // routingFailFast: { ms, scope: "unseen" | "all", allow?: [{ match, reason, ref }] } (Rodney 2026-10-26, routing-failfast.ts): from the profile
 // start, every 30 s, routing above ms (unseen fallback lines; with scope all also sync plans, own-job waits, route-led hitches)
 // stops the job at once with FAIL: routing fail-fast: ...; triaged false positives go into routing-failfast-allow.json.
+// earlyGates: [{ afterSec, counter, op, value, why }] (Rodney 2026-10-31, profile jobs): live /native paths (autshadow.req) or ts3fixes
+// counters (fixes:autshadow_gm6_faults, + sums) read every GUARD_MS from the profile start; past afterSec a gate that does not hold
+// stops the job at once with FAIL: early gate: <why> (<counter>=<v>) (see earlyGateGuard / gateFail).
+// stopQueueOnFail: true (job or queue level) or --stop-on-fail: after a FAIL row the queue stops with 'STOP: <job> failed (stopQueueOnFail): ...'
+// (chain scripts grep it); a noisy timing job whose -rerun was queued does not stop it.
 // scriptErrorsMax: N = at most N new ScriptError_*.xml in the user folder since the job start (known EA errors, known-script-errors.json,
 // not counted); more turns the row FAIL (docs/191 bp-cc-load-smoke: synthetic CC loads, places and wears without script errors).
 // profile: profile-world.ts --tag <queue>-<date>-<job> (--seed: seed_rng at the window start, docs/27); rng-compare.ts reads the rows.
@@ -171,10 +178,10 @@ import { earlyNoise, startMachineLoad, summarize as loadSummary } from './machin
 import { jsonlRows, queueFile, rowTiming, timingText } from './run-verdict.ts';
 import { loadRun as hitchRun, runIters, toolCosts, toolsOn, withBaseIni } from './hitch-ab.ts';
 import { mergeFile as mergeCallsites } from '../callsite-db.ts';
-import { asiCheck, fixesCheck, loadDb, logVersionCheck, packageTuning, type Build } from '../builds.ts';
+import { asiCheck, asiVersion, fixesCheck, loadDb, logVersionCheck, packageTuning, type Build } from '../builds.ts';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-  'dry-run': { type: 'boolean' }, from: { type: 'string' }, only: { type: 'string' }, 'self-check': { type: 'boolean' }, 'restore-content': { type: 'boolean' }, 'no-smoke': { type: 'boolean' }, 'close-spotify': { type: 'boolean' }, port: { type: 'string', default: '47891' },
+  'dry-run': { type: 'boolean' }, from: { type: 'string' }, only: { type: 'string' }, 'self-check': { type: 'boolean' }, 'restore-content': { type: 'boolean' }, 'no-smoke': { type: 'boolean' }, 'stop-on-fail': { type: 'boolean' }, 'close-spotify': { type: 'boolean' }, port: { type: 'string', default: '47891' },
 } });
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const BIN = process.env.TS3_BIN ?? 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Sims 3\\Game\\Bin';
@@ -196,8 +203,8 @@ const log = (m: string) => console.log(`${stamp()} queue: ${m}`);
 // ---------------------------------------------------------------- pure parts (covered by --self-check)
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
   save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; run: { repro?: string; saveReload?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
-    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; routingFailFast?: FailFast; scriptErrorsMax?: number; timeoutMin?: number; pin?: false | PinOpts;
-  saveMatrix?: { fixes?: 'all' | 'shipped' }; fixesBuild?: string; fixesPackage?: string; rerunOf?: string };
+    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; stopQueueOnFail?: boolean; scriptErrorsMax?: number; timeoutMin?: number; pin?: false | PinOpts;
+  saveMatrix?: { fixes?: 'all' | 'shipped' }; fixesBuild?: string; fixesPackage?: string; pinReason?: string; rerunOf?: string };
 
 export function parseQueue(json: unknown): Job[] {
   const jobs = Array.isArray(json) ? json : (json as any)?.jobs;
@@ -285,6 +292,7 @@ export function parseQueue(json: unknown): Job[] {
     // fixesPackage: a shipped ts3fixes.package (path from the repo root) installed over cycle.ts's build/ copy before each start (repro jobs: the start-path controls, release-validate *-v016)
     if (j.fixesPackage !== undefined && (typeof j.fixesPackage !== 'string' || !j.fixesPackage || j.fixesBuild !== undefined || !(j.run?.profile || j.run?.soak || j.run?.repro)))
       throw new Error(`${at}: fixesPackage must be a path, only on profile/soak/repro jobs, not with fixesBuild`);
+    if (j.pinReason !== undefined && (typeof j.pinReason !== 'string' || !j.pinReason.trim())) throw new Error(`${at}: pinReason must be a non-empty text (why this job pins its asi/package)`);
     if (fridaAttach(j) && (j.callSites || Number(j.ini?.['ProbeSnap.CallSites']))) throw new Error(`${at}: ProbeSnap.CallSites with a second Frida agent (${fridaAttach(j)}): int3 traps + agent attach crashed the game (docs/67 §7); set run.profile.noProf (and drop the side probe) or callSites false`);
     if (j.timeoutMin !== undefined && !(j.timeoutMin > 0)) throw new Error(`${at}: timeoutMin must be > 0`);
     if (j.minCounters !== undefined && !(Number.isInteger(j.minCounters) && j.minCounters > 0)) throw new Error(`${at}: minCounters must be a positive integer (a counters version)`);
@@ -297,6 +305,12 @@ export function parseQueue(json: unknown): Job[] {
       if (j.routingFailFast.scope === 'all' && (j.run.profile.ab || (j.run.profile as any).loopRule)) throw new Error(`${at}: routingFailFast scope "all" on an --ab / loop job: the off arm's plans and hitches would trip it; use scope "unseen"`);
     }
     if (j.scriptErrorsMax !== undefined && !(Number.isInteger(j.scriptErrorsMax) && j.scriptErrorsMax >= 0)) throw new Error(`${at}: scriptErrorsMax must be an integer >= 0`);
+    if (j.stopQueueOnFail === undefined && !Array.isArray(json) && (json as any).stopQueueOnFail !== undefined) j.stopQueueOnFail = (json as any).stopQueueOnFail; // queue-level default
+    if (j.stopQueueOnFail !== undefined && typeof j.stopQueueOnFail !== 'boolean') throw new Error(`${at}: stopQueueOnFail must be true or false`);
+    if (j.earlyGates !== undefined) {
+      checkGates(j.earlyGates, `${at}: earlyGates`);
+      if (!j.run.profile) throw new Error(`${at}: earlyGates needs run.profile (they start at the profile start)`);
+    }
     const ccDir = (x: unknown) => typeof x === 'string' && /^game-copy\/cc-synth\/[\w.-]+$/.test(x);
     if (j.ccSet !== undefined && !(ccDir(j.ccSet) || (Array.isArray(j.ccSet) && j.ccSet.length && j.ccSet.every(ccDir) && new Set(j.ccSet.map(x => basename(x))).size === j.ccSet.length))) throw new Error(`${at}: ccSet must be "game-copy/cc-synth/<set>" (a tools/cc-gen.ts output dir) or a list of distinct ones`);
     if (j.ccLots !== undefined && !ccDir(j.ccLots)) throw new Error(`${at}: ccLots must be "game-copy/cc-synth/<dir>" (a tools/cc-lot-gen.ts output dir)`);
@@ -354,6 +368,45 @@ export function shadowFails(ini: Record<string, unknown>, fixesOn: string | unde
   }
   return out;
 }
+
+// earlyGates (Rodney 2026-10-31, fail fast: two void rain-h11 jobs burned ~12 min each with G-M6 skipping every definition):
+// [{ afterSec, counter, op, value, why }] checked every GUARD_MS from the profile child's start while the game runs; once
+// afterSec has passed a gate must hold at every check, else the child stops and the job FAILs with
+// `early gate: <why> (<counter>=<v>)`. counter = a live /native path (`autshadow.req`, `autshadow.rainArm`, arrays `x.0`) or a
+// ts3fixes `patches` counter as `fixes:<name>`; terms joined by + are summed (`fixes:autshadow_a0+fixes:autshadow_a1`).
+// Values are absolute, not deltas since the load: the G-M6 sweep counts before the first read (shortcut: a reuseSession job
+// would see the previous window's counts; gate deltas if such a queue needs gates).
+export type EarlyGate = { afterSec: number; counter: string; op: string; value: number; why: string };
+const GATE_OPS = ['>=', '<=', '==', '!=', '>', '<'];
+export function checkGates(gs: unknown, at: string): void {
+  if (!Array.isArray(gs) || !gs.length) throw new Error(`${at} must be a non-empty list`);
+  for (const g of gs as any[]) {
+    if (!(g?.afterSec > 0) || typeof g.counter !== 'string' || !/^(fixes:)?[\w.]+(\+(fixes:)?[\w.]+)*$/.test(g.counter)
+      || !GATE_OPS.includes(g.op) || typeof g.value !== 'number' || typeof g.why !== 'string' || !g.why.trim())
+      throw new Error(`${at}: ${JSON.stringify(g)} must be { afterSec > 0, counter: "path" | "fixes:name" (+ sums), op: ${GATE_OPS.join(' ')}, value: number, why }`);
+  }
+}
+// one term's value; undefined = that source did not answer this round (skip), null = answered but no such counter
+function gateTerm(t: string, native: any, fixes: any): number | null | undefined {
+  const fx = t.startsWith('fixes:'), src = fx ? fixes : native;
+  if (src == null) return undefined;
+  const v = fx ? src[t.slice(6)] : t.split('.').reduce((o: any, k) => o?.[k], src);
+  return typeof v === 'number' ? v : typeof v === 'boolean' ? Number(v) : null;
+}
+// '' = all due gates hold (or a source did not answer), else the FAIL reason of the first failing gate
+export function gateFail(gs: EarlyGate[], elapsedSec: number, native: any, fixes: any): string {
+  for (const g of gs) {
+    if (elapsedSec < g.afterSec) continue;
+    const vs = g.counter.split('+').map(t => gateTerm(t, native, fixes));
+    if (vs.some(v => v === undefined)) continue;
+    if (vs.some(v => v === null)) return `early gate: ${g.why} (${g.counter} missing)`;
+    const v = (vs as number[]).reduce((s, x) => s + x, 0), w = g.value;
+    const ok = g.op === '>=' ? v >= w : g.op === '<=' ? v <= w : g.op === '==' ? v === w : g.op === '!=' ? v !== w : g.op === '>' ? v > w : v < w;
+    if (!ok) return `early gate: ${g.why} (${g.counter}=${v}) [want ${g.op}${w} from ${g.afterSec} s]`;
+  }
+  return '';
+}
+export const describeGates = (gs: EarlyGate[]) => `early gates every ${GUARD_MS / 1000} s from the profile start: ${gs.map(g => `${g.counter}${g.op}${g.value} from ${g.afterSec} s`).join(', ')}; a miss stops the job (FAIL: early gate: ...)`;
 
 // ---- worldimage (docs/123 §8.6): capture job pieces
 const GAME_COPY = join(ROOT, 'game-copy');
@@ -740,6 +793,21 @@ export function pairWarnings(jobs: Job[]): string[] {
   }));
   return out;
 }
+// stale pins (Rodney 2026-10-31): a job that pins a parked asi older than the source build, or a game-copy ts3fixes.package
+// older than the last ts3fixes source change, tests an old build; a warning (queue log, --dry-run), never a refusal.
+// Deliberate pins (release/baseline arm, a published-release check, a job about one old build) say why in pinReason.
+const verKey = (v: string) => { const m = /^(\d+)\.(\d+)\.(\d+)([a-z]?)$/.exec(v); return m ? [+m[1], +m[2], +m[3], m[4]] as const : null; };
+export const verOlder = (a: string, b: string) => { const x = verKey(a), y = verKey(b); if (!x || !y) return false; for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] < y[i]; return false; };
+export function pinWarnings(jobs: Job[], src: string | undefined, asiVer: (path: string) => string | undefined, pkgStale: (path: string) => boolean): string[] {
+  const out: string[] = [];
+  for (const j of jobs.filter(j => !j.pinReason)) {
+    const v = j.asi === 'tested' ? undefined : asiVer(j.asi);
+    if (v && src && verOlder(v, src)) out.push(`WARN pin ${j.id}: asi ${j.asi} is ts3native ${v}, source is ${src}: "asi": "tested" runs the source build; else set pinReason`);
+    if (j.fixesPackage?.startsWith('game-copy/') && pkgStale(j.fixesPackage))
+      out.push(`WARN pin ${j.id}: fixesPackage ${j.fixesPackage} is older than the last ts3fixes source change: build-fixes.ts [--on kX] -> build/ts3fixes[-on-kX].package; else set pinReason`);
+  }
+  return out;
+}
 // logForbid: { "<regex>": max lines }; failed rules as text
 export function logForbidFails(text: string, forb: Record<string, number>): string[] {
   return Object.entries(forb).flatMap(([re, max]) => { const n = text.split(/\r?\n/).filter(l => new RegExp(re).test(l)).length; return n <= max ? [] : [`log /${re}/ ${n} lines (want <= ${max})`]; });
@@ -797,6 +865,11 @@ export function routelockSummary(r: any): any {
   return { ...r, g11: r.g11 ? g11 : null };
 }
 
+// stopQueueOnFail / --stop-on-fail: '' = go on, else the STOP reason naming the job (a noisy job with its -rerun queued goes on)
+export function failStop(j: { id: string; stopQueueOnFail?: boolean }, row: { pass?: boolean; rerun?: string; error?: string | null; verdict?: string[] }, cli: boolean): string {
+  if (row.pass || row.rerun || !(j.stopQueueOnFail || cli)) return '';
+  return `${j.id} failed (stopQueueOnFail): ${String(row.error || row.verdict?.find(v => /^FAIL/.test(v)) || 'see the row').slice(0, 200)}`;
+}
 // stop rule after a job: same job crashed twice (earlier rows count), or this and the previous job both crashed
 export function crashStop(crashed: boolean, earlierCrashesOfJob: number, prevCrashed: boolean): string {
   if (!crashed) return '';
@@ -1029,6 +1102,13 @@ if (values['self-check']) {
   assert.deepEqual(pairWarnings(parseQueue([pj('sv-soak-v014', { profOpts: { tasks: false } }), pj('sv-soak-cand'), pj('bp-soak-cand', { noSamplers: true }), pj('solo')])),
     ['WARN pair sv-soak-v014 / sv-soak-cand differ in profiler tools: profOpts {"tasks":false} vs - (cost known? else not comparable)']);
   assert.deepEqual(pairWarnings(parseQueue([pj('ip-a-on', { fixesOff: 'x' }), pj('ip-a-off', { fixesOff: 'y' })])), []);
+  // stale pins: older asi / stale game-copy package warn, pinReason, tested, same version and build/ packages do not
+  assert.ok(verOlder('0.36.105', '0.36.148') && verOlder('0.36.37', '0.36.37a') && !verOlder('0.36.148', '0.36.148') && !verOlder('0.37.0', '0.36.148'));
+  const pw = pinWarnings(parseQueue([pj('old', { minutes: 5 }), { ...pj('rel'), asi: 'game-copy/ts3native.asi.rel020', pinReason: 'v0.2.0 release arm' }, pj('t'), { ...pj('same'), asi: 'game-copy/ts3native.asi.now' },
+    { ...pj('pkg'), fixesPackage: 'game-copy/ts3fixes.package.x' }, { ...pj('bld'), fixesPackage: 'build/ts3fixes-on-kX.package' }].map((j, i) => (i === 0 ? { ...j, asi: 'game-copy/ts3native.asi.old' } : j))),
+    '0.36.148', p => (p.endsWith('.now') ? '0.36.148' : '0.36.105'), () => true);
+  assert.equal(pw.length, 2); assert.match(pw[0], /^WARN pin old: .*0\.36\.105, source is 0\.36\.148/); assert.match(pw[1], /^WARN pin pkg: fixesPackage/);
+  assert.throws(() => parseQueue([{ ...pj('e'), pinReason: ' ' }]), /pinReason/);
   // ABBA set and two-load pair: paired across on/off and across repeats; a same-stem stranger (-x) and a longer id are not
   assert.deepEqual(pairWarnings(parseQueue([pj('bp-pc-off-1'), pj('bp-pc-on-1', { noSamplers: true }), pj('bp-pc-x'), pj('bp-pc-on-2', { noSamplers: true })])),
     ['WARN pair bp-pc-off-1 / bp-pc-on-1 differ in profiler tools: noSamplers - vs true (cost known? else not comparable)',
@@ -1160,6 +1240,35 @@ if (values['self-check']) {
   assert.equal(crashStop(true, 0, false), '');
   assert.equal(crashStop(true, 1, false), 'same job crashed twice');
   assert.equal(crashStop(true, 0, true), 'two jobs in a row crashed');
+  // stopQueueOnFail / --stop-on-fail (2026-10-31): queue-level default, type check, STOP reason names the job
+  assert.equal(parseQueue({ stopQueueOnFail: true, jobs: [{ id: 's', asi: 'x', save: 'S', run: { soak: { minutes: 1 } } }] })[0].stopQueueOnFail, true);
+  assert.equal(parseQueue({ stopQueueOnFail: true, jobs: [{ id: 's', asi: 'x', save: 'S', stopQueueOnFail: false, run: { soak: { minutes: 1 } } }] })[0].stopQueueOnFail, false);
+  assert.throws(() => parseQueue([{ id: 's', asi: 'x', save: 'S', stopQueueOnFail: 'yes', run: { soak: { minutes: 1 } } }]), /stopQueueOnFail must be true or false/);
+  assert.equal(failStop({ id: 'a', stopQueueOnFail: true }, { pass: true }, false), '');
+  assert.equal(failStop({ id: 'a' }, { pass: false, verdict: ['FAIL: x'] }, false), '');
+  assert.equal(failStop({ id: 'a', stopQueueOnFail: true }, { pass: false, rerun: 'a-rerun' }, false), '');
+  assert.equal(failStop({ id: 'a', stopQueueOnFail: true }, { pass: false, verdict: ['note', 'FAIL: x'] }, false), 'a failed (stopQueueOnFail): FAIL: x');
+  assert.equal(failStop({ id: 'a' }, { pass: false, error: 'early gate: w (c=0)', verdict: [] }, true), 'a failed (stopQueueOnFail): early gate: w (c=0)');
+  // earlyGates (2026-10-31): parse rules, absolute values, fixes: + sums, missing counters, skipped rounds
+  const eg = (g: object) => [{ id: 'g', asi: 'x', save: 'S', earlyGates: [g], run: { profile: { minutes: 5 } } }];
+  const g1 = { afterSec: 150, counter: 'fixes:autshadow_gm6_faults', op: '==', value: 0, why: 'G-M6 guard faults' };
+  assert.equal(parseQueue(eg(g1))[0].earlyGates!.length, 1);
+  assert.throws(() => parseQueue(eg({ ...g1, op: '=>' })), /earlyGates/);
+  assert.throws(() => parseQueue(eg({ ...g1, why: '' })), /earlyGates/);
+  assert.throws(() => parseQueue(eg({ ...g1, counter: 'a b' })), /earlyGates/);
+  assert.throws(() => parseQueue([{ id: 'g', asi: 'x', save: 'S', earlyGates: [g1], run: { soak: { minutes: 1 } } }]), /needs run.profile/);
+  const gates: EarlyGate[] = [g1, { afterSec: 150, counter: 'autshadow.req', op: '>', value: 0, why: 'worker never posted' },
+    { afterSec: 300, counter: 'fixes:autshadow_a0+fixes:autshadow_a1+fixes:autshadow_a2+fixes:autshadow_a3', op: '>', value: 0, why: 'no compared pairs' }];
+  const nat = (req: number) => ({ autshadow: { req, rainArm: 0 } }), gfx = (a0: number, f = 0) => ({ autshadow_gm6_faults: f, autshadow_a0: a0, autshadow_a1: 0, autshadow_a2: 0, autshadow_a3: 0 });
+  assert.equal(gateFail(gates, 100, nat(0), gfx(0, 3)), ''); // nothing due yet
+  assert.equal(gateFail(gates, 160, nat(5), gfx(0, 3)), 'early gate: G-M6 guard faults (fixes:autshadow_gm6_faults=3) [want ==0 from 150 s]');
+  assert.equal(gateFail(gates, 160, nat(0), gfx(0)), 'early gate: worker never posted (autshadow.req=0) [want >0 from 150 s]');
+  assert.equal(gateFail(gates, 160, nat(5), gfx(0)), ''); // pairs not due until 300 s
+  assert.match(gateFail(gates, 310, nat(5), gfx(0)), /^early gate: no compared pairs \(fixes:autshadow_a0\+.*=0\)/); // the void rain-h11 shape
+  assert.equal(gateFail(gates, 310, nat(5), gfx(7)), '');
+  assert.equal(gateFail(gates, 310, null, null), ''); // probe/agent did not answer: skip the round (the game guard covers a dead probe)
+  assert.equal(gateFail(gates, 160, nat(5), {}), 'early gate: G-M6 guard faults (fixes:autshadow_gm6_faults missing)'); // old package / wrong name
+  assert.equal(gateFail([{ afterSec: 1, counter: 'p.1', op: '>=', value: 2, why: 'arr' }], 5, { p: [0, 2] }, null), '');
 
   // content stash round trip on a temp Mods tree
   const tmp = mkdtempSync(join(tmpdir(), 'queue-content-')), mods = join(tmp, 'Mods'), stash = join(tmp, 'stash');
@@ -1327,7 +1436,7 @@ if (values['restore-content']) {
 
 // ---------------------------------------------------------------- queue run
 const file = positionals[0];
-if (!file) { console.error('usage: node tools/harness/queue.ts <queue.json> [--from id] [--only id,id] [--dry-run] [--no-smoke] | --self-check | --restore-content'); process.exit(2); }
+if (!file) { console.error('usage: node tools/harness/queue.ts <queue.json> [--from id] [--only id,id] [--dry-run] [--no-smoke] [--stop-on-fail] | --self-check | --restore-content'); process.exit(2); }
 // an unfinished run's packages are still in the stash: put them back before measuring anything
 const staleDir = [CONTENT_STASH, CC_DIR].find(d => existsSync(manifestOf(d)));
 const staleFile = staleDir ? manifestOf(staleDir) : existsSync(LOTS_MANIFEST) ? LOTS_MANIFEST : '';
@@ -1429,7 +1538,10 @@ if (!values['dry-run'] && (process.env.TS3_NIGHT === '1' || values['close-spotif
   if (n) { try { execFileSync('taskkill', ['/F', '/T', '/IM', 'Spotify.exe'], { stdio: 'ignore', timeout: 15000 }); } catch { /* checked below */ } }
   log(n ? `Spotify: ${n} processes stopped${spotify() ? ` (${spotify()} still running)` : ''}` : 'Spotify: not running');
 }
-const pairs = pairWarnings(all);
+let fixesSrcAt = 0; // last commit time of the ts3fixes source (ms), for the stale package pin warning
+try { fixesSrcAt = 1000 * Number(execFileSync('git', ['-C', ROOT, 'log', '-1', '--format=%ct', '--', 'mods/ts3fixes', 'tools/setup/build-fixes.ts']).toString().trim()); } catch { /* not a repo */ }
+const pairs = [...pairWarnings(all), ...pinWarnings(all, SRC_VERSION, p => (existsSync(resolve(ROOT, p)) ? asiVersion(readFileSync(resolve(ROOT, p))) : undefined),
+  p => existsSync(resolve(ROOT, p)) && statSync(resolve(ROOT, p)).mtimeMs < fixesSrcAt)];
 
 // measurement smoke (header): planned here so --dry-run shows it, run below before the queue touches the machine
 const smoke = values['no-smoke'] || timingMinutes(jobs) <= SMOKE_OVER_MIN ? null : smokeJob(queueJson, jobs);
@@ -1494,6 +1606,8 @@ if (values['dry-run']) {
     if (j.dxvkConf) console.log(`  3 Bin/dxvk.conf + ${Object.entries(j.dxvkConf).map(([k, v]) => `${k} = ${v}`).join(', ')}${existsSync(DXVK_CONF) ? '' : '  ** MISSING **'}   (put back after the job)`);
     if (j.s3ssToml) console.log(`  3 S3SS/S3SS.toml + ${Object.entries(j.s3ssToml).map(([k, v]) => `${k}=${v}`).join(', ')}${existsSync(S3SS_TOML) ? '' : '  ** MISSING **'}   (put back after the job)`);
     if (j.routingFailFast) console.log(`  5 ${describeFailFast(j.routingFailFast)}`);
+    if (j.earlyGates) console.log(`  5 ${describeGates(j.earlyGates)}`);
+    if (j.stopQueueOnFail || values['stop-on-fail']) console.log('  9 stopQueueOnFail: a FAIL row stops the queue (STOP: line)');
     if (j.fixes?.install?.length) console.log(`  4 node tools/setup/install-fixes.ts install --only ${j.fixes.install.join(',')}   (uninstalled after the job)`);
     if (j.fixes?.uninstall?.length) console.log(`  4 node tools/setup/install-fixes.ts uninstall --only ${j.fixes.uninstall.join(',')}   (reinstalled after the job)`);
     console.log(`  5 python tools/probe/ts3probe.py serve --launch${j.gameArgs?.length ? ` -- ${j.gameArgs.join(' ')}` : ''}   (child, killed at job end)`);
@@ -1560,6 +1674,23 @@ let jobGuard: (() => string) | null = null, stall = '';
 let noiseGuard: (() => string) | null = null;
 // set while a routingFailFast job's profile runs: '' or the FAIL reason (stops the child at once, like noiseGuard)
 let routeGuard: (() => string) | null = null;
+// set while an earlyGates job's profile runs: '' or the FAIL reason. The guard is sync, so each call starts one async /native
+// (+ agent patches when a gate reads fixes:) read and returns the verdict of the previous one (one GUARD_MS behind)
+let gateGuard: (() => string) | null = null;
+function earlyGateGuard(gs: EarlyGate[]): () => string {
+  const t0 = Date.now(), needFixes = gs.some(g => g.counter.includes('fixes:'));
+  let verdict = '', busy = false;
+  return () => {
+    if (!busy && !verdict) {
+      busy = true;
+      (async () => {
+        const sec = (Date.now() - t0) / 1000, n = await get('native'), f = needFixes ? (await agent('patches'))?.result ?? null : null;
+        verdict = gateFail(gs, sec, n, f);
+      })().catch(() => { /* next round */ }).finally(() => { busy = false; });
+    }
+    return verdict;
+  };
+}
 // child process with output to the console and the job log; killed (whole tree) at the deadline
 function run(cmd: string, args: string[], logFile: string, deadline: number, onLine?: (l: string) => void): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean }> {
   return new Promise(res => {
@@ -1582,6 +1713,8 @@ function run(cmd: string, args: string[], logFile: string, deadline: number, onL
 `)); }
       if (rf) { routeGuard = null; stall ||= rf; on(Buffer.from(`FAIL: ${rf}; child stopped
 `)); killTree(p.pid); return; }
+      const eg = gateGuard?.() ?? '';
+      if (eg) { gateGuard = null; stall ||= eg; on(Buffer.from(`FAIL: ${eg}; child stopped\n`)); killTree(p.pid); return; }
       const why = jobGuard!();
       misses = why ? misses + 1 : 0;
       if (misses >= 2) { stall ||= `${why} for ~${2 * GUARD_MS / 1000} s (fail-fast guard)`; on(Buffer.from(`FAIL: ${stall}; child stopped\n${dumpHungGame('fail-fast guard')}\n`)); killTree(p.pid); }
@@ -1973,6 +2106,7 @@ for (const [n, j] of jobs.entries()) {
       noiseGuard = () => { const v = earlyNoise(machineFile, from); if (v !== null) noiseGuard = null; return v ?? ''; };
     }
     if (j.routingFailFast) { routeGuard = routingGuard(j.routingFailFast, LOG, join(ROOT, 'probe-out', 'profile', profileTag(j))); log(`${j.id}: ${describeFailFast(j.routingFailFast)}`); }
+    if (j.earlyGates) { gateGuard = earlyGateGuard(j.earlyGates); log(`${j.id}: ${describeGates(j.earlyGates)}`); }
     if (items) {
       // ---- profile.repros (docs/170 §1): one window per repro in this load, each its own tag, pass rules and log slice
       row.repros = [];
@@ -2142,7 +2276,7 @@ for (const [n, j] of jobs.entries()) {
     row.counters ={ before: pickCounters(c0, sections), after: pickCounters(c1, sections) };
     row.counters.delta = delta(row.counters.before, row.counters.after);
   } catch (e) { row.error = String((e as Error).message ?? e); log(`${j.id}: ${row.error}`); }
-  noiseGuard = null; routeGuard = null;
+  noiseGuard = null; routeGuard = null; gateGuard = null;
   if (stopLoad) { stopLoad(); const ml = loadSummary(machineFile); Object.assign(row, { machine: ml.line, noise: ml.noise, noiseNote: ml.short, machineLog: machineFile }); log(`${j.id}: ${ml.line}`); }
   if (stall && !row.error?.includes(stall)) row.error = [row.error, stall].filter(Boolean).join('; ');
   stall = '';
@@ -2236,6 +2370,8 @@ for (const [n, j] of jobs.entries()) {
 
   const earlierCrashes = earlier.filter(r => r.job === j.id && r.crashed).length;
   stopWhy ||= crashStop(row.crashed, earlierCrashes, prevCrashed);
+  // stopQueueOnFail / --stop-on-fail (Rodney 2026-10-31): a FAIL row ends the queue; a noisy timing job with its rerun queued does not
+  stopWhy ||= failStop(j, row, !!values['stop-on-fail']);
   prevCrashed = row.crashed;
   earlier.push(row);
   if (stopWhy) { log(`STOP: ${stopWhy}${next ? `; resume: node tools/harness/queue.ts ${file} --from ${next.id}` : ''}`); exitCode = 1; break; }

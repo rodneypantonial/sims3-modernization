@@ -1,10 +1,10 @@
 {
-  "note": "venue-memo-ab: ts3fixes venuememo timing A/B in one load per job (docs/122 §14.24), NOT RUN. Run only after venue-memo-verify passed (0 mismatches). Every job installs game-copy/ts3fixes.package.venuememo (node tools/setup/build-fixes.ts --on kVenueMemo, copied from build/ts3fixes-on-kVenueMemo.package): the venue score hook is patched only with kVenueMemo on at startup (docs/122 §14.24.7); --ab venuememo flips the runtime switch per slice, verify off; [AutShadow] stays off in these jobs. Release asi + the sim-budget release ini + HitchAttr (as mintcall-ab without MonoFast). Timing: clean machine only (night or Rodney away); queue.ts runs the measurement smoke first. Expected [inferred]: Mono ms/s -0.9..-1 (BP), -1.4..-1.5 (IP) on; this is near the noise of a 10-min A/B, so the verdict pools both orders and reads the managed sampler shares too. Verdict: node tools/harness/hitch-ab.ts venue-memo-ab and node tools/harness/sim-budget-report.ts per job; gain = Mono ms/s off - on pooled over both orders; regression rule as AGENTS.md (it/s down > 2% in both orders). Run: node tools/harness/queue.ts tools/harness/queues/venue-memo-ab.json",
+  "note": "venue-memo-ab: ts3fixes venuememo timing A/B in one load per job (docs/122 §14.24), NOT RUN. Run only after venue-memo-verify passed (0 mismatches). Every job installs build/ts3fixes-on-kVenueMemo.package, built from master (run node tools/setup/build-fixes.ts --on kVenueMemo before the queue; was game-copy/ts3fixes.package.venuememo until 2026-10-31): the venue score hook is patched only with kVenueMemo on at startup (docs/122 §14.24.7); --ab venuememo flips the runtime switch per slice, verify off; [AutShadow] stays off in these jobs. Release asi + the sim-budget release ini + HitchAttr (as mintcall-ab without MonoFast). Timing: clean machine only (night or Rodney away); queue.ts runs the measurement smoke first. Expected [inferred]: Mono ms/s -0.9..-1 (BP), -1.4..-1.5 (IP) on; this is near the noise of a 10-min A/B, so the verdict pools both orders and reads the managed sampler shares too. Verdict: node tools/harness/hitch-ab.ts venue-memo-ab and node tools/harness/sim-budget-report.ts per job; gain = Mono ms/s off - on pooled over both orders; regression rule as AGENTS.md (it/s down > 2% in both orders). Run: node tools/harness/queue.ts tools/harness/queues/venue-memo-ab.json",
   "smoke": {
     "note": "Measurement smoke (AGENTS.md): BP 4 min, --ab venuememo 1-min slices. Pass: both arms in the per-arm split, venuememo read back off / on per slice in the patches readout, venuememo_scores and venuememo_tuning_hits grow only in on slices, heavy tools off (HitchAttr only), no crash. A FAIL stops the queue.",
     "asi": "tested",
     "save": "Baseline-BP-Spring",
-    "fixesPackage": "game-copy/ts3fixes.package.venuememo",
+    "fixesPackage": "build/ts3fixes-on-kVenueMemo.package",
     "ini": {
       "SlotEnabledRO.Enabled": 1,
       "SlotEnabledRO.Mode": 1,
@@ -46,7 +46,7 @@
       "note": "BP Spring 10 min, seed 12345, release ini + HitchAttr, --ab venuememo per 2-min slice, off first. Pass: no crash, 0 watchdog lines, applied shows both venue memo patches ok, venuememo_passed 0. Read: sim it/s and Mono ms/s per arm.",
       "asi": "tested",
       "save": "Baseline-BP-Spring",
-      "fixesPackage": "game-copy/ts3fixes.package.venuememo",
+      "fixesPackage": "build/ts3fixes-on-kVenueMemo.package",
       "ini": {
         "SlotEnabledRO.Enabled": 1,
         "SlotEnabledRO.Mode": 1,
@@ -87,7 +87,7 @@
       "note": "Same as bp-venuememo-ab, on first (pair cancels the slot-1 bias).",
       "asi": "tested",
       "save": "Baseline-BP-Spring",
-      "fixesPackage": "game-copy/ts3fixes.package.venuememo",
+      "fixesPackage": "build/ts3fixes-on-kVenueMemo.package",
       "ini": {
         "SlotEnabledRO.Enabled": 1,
         "SlotEnabledRO.Mode": 1,
@@ -129,7 +129,7 @@
       "note": "IP 10 min, seed 12345, same as bp-venuememo-ab (IP's venue score share is the larger one, 34% of meta pair time).",
       "asi": "tested",
       "save": "Baseline-IP",
-      "fixesPackage": "game-copy/ts3fixes.package.venuememo",
+      "fixesPackage": "build/ts3fixes-on-kVenueMemo.package",
       "ini": {
         "SlotEnabledRO.Enabled": 1,
         "SlotEnabledRO.Mode": 1,
@@ -170,7 +170,7 @@
       "note": "Same as ip-venuememo-ab, on first.",
       "asi": "tested",
       "save": "Baseline-IP",
-      "fixesPackage": "game-copy/ts3fixes.package.venuememo",
+      "fixesPackage": "build/ts3fixes-on-kVenueMemo.package",
       "ini": {
         "SlotEnabledRO.Enabled": 1,
         "SlotEnabledRO.Mode": 1,
