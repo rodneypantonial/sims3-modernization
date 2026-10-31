@@ -77,7 +77,7 @@ Everything else matched the 1.2.3 case for the same opcode, including the bugs i
 ## 6. What this means for current work
 
 - **Compiler / fast paths (docs/207 §7, docs/139 §5).** A template compiler that copies these handlers inherits every §4 row; one that writes its own arithmetic must decide per row whether to match EA (bit-exact with interpreted code) or the CLI. Matching EA is the safe default for verify mode; the #DE crash and the `call` null fault are worth fixing in both [inferred].
-- **ts3fixes candidates [inferred, not built].** (1) Guard `div.i4`/`rem.i4` for `-1` divisors by a table patch of the two handlers; the cost is one compare on the divide path. (2) A null check in `call` before the proxy load. Both are crash fixes for code paths no measured game script has hit; each needs a repro first (AGENTS.md "Repro per fix").
+- **ts3fixes candidates [inferred, not built].** (1) Guard `div.i4`/`rem.i4` for `-1` divisors by a table patch of the two handlers; the cost is one compare on the divide path. Built as `[EaCrashFixes] MintDivGuard` (§8, ts3native, not ts3fixes). (2) A null check in `call` before the proxy load. Both are crash fixes for code paths no measured game script has hit; each needs a repro first (AGENTS.md "Repro per fix").
 - **Worker emulation (docs/206 §7.2).** The load emulation follows the same rules: `vtldfld.*` and `ldelem.any.vt` read value-type temps on the vt stack, `con.callvirt`/`con.boxcallvirt` read through the `this` slot, and the NullReferenceException ip of `ldelema` is the next instruction.
 
 ## 7. Gaps
@@ -87,6 +87,20 @@ Everything else matched the 1.2.3 case for the same opcode, including the bugs i
 - The `0x1A9` row has 17 self samples in `docs/data/mint-opcodes.csv` although no opcode uses it; they are probably code laid out after another handler at that address range [inferred].
 - The harness is not in the repo. Porting it to `tools/emu/` as a frame-aware spec (it maps the contributor's own exe copy at run time, like docs/63) would let the 746 cases run as a regression check.
 - Not checked: the x87 precision the sim thread really runs at in game (docs/37 open item); the CRT SSE2 flag value in game (expected set).
+
+## 8. Fix built: `[EaCrashFixes] MintDivGuard` (0.36.149, issue #114, eafix.cpp, counters v144, off by default; ledger docs/51 §413)
+
+This builds the design in issue #114, with one change: the rem stub also checks for `INT_MIN`. So `x % -1` for every other `x` still runs the game's `idiv`, which gives 0, and the counter counts only the cases that used to fault.
+
+| | |
+|---|---|
+| Patch | Jump-table entries `0x127` (`0xE59D1C`, `div.i4` `0xE55B4C`) and `0x143` (`0xE59D8C`, `rem.i4` `0xE55C0F`) of the table at `0xE59880` point to two naked stubs. Each stub compares the divisor `[esi-8]` with -1 and the dividend `[esi-0x10]` with `INT_MIN`; any other pair jumps to the game's handler with every register as it came. One aligned 4-byte store per entry in DllMain, before any script runs. Install refuses (one SKIP line) unless both entries still name the game's handlers and both handlers start with `83 7E F8 00 0F 84` (`cmp [esi-8],0; je` the DivideByZero stub `0xE593F8`) [verified disassembly] |
+| `div.i4 INT_MIN / -1` | jumps to `0xE57AA5`, the OverflowException stub the `*.ovf` opcodes use. It stores `edi` (this instruction) as the frame ip and throws, so `catch` blocks and ErrorTrap see the right IL offset [verified disassembly: `mov [ebx+0x1C],edi` at `0xE57AA8`] |
+| `rem.i4 INT_MIN % -1` | does what the game's handler does after its `idiv`, with result 0: pops the divisor (`esi -= 8`), writes 0 over the dividend, `edi += 2`, `[ebp-4] = edi`, then jumps to the dispatch head `0xE544D5` [verified: the handler tail `0xE55C22`-`0xE55C2B`] |
+| Counters (v144) | `mdOn`, `mdDivOverflow`, `mdRemMinus1` (each counts only the `INT_MIN` by -1 cases), `mdSpare`. The first 8 hits log `ea fix: MintDivGuard: <op>: <outcome>; script stack: ...` |
+| Overlap | `[MonoFast]` CallPath dispatches through the same table, so it sees the stubs. `[AutShadow] Satb` swaps only its own wrapped entries (stores, loads, superinstructions, address opcodes), restores them from the copy it takes at install, and does not wrap these two. No superinstruction contains `div.i4` or `rem.i4` |
+| Tests (offline) | selftest `TestEaCrashFixes` runs both stubs on a fake eval stack, with landing pads in place of the game's targets. 18 normal cases (`7/2`, `-7/2`, `MIN/1`, `5/-1`, `5/0`, `MIN/2`, `MAX/-1`, `MIN/0`, `0/-1`, as div and rem) reach the game's handler with `esi`, `edi`, `[ebp-4]` and both stack slots unchanged. `MIN/-1` reaches the overflow stub with nothing popped. `MIN%-1` reaches the dispatch head with 0, `esi` one slot lower and `edi`/`[ebp-4]` = ip + 2. The patch on a stand-in table: foreign handler bytes mean nothing is written, and the table is patched only once |
+| In game (2026-10-30, one session, CI build) | `RandomUtil.GetIntMultiple(int.MinValue, int.MinValue, -1)` through the test agent (on stock it froze the sim thread) returned `OverflowException: Number overflow.`. The game ran on, `mdDivOverflow` went 0 -> 1, the log printed `ea fix: MintDivGuard: div.i4 INT_MIN / -1: OverflowException; script stack: Sims3.Gameplay.Core.RandomUtil.GetIntMultiple`, and control calls answered before and after [verified]. `(int.MinValue, 0, -1)` is not a repro: its first division is not `MIN / -1` |
 
 ## Reproduce
 
