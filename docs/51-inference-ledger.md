@@ -5318,7 +5318,7 @@ mono-cost11 (BP run + rerun, IP run + rerun, all exact, `listMissed` 0): I-393-1
 | I-410-3 | 127 §4.1 | For a target that is not `ICanCountAsBeingIndoors`, `IsShelteredFromPrecipitation(target, instance)` = `IsShelteredFromPrecipitation(target.Position)`: one bit per meta object at the cut answers the branch bit-exactly | decompiled `SeasonsManager` [verified source]; bit at the request and again at the cut (`AutReference`) | `bp-rain-moder` | A1-A3 0 with rain pairs scored | an A1-A3 on a rain pair (object moved between request and cut in Mode 3: only on non-verify cuts) | inferred |
 | I-410-4 | 127 §4.1 | No score-relevant work of the vanilla `CreateInstance` is lost on the worker (no RNG draw in the base `Init`; subclass `Init`/ctor/`ConfigureInteraction` draws would move later draws of the same pair unit) | decompiled base `InteractionInstance.Init` [verified: no RandomUtil]; subclasses not checked | `bp-rain-moder` | A1-A3 0 | an A1-A3 on a rain pair of one definition only | inferred |
 
-## 412. [EaCrashFixes] GeomBoneIndex: GEOM bone index past the mesh's bone list (2026-10-30, docs/67 §28, ts3native 0.36.149; static + selftest, no game run)
+## 411. [EaCrashFixes] GeomBoneIndex: GEOM bone index past the mesh's bone list (2026-10-30, docs/67 §28, ts3native 0.36.149; static + selftest, no game run)
 
 | ID | Doc | Claim | Evidence | Check job | Confirms | Refutes | Verdict |
 |----|-----|-------|----------|-----------|----------|---------|---------|
@@ -5328,7 +5328,7 @@ mono-cost11 (BP run + rerun, IP run + rerun, all exact, `listMissed` 0): I-393-1
 | I-409-4 | 67 §28.2 | The bad index comes from a mesh (probably CC) whose blend indices exceed its bone list, not from a freed GEOM | `+0x58` load succeeded; byte index | a session with `GeomBoneIndex=1` | `ea fix: GeomBoneIndex` lines with `i >= n` on a readable GEOM, no crash X | crash X with the switch on, or lines with `n` = 0 on every ask (a dead object) | **verified** (one session, docs/67 §28.4: 8 lines, `i` 104-115 of `n` 5, caller `0x5D1633`, at world load) |
 | I-409-5 | 67 §28.3 | Answering 0 past the list never matches a rig bone, so the vertex takes the miss path | no rig bone with hash 0 is known | same | - | a Sim mesh visibly bound to a wrong bone with the switch on | **verified** for this install (docs/67 §28.4 scan: 251 CC GEOMs with indices past the list, every one in a weight-0 slot) |
 
-## 413. [EaCrashFixes] MintDivGuard: mint div.i4 / rem.i4 INT_MIN by -1 (2026-10-30, docs/213 §8, issue #114, ts3native 0.36.149; static + selftest, no game run)
+## 412. [EaCrashFixes] MintDivGuard: mint div.i4 / rem.i4 INT_MIN by -1 (2026-10-30, docs/213 §8, issue #114, ts3native 0.36.149; static + selftest, no game run)
 
 | ID | Doc | Claim | Evidence | Check job | Confirms | Refutes | Verdict |
 |----|-----|-------|----------|-----------|----------|---------|---------|
@@ -5336,7 +5336,7 @@ mono-cost11 (BP run + rerun, IP run + rerun, all exact, `listMissed` 0): I-393-1
 | I-410-2 | 213 §8 | `0xE57AA5` throws OverflowException with the frame ip = `edi` (`mov [ebx+0x1C],edi`, `ebx = [ebp-8]`), reached with the eval stack as the faulting handler had it | disassembly; the `*.ovf` handlers jump there | issue #114 repro with `MintDivGuard=1` | the agent call returns an OverflowException and the game runs on, `mdDivOverflow` 1 | a freeze or a crash at `0xE57AA5` | **verified** (one session, docs/213 §8: OverflowException, game ran on, `mdDivOverflow` 1) |
 | I-410-3 | 213 §8 | Writing the two entries in DllMain reaches every interpreting thread, and no copy of the table bypasses it | `[MonoFast]` and the dispatch head read `[op*4+0xE59880]`; Satb keeps its own originals only for the entries it wraps | a normal session with the guard on | `mdOn` 1, counters 0, no change in script errors | a div/rem fault with `mdOn` 1 | **inferred** |
 
-## 414. [EaCrashFixes] GeomNoMaterial: CAS mesh without an embedded material (2026-10-30, docs/67 §29, issue #80, ts3native 0.36.149; static + selftest; in-game A/B 2026-10-31)
+## 413. [EaCrashFixes] GeomNoMaterial: CAS mesh without an embedded material (2026-10-30, docs/67 §29, issue #80, ts3native 0.36.149; static + selftest; in-game A/B 2026-10-31)
 
 | ID | Doc | Claim | Evidence | Check job | Confirms | Refutes | Verdict |
 |----|-----|-------|----------|-----------|----------|---------|---------|

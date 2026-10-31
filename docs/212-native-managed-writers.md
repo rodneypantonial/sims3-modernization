@@ -10,7 +10,7 @@ Written 2026-10-30. Static only: no game run, no queue, no build. Question (docs
 | Dynamic icalls | every call of the registration function `0xE82550`: 4 interpreter icalls (`0xE5A740`-`0xE5A77A`) and EA's IC loop (`0xD7E6C7`) | [verified] |
 | How icalls resolve | `mono_lookup_internal_call 0xE82680` -> `0xE82580` reads the patched table (`0xE825B4`); EA binder init `0xD89F00` caches what it returns, so cached icall pointers in EA bodies get Satb's wrappers | [verified] |
 | Direct callers of wrapped functions | E8/E9 xrefs of every `kSatbRtAddr` entry and of `0xE69820` | [verified] |
-| EA binder native bodies (docs/130 D17) | all 1,085 registrations; each body is classified by the IL of the managed method it replaces (a proxy); 11 bodies checked for stores in the disassembly | [inferred] proxy, [verified] for the 11 |
+| EA binder native bodies (docs/130 D17) | all 1,085 registrations; each body is classified by the IL of the managed method it replaces (a proxy); 11 bodies checked for stores in the disassembly; docs/220 classifies every body from its own code | [inferred] proxy, [verified] for the 11 |
 | EA glue | static-field address users (`0xE6F720` + `0xE9DD40`), host `+0xC20`/`+0xC24`, 12 of 34 `mono_object_unbox 0xEA1650` sites, EA ICs with class-typed parameters | [verified] for the sites read |
 
 Limits:
