@@ -182,9 +182,9 @@ static void TestCrashReport() {
 
     // docs/172 §7: the first-chance logger names another module's address and logs it once; repeats take no slot
     {
-        const DWORD k32 = (DWORD)(uintptr_t)GetModuleHandleW(L"kernel32.dll") + 0x1000;
+        const DWORD k32 = (DWORD)(uintptr_t)GetModuleHandleW(L"kernel32.dll") + 0x10;  // the header page: always committed
         char m[MAX_PATH + 16];
-        assert(XcptOtherModule(k32, m, sizeof(m)) && !_stricmp(m, "kernel32.dll+0x1000"));
+        assert(XcptOtherModule(k32, m, sizeof(m)) && !_stricmp(m, "kernel32.dll+0x10"));
         void* const heap = malloc(64);
         assert(!XcptOtherModule((DWORD)(uintptr_t)heap, m, sizeof(m)));  // not an image: logged every time, as before
         free(heap);
