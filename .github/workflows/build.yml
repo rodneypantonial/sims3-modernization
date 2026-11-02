@@ -49,7 +49,7 @@ jobs:
           # sections left on for EA (docs/228 §6 first smoke); everything else: every integer-valued key =0
           # (Enabled and independent switches such as [ArenaGuard] TailPad/InitobjFix)
           # [EaDiag] is EA-only (eadiag.cpp, docs/234): kept so its ProductGate=0 default line stays editable for a diagnostic run
-          ALLOW: Decompress OptsInit EaDiag
+          ALLOW: Decompress OptsInit EaDiag WaterJps
         # tools/ini-sections.json (section -> .cpp files naming it as L"<Section>") was built with:
         #   node -e 'const fs=require("fs"),p=require("path"),d="native/ts3native";const secs=[...fs.readFileSync(d+"/ts3native.ini","utf8").matchAll(/^\[(\w+)\]/gm)].map(m=>m[1]);const cpp=fs.readdirSync(d).filter(f=>f.endsWith(".cpp")&&!/test/.test(f)).sort();console.log(JSON.stringify(Object.fromEntries(secs.map(s=>[s,cpp.filter(f=>fs.readFileSync(p.join(d,f),"utf8").includes("L\""+s+"\""))]))))'
         run: |
