@@ -13,7 +13,7 @@ the Node binding is a native npm module. Standard library otherwise.
 serve attaches to a running TS3W.exe (or starts it with --launch), loads tools/probe/agent.js
 (and tools/frida/stutter-profile.js with --profile), serves JSON on 127.0.0.1 only, and appends
 every event (native exceptions, script errors, detach/crash) to probe-out/<timestamp>/events.jsonl.
-Env: TS3_EXE process name (default TS3W.exe); TS3_LAUNCH=ea starts EALauncher.exe (TS3_EA_LAUNCHER, TS3_EA_URI), no game args; the startup-popup answerer runs only then or with TS3_ANSWER_STARTUP_DIALOG=1.
+Env: TS3_EXE process name (default TS3W.exe); TS3_LAUNCH=ea starts EALauncher.exe (TS3_EA_LAUNCHER, TS3_EA_URI), no game args, and sets LoadOption.ini selectedflags from the launcher's LastRunIProducts & LastRunEProducts (TS3_SELECTED_FLAGS overrides; docs/234); the startup-popup answerer runs only then or with TS3_ANSWER_STARTUP_DIALOG=1.
 """
 import argparse, bisect, csv, glob, json, os, subprocess, sys, threading, time, urllib.error, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -101,6 +101,7 @@ class Probe:
     def launch(self):
         ea = os.environ.get('TS3_LAUNCH', 'direct') == 'ea'
         if ea:  # EA app edition: only EALauncher.exe with the offer URI works (a direct start is bounced by the DRM)
+            ensure_selected_flags(USER_DIR / 'LoadOption.ini')
             cmd = [os.environ.get('TS3_EA_LAUNCHER', r'C:\Program Files\Electronic Arts\EA Desktop\EA Desktop\EALauncher.exe'),
                    os.environ.get('TS3_EA_URI', 'origin2://game/launch/?offerIds=sims3_dd,1002441,70384_CE,70384_Unrevised')]
             if self.args.world or self.args.extra:
@@ -429,6 +430,56 @@ class Probe:
         raise KeyError(path)
 
 
+def launcher_product_flags():
+    """The launcher's own record of the last real run: HKCU\\Software\\Electronic Arts\\Sims 3\\Launcher\\Settings
+    LastRunIProducts (installed) AND LastRunEProducts (entitled), as the 8-digit lower-case hex the ini uses; None when
+    either key is missing (the real launcher never ran)."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Electronic Arts\Sims 3\Launcher\Settings') as k:
+            i, e = winreg.QueryValueEx(k, 'LastRunIProducts')[0], winreg.QueryValueEx(k, 'LastRunEProducts')[0]
+        return f'{(int(i) & int(e)) & 0xFFFFFFFF:08x}'
+    except OSError:
+        return None
+
+
+def set_selected_flags(text, flags):
+    """LoadOption.ini text with `[productoption] selectedflags = <hex>`; None when it already has that value.
+    The real launcher writes this mask at Play and the game mounts only the packs in it (docs/234); the launcher swap
+    (docs/230) skips that write, so an EA launch sets it here. shortcut: appends a new [productoption] section when
+    the key is missing, upgrade if the game rejects a duplicate section header."""
+    import re
+    m = re.search(r'(?im)^(\s*selectedflags\s*=\s*)([0-9a-fA-F]*)', text)
+    if m and m.group(2).lower() == flags.lower():
+        return None
+    if m:
+        return text[:m.start(2)] + flags + text[m.end(2):]
+    return text.rstrip('\r\n') + ('\r\n' if text.strip() else '') + f'[productoption]\r\nselectedflags = {flags}\r\n'
+
+
+def ensure_selected_flags(path, flags=None):
+    """EA launch (docs/230 swap): make LoadOption.ini select the packs the launcher recorded; TS3_SELECTED_FLAGS overrides."""
+    flags = flags or os.environ.get('TS3_SELECTED_FLAGS') or launcher_product_flags()
+    if not flags:
+        print(f'[ts3probe] WARN: no LastRunIProducts/LastRunEProducts in HKCU Launcher\\Settings: {path.name} left alone; '
+              'run the real Sims3Launcher.exe once (Play) so it records the installed packs', flush=True)
+        return
+    try:
+        old = path.read_text(encoding='utf-8') if path.exists() else ''
+        new = set_selected_flags(old, flags)
+        if new is None:
+            print(f'[ts3probe] {path.name} selectedflags already {flags}', flush=True)
+            return
+        bak = path.with_name(path.name + '.bak-before-ea-launch')
+        if old and not bak.exists():
+            bak.write_text(old, encoding='utf-8')
+        path.write_text(new, encoding='utf-8')
+        print(f'[ts3probe] {path.name} selectedflags -> {flags} (launcher LastRunIProducts & LastRunEProducts; the swap skips the '
+              'launcher write, docs/234)', flush=True)
+    except OSError as e:
+        print(f'[ts3probe] WARN: cannot set selectedflags in {path}: {e}', flush=True)
+
+
 def serve(args):
     global frida
     import frida
@@ -494,6 +545,11 @@ def main():
     if args.cmd == 'self-check':
         assert is_mod_version_dialog('#32770', [1001, 1004, 1003]) and is_mod_version_dialog('#32770', [1003, 1004, 1001, 2])
         assert not is_mod_version_dialog('#32770', [1001, 1004]) and not is_mod_version_dialog('Canvas', [1001, 1004, 1003])
+        ini = '[productoption]\r\nplayedflags = ffffffff\r\n\r\nselectedflags = 00000000\r\n'
+        assert set_selected_flags(ini, '001fefff') == ini.replace('00000000', '001fefff')
+        assert set_selected_flags(ini.replace('00000000', '001FEFFF'), '001fefff') is None
+        assert set_selected_flags('', '001fefff') == '[productoption]\r\nselectedflags = 001fefff\r\n'
+        assert launcher_product_flags() is None or len(launcher_product_flags()) == 8
         print('self-check ok')
         return
     serve(args) if args.cmd == 'serve' else get(args)
