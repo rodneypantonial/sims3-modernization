@@ -318,6 +318,8 @@ namespace Ts3Agent
 
         static string[] RuleFor(string text)
         {
+            string[] ev = DialogPick.EventRule(text); // named event rules first (text match only)
+            if (ev != null) return ev;
             foreach (string[][] rule in kDialogRules)
                 foreach (string frag in rule[0])
                     if (text.IndexOf(frag) >= 0) return rule[1];

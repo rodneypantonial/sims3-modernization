@@ -18,6 +18,13 @@ static class DialogPickTest
         Eq(-1, DialogPick.DeclineSave(new List<string> { "yes", "no" }, new List<bool> { true, true }), "yes/no");
         Eq(-1, DialogPick.DeclineSave(new List<string> { "accept", "cancel" }, new List<bool> { true, true }), "accept/cancel");
         Eq(-1, DialogPick.DeclineSave(new List<string>(), new List<bool>()), "no buttons");
+        // named event rule: text decides, never the buttons alone
+        string[] w = DialogPick.EventRule("Marty was talked into running an obstacle course at practice against some teammates. Should Marty compete or just watch the competition? compete watch");
+        Eq(1, w != null && w.Length == 1 && w[0] == "watch" ? 1 : 0, "competition event -> watch");
+        Eq(1, DialogPick.EventRule("SHOULD ANNA COMPETE OR JUST WATCH THE COMPETITION?") != null ? 1 : 0, "case");
+        Eq(1, DialogPick.EventRule("compete watch") == null ? 1 : 0, "buttons alone: no rule");
+        Eq(1, DialogPick.EventRule("Do you want to watch TV?") == null ? 1 : 0, "other text: no rule");
+        Eq(1, DialogPick.EventRule(null) == null ? 1 : 0, "null text");
         Console.WriteLine(fails == 0 ? "dialogpick self-check ok" : fails + " FAIL");
         return fails == 0 ? 0 : 1;
     }
