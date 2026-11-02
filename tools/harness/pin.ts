@@ -13,6 +13,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { GAME_EXE, GAME_NAME } from './game-exe.ts';
 
 export type PinOpts = { cpus?: string; priority?: string; others?: boolean | string[] };
 export type PinCfg = { cpus: string; gameMask: bigint; otherMask: bigint; fullMask: bigint; priority: string | null; others: string[] };
@@ -54,7 +55,7 @@ export function pinConfig(job?: false | PinOpts, env: NodeJS.ProcessEnv = proces
   return { cpus, gameMask, otherMask, fullMask, priority: priority === 'off' ? null : priority, others };
 }
 export const describePin = (c: PinCfg | null) => (!c ? 'pin off'
-  : `TS3W.exe -> CPUs ${c.cpus}${c.priority ? ` priority ${c.priority}` : ''}; ${c.others.length ? `${c.others.length} app names -> CPUs ${maskCpus(c.otherMask).join(',')}, restored after the job` : 'other apps untouched'}`);
+  : `${GAME_EXE} -> CPUs ${c.cpus}${c.priority ? ` priority ${c.priority}` : ''}; ${c.others.length ? `${c.others.length} app names -> CPUs ${maskCpus(c.otherMask).join(',')}, restored after the job` : 'other apps untouched'}`);
 
 const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const names = (c: PinCfg) => c.others.map(q).join(',');
@@ -71,7 +72,7 @@ $me = (Get-Process -Id $PID).SessionId
 ${c.otherMask ? `[Diagnostics.Process]::GetCurrentProcess().ProcessorAffinity = [IntPtr][long]${c.otherMask}` : ''}
 $seen = @{}
 while (Get-Process -Id ${process.pid}) {
-  foreach ($p in Get-Process -Name TS3W) {
+  foreach ($p in Get-Process -Name ${GAME_NAME}) {
     if ($p.SessionId -ne $me) { continue }
     try { if ($p.ProcessorAffinity.ToInt64() -ne ${c.gameMask}) { $p.ProcessorAffinity = [IntPtr][long]${c.gameMask} } } catch {}
     ${c.priority ? `try { if ("$($p.PriorityClass)" -ne '${c.priority}') { $p.PriorityClass = '${c.priority}' } } catch {}` : ''}

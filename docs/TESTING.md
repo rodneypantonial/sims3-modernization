@@ -175,6 +175,15 @@ Not changed, already bounded or covered: `cycle.ts` game closed (60 s), settle (
 - New native code: test it on a dummy process that hits the same path before injecting into the game, and keep exception handlers opt-in.
 - Never enter credentials for the game or EA services during tests.
 
+### EA app edition
+
+The harness defaults to the Steam edition. For the EA app edition set these before `queue.ts`, `cycle.ts` or `ts3probe.py` (all optional):
+
+- `TS3_BIN`: the `Game\Bin` folder (EA: `C:\Program Files\EA Games\The Sims 3\Game\Bin`). Default: the Steam library path.
+- `TS3_EXE`: game file and process name, default `TS3W.exe`. EA installs have `TS3.exe` or, after the community swap, `Sims3Launcher.exe`. Not derived: set it.
+- `TS3_LAUNCH`: `direct` (default, starts `<TS3_BIN>\<TS3_EXE>`) or `ea`. With `ea`, `ts3probe.py --launch` runs `TS3_EA_LAUNCHER` (default `C:\Program Files\Electronic Arts\EA Desktop\EA Desktop\EALauncher.exe`) with `TS3_EA_URI` (default `origin2://game/launch/?offerIds=sims3_dd,1002441,70384_CE,70384_Unrevised`) and polls up to 60 s for the `TS3_EXE` process. No Steam check; game arguments cannot be passed (a warning is logged).
+- Why: a direct start of `TS3.exe` is bounced by the DRM to the EA app, which starts `Sims3Launcher.exe -test`; only the EA launch URI works. Steam runs are unchanged when none of this is set.
+
 ## 7. Baseline saves
 
 EA saves contain EA data and the maintainer's saves cannot be shared, so every contributor makes their own baselines. Your numbers then compare only with your own baselines, which is why reports always include both.

@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { summarize } from './machine-load.ts';
 import { classify, jsonlRows } from './run-verdict.ts';
+import { GAME_EXE } from './game-exe.ts';
 
 const ROOT = process.env.TS3_REPO ?? join(import.meta.dirname, '..', '..');
 const DEFS = join(import.meta.dirname, 'queues');
@@ -233,7 +234,7 @@ export function renderApex(a: AStatus, now = Date.now(), game?: boolean): string
   return out.join('\n');
 }
 export const apexDirs = (root: string) => { const d = join(root, 'probe-out', 'apex'); return existsSync(d) ? readdirSync(d).map(x => join(d, x)).filter(x => existsSync(join(x, 'run.json'))).sort((x, y) => mtime(join(x, 'run.json')) - mtime(join(y, 'run.json'))) : []; };
-const ts3wRunning = () => { if (process.platform !== 'win32') return undefined; try { return /^TS3W\.exe/im.test(execFileSync('tasklist', ['/NH', '/FI', 'IMAGENAME eq TS3W.exe'], { timeout: 15000 }).toString()); } catch { return undefined; } };
+const ts3wRunning = () => { if (process.platform !== 'win32') return undefined; try { return new RegExp(`^${GAME_EXE.replace(/\./g, '\\.')}`, 'im').test(execFileSync('tasklist', ['/NH', '/FI', `IMAGENAME eq ${GAME_EXE}`], { timeout: 15000 }).toString()); } catch { return undefined; } };
 
 function selfCheck() {
   const tmp = mkdtempSync(join(tmpdir(), 'ts3-status-')), dir = join(tmp, 'q'), defs = join(tmp, 'defs');
