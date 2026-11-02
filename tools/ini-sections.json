@@ -71,5 +71,6 @@
  "CrashReport": ["crashreport.cpp"],
  "P6Waits": ["p6wait.cpp"],
  "ResourceCache": ["rctrim.cpp"],
- "EaCrashFixes": ["eafix.cpp","wastar.cpp"]
+ "EaCrashFixes": ["eafix.cpp","wastar.cpp"],
+ "EaDiag": ["eadiag.cpp"]
 }

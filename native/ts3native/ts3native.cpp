@@ -4643,6 +4643,7 @@ static bool CostStubsWanted(bool routeBudget, int asyncMode) {
 #include "allocsites.cpp"  // docs/201: [MemDiag] AllocSites, TEST-RUN TOOL (needs memdiag.cpp, alloc.cpp, apex.cpp)
 #include "eafix.cpp"       // docs/67 §26.4 / §27.5 / §28: [EaCrashFixes] ConformActor, ThumbPose, GeomBoneIndex (needs footprint.cpp's FpCallOk / FpRedirect)
 #include "wastar.cpp"      // docs/67 §30: [EaCrashFixes] WorldAStarRefs
+#include "eadiag.cpp"      // docs/234: [EaDiag] ProductGate log-only hooks, EA app 1.69.47 build only (empty on Steam)
 
 // [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
 // flags: 0x40 (software VP) at 0x6112A4, replaced by 0x20 (hardware VP) at 0x6112B9 when the caps allow [verified]. Adding
@@ -4793,6 +4794,9 @@ static void Run(HMODULE self) {
         P5Snapshot();                           // P5 M2-1: the code bytes of every site the clone run passes, after every install
         keepLog = ApplyMintCall(ini) || keepLog;   // docs/139 §8: after every code patch (checks EA's call path bytes), before Satb
         keepLog = ApplyAutShadow(ini) || keepLog;  // docs/122 part 1: guard thunks after every other table owner (routesnap)
+#ifdef TS3A_TABLE
+        keepLog = ApplyEaDiag(ini) || keepLog;  // docs/234: EA 1.69.47 product/entitlement gate, log only (default off)
+#endif
         ApexStartLate();  // zzApexRadiance.asi loads after us (its lines reach the log only while it stays open)
     }
     Log("done");
