@@ -119,9 +119,11 @@ the menu and the save load: `calls 21135 fails 0 mismatches 0 in 54 MB out 131 M
   `__except` [inferred from the log order and the unresolved list]. Task 7 rerun: set both to 0 or resolve the row first.
 - Run stable: no. `load_save Baseline-SV-Spring` ended in `A serious error has occurred while loading 'Baseline-SV-Spring'` after 10 s (no
   new `ScriptError*.xml`, no crash, game alive at the menu). Rerun 12:43 with the `.pre-ea169` pair (`SKIP all`, c035abe5a3a6) and the
-  same Mods and save: identical failure at 9 s. So the load failure is not the ea169 asi. Difference to the clean docs/226 run 4 (12:09):
-  `Mods\Packages\NRaas_ErrorTrap.package` (970,244 B, 12:10, the restamped P169 of docs/229) and rebuilt ts3agent/ts3fixes packages;
-  `scriptCache.package` is 260 B after the rerun [observed; cause not isolated, owner: docs/229 Mods work].
+  same Mods and save: identical failure at 9 s. So the load failure is not the ea169 asi. Cause (isolated 13:04, docs/229): the smoke
+  driver passed `file: "Baseline-SV-Spring"` without `.sims3`; cycle.ts passes `Baseline-SV-Spring.sims3` and the same save then loads
+  in ~12 s. Not the cause: ts3agent/ts3fixes (sha256 `e9b98bf37d90`/`b067efaa9047`, identical to the 12:09 change set `344a2752d415`),
+  the 260 B `scriptCache.package` (the game writes it at every start). The restamped ErrorTrap P169 is a separate failure: it crashes
+  the load (`0xc0000005`), so it is disabled (docs/229). Task 7 reruns must load `Baseline-SV-Spring.sims3`.
 - Verdict: host check PASS, decryption timing PASS, Decompress + OptsInit installed PASS, lot reached FAIL (environment). CPU/WS: only
   at the menu (300 MB WS at attach), no soak. Both runs' logs: `probe-out/ea-smoke6-1102*.log`, `probe-out/ea-smoke6-1102.ts3native.log`.
 - Task 7 candidates (files with 0 unresolved rows and 0 problems.csv rows, own ini gate): `[WaterJps]` (waterjps.cpp + wastar.cpp, §6
