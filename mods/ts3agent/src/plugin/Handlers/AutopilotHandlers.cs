@@ -28,10 +28,14 @@ namespace Ts3Agent
         // accept:true (accept-on-match): the autopilot itself clicks the accepting button of the first matching dialog inside the window,
         // logs it and ends the window; no race with a harness poll that comes after the window (docs/236 H-move run 1). kDialogRules still
         // apply (e.g. Edit Town "save your town" -> just continue) unless rules:false (H-move: accept the move offer the move rule declines).
+        // accept_all:true: accept-on-match for the whole window, every dialog (title ignored), one log line per click, ends with "dialog_expect accept_all ended: N clicks".
         // A window that ends without a match logs "dialog_expect expired (no match)".
         static int sExpectUntil;
         static string sExpectTitle, sExpectLogged;
-        static bool sExpectAccept, sExpectMatched, sExpectRules = true;
+        static bool sExpectAccept, sExpectMatched, sExpectRules = true, sExpectAll;
+        // accept_all: every dialog in the window is accepted (rules and safe default off), the window stays open; reproduces the old unattended autopilot for a whole flow (docs/236 Round 6)
+        static int sExpectAllClicks, sExpectAllTick;
+        static object sExpectAllModal;
         static string sApBlocked; // last dialog the autopilot would not click (AutoDialog: no safe button); logged once per dialog
 
         static void StartAutopilot()
@@ -88,10 +92,12 @@ namespace Ts3Agent
             sExpectTitle = a.Has("title") ? a.Str("title").ToLowerInvariant() : null;
             sExpectAccept = a.Bool("accept", false);
             sExpectRules = a.Bool("rules", true);
+            sExpectAll = a.Bool("accept_all", false); sExpectAllClicks = 0; sExpectAllModal = null;
+            if (sExpectAll) { sExpectAccept = true; sExpectRules = false; sExpectTitle = null; }
             sExpectUntil = sec > 0 ? System.Environment.TickCount + Math.Min(sec, 900) * 1000 : 0;
             sExpectLogged = null; sExpectMatched = false;
             Dictionary<string, object> r = Util.Obj();
-            r["seconds"] = sec; r["title"] = sExpectTitle; r["accept"] = sExpectAccept; r["rules"] = sExpectRules;
+            r["seconds"] = sec; r["title"] = sExpectTitle; r["accept"] = sExpectAccept; r["rules"] = sExpectRules; r["accept_all"] = sExpectAll;
             return r;
         }
 
@@ -105,6 +111,21 @@ namespace Ts3Agent
             if (sExpectTitle != null && all.ToLowerInvariant().IndexOf(sExpectTitle) < 0) return false;
             sExpectMatched = true;
             string t = texts.Count > 0 ? texts[0] : "";
+            if (sExpectAll)
+            {
+                // the dialog may stay modal for a few ticks after the click: do not click the same one twice within 2 s
+                if (object.ReferenceEquals(modal, sExpectAllModal) && System.Environment.TickCount - sExpectAllTick < 2000) return true;
+                sExpectAllModal = modal; sExpectAllTick = System.Environment.TickCount;
+                Dictionary<string, object> args = new Dictionary<string, object>();
+                args["accept"] = true; args["rules"] = false;
+                string clicked;
+                try { Dictionary<string, object> d = AutoDialog(new Args(args)) as Dictionary<string, object>; clicked = d != null ? d["clicked"] as string : "(no dialog)"; }
+                catch (McpException e) { clicked = "(not clicked: " + e.Message + ")"; }
+                sExpectAllClicks++;
+                ApLog(t, "dialog_expect accept_all: " + clicked);
+                if (sApCleared.Count < 200) sApCleared.Add("dialog_expect accept_all: " + t + " -> " + clicked);
+                return true;
+            }
             if (sExpectAccept)
             {
                 Dictionary<string, object> args = new Dictionary<string, object>();
@@ -126,10 +147,28 @@ namespace Ts3Agent
         {
             if (sExpectUntil == 0 || sExpectUntil - System.Environment.TickCount > 0) return;
             sExpectUntil = 0;
+            if (sExpectAll)
+            {
+                string end = "dialog_expect accept_all ended: " + sExpectAllClicks + " clicks";
+                DiagLine("ap click: " + end);
+                if (sApCleared.Count < 200) sApCleared.Add(end);
+                return;
+            }
             if (sExpectMatched) return;
             string line = "dialog_expect expired (no match)" + (sExpectTitle != null ? ": " + sExpectTitle : "") + (sExpectAccept ? " [accept]" : "");
             DiagLine("ap click: " + line);
             if (sApCleared.Count < 200) sApCleared.Add(line);
+        }
+
+        // safe-default clicks carry the full button list, so a run can tell which dialogs lacked a rule (docs/236 Round 6)
+        static string ApClicked(Dictionary<string, object> d)
+        {
+            string c = d["clicked"] as string;
+            object how; object buttons;
+            if (c == null || !d.TryGetValue("how", out how) || (how as string) != "safe default" || !d.TryGetValue("buttons", out buttons)) return c;
+            List<string> names = new List<string>();
+            foreach (object o in (List<object>)buttons) names.Add(System.Text.RegularExpressions.Regex.Replace((string)o, @"^(#\d+) '(.*?)'( \(disabled\))? score -?\d+$", "$1 $2$3"));
+            return c.Substring(0, c.Length - 1) + "; buttons: " + string.Join(", ", names.ToArray()) + ")";
         }
 
         static GameSpeed ApTarget(string s)
@@ -169,7 +208,7 @@ namespace Ts3Agent
                     }
                     sApBlocked = null;
                     if (d != null && sApCleared.Count < 200) sApCleared.Add(d["title"] + " -> " + d["clicked"]);
-                    if (d != null) ApLog(d["title"] as string, d["clicked"] as string);
+                    if (d != null) ApLog(d["title"] as string, ApClicked(d));
                     return; // let the dialog close before touching the speed
                 }
             }

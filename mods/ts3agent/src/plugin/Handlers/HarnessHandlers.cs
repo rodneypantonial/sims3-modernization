@@ -311,6 +311,8 @@ namespace Ts3Agent
             new[] { new[] { "field trip", "boarding school", "homesick", "visit a friend" }, new[] { "cancel", "decline", "no" } },
             // Long-distance move offers: accepting one leaves LiveMode (1.69 run 7h/7j2 exits, crash at 0x00AD04EC); a player does not accept one in a 10 min test.
             new[] { new[] { "new towns available", "long-distance move", "preparing to move" }, new[] { "not now", "cancel", "later", "decline", "no" } },
+            // Event invitations (Round 5: "Committee Hearing", "The Dish Showdown", "The Complete Circuit") and the move flow's second dialog: normal play must not move house or start events.
+            new[] { new[] { "committee hearing", "the dish showdown", "the complete circuit", "moving to a new town" }, new[] { "cancel", "decline", "no" } },
             new[] { new[] { "mod scripts found" }, new[] { "accept", "ok", "continue" } },
         };
 
