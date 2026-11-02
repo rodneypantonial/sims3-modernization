@@ -117,6 +117,8 @@ export function addInclude(text: string): string {
 export function sourceFiles(dir = SRC): string[] {
     return readdirSync(dir).filter((f) => /\.(cpp|h)$/.test(f) && !/test/.test(f) && !/^ts3addr/.test(f)).sort();  // ts3addr.h and the generated ts3addr-*.h tables
 }
+// EA-only module (eadiag.cpp): its literals are raw 1.69.47 addresses already, no Steam counterpart
+export const eaOnly = (text: string) => text.slice(0, 600).includes("raw 1.69.47");
 export const generated = (text: string) => /generated (by|from)/i.test(text.split("\n").slice(0, 3).join("\n"));
 
 // ---- gen: Steam -> other pairs for TS3A_TABLE ----
@@ -233,7 +235,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         for (const f of sourceFiles()) {
             const text = readFileSync(join(SRC, f), "utf8");
             const rows = scanText(text, f, data);
-            if (!rows.length || text.slice(0, 600).includes("raw 1.69.47")) continue;  // EA-only module (eadiag.cpp): literals are EA addresses already
+            if (!rows.length || eaOnly(text)) continue;
             if (generated(text)) { gens.push(`${f} (${rows.length})`); continue; }
             all.push(...rows);
             if (v.apply && cmd === "scan" && rows.some((r) => r.kind === "wrap")) writeFileSync(join(SRC, f), applyText(text, rows));

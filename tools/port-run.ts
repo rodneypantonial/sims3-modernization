@@ -24,7 +24,7 @@ import { parseArgs } from "node:util";
 import { csvRow } from "./hook-sites.ts";
 import { parsePe } from "./exe-addr-map.ts";
 import { bytesTable, type BytesRow, check, extract, patchedSites, readSources, sourceTexts, type Expect } from "./patch-bytes-check.ts";
-import { dataRanges, gen, generated, scanText, sourceFiles } from "./addr-codemod.ts";
+import { dataRanges, eaOnly, gen, generated, scanText, sourceFiles } from "./addr-codemod.ts";
 import { readReport } from "./port-report.ts";
 import { mapExtra, portNames, readCands, readMap, steamNames, type MapRow } from "./port-ghidra-names.ts";
 
@@ -114,7 +114,7 @@ function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow
     // probe-only expectations from generated headers (vcallsites*.h, /DTS3N_VCSITES*) are out of scope, as in addr-codemod
     const texts = sourceTexts(), gens = new Set(texts.filter(([, t]) => generated(t)).map(([f]) => f));
     const all = extract(readSources(texts)).exp, exp = all.filter((x) => !x.where.split(" ").every((w) => gens.has(w.replace(/:\d+$/, ""))));
-    const data = dataRanges(refPath), scan = sourceFiles().flatMap((f) => { const t = readFileSync(join(SRC, f), "utf8"); return generated(t) ? [] : scanText(t, f, data); });
+    const data = dataRanges(refPath), scan = sourceFiles().flatMap((f) => { const t = readFileSync(join(SRC, f), "utf8"); return generated(t) || eaOnly(t) ? [] : scanText(t, f, data); });
     const needed = scan.filter((r) => r.kind === "wrap" || r.kind === "wrapped").map((r) => r.addr);
     const whereBy = new Map<number, string>();
     for (const r of scan) whereBy.set(r.addr, whereBy.has(r.addr) ? whereBy.get(r.addr)!.replace(/( \(\+(\d+)\))?$/, (_, __, n) => ` (+${Number(n ?? 0) + 1})`) : `native/ts3native/${r.file}:${r.line}`);
@@ -135,7 +135,7 @@ function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow
     if (v.exe) {
         const r = parsePe(refBuf), o = parsePe(otherBuf!);
         const res = check(r, o, exp);
-        bytesRows = res.map((x) => ({ len: x.bytes.length, new: x.new, kind2: x.kind2, addr: x.addr }));
+        bytesRows = res.map((x) => ({ len: x.bytes.length, new: x.new, kind2: x.kind2, addr: x.addr, where: x.where }));
         patch = res.map((x) => ({ addr: x.addr, new: x.new, kind2: x.kind2, mapKind: x.mapKind, name: x.name, where: x.where }));
         for (const x of patch) {  // its own mapping missed it: try the map row (ref rows for data)
             const m = best.get(x.addr), e = exp.find((y) => y.addr === x.addr && y.name === x.name)!;
@@ -236,7 +236,7 @@ function selfCheck() {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     const { values: v } = parseArgs({ options: { zip: { type: "string" }, exe: { type: "string" }, ref: { type: "string" }, asm: { type: "string" }, "allow-inferred": { type: "boolean" }, "zero-unresolved": { type: "boolean" }, table: { type: "string" }, "host-name": { type: "string" },
-        build: { type: "boolean" }, "ghidra-names": { type: "boolean" }, "min-score": { type: "string" }, "self-check": { type: "boolean" } } });
+        build: { type: "boolean" }, "ghidra-names": { type: "boolean" }, "min-score": { type: "string" }, xrefs: { type: "boolean" }, "self-check": { type: "boolean" } } });
     if (v["self-check"]) selfCheck();
     else if (!v.zip === !v.exe) { console.error("usage: node tools/port-run.ts (--exe <exe> | --zip <player report>) [--ref <Steam exe>] [--asm <dir>] [--allow-inferred] [--zero-unresolved] [--table <repo path>] [--host-name <s>] [--build] [--ghidra-names] [--min-score 6] | --self-check"); process.exit(2); }
     else run(v);
