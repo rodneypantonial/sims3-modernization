@@ -13,7 +13,7 @@ the Node binding is a native npm module. Standard library otherwise.
 serve attaches to a running TS3W.exe (or starts it with --launch), loads tools/probe/agent.js
 (and tools/frida/stutter-profile.js with --profile), serves JSON on 127.0.0.1 only, and appends
 every event (native exceptions, script errors, detach/crash) to probe-out/<timestamp>/events.jsonl.
-Env: TS3_EXE process name (default TS3W.exe); TS3_LAUNCH=ea starts EALauncher.exe (TS3_EA_LAUNCHER, TS3_EA_URI), no game args.
+Env: TS3_EXE process name (default TS3W.exe); TS3_LAUNCH=ea starts EALauncher.exe (TS3_EA_LAUNCHER, TS3_EA_URI), no game args; the startup-popup answerer runs only then or with TS3_ANSWER_STARTUP_DIALOG=1.
 """
 import argparse, bisect, csv, glob, json, os, subprocess, sys, threading, time, urllib.error, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -137,7 +137,10 @@ class Probe:
             prof.load()
             prof.exports_sync.init('late', {'out': str(self.out / 'profile').replace('\\', '/')})
         threading.Thread(target=self.watch_script_errors, daemon=True).start()
-        threading.Thread(target=self.answer_startup_dialog, daemon=True).start()
+        if os.environ.get('TS3_LAUNCH') == 'ea' or os.environ.get('TS3_ANSWER_STARTUP_DIALOG') == '1':
+            threading.Thread(target=self.answer_startup_dialog, daemon=True).start()
+        else:
+            print('[ts3probe] startup-dialog answerer skipped (TS3_LAUNCH != ea and TS3_ANSWER_STARTUP_DIALOG != 1)', flush=True)
         threading.Thread(target=self.sample_memory, daemon=True).start()
         if sys.platform == 'win32':
             threading.Thread(target=self.keep_window_place, daemon=True).start()
