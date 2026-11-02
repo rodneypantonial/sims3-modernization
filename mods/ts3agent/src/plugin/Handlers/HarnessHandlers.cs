@@ -381,7 +381,7 @@ namespace Ts3Agent
             CollectTexts(modal, texts, 0);
             r["title"] = texts.Count > 0 ? texts[0] : null;
             string allText = string.Join(" ", texts.ToArray()).ToLowerInvariant();
-            string[] preferred = RuleFor(allText);
+            string[] preferred = a.Bool("rules", true) ? RuleFor(allText) : null; // rules:false = the caller named this dialog (dialog_expect accept)
             r["rule"] = preferred != null ? preferred[0] : null;
 
             KeyValuePair<WindowBase, object>? best = null;
