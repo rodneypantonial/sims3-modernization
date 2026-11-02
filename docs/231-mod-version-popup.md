@@ -1,6 +1,6 @@
-# 227. Start-up popup "unofficial game modification that does not match your current version"
+# 231. Start-up popup "unofficial game modification that does not match your current version"
 
-Seen on the EA laptop (EA app 1.69.47, docs/226) with the Mods set restored from the Steam 1.67 machine. The popup is
+Seen on the EA laptop (EA app 1.69.47, docs/230) with the Mods set restored from the Steam 1.67 machine. The popup is
 native (Win32), appears before the script VM runs and blocks start-up until Quit or Continue is pressed. Status
 (2026-11-02): cause found statically, harness answer built and self-checked, not yet run against the game.
 

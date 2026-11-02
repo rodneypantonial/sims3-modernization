@@ -25,7 +25,7 @@ frida = None  # imported in serve only, so `get` runs without it
 ROOT = Path(__file__).resolve().parents[2]
 GAME_BIN = Path(os.environ.get('TS3_BIN', r'C:\Program Files (x86)\Steam\steamapps\common\The Sims 3\Game\Bin'))
 GAME_EXE = os.environ.get('TS3_EXE', 'TS3W.exe')
-# Native start-up warning "unofficial game modification that does not match your current version" (docs/227): a Win32
+# Native start-up warning "unofficial game modification that does not match your current version" (docs/231): a Win32
 # dialog (template 104 in the exe: buttons 1001 Quit, 1004 Continue, static 1003) shown before the script VM runs, so the
 # in-game agent cannot answer it. The probe posts the Continue click (no focus, nothing else changes).
 MOD_VERSION_DIALOG = {'quit': 1001, 'continue': 1004, 'text': 1003}

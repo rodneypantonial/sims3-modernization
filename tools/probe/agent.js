@@ -1808,7 +1808,7 @@ rpc.exports = {
   },
 
   status() {
-    const m = Process.getModuleByName('TS3W.exe');
+    const m = Process.enumerateModules()[0]; // the host exe (TS3W.exe, or Sims3Launcher.exe on the EA app edition, docs/230)
     return { pid: Process.id, arch: Process.arch, exeBase: m.base.toString(), threads: Process.enumerateThreads().length,
              modules: Process.enumerateModules().length, attachedSeconds: Math.round((Date.now() - startedAt) / 1000),
              lastEventSeq: eventSeq };
