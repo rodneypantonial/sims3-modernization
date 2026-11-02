@@ -157,17 +157,22 @@ async function accept() {
 }
 
 async function stateCmd() {
+  // the move-offer dialog is modal and blocks buy_open (Round 8): autopilot dialogs answer it by rule, as in the other jobs
+  await agent('autopilot', { enabled: true, speed: values.speed, dialogs: true });
   // buy_open/buy_close are queued game tasks (Buy took >20 s on the EA laptop): wait on cas_state, not a fixed sleep (Round 8)
-  const reached = (r: any, cmd: string) => cmd === 'buy_open' ? !!r?.buy_catalog : r?.state === 'LiveModeState';
+  const reached = (r: any, cmd: string) => cmd === 'buy_open' ? !!r?.result?.buy_catalog : r?.result?.state === 'LiveModeState'; // agent() returns {id, ok, result}
   for (const [cmd, waitS] of [['buy_open', 15], ['buy_close', 15], ['enter_live_mode', 90]] as const) {
     const r = await agent(cmd);
-    log(`${cmd}: ${r.ok ? 'ok' : `error ${r.error}`}`);
+    log(`${cmd}: ${r.ok ? 'ok ' + JSON.stringify(r).slice(0, 300) : `error ${r.error}`}`);
     if (!r.ok) { console.log(`FAIL: state-cmd: ${cmd}: ${r.error}`); process.exit(1); }
     await sleep(waitS * 1000);
     if (cmd === 'enter_live_mode') break;
     const t0 = Date.now();
-    while (!reached(await agent('cas_state'), cmd)) {
-      if (Date.now() - t0 > 180000) { console.log(`FAIL: state-cmd: ${cmd}: mode not reached after 180 s`); process.exit(1); }
+    for (let st = await agent('cas_state'); !reached(st, cmd); st = await agent('cas_state')) {
+      if (Date.now() - t0 > 180000) {
+        log(`${cmd}: last cas_state ${JSON.stringify(st).slice(0, 700)}; pending_dialogs ${JSON.stringify(await agent('pending_dialogs')).slice(0, 500)}`);
+        console.log(`FAIL: state-cmd: ${cmd}: mode not reached after 180 s`); process.exit(1);
+      }
       await sleep(5000);
     }
     log(`${cmd}: mode reached after ${Math.round((Date.now() - t0) / 1000) + waitS} s`);
