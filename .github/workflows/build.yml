@@ -43,7 +43,10 @@ jobs:
           cd native\ts3native
           mkdir out-ea169
           cl /nologo /LD /O2 /MT /W4 /WX /DTS3A_TABLE /Foout-ea169\ /Feout-ea169\ts3native-ea169.asi ts3native.cpp /link /DLL /MAP:out-ea169\ts3native-ea169.map kernel32.lib || exit /b 1
-      - name: EA ini (allowlist) and unresolved-row assert
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+      - name: EA inis (minimal allowlist and release candidate) and unresolved-row assert
         shell: bash
         env:
           # sections left on for EA (docs/228 §6 first smoke); everything else: every integer-valued key =0
@@ -54,41 +57,18 @@ jobs:
           # like ALLOW, but Enabled=1 is forced (the Steam ini ships it 0 until verified in game). [FootprintIndex]: standalone,
           # footprint.cpp has no unresolved row, its byte-check site is ok; an FNV mismatch on 1.69 only logs SKIP
           ALLOW_ON: FootprintIndex
-        # tools/ini-sections.json (section -> .cpp files naming it as L"<Section>") was built with:
-        #   node -e 'const fs=require("fs"),p=require("path"),d="native/ts3native";const secs=[...fs.readFileSync(d+"/ts3native.ini","utf8").matchAll(/^\[(\w+)\]/gm)].map(m=>m[1]);const cpp=fs.readdirSync(d).filter(f=>f.endsWith(".cpp")&&!/test/.test(f)).sort();console.log(JSON.stringify(Object.fromEntries(secs.map(s=>[s,cpp.filter(f=>fs.readFileSync(p.join(d,f),"utf8").includes("L\""+s+"\""))]))))'
-        run: |
-          node -e '
-          const fs = require("fs"), on = process.env.ALLOW_ON.split(" "), allow = process.env.ALLOW.split(" ").concat(on);
-          const map = JSON.parse(fs.readFileSync("tools/ini-sections.json", "utf8"));
-          const hdr = fs.readFileSync("native/ts3native/ts3addr-ea169.h", "utf8");
-          const zero = new Set([...hdr.matchAll(/^\/\/ unresolved: .*native\/ts3native\/([^:\s]+)/gm)].map((m) => m[1]));
-          for (const s of allow) {
-            if (!map[s]) throw new Error("[" + s + "] is not in tools/ini-sections.json");
-            const hit = map[s].filter((f) => zero.has(f));
-            if (hit.length) throw new Error("[" + s + "] reads " + hit.join(", ") + ", which has unresolved (0) rows in ts3addr-ea169.h: it cannot be on for EA");
-          }
-          // outside the allowlist every integer-valued key becomes 0 (TailPad/InitobjFix run independent of Enabled); paths and names stay
-          const lines = fs.readFileSync("native/ts3native/ts3native.ini", "utf8").split(/\r?\n/), zeroed = {};
-          let sec = "";
-          const out = lines.map((l) => {
-            const m = /^\[(\w+)\]/.exec(l);
-            if (m) { sec = m[1]; return l; }
-            if (on.includes(sec) && /^Enabled=/.test(l)) { console.log("forced on [" + sec + "]"); return "Enabled=1"; }
-            const k = /^(\w+)=-?\d+\s*$/.exec(l);
-            if (!k || allow.includes(sec)) return l;
-            if (!/=0\s*$/.test(l)) (zeroed[sec] = zeroed[sec] || []).push(l.trim());
-            return k[1] + "=0";
-          });
-          fs.writeFileSync("native/ts3native/out-ea169/ts3native-ea169.ini", out.join("\r\n"));
-          for (const s in zeroed) console.log("zeroed [" + s + "]: " + zeroed[s].join(" "));
-          console.log("EA ini: on = " + allow.map((s) => "[" + s + "]").join(" ") + "; " + zero.size + " source files have unresolved rows");
-          '
+        # tools/ea-ini.ts writes out-ea169/ts3native-ea169.ini (minimal: ALLOW / ALLOW_ON only) and ts3native-ea169-rc.ini (release candidate:
+        # shipped values for every section whose files have no unresolved / bytes-bad row and no zeroed dependency; docs/232 rc table). It fails when an
+        # ALLOW section reads a file with such a row ([EaDiag] is EA-only: its file is not in the tables). tools/ini-sections.json (section -> .cpp files
+        # naming it as L"<Section>") was built with the one-liner in git history (docs/232 §5 row 6); rebuild it after adding a section or moving its reader.
+        run: node tools/ea-ini.ts --out native/ts3native/out-ea169
       - uses: actions/upload-artifact@v4
         with:
           name: ts3native-ea169
           path: |
             native/ts3native/out-ea169/ts3native-ea169.asi
             native/ts3native/out-ea169/ts3native-ea169.ini
+            native/ts3native/out-ea169/ts3native-ea169-rc.ini
             native/ts3native/ts3addr-ea169.h
             native/ts3native/ts3bytes-ea169.h
 
