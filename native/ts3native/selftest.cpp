@@ -3637,6 +3637,30 @@ static void __fastcall FakeW2L(void* lotp, void*, float x, float z, float* outX,
     if (g_fakeW2LLie) *outX += 1.0f;
 }
 
+// Calls LscStub as the game does (ecx = lot, edx = a value the caller keeps) with sentinels in xmm4 and xmm7; returns edx.
+static DWORD LscStubCall(void* lot, float x, float z, float* ox, float* oz, DWORD* x4, DWORD* x7) {
+    __declspec(align(16)) static const DWORD s4[4] = {0x44444441, 0x44444442, 0x44444443, 0x44444444};
+    __declspec(align(16)) static const DWORD s7[4] = {0x77777771, 0x77777772, 0x77777773, 0x77777774};
+    DWORD edxOut;
+    __asm {
+        movups xmm4, xmmword ptr s4
+        movups xmm7, xmmword ptr s7
+        push dword ptr oz
+        push dword ptr ox
+        push dword ptr z
+        push dword ptr x
+        mov ecx, lot
+        mov edx, 0x5EED1234
+        call LscStub
+        mov edxOut, edx
+        mov eax, x4
+        movups xmmword ptr [eax], xmm4
+        mov eax, x7
+        movups xmmword ptr [eax], xmm7
+    }
+    return edxOut;
+}
+
 static void TestLotSinCos() {
     static_assert(offsetof(Ts3nCounters, lscReady) == 0xC24 && offsetof(Ts3nCounters, lscMode) == 0xC28 &&
                   offsetof(Ts3nCounters, lscMismatches) == 0xC34 && offsetof(Ts3nCounters, idcMode) == 0xC3C &&
@@ -3694,6 +3718,21 @@ static void TestLotSinCos() {
     const int calls = g_fakeW2LCalls;
     LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);
     assert(LscBits(o1[0]) == LscBits(r[0]) && LscBits(o1[1]) == LscBits(r[1]) && g_fakeW2LCalls == calls);
+    // the stub keeps edx and xmm4-xmm7 on a miss and on a hit, with and without Verify (docs/232 run 7j2: a miss left
+    // edx = &g_lsc[slot] in a caller that keeps the lot in edx); the answer is the hook's
+    for (int v = 0; v < 2; v++) {
+        g_lscVerify = v != 0;
+        memset(g_lsc, 0, sizeof(g_lsc));
+        for (int i = 0; i < 2; i++) {
+            DWORD x4[4], x7[4];
+            const LONG c0 = g_lscEdxClobber;
+            assert(LscStubCall(lots[0], 5.f, 7.f, &o1[0], &o1[1], x4, x7) == 0x5EED1234);
+            assert(x4[0] == 0x44444441 && x4[3] == 0x44444444 && x7[0] == 0x77777771 && x7[3] == 0x77777774);
+            assert(g_lscLastHit == i && g_lscEdxClobber == c0);
+            assert(LscBits(o1[0]) == LscBits(r[0]) && LscBits(o1[1]) == LscBits(r[1]));
+        }
+    }
+    g_lscVerify = false;
     // mode 0: the game's function only
     k.lscMode = 0;
     LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);

@@ -2416,12 +2416,14 @@ static void AgLogCounters();   // monothread-m5.cpp: [ArenaGuard] (docs/67 §22.
 static void GrLogCounters();   // gcroots.cpp: [GcRootCheck] (docs/67 §22.4)
 static void AtLogCounters();   // arenatail.cpp: [ArenaGuard] TailPad, [GcRootCheck] TailWatch (docs/67 §22.7)
 static void UfcLogCounters();  // unseenfbc.cpp (docs/202 §3.4)
+static void LscLogCounters();  // lotsincos.cpp
 
 static void MaybeLogCounters(ULONGLONG now) {
     LONG64 next = g_nextLog;
     if ((LONG64)now < next || InterlockedCompareExchange64(&g_nextLog, (LONG64)now + 60000, next) != next) return;
     const Ts3nCounters& c = ts3native_counters;
     if (c.prReady) PrLog();
+    if (c.lscReady) LscLogCounters();
     if (c.windowMs) Log("route cache: calls %ld hits %ld misses %ld stored %ld otherFails %ld", c.calls, c.hits, c.misses, c.stored, c.otherFails);
     if (c.workerReady)
         Log("route worker: mode %ld calls %ld worker %ld ms max %ld us wait %ld ms fallbacks %ld watchdogs %ld invokeHook %ld invokes %ld",
