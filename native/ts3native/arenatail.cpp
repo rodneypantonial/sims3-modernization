@@ -125,7 +125,7 @@ static void AtHitLine(const CONTEXT* c, DWORD addr) {
         a[3] = *(const WORD*)(uintptr_t)(rm + 0x3C), a[4] = *(const WORD*)(uintptr_t)(rm + 0x38);
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
     DWORD irm = 0;  // inside ves_exec (0xE53EB0, helpers keep ebp): the running RuntimeMethod at [ebp-0x10] (MonoFaultText)
-    if (c->Eip >= 0x00E51000 && c->Eip < TS3A(0x00E5A600)) {
+    if (c->Eip >= TS3A(0x00E51000) && c->Eip < TS3A(0x00E5A600)) {
         __try {
             irm = *(const DWORD*)(uintptr_t)(c->Ebp - 0x10);
             if (irm) FbName(cur, sizeof(cur), *(const DWORD*)(uintptr_t)(irm + 8));

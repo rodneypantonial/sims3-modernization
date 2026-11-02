@@ -178,7 +178,7 @@ static void CfOnFault(const EXCEPTION_POINTERS* x) {
     // an illegal instruction anywhere = a wild call into data (Crash M / O: eip in the heap), dumped with the fault at eip
     const DWORD eip = x->ContextRecord->Eip;
     const bool wild = x->ExceptionRecord->ExceptionCode == EXCEPTION_ILLEGAL_INSTRUCTION;
-    if (!g_cfOn || (!wild && (eip < 0x00401000 || eip >= 0x00F95000)) || InterlockedIncrement(&g_cfDumpN) > 4) return;
+    if (!g_cfOn || (!wild && (eip < TS3A(0x00401000) || eip >= TS3A(0x00F95000))) || InterlockedIncrement(&g_cfDumpN) > 4) return;
     Ts3nCounters& k = ts3native_counters;
     InterlockedIncrement(&k.cfDumps);
     const EXCEPTION_RECORD* r = x->ExceptionRecord;
@@ -258,7 +258,7 @@ static const char* const kCdSite[4] = {"model part draw 0x6F6250 (call 0x6F6B5B 
 
 // "module+0xoff" for a code address (TS3W.exe or any image), false = not executable image memory
 static bool CdCode(DWORD v, char* out, size_t cap) {
-    if (v >= 0x00401000 && v < 0x00F95000) { sprintf_s(out, cap, "0x%08lX", v); return true; }
+    if (v >= TS3A(0x00401000) && v < TS3A(0x00F95000)) { sprintf_s(out, cap, "0x%08lX", v); return true; }
     MEMORY_BASIC_INFORMATION m;
     if (v < 0x10000 || !VirtualQuery((void*)(uintptr_t)v, &m, sizeof(m)) || m.Type != MEM_IMAGE ||
         !(m.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)))
@@ -516,7 +516,7 @@ static const char* FxThr(DWORD tid) {
     if (g_rtSimTidSlot && Readable(g_rtSimTidSlot, 4) && *g_rtSimTidSlot && tid == *g_rtSimTidSlot) return "sim";
     return g_workerTid && tid == g_workerTid ? "route worker" : "other";
 }
-static bool FxIsCode(DWORD v) { return (v >= 0x00401000 && v < 0x00F95000) || (v >= g_fxApexLo && v < g_fxApexHi); }
+static bool FxIsCode(DWORD v) { return (v >= TS3A(0x00401000) && v < TS3A(0x00F95000)) || (v >= g_fxApexLo && v < g_fxApexHi); }
 // sp = address of our return address: code[0] = the caller, code[1] = the next TS3W / Apex code word above it
 static void FxCodes(const DWORD* sp, DWORD* code) {
     code[0] = sp[0], code[1] = 0;

@@ -55,8 +55,8 @@ static const u8 kCaAsk[11] = {0x8B, 0x48, 0x1C, 0x8B, 0x11, 0x50, 0x8B, 0x42, 0x
 static const DWORD CA_CTOR_SITE = TS3A(0x0093F90D), CA_CTOR = TS3A(0x0093E5C0);  // AnimationComponent ctor (thiscall, owner; ret 4)
 static const DWORD CA_DTOR_SITE = TS3A(0x00942E73), CA_DTOR = TS3A(0x00941CD0);  // AnimationComponent dtor (thiscall, no args)
 static const DWORD CA_ANIM_VT8 = TS3A(0x010433EC);                          // AnimationComponent +8 interface vtable
-static DWORD g_ecaRdLo = 0x00F95000, g_ecaRdHi = 0x01146000;            // .rdata (vtables); selftest: its own range
-static DWORD g_ecaTxLo = 0x00401000, g_ecaTxHi = 0x00F95000;            // .text
+static DWORD g_ecaRdLo = TS3A(0x00F95000), g_ecaRdHi = TS3A(0x01146000);            // .rdata (vtables); selftest: its own range
+static DWORD g_ecaTxLo = TS3A(0x00401000), g_ecaTxHi = TS3A(0x00F95000);            // .text
 
 typedef void*(__fastcall* CaCtorFn)(u8* comp, void* edx, void* owner);
 typedef void(__fastcall* CaDtorFn)(u8* comp);

@@ -191,7 +191,7 @@ static int FbName(char* d, int room, DWORD method);   // below (LogFallbackStack
 static int FbStackText(char* d, int room, int frames);
 static bool GrFaultText(const CONTEXT* c, char* d, int room);  // gcroots.cpp: the task line (docs/67 §22.4)
 static bool MonoFaultText(const CONTEXT* c, char* d, int room) {
-    if (c->Eip < 0x00E51000 || c->Eip >= TS3A(0x00E5A600)) return false;
+    if (c->Eip < TS3A(0x00E51000) || c->Eip >= TS3A(0x00E5A600)) return false;
     char caller[120] = "?", callee[120] = "-", st[1100] = "unreadable";
     DWORD rm = 0, obj = 0, vt = 0, kl = 0;
     const bool miss = c->Eip >= TS3A(0x00E51FC0) && c->Eip < TS3A(0x00E520C0);
@@ -254,7 +254,7 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
         if (GrFaultText(c, mono, sizeof(mono))) Log("  %s", mono);  // docs/67 §22.4: is the task rooted, is the frame scanned
     }
     // TS3W.exe code (not the start-up AVs in other modules): the released ring once; an illegal instruction counts (wild call)
-    if ((code == EXCEPTION_ACCESS_VIOLATION && c->Eip >= 0x00401000 && c->Eip < 0x00F95000) || code == EXCEPTION_ILLEGAL_INSTRUCTION)
+    if ((code == EXCEPTION_ACCESS_VIOLATION && c->Eip >= TS3A(0x00401000) && c->Eip < TS3A(0x00F95000)) || code == EXCEPTION_ILLEGAL_INSTRUCTION)
         P5cRelDump();
     return EXCEPTION_CONTINUE_SEARCH;
 }

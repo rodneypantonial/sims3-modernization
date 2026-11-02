@@ -347,3 +347,12 @@ bytes, so the bit-exact claim carries over. No range hash in this feature; the 6
 ts3bytes `ok` row. No code change; `[LotSinCos]` added to `ALLOW_ON` (minimal EA ini, `Enabled=1` forced). Next smoke must
 show `OK   lot sin/cos cache: 0x00AB71B0 (Mode=1 Verify=0, 256 angles)`; a run with `Verify=1` would confirm bit-exactness live
 (`lotsincos MISMATCH` lines = stop).
+
+### AllocSites heap hooks on 1.69 [verified, static]
+
+The four heap entries were already `TS3A` (since 4f097f5; the Run 7f2 note "raw Steam addresses" is stale): 0x4E69D0 /
+0x4E6A20 / 0x4E6A70 / 0x4E5920 -> 0x4E6C30 / 0x4E6C80 / 0x4E6CD0 / 0x4E5B80, all four with the same 10-byte prologue on
+1.69. The raw literal was the `.text` range (0x401000..0xF95000, -> ..0xFDF000), and the guard took any leading `E9`. Now
+an entry must match the prologue (`Matches`) or be [Alloc]'s jmp into this module. Other raw literals the scanner had
+marked `unsure` (page-aligned or a size-like name) are wrapped with overrides in `docs/data/ea169-overrides.csv`.
+`AllocSitesHeap=1` is static-safe on EA; not yet run.
