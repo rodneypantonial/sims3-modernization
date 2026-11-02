@@ -85,6 +85,7 @@ see ciphertext. Largest new machinery; its one advantage (future EA patches with
 | 5 | resolve the 9 ts3native.cpp rows + any zero row in the smoke pool in Ghidra (main laptop), `docs/data/ea169-overrides.csv` | docs/data/ea169-overrides.csv, tools/addr-codemod.ts (read overrides) | reasoning | 2 h | 0 | port-run: those rows leave the unresolved list with evidence text |
 | 6 | first smoke (§6) **done 2026-11-02: PASS on the second run (ini fix 80b215b, Verify=1; lot reached, 5 min soak, see end)** | ts3native-ea169.ini on the EA laptop | reasoning | 1 h | 1 (+1 rerun) | log: host line, no `SKIP all`, every on-feature logs its install line, no `FAIL`, reach the main menu and a lot |
 | 7 | widen: features with only `ok` expectations and no zero rows, one per run | allowlist in build.yml | sonnet | 30 min each | 1 each | same as 6 plus the feature's own first log line. **Run 7c done 2026-11-02 (build e09801d, `[FootprintIndex]` forced on): `SKIP footprint index: 0x006677E0..0x00667B60 differs from Steam 1.67`, FNV range guard, nothing written; game stable with all packs mounted. Next standalone candidate: `[LotSinCos]` (not built).** **Run 7a done 2026-11-02 (build 30603bd, `[WaterJps]`): `SKIP water jps`, code hash differs on 1.69.47; game stable, see "Task 7 runs" below.** 7b not run: every other candidate section is `Enabled=0` in the Steam ini (the allowlist keeps the value, so nothing installs) and `[SlotEnabledRO]` / `[CellMemoProbe]` also SKIP by dependency (`[RouteGate] Enforce=1` + async, `[RouteJobPhases]`), both off on EA |
+| 7d | rc smoke: `ts3native-ea169-rc.ini` (section "EA release-candidate ini" below) as `ts3native.ini` on the EA laptop, one load of `Baseline-SV-Spring.sims3`, a save, quit | tools/ea-ini.ts | sonnet | 30 min | 1 | game stable with all packs mounted; log has no `FAIL`/exception from a kept section; every kept section with Enabled=1 logs its install or a SKIP line; a crash names its section, which goes to `ALWAYS_OFF` |
 | 8 | managed lane (§3 last bullet) | tools/setup/build-fixes.ts (REF_DIR arg), docs/231 | reasoning | 3 h | 1 | `.managed.csv` reviewed; game starts with ts3fixes-ea169 and no popup |
 | 9 | post-release: `--apply` on main, PR, docs/68 §7.1 "applied" | as task 4 | sonnet | 30 min | 0 | identity proof repeated on main |
 
@@ -191,3 +192,83 @@ logged `LoadOption.ini selectedflags already 001fefff`, so every installed pack 
 - Not checked: the window title ("The Sims™ 3 Into the Future" expected with all packs); the probe does not log it and the game had exited before anyone looked.
 - Verdict: FootprintIndex SKIP (safe, nothing written), the 6b feature set still PASS with all packs mounted. Logs: `probe-out/ea-7c-1102.ts3native.log`, `.soak.log`,
   `.drive.log`, `.log`, events `probe-out/20261102-150447`. Next standalone candidate (§7): `[LotSinCos]`, not built yet.
+
+## EA release-candidate ini (2026-11-02)
+
+`ts3native-ea169-rc.ini` (artifact `native-ea169`, written by `tools/ea-ini.ts`; the minimal `ts3native-ea169.ini` stays as before). Start = the shipped Steam ini; a section is zeroed (every integer key 0) when (a) a source file of it (tools/ini-sections.json, plus cpp files including a flagged .h) has an `// unresolved` row in ts3addr-ea169.h or a `// bytes-bad` row (mismatch/unmapped; written by port-run into ts3bytes-ea169.h), (b) it is on the always-off list (EaDiag, Verify, MemDiag, SteerRO, FpRebuildLock, Watchpoint, RouteToObjRO: struct layouts, §3), or (c) a dependency is zeroed (`DEPENDS` in the script: the RouteGate/RouteAsync pair, RouteJobPhases, SaveWrite, UserDiag, MonoThread, RouteSnap). [GC] ignores memexp.cpp (only its `SqrtHeapLimit`, shipped 0). Table regenerated with 31 unresolved rows (eadiag.cpp rows gone: port-run now skips EA-only modules like addr-codemod) and 8 bytes-bad sites; sections whose only evidence is "files clean" are not proven to work on 1.69, only free of known address/bytes gaps (WaterJps still logs SKIP by its hash guard).
+
+| section | shipped Enabled | rc state | reason |
+|---|---|---|---|
+| [GC] | 1 | kept | files clean |
+| [Compat] | - | kept | files clean |
+| [ThreadStack] | 0 | kept | files clean |
+| [Watchpoint] | 0 | zeroed | always off: watchpt.cpp struct layouts |
+| [CrashForensics] | 0 | zeroed | crashfx.cpp (unresolved row) |
+| [RouteCache] | 0 | kept | files clean |
+| [RouteWorker] | 0 | kept | files clean |
+| [RouteAsync] | 1 | zeroed | hostcalls.cpp (unresolved row), routesnap.cpp (unresolved row) |
+| [RouteBudget] | 0 | kept | files clean |
+| [RouteJobPhases] | 0 | zeroed | hostcalls.cpp (unresolved row), routephases.cpp (unresolved row) |
+| [GoalGen] | - | kept | files clean |
+| [CellMemoProbe] | 0 | zeroed | depends on [RouteJobPhases], zeroed |
+| [RouteEarlyOut] | 0 | kept | files clean |
+| [SaveWrite] | 1 | kept | files clean |
+| [Decompress] | 1 | kept | files clean |
+| [Alloc] | 0 | kept | files clean |
+| [WaterJps] | 1 | kept | files clean |
+| [SaveFlush] | 0 | kept | files clean |
+| [UserDiag] | 1 | kept | files clean |
+| [MemDiag] | 0 | zeroed | always off: memexp.cpp struct layouts |
+| [Compaction] | 0 | kept | files clean |
+| [SaveCompress] | 0 | zeroed | savecompress.cpp (unresolved row) |
+| [FootprintIndex] | 0 | kept | files clean |
+| [HeightCache] | 0 | kept | files clean |
+| [TerrainGrave] | 0 | kept | files clean |
+| [GcThreadCheck] | 0 | kept | files clean |
+| [GcRootCheck] | 0 | zeroed | gcroots.cpp (bytes mismatch) |
+| [ArenaGuard] | 0 | kept | files clean |
+| [IcLockCheck] | 0 | kept | files clean |
+| [RouteGate] | 1 | zeroed | depends on [RouteAsync], zeroed |
+| [Discourage] | 1 | zeroed | depends on [RouteGate], zeroed |
+| [LotRemoveGuard] | 1 | zeroed | routesnap.cpp (unresolved row) |
+| [SteerRO] | 0 | zeroed | always off: steerro.cpp struct layouts |
+| [FpRebuildLock] | 0 | zeroed | always off: steerro.cpp struct layouts |
+| [LotFrontDoorRO] | 0 | zeroed | depends on [RouteGate], zeroed |
+| [ObstructedRO] | 0 | zeroed | depends on [RouteGate], zeroed |
+| [AvoidRO] | 0 | zeroed | avoidro.cpp (unresolved row) |
+| [RouteToObjRO] | 0 | zeroed | always off: rtoro.cpp struct layouts |
+| [PlacementRO] | 0 | zeroed | depends on [RouteGate], zeroed |
+| [GoalValidRO] | - | zeroed | depends on [RouteGate], zeroed |
+| [IdleCheckRO] | 0 | zeroed | depends on [RouteGate], zeroed |
+| [MovedWaits] | 0 | kept | files clean |
+| [SlotEnabledRO] | 0 | zeroed | depends on [RouteGate], zeroed |
+| [Gate0RO] | 0 | zeroed | depends on [RouteGate], zeroed |
+| [ProbeP1b] | 0 | zeroed | depends on [RouteGate], zeroed |
+| [LocoWindow] | 0 | zeroed | depends on [RouteGate], zeroed |
+| [ProbeP10] | 0 | zeroed | depends on [RouteGate], zeroed |
+| [MonoThread] | 0 | zeroed | monothread.cpp (unresolved row) |
+| [LotStream] | 0 | kept | files clean |
+| [Verify] | 0 | zeroed | always off: bit-compares against Steam code |
+| [JobQueue] | 0 | zeroed | jobqueue.cpp (unresolved row) |
+| [D3DMultithreaded] | 0 | kept | files clean |
+| [LotSinCos] | 0 | kept | files clean |
+| [IdCache] | 0 | kept | files clean |
+| [ProbeSnap] | 0 | zeroed | vcall.cpp (unresolved row) |
+| [ProbeValues] | 0 | kept | files clean |
+| [LoadProf] | 0 | kept | files clean |
+| [RouteSnap] | 0 | zeroed | hostcalls.cpp (unresolved row), routesnap.cpp (unresolved row) |
+| [OptsInit] | 1 | kept | files clean |
+| [HitchAttr] | 0 | zeroed | depends on [RouteAsync], zeroed |
+| [UnseenProbe] | 0 | zeroed | unseen.cpp (unresolved row) |
+| [UnseenThrottle] | 0 | zeroed | unseen.cpp (unresolved row) |
+| [UnseenFallback] | 1 | zeroed | depends on [RouteAsync], zeroed |
+| [UnseenGhost] | 0 | kept | files clean |
+| [PlanRepeat] | 0 | zeroed | routesnap.cpp (unresolved row) |
+| [MonoFast] | - | kept | files clean |
+| [AutShadow] | 0 | zeroed | depends on [MonoThread], zeroed |
+| [WorldImage] | 0 | kept | files clean |
+| [CrashReport] | 0 | kept | files clean |
+| [P6Waits] | 0 | kept | files clean |
+| [ResourceCache] | - | zeroed | rctrim.cpp (unresolved row) |
+| [EaCrashFixes] | - | zeroed | eafix.cpp (unresolved row) |
+| [EaDiag] | - | zeroed | always off: EA-only diagnostics, log only, minimal ini only |
