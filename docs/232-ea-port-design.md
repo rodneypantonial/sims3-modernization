@@ -206,7 +206,7 @@ Keaton. Enabled=1 in the rc ini: `[GC]` `[SaveWrite]` `[Decompress]` `[WaterJps]
 - No `FAIL`, no `bytes differ`, no `SKIP all`, no asi exception line, no crash file; decompress at exit `calls 66523 fails 0 mismatches 0`.
 - Soak 15:29-15:31 (5 samples, 28 s apart, taken after about 4 min in the world): WS 2065-2073 MB, 144 threads, game CPU flat; no new `ScriptError*.xml`. `quit_game`: process gone
   within 5 s, no EA relaunch in 60 s; exit line `1 world loads`. No save made (the row's save step was not run, as in 7c).
-- Verdict: PASS for the criteria, with the `mintcall` SKIP to decide on (§7: keep as a guard SKIP or zero `[MonoFast]` in the rc ini). Logs: `probe-out/ea-7d-1102.*`.
+- Verdict: PASS for the criteria, with the `mintcall` SKIP to decide on (§7: keep as a guard SKIP or zero `[MonoFast]` in the rc ini). **Decision 2026-11-02: keep `[MonoFast]` as is in the rc ini; its guard SKIP writes nothing, so no zeroing is needed.** Logs: `probe-out/ea-7d-1102.*`.
 
 ## EA release-candidate ini (2026-11-02)
 

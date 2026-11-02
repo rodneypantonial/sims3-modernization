@@ -291,7 +291,7 @@ static bool ApplyThumbPose(const wchar_t* ini) {
 }
 
 // ---- GeomBoneIndex ----
-static const DWORD GB_SLOT = TS3A(0x00FE3314), GB_GET = TS3A(0x005C6E00), GB_COUNT = 0x005C6DF0;  // vtable 0xFE32C0 +0x54, +0x50
+static const DWORD GB_SLOT = TS3A(0x00FE3314), GB_GET = TS3A(0x005C6E00), GB_COUNT = TS3A(0x005C6DF0);  // vtable 0xFE32C0 +0x54, +0x50
 // mov eax,[ecx+58h]; mov ecx,[esp+4]; mov eax,[eax+ecx*4]; ret 4
 static const u8 kGbGet[13] = {0x8B, 0x41, 0x58, 0x8B, 0x4C, 0x24, 0x04, 0x8B, 0x04, 0x88, 0xC2, 0x04, 0x00};
 // mov eax,[ecx+5Ch]; sub eax,[ecx+58h]; sar eax,2; ret

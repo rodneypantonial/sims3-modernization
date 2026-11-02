@@ -1,7 +1,7 @@
 // One command for a port to another exe build (docs/68 §7.5): map -> expected bytes -> TS3A table, one screen out.
 //
 //   node tools/port-run.ts --exe <decrypted TS3W.exe|TS3.exe> [--ref <Steam exe>] [--allow-inferred] [--build] [--ghidra-names]
-//   node tools/port-run.ts --exe <exe> --allow-inferred --zero-unresolved --table native/ts3native/ts3addr-ea169.h --host-name "EA app 1.69.47"
+//   node tools/port-run.ts --exe <exe> --allow-inferred --zero-unresolved --table native/ts3native/ts3addr-ea169.h --host-name "EA app 1.69.47" --overrides docs/data/ea169-overrides.csv
 //                                              the committed TS3A_TABLE header (docs/228 task 1: addresses only, review = git diff)
 //   node tools/port-run.ts --zip <Sims3PortReport-xxxxxxxx.zip> [same options]
 //   node tools/port-run.ts --self-check
@@ -33,14 +33,20 @@ const SRC = join(repo, "native", "ts3native");
 const hx = (a: number | null | undefined) => (a === null || a === undefined ? "" : "0x" + a.toString(16).toUpperCase().padStart(8, "0"));
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 const rel = (p: string) => relative(repo, p).replace(/\\/g, "/");
-const GOOD = new Set(["exact", "masked", "ref"]);
+const GOOD = new Set(["exact", "masked", "ref", "override"]);
 
 export type PatchRow = { addr: number; new: number | null; kind2: string; mapKind: string; name: string; where: string };
 export type Problem = { prio: number; stage: string; addr: number | null; label: string; kind: string; cand: string; ai: boolean; where: string };
 
+export function readOverrides(text: string): Map<number, number> {
+    const out = new Map<number, number>();
+    for (const c of text.trim().split(/\r?\n/).slice(1).map(csvRow)) if (/^0x[0-9a-f]+$/i.test(c[1] ?? "")) out.set(parseInt(c[0], 16), parseInt(c[1], 16));
+    return out;
+}
+
 // best map row per Steam address (a site can be both a site row and a ref row)
 export function bestMap(rows: MapRow[]): Map<number, MapRow> {
-    const rank = (k: string) => (k === "exact" ? 4 : k === "masked" ? 3 : k === "ref" ? 2 : k === "near" || k === "offset-changed" || k === "xref" ? 1 : 0);
+    const rank = (k: string) => (k === "override" ? 5 : k === "exact" ? 4 : k === "masked" ? 3 : k === "ref" ? 2 : k === "near" || k === "offset-changed" || k === "xref" ? 1 : 0);
     const out = new Map<number, MapRow>();
     for (const m of rows) { const b = out.get(m.ref); if (!b || rank(m.kind) > rank(b.kind) || (rank(m.kind) === rank(b.kind) && b.new === null && m.new !== null)) out.set(m.ref, m); }
     return out;
@@ -93,7 +99,7 @@ const node = (args: string[]) => {
     catch (e: any) { console.error(`${args[0]} failed (exit ${e.status}):\n${String(e.stdout ?? "").split("\n").slice(-5).join("\n")}${e.stderr ?? ""}`); process.exit(1); }
 };
 
-function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow-inferred"?: boolean; "zero-unresolved"?: boolean; table?: string; "host-name"?: string; build?: boolean; "ghidra-names"?: boolean; "min-score"?: string }) {
+function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow-inferred"?: boolean; "zero-unresolved"?: boolean; table?: string; "host-name"?: string; build?: boolean; "ghidra-names"?: boolean; "min-score"?: string; overrides?: string }) {
     const refPath = v.ref ?? join(repo, "game-copy", "bin", "TS3W.exe");
     if (!existsSync(refPath)) { console.error(`Steam exe not found: ${refPath} (--ref)`); process.exit(2); }
     const refBuf = readFileSync(refPath), input = (v.zip ?? v.exe)!;
@@ -128,13 +134,17 @@ function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow
         writeFileSync(mapCsv, mapText);
         console.log(`identity: +${add.length} addresses outside the map taken as the same address`);
     }
+    // hand-verified rows (docs/232 task 5, docs/data/ea169-overrides.csv: steam,ea,label,evidence); an empty ea stays unresolved
+    const over = v.overrides ? readOverrides(readFileSync(join(repo, v.overrides), "utf8")) : new Map<number, number>();
+    if (over.size) mapText = mapText.trimEnd() + "\n" + [...over].map(([a, b]) => `${hx(a)},${hx(b)},override,1,,,,,,${v.overrides}`).join("\n") + "\n";
+    if (v.overrides) console.log(`overrides: ${over.size} rows from ${v.overrides}`);
     const map = readMap(mapText), best = bestMap(map);
 
     // 2. expected original bytes
     let patch: PatchRow[], bytesRows: BytesRow[] = [];
     if (v.exe) {
         const r = parsePe(refBuf), o = parsePe(otherBuf!);
-        const res = check(r, o, exp);
+        const res = check(r, o, exp, over);
         bytesRows = res.map((x) => ({ len: x.bytes.length, new: x.new, kind2: x.kind2, addr: x.addr, where: x.where }));
         patch = res.map((x) => ({ addr: x.addr, new: x.new, kind2: x.kind2, mapKind: x.mapKind, name: x.name, where: x.where }));
         for (const x of patch) {  // its own mapping missed it: try the map row (ref rows for data)
@@ -231,12 +241,15 @@ function selfCheck() {
     const csv = problemsCsv(ps).split("\n");
     ok(csv[0] === "prio,stage,address,label,kind,candidates,ai,where" && csv.length === ps.length + 2, "csv shape");
     ok(aiLine(ps, "x.csv") === "AI needed: 3 rows (see x.csv)" && aiLine([], "x") === "AI needed: none", `ai line ${aiLine(ps, "x.csv")}`);
+    const ov = readOverrides('steam,ea,label,evidence\n0x00401000,0x00409000,A,"x, y"\n0x00403000,,C,unresolved: why\n');
+    ok(ov.size === 1 && ov.get(0x401000) === 0x409000, "overrides: rows with an ea only");
+    ok(bestMap(map.concat([{ ref: 0x401000, new: 0x409000, kind: "override", hint: null, label: "", where: "" }])).get(0x401000)!.new === 0x409000, "override beats exact");
     console.log("port-run self-check: ok");
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     const { values: v } = parseArgs({ options: { zip: { type: "string" }, exe: { type: "string" }, ref: { type: "string" }, asm: { type: "string" }, "allow-inferred": { type: "boolean" }, "zero-unresolved": { type: "boolean" }, table: { type: "string" }, "host-name": { type: "string" },
-        build: { type: "boolean" }, "ghidra-names": { type: "boolean" }, "min-score": { type: "string" }, xrefs: { type: "boolean" }, "self-check": { type: "boolean" } } });
+        build: { type: "boolean" }, "ghidra-names": { type: "boolean" }, "min-score": { type: "string" }, overrides: { type: "string" }, xrefs: { type: "boolean" }, "self-check": { type: "boolean" } } });
     if (v["self-check"]) selfCheck();
     else if (!v.zip === !v.exe) { console.error("usage: node tools/port-run.ts (--exe <exe> | --zip <player report>) [--ref <Steam exe>] [--asm <dir>] [--allow-inferred] [--zero-unresolved] [--table <repo path>] [--host-name <s>] [--build] [--ghidra-names] [--min-score 6] | --self-check"); process.exit(2); }
     else run(v);

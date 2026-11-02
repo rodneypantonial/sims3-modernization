@@ -295,12 +295,14 @@ function ptrMask(r: Pe, x: Expect): Uint8Array {
     return m;
 }
 
-export function check(r: Pe, o: Pe, exp: Expect[]): Res[] {
+// over: hand-verified Steam -> other addresses (port-run --overrides); a site with one is ported even when bytes differ
+export function check(r: Pe, o: Pe, exp: Expect[], over = new Map<number, number>()): Res[] {
     const same = r === o;
     const sites = [...new Set(exp.flatMap((x) => (x.target !== undefined ? [x.addr, x.target] : [x.addr])))].map((va) => ({ va, label: "", where: "" }));
     const map = new Map<number, { new: number | null; kind: string }>();
     if (same) for (const s of sites) map.set(s.va, { new: s.va, kind: "exact" });
     else for (const x of mapAll(r, o, sites).rows) map.set(x.ref, { new: x.new, kind: x.kind });
+    for (const [a, b] of over) map.set(a, { new: b, kind: "override" });
     return exp.map((x) => {
         let m = map.get(x.addr) ?? { new: null, kind: "missing" };
         if (x.kind === "slot" && m.new === null) {  // data slot: the one aligned dword outside code holding the mapped fn
@@ -322,7 +324,7 @@ export function check(r: Pe, o: Pe, exp: Expect[]): Res[] {
             return res;
         }
         const pm = ptrMask(r, x);
-        res.kind2 = x.bytes.every((b, i) => pm[i] || b === got[i]) ? "ported" : "mismatch";
+        res.kind2 = x.bytes.every((b, i) => pm[i] || b === got[i]) || over.has(x.addr) ? "ported" : "mismatch";
         return res;
     });
 }
