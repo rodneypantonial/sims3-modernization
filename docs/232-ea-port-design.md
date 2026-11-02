@@ -84,7 +84,7 @@ see ciphertext. Largest new machinery; its one advantage (future EA patches with
 | 4 | **done 2026-11-02**: `--apply` on the branch (80 files, 1,414 literals), identity proof vs the pre-codemod branch build (run 41387248277): `.text`/`.data` equal, `.rdata` differs only in the debug-dir timestamp (2 bytes); no .map in the Steam artifact | native/ts3native/*.cpp (79 files), docs/68 §7.1 note | sonnet | 30 min | 0 | both hashes equal; second scan 0 `wrap` rows |
 | 5 | resolve the 9 ts3native.cpp rows + any zero row in the smoke pool in Ghidra (main laptop), `docs/data/ea169-overrides.csv` | docs/data/ea169-overrides.csv, tools/addr-codemod.ts (read overrides) | reasoning | 2 h | 0 | port-run: those rows leave the unresolved list with evidence text |
 | 6 | first smoke (§6) **done 2026-11-02: PASS on the second run (ini fix 80b215b, Verify=1; lot reached, 5 min soak, see end)** | ts3native-ea169.ini on the EA laptop | reasoning | 1 h | 1 (+1 rerun) | log: host line, no `SKIP all`, every on-feature logs its install line, no `FAIL`, reach the main menu and a lot |
-| 7 | widen: features with only `ok` expectations and no zero rows, one per run | allowlist in build.yml | sonnet | 30 min each | 1 each | same as 6 plus the feature's own first log line. **FootprintIndex build ready e09801d, run pending (CI run 41398218278, `[WaterJps]` dropped from ALLOW).** **Run 7a done 2026-11-02 (build 30603bd, `[WaterJps]`): `SKIP water jps`, code hash differs on 1.69.47; game stable, see "Task 7 runs" below.** 7b not run: every other candidate section is `Enabled=0` in the Steam ini (the allowlist keeps the value, so nothing installs) and `[SlotEnabledRO]` / `[CellMemoProbe]` also SKIP by dependency (`[RouteGate] Enforce=1` + async, `[RouteJobPhases]`), both off on EA |
+| 7 | widen: features with only `ok` expectations and no zero rows, one per run | allowlist in build.yml | sonnet | 30 min each | 1 each | same as 6 plus the feature's own first log line. **Run 7c done 2026-11-02 (build e09801d, `[FootprintIndex]` forced on): `SKIP footprint index: 0x006677E0..0x00667B60 differs from Steam 1.67`, FNV range guard, nothing written; game stable with all packs mounted. Next standalone candidate: `[LotSinCos]` (not built).** **Run 7a done 2026-11-02 (build 30603bd, `[WaterJps]`): `SKIP water jps`, code hash differs on 1.69.47; game stable, see "Task 7 runs" below.** 7b not run: every other candidate section is `Enabled=0` in the Steam ini (the allowlist keeps the value, so nothing installs) and `[SlotEnabledRO]` / `[CellMemoProbe]` also SKIP by dependency (`[RouteGate] Enforce=1` + async, `[RouteJobPhases]`), both off on EA |
 | 8 | managed lane (§3 last bullet) | tools/setup/build-fixes.ts (REF_DIR arg), docs/231 | reasoning | 3 h | 1 | `.managed.csv` reviewed; game starts with ts3fixes-ea169 and no popup |
 | 9 | post-release: `--apply` on main, PR, docs/68 §7.1 "applied" | as task 4 | sonnet | 30 min | 0 | identity proof repeated on main |
 
@@ -104,7 +104,7 @@ features can go on. - steerro/watchpt struct layouts: rewrite, not port (docs/23
   row crashes at load; the ini allowlist + CI assert is the only guard.
 - WaterJps (run 7a): the guard hashes `0x61F750..0x61FF93` (table: `0x00620880..0x00621063`) against one Steam 1.67 FNV constant and logs no measured
   value, so the log cannot say whether only the hash or the code differs. Fix: a per-build expected hash column in the port table (same for `[FootprintIndex]`,
-  whose guard has the same shape), plus a way to set `Enabled=1` in the EA ini for sections that are off on Steam; until then task 7 has no runnable candidate.
+  whose guard has the same shape), plus a way to set `Enabled=1` in the EA ini for sections that are off on Steam; `[FootprintIndex]` confirmed it in run 7c (same SKIP shape, no measured value). ALLOW_ON (e09801d) now forces `Enabled=1` on EA for listed sections; the remaining standalone candidate without a range hash is `[LotSinCos]` (lotsincos.cpp: one mapped address `0xAB8540`, 6-byte prologue check, `Verify=1` bit-compares against the game's code, no routing dependency, no unresolved or problems.csv row).
 Fix 2026-11-02 (after the first smoke): the generated EA ini zeroed only `Enabled`, so `[ArenaGuard] TailPad=1` and `InitobjFix=1` (independent of `Enabled`) ran on EA and TailPad read an unresolved row (arenatail.cpp:233, caught C0000005). The `native-ea169` step now zeroes every integer-valued key outside the allowlist and prints the zeroed keys per section.
 
 ## First smoke 2026-11-02 (task 6)
@@ -174,3 +174,20 @@ Run 7b: not run (see §5 row 7 and §7). Candidates with clean files (no unresol
 HeightCache, TerrainGrave, PlacementRO, GoalValidRO, MovedWaits, SlotEnabledRO, Gate0RO, ProbeP10, LotSinCos, ProbeSnap, HitchAttr, UnseenFallback, UnseenGhost,
 WorldImage, CrashReport, P6Waits; all `Enabled=0` on Steam, most need a routing feature that is off on EA. Best standalone next: `[FootprintIndex]` (FNV range
 guard + 3 byte-checked sites), once the EA ini can turn it on.
+Run 7c 15:04 PHT: CI artifact of e09801d (run 41398218278; asi sha256 `f4d01234cea7...780ff`, ini `8df4066c764c...9e80`, on: `[Decompress]` `[OptsInit]`
+`[FootprintIndex]` via ALLOW_ON, `Enabled=1` read back in the installed ini), Bin pair backed up as `.pre-7c` (`c035abe5a3a6` / `8aa37522782a`, restored after the run,
+sha-checked), `Bin	s3native.log` deleted first. Driver as 7a (`ts3probe.py serve --launch --port 47891` + `cycle.ts --save Baseline-SV-Spring.sims3`); the probe
+logged `LoadOption.ini selectedflags already 001fefff`, so every installed pack mounted: agent after 15 s, "Mod Scripts Found" accepted, world loaded 39 s (16 s in 7a),
+`LiveModeState`, households 37 (32 in 7a), Keaton. Install lines [verified]:
+- `SKIP footprint index: 0x006677E0..0x00667B60 differs from Steam 1.67, nothing written` (the FNV range guard over the ported LotLevel_SaveFootprints body; the
+  three byte-checked sites were never reached, the guard prints no measured hash, same shape as WaterJps in §7)
+- `OK   decompress: call 0x004EC1A5 -> RefpackHook, mode 1 verify 0 (0x004EB4F0 starts 83 EC 10 8B 4C = game code at load time)`
+- `OK   detour RoutePlanOptions_ctor (I-94-322 hub refs) at 0x00654240`, `OK   OptsInit: search options hub references +4 / +0x34 start at 0 (I-94-322)`
+- host line unchanged (`pe 6707155C size 0xEB5000`, `EA app 1.69.47`), no `SKIP all`, no `FAIL`, no `bytes differ`, no exception line inside the asi (module
+  `0x5D320000-0x5DA96000`); `arena guard disabled (Enabled=0)`, `arena tail pad disabled (TailPad=0)`, `initobj size fix disabled (InitobjFix=0)`, `water jps off (Enabled=0)`.
+- Decompress at exit: `calls 67063 fails 0 mismatches 0 in 380 MB out 1229 MB time 1139 ms max 19292 us` (Verify=0; about twice 7a's volume, all packs).
+- Soak 15:06-15:11 (10 samples, 30 s): game CPU 3-4 % of 16 logical CPUs, WS 1810-1842 MB (7a: 1569-1578 with fewer packs), commit 1709-1741 MB, 142 threads
+  (7a: 67); no new `ScriptError*.xml` (1 before, 1 after). Clean quit: process gone 5 s after `quit_game`, no EA relaunch in 150 s.
+- Not checked: the window title ("The Sims™ 3 Into the Future" expected with all packs); the probe does not log it and the game had exited before anyone looked.
+- Verdict: FootprintIndex SKIP (safe, nothing written), the 6b feature set still PASS with all packs mounted. Logs: `probe-out/ea-7c-1102.ts3native.log`, `.soak.log`,
+  `.drive.log`, `.log`, events `probe-out/20261102-150447`. Next standalone candidate (§7): `[LotSinCos]`, not built yet.
