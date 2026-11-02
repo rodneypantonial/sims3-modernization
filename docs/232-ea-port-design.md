@@ -84,7 +84,7 @@ see ciphertext. Largest new machinery; its one advantage (future EA patches with
 | 4 | **done 2026-11-02**: `--apply` on the branch (80 files, 1,414 literals), identity proof vs the pre-codemod branch build (run 41387248277): `.text`/`.data` equal, `.rdata` differs only in the debug-dir timestamp (2 bytes); no .map in the Steam artifact | native/ts3native/*.cpp (79 files), docs/68 §7.1 note | sonnet | 30 min | 0 | both hashes equal; second scan 0 `wrap` rows |
 | 5 | resolve the 9 ts3native.cpp rows + any zero row in the smoke pool in Ghidra (main laptop), `docs/data/ea169-overrides.csv` | docs/data/ea169-overrides.csv, tools/addr-codemod.ts (read overrides) | reasoning | 2 h | 0 | port-run: those rows leave the unresolved list with evidence text |
 | 6 | first smoke (§6) **done 2026-11-02: PASS on the second run (ini fix 80b215b, Verify=1; lot reached, 5 min soak, see end)** | ts3native-ea169.ini on the EA laptop | reasoning | 1 h | 1 (+1 rerun) | log: host line, no `SKIP all`, every on-feature logs its install line, no `FAIL`, reach the main menu and a lot |
-| 7 | widen: features with only `ok` expectations and no zero rows, one per run | allowlist in build.yml | sonnet | 30 min each | 1 each | same as 6 plus the feature's own first log line. **Build ready 30603bd** (first widening `[WaterJps]`, CI run 41396273029, asi sha256 `bc71151ee14d`, ini `208ffe1715a1`), **run pending**: expect `OK   water jps` or, if the code hash differs on EA, `SKIP water jps` (safe) |
+| 7 | widen: features with only `ok` expectations and no zero rows, one per run | allowlist in build.yml | sonnet | 30 min each | 1 each | same as 6 plus the feature's own first log line. **Run 7a done 2026-11-02 (build 30603bd, `[WaterJps]`): `SKIP water jps`, code hash differs on 1.69.47; game stable, see "Task 7 runs" below.** 7b not run: every other candidate section is `Enabled=0` in the Steam ini (the allowlist keeps the value, so nothing installs) and `[SlotEnabledRO]` / `[CellMemoProbe]` also SKIP by dependency (`[RouteGate] Enforce=1` + async, `[RouteJobPhases]`), both off on EA |
 | 8 | managed lane (§3 last bullet) | tools/setup/build-fixes.ts (REF_DIR arg), docs/231 | reasoning | 3 h | 1 | `.managed.csv` reviewed; game starts with ts3fixes-ea169 and no popup |
 | 9 | post-release: `--apply` on main, PR, docs/68 §7.1 "applied" | as task 4 | sonnet | 30 min | 0 | identity proof repeated on main |
 
@@ -102,6 +102,9 @@ features can go on. - steerro/watchpt struct layouts: rewrite, not port (docs/23
 - Not checked by the design: the ini-section-to-source-file map the task 3 allowlist assert needs (by hand), and whether
   selftest.exe compiles under `/DTS3A_TABLE` (task 3 skips it). Risk: a feature left ON whose data read hits a zero table
   row crashes at load; the ini allowlist + CI assert is the only guard.
+- WaterJps (run 7a): the guard hashes `0x61F750..0x61FF93` (table: `0x00620880..0x00621063`) against one Steam 1.67 FNV constant and logs no measured
+  value, so the log cannot say whether only the hash or the code differs. Fix: a per-build expected hash column in the port table (same for `[FootprintIndex]`,
+  whose guard has the same shape), plus a way to set `Enabled=1` in the EA ini for sections that are off on Steam; until then task 7 has no runnable candidate.
 Fix 2026-11-02 (after the first smoke): the generated EA ini zeroed only `Enabled`, so `[ArenaGuard] TailPad=1` and `InitobjFix=1` (independent of `Enabled`) ran on EA and TailPad read an unresolved row (arenatail.cpp:233, caught C0000005). The `native-ea169` step now zeroes every integer-valued key outside the allowlist and prints the zeroed keys per section.
 
 ## First smoke 2026-11-02 (task 6)
@@ -152,3 +155,22 @@ installed as the Bin pair with the 12:43 pair backed up as `.pre-ea169b` (`c035a
   `SKIP all` run before reading anything into it].
 - Also in this run: the ts3agent `LoadSave` fix (bare name gets `.sims3`, package `3eb7bb6fc994`) checked live: `load_save {"file":"Baseline-SV-Spring","reload":true}`
   answered `{"loading":"Baseline-SV-Spring.sims3"}` and reached `LiveModeState` again in ~40 s. No EA app relaunch followed the clean quit (150 s watch).
+
+## Task 7 runs 2026-11-02
+Run 7a 13:56 PHT: CI artifact of 30603bd (run 41396273029; asi sha256 `bc71151ee14d`, ini `208ffe1715a1`, on: `[Decompress]` `[OptsInit]` `[WaterJps]`),
+Bin pair backed up as `.pre-7a` (`c035abe5a3a6` / `8aa37522782a`, restored after the run, sha-checked), `Bin	s3native.log` deleted first. Driver as 6b:
+`ts3probe.py serve --launch` + `cycle.ts --save Baseline-SV-Spring.sims3` (agent after 24 s, "Mod Scripts Found" accepted, world loaded 16 s, `LiveModeState`,
+households 32, Keaton), 5 min soak, `quit_game`, 150 s relaunch watch. Install lines [verified]:
+- `SKIP water jps: code at 0x00620880..0x00621063 differs from Steam 1.67, nothing written` (the guard prints no measured hash; §7)
+- `OK   decompress: call 0x004EC1A5 -> RefpackHook, mode 1 verify 0 (0x004EB4F0 starts 83 EC 10 8B 4C = game code at load time)`
+- `OK   detour RoutePlanOptions_ctor (I-94-322 hub refs) at 0x00654240`, `OK   OptsInit: search options hub references +4 / +0x34 start at 0 (I-94-322)`
+- host line unchanged (`pe 6707155C size 0xEB5000`, `EA app 1.69.47`), no `SKIP all`, no `FAIL`, no `bytes differ`, no exception line inside the asi
+  (6b's 3x `C0000005 at 0x04697CC2` first-chance faults did not recur: so they are not reproducible per load either).
+- Decompress: `calls 45668 fails 0 mismatches 0 in 222 MB out 646 MB time 583 ms max 25284 us` (Verify=0 this run).
+- Soak 13:58-14:03 (10 samples, 30 s): game CPU 3 % of 16 logical CPUs every sample, WS 1577 -> 1569 MB, commit 1451 -> 1452 MB, 67 threads;
+  no new `ScriptError*.xml` (1 before, 1 after). Clean quit: process gone 5 s after `quit_game`, no EA relaunch in 150 s.
+- Verdict: WaterJps SKIP (safe, nothing written), the 6b feature set still PASS. Logs: `probe-out/ea-7a-1102.ts3native.log`, `.soak.log`, `.drive.log`, `.log`.
+Run 7b: not run (see §5 row 7 and §7). Candidates with clean files (no unresolved and no problems.csv rows): GoalGen, CellMemoProbe, Compaction, FootprintIndex,
+HeightCache, TerrainGrave, PlacementRO, GoalValidRO, MovedWaits, SlotEnabledRO, Gate0RO, ProbeP10, LotSinCos, ProbeSnap, HitchAttr, UnseenFallback, UnseenGhost,
+WorldImage, CrashReport, P6Waits; all `Enabled=0` on Steam, most need a routing feature that is off on EA. Best standalone next: `[FootprintIndex]` (FNV range
+guard + 3 byte-checked sites), once the EA ini can turn it on.
