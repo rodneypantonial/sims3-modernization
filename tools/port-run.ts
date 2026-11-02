@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { csvRow } from "./hook-sites.ts";
 import { parsePe } from "./exe-addr-map.ts";
-import { check, extract, patchedSites, readSources, sourceTexts, type Expect } from "./patch-bytes-check.ts";
+import { bytesTable, type BytesRow, check, extract, patchedSites, readSources, sourceTexts, type Expect } from "./patch-bytes-check.ts";
 import { dataRanges, gen, generated, scanText, sourceFiles } from "./addr-codemod.ts";
 import { readReport } from "./port-report.ts";
 import { mapExtra, portNames, readCands, readMap, steamNames, type MapRow } from "./port-ghidra-names.ts";
@@ -131,10 +131,12 @@ function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow
     const map = readMap(mapText), best = bestMap(map);
 
     // 2. expected original bytes
-    let patch: PatchRow[];
+    let patch: PatchRow[], bytesRows: BytesRow[] = [];
     if (v.exe) {
         const r = parsePe(refBuf), o = parsePe(otherBuf!);
-        patch = check(r, o, exp).map((x) => ({ addr: x.addr, new: x.new, kind2: x.kind2, mapKind: x.mapKind, name: x.name, where: x.where }));
+        const res = check(r, o, exp);
+        bytesRows = res.map((x) => ({ len: x.bytes.length, new: x.new, kind2: x.kind2, addr: x.addr }));
+        patch = res.map((x) => ({ addr: x.addr, new: x.new, kind2: x.kind2, mapKind: x.mapKind, name: x.name, where: x.where }));
         for (const x of patch) {  // its own mapping missed it: try the map row (ref rows for data)
             const m = best.get(x.addr), e = exp.find((y) => y.addr === x.addr && y.name === x.name)!;
             if (x.kind2 !== "unmapped" || !m || m.new === null) continue;
@@ -142,6 +144,7 @@ function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow
             x.new = m.new; x.mapKind = `map ${m.kind}`; x.kind2 = got && e.bytes.every((b, i) => b === got[i]) ? "ok" : "mismatch";
         }
     } else patch = patchFromMap(exp, best);
+    patch.forEach((x, i) => { if (bytesRows[i]) { bytesRows[i].new = x.new; bytesRows[i].kind2 = x.kind2; } });  // the map-row rescue above
     const pc = (k: string) => patch.filter((x) => x.kind2 === k).length;
     const kinds = [...new Set(patch.map((x) => x.kind2))].filter((k) => k !== "ok");
     console.log(`patch: ${patch.length} expectations at ${new Set(patch.map((x) => x.addr)).size} addresses: ok ${pc("ok")}${kinds.map((k) => `, ${k} ${pc(k)}`).join("")}; probe-only (generated headers) skipped ${all.length - exp.length}${v.zip ? " (zip: from map kinds, no bytes)" : ""}`);
@@ -152,6 +155,11 @@ function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow
     const hostOf = (b: Buffer) => { const pe = b.readUInt32LE(0x3c); return { pe: b.readUInt32LE(pe + 8), size: b.readUInt32LE(pe + 24 + 56), name: v["host-name"]! }; };
     const g = gen(mapText, needed, !!v["allow-inferred"], basename(mapCsv), { zeroUnresolved: zero, byValue, where: whereBy, host: otherBuf && v["host-name"] ? hostOf(otherBuf) : undefined });
     if (zero || !g.errors.length) writeFileSync(table, g.header);
+    if (v.table && v.exe && /ts3addr-/.test(v.table)) {  // docs/68 7.3: the game's own bytes at our hook sites, next to the address table
+        const bt = bytesTable(bytesRows, parsePe(otherBuf!), basename(v.exe)), bp = join(repo, v.table.replace("ts3addr-", "ts3bytes-"));
+        writeFileSync(bp, bt.header);
+        console.log(`bytes: ${bt.rows} rows (ok ${bt.ok}, ported ${bt.ported}) -> ${rel(bp)}`);
+    }
     const notApplied = scan.some((r) => r.kind === "wrap");
     console.log(`gen: ${g.rows} table rows (${g.zero} zero, ${g.byValue} by-value, ${g.inferred} inferred), ${g.errors.length} without a usable row${v["allow-inferred"] ? "" : " (strict)"}${zero || !g.errors.length ? ` -> ${rel(table)}` : ""}`);
 
