@@ -122,3 +122,35 @@ No registry edit is needed or recommended; the per-pack script and the forum req
 - **Verdict: Repair does not add `ProductID` to the pack keys.** The player FAQ step "repair the game" cannot fix the BaseGame-only
   load; the per-key `ProductID` dword (registry probe section above) or an EA installer fix remains the only route. Re-adding the packs in
   Manage > Add-ons was not tried (needs the same CDP route; expected to rerun the same DLC installer). [inferred for Add-ons]
+
+## LoadOption.ini selectedflags test 2026-11-02
+14:54 PHT, EA laptop, screen locked, swap kept (`Sims3Launcher.exe` = TS3.exe sha 7352DD6E599F, SKIP-all asi pair c035abe5a3a6 / 8aa37522782a). [verified]
+- Static (launcher + `TSLHost.dll` + image `probe-out/ts3-ea169.bin`): the real launcher is a thin .NET WinForms shell (manifest
+  `asInvoker`, no elevation, no `ProductID` write anywhere); the pack logic is native in `TSLHost.dll` (`S3L_gc_SetSelectedProductFlags`,
+  `S3L_gc_GetEntitledProducts`, `S3L_wp_GetInstalledProducts`, `S3L_g_launchGame` -> `origin://LaunchGameRtP/%s?CommandParams=%s` with
+  `Bin\TS3.rtp`). TSLHost `0x10022510` = `SetSelectedFlags(flags, save)`: stores this+8 and writes `selectedflags` to
+  `Documents\Electronic Arts\The Sims 3\LoadOption.ini` (`[productoption] playedflags / selectedflags`). The game reads it in the
+  product-gate constructor `0x596A70` (this = 0x1227E50): with `-editInGameMode` (string 0x107A880, checked at 0xECB8FA) the mask
+  `[this+8]` = 0xFFFFFFFF, otherwise `[this+8]` = `selectedflags` (0x596AC3-0x596AE6, string table 0x11A8930). The mount loop tests
+  `and ecx,[esi+8]; cmp ecx,eax; jne skip` at `0x597D0F` (skipped only when byte `[this+0x14]` != 0), so a pack mounts only if its bit is
+  in `selectedflags`. The game never writes that key (the only xref to 0x11A8934 is the read at 0x596AC5); it only ORs `playedflags`
+  (0x598BC6-0x598C2B). The launcher's record of its one real run (2026-11-01 20:52): `HKCU\Software\Electronic Arts\Sims 3\Launcher\Settings`
+  `LastRunIProducts = LastRunEProducts = 2093055 = 0x1FEFFF` (installed and entitled = base + 19 packs), while `LoadOption.ini` on the laptop
+  had `selectedflags = 00000000` (mtime 11-02 11:21:36; who zeroed it is unverified).
+- Live: `LoadOption.ini` backed up as `LoadOption.ini.bak-2026-11-02`, `selectedflags 00000000 -> 001fefff` (= LastRunIProducts &
+  LastRunEProducts, written by the new harness step below at 14:54:30), harness launch `ts3probe.py serve --launch` (`TS3_LAUNCH=ea`), game
+  process `Sims3Launcher.exe` pid 36032, parent EADesktop.exe, command line `-test`, no injection: ReadProcessMemory reader at 100 ms
+  (`probe-out/ea/selectedflags-flags-1102.txt`): t=0.000 `[0x1227E54]` 0x0, `[0x1227E58]` (selected mask) 0x1FEFFF, `[0x1227E60]` 0x1;
+  t=0.201 service answered, **`[0x1227E54]` = 0x1FEFFF**, stays so to t=60; `[0x1227E60]` stays 0x1 (so this+0x10 is not a per-pack found
+  mask, or only the registry-found base lands there); window title "The Sims™ 3 Into the Future" (EP11 mounted); `LoadOption.ini` not
+  rewritten by the game (mtime unchanged, `selectedflags = 001fefff`); no mod-version popup. Kill + 150 s relaunch watch, Bin pair unchanged.
+- **Verdict: the swap is the cause.** Our swap (`TS3.exe` over `Sims3Launcher.exe`) skipped the real launcher, whose Play press writes the pack
+  selection to `LoadOption.ini`; with `selectedflags = 0` the mask check at 0x597D0F drops every pack, so the game loads BaseGame only
+  (`GetProductFlags` 0x1). With `selectedflags = 001fefff` all 19 packs mount **without any registry change**: the pack keys still have
+  `Install Dir` only, so the `ProductID` registry theory (sections above) is not needed for the EA-app install; the game finds the packs
+  through another path once they are selected (not traced). Fix = set `selectedflags` before an EA launch: `tools/probe/ts3probe.py`
+  `ensure_selected_flags` (EA launch path) derives the value from `LastRunIProducts & LastRunEProducts` (8-digit lower-case hex as the file
+  has it), writes only when different, backs the file up once as `LoadOption.ini.bak-before-ea-launch`, `TS3_SELECTED_FLAGS` overrides, and
+  warns (file left alone) when the launcher keys are missing: run the real launcher once. Players going through the launcher never hit this;
+  it only affects launcher-less starts (our swap, or any player tool that starts TS3.exe directly). `probe-out/ea/ea-pack-registry.ps1` is
+  not needed; the forum-post draft above (installer writes no `ProductID`) stays a fact but is not the cause of BaseGame-only loads.
