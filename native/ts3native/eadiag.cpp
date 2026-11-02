@@ -1,6 +1,6 @@
 // [EaDiag] (docs/234): log-only diagnostics for the EA app 1.69.47 product/entitlement gate, the code that decides which
 // installed packs mount (player report: 19 packs installed, BaseGame only). EA build only (/DTS3A_TABLE): raw 1.69.47
-// addresses, no Steam counterpart. Nothing in the game is changed: the only writes are the five detour jmps; every game
+// addresses, no Steam counterpart. Nothing in the game is changed: the only writes are the eight detour jmps; every game
 // read goes through Readable first; everything is bounded (strings 64 chars, lists 64/80 entries, lookup lines 400).
 // Sites [verified in the 1.69.47 image, no branch lands inside a detoured range; see docs/234]:
 //   0xA421F0 entitlement lookup, cdecl, one arg = offer id (char*), returns 2 = no service or answer not loaded (the
@@ -236,8 +236,115 @@ static __declspec(naked) void EdAfterStub() {
     }
 }
 
+// (5) registry probe 0x7D1820(requested id, out eastl wstring&) [verified in the 1.69.47 image]: RegOpenKeyExW(HKLM,
+//     "Software\Sims"), RegEnumKeyExW over every subkey, RegQueryValueExW "ProductID" (one dword, type not checked;
+//     1001 counts as 1, values <= 0 skipped, else it must EQUAL the requested id; every subkey is visited, the last match
+//     wins), on a match RegQueryValueExW "Install Dir" into the out string. The caller 0x597AC6 loops over the rows
+//     {seq, pid, pid+1} of 0x11A7A38 and requests `seq` (1 = base, 2..21 = the packs in pid order EP01, SP01, EP02 ...).
+//     Sites (esp = the probe's frame F at both inner sites; nothing branches into a detoured range):
+//       0x7D193D after the subkey open, before the ProductID query: F+0x3C = wide subkey name (RegEnumKeyExW buffer,
+//                <= 255 chars), F+0x348 = requested id.
+//       0x7D1965 after a successful ProductID query: F+0x14 = the dword read.
+//       0x597B2D in the caller, right after the call: al = found, [esp] = requested id, [esp+4] = &wstring {begin, end}.
+static void* g_edKeyJmp;   // 0x7D193D
+static void* g_edValJmp;   // 0x7D1965
+static void* g_edCallJmp;  // 0x597B2D
+static char g_edKeyName[65];
+static DWORD g_edKeyReq;
+static bool g_edKeyPending;  // a subkey was opened and its ProductID not logged yet (absent until 0x7D1965 fires)
+static LONG g_edRegLines;
+
+// at most cap-1 chars of a wide string (p..end, or NUL-terminated when end is 0), every word checked, non-ASCII as '?'
+static void EdWStr(DWORD p, DWORD end, char* out, size_t cap) {
+    size_t i = 0;
+    if (!p) { strcpy_s(out, cap, "<null>"); return; }
+    for (; i + 1 < cap && (!end || p + 2 * i + 2 <= end); i++) {
+        const WORD* c = (const WORD*)(uintptr_t)(p + 2 * i);
+        if (!Readable(c, 2) || !*c) break;
+        out[i] = (*c >= 0x20 && *c < 0x7F) ? (char)*c : '?';
+    }
+    out[i] = 0;
+}
+static void EdFlushKey() {
+    if (g_edKeyPending && InterlockedIncrement(&g_edRegLines) <= 600)
+        Log("eadiag: regprobe req %lu key \"%s\": ProductID absent", g_edKeyReq, g_edKeyName);
+    g_edKeyPending = false;
+}
+static void __cdecl EdRegKey(DWORD frame) {
+    EdFlushKey();
+    EdWStr(frame + 0x3C, 0, g_edKeyName, sizeof(g_edKeyName));
+    g_edKeyReq = 0;
+    EdRd(frame + 0x348, &g_edKeyReq);
+    g_edKeyPending = true;
+}
+static void __cdecl EdRegVal(DWORD frame) {
+    DWORD v = 0;
+    EdRd(frame + 0x14, &v);
+    const DWORD eff = v == 0x3E9 ? 1 : v;
+    if (InterlockedIncrement(&g_edRegLines) <= 600)
+        Log("eadiag: regprobe req %lu key \"%s\": ProductID %lu (0x%lX)%s -> %s", g_edKeyReq, g_edKeyName, v, v,
+            v == 0x3E9 ? " = base, counts as 1" : "", (LONG)eff <= 0 ? "skipped (<= 0)" : eff == g_edKeyReq ? "MATCH" : "no match");
+    g_edKeyPending = false;
+}
+static void __cdecl EdRegCall(DWORD req, DWORD wstr, DWORD found) {
+    EdFlushKey();
+    DWORD b = 0, e = 0;
+    char dir[65];
+    if (EdRd(wstr, &b) && EdRd(wstr + 4, &e) && e >= b) EdWStr(b, e, dir, sizeof(dir));
+    else strcpy_s(dir, sizeof(dir), "<unreadable>");
+    if (InterlockedIncrement(&g_edRegLines) <= 600)
+        Log("eadiag: regprobe result req %lu -> found %lu, Install Dir \"%s\"", req, found, dir);
+}
+static __declspec(naked) void EdRegKeyStub() {
+    __asm {
+        pushfd
+        pushad
+        lea eax, [esp + 36]
+        push eax
+        call EdRegKey
+        add esp, 4
+        popad
+        popfd
+        jmp dword ptr [g_edKeyJmp]
+    }
+}
+static __declspec(naked) void EdRegValStub() {
+    __asm {
+        pushfd
+        pushad
+        lea eax, [esp + 36]
+        push eax
+        call EdRegVal
+        add esp, 4
+        popad
+        popfd
+        jmp dword ptr [g_edValJmp]
+    }
+}
+static __declspec(naked) void EdRegCallStub() {
+    __asm {
+        pushfd
+        pushad
+        movzx eax, byte ptr [esp + 28]  // al as saved by pushad
+        push eax                        // found
+        push dword ptr [esp + 44]       // &wstring ([esp+4] at the site)
+        push dword ptr [esp + 44]       // requested id ([esp] at the site)
+        call EdRegCall
+        add esp, 12
+        popad
+        popfd
+        jmp dword ptr [g_edCallJmp]
+    }
+}
+
 static bool ApplyEaDiag(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"EaDiag", L"ProductGate", 0, ini)) return false;
+    static const u8 kKey[] = {0x8B, 0x4C, 0x24, 0x10, 0x8D, 0x54, 0x24, 0x18};              // mov ecx,[esp+0x10]; lea edx,[esp+0x18]
+    static const u8 kVal[] = {0x8B, 0x44, 0x24, 0x14, 0x3D, 0xE9, 0x03, 0x00, 0x00};        // mov eax,[esp+0x14]; cmp eax,0x3E9
+    static const u8 kCall[] = {0x83, 0xC4, 0x08, 0x83, 0x3B, 0x01, 0x88, 0x44, 0x24, 0x2B};  // add esp,8; cmp [ebx],1; mov [esp+0x2B],al
+    g_edKeyJmp = InstallDetour("EaDiag regprobe subkey", 0x007D193D, kKey, sizeof(kKey), (void*)EdRegKeyStub);
+    g_edValJmp = InstallDetour("EaDiag regprobe ProductID", 0x007D1965, kVal, sizeof(kVal), (void*)EdRegValStub);
+    g_edCallJmp = InstallDetour("EaDiag regprobe result", 0x00597B2D, kCall, sizeof(kCall), (void*)EdRegCallStub);
     static const u8 kLookup[] = {0x8B, 0x0D, 0xB0, 0x4F, 0x24, 0x01};            // mov ecx,[0x1244FB0]
     static const u8 kWait[] = {0x8D, 0xAB, 0xBC, 0x04, 0x00, 0x00};              // lea ebp,[ebx+0x4BC]
     static const u8 kLoop[] = {0x33, 0xF6, 0x39, 0x35, 0x40, 0x7B, 0x1A, 0x01};  // xor esi,esi; cmp [0x11A7B40],esi
@@ -248,10 +355,10 @@ static bool ApplyEaDiag(const wchar_t* ini) {
     g_edLoopJmp = InstallDetour("EaDiag gate product loop", 0x005969C2, kLoop, sizeof(kLoop), (void*)EdLoopStub);
     g_edMountJmp = InstallDetour("EaDiag gate mount", 0x00596A3D, kMount, sizeof(kMount), (void*)EdMountStub);
     g_edAfterJmp = InstallDetour("EaDiag after gate", 0x00597E34, kAfter, sizeof(kAfter), (void*)EdAfterStub);
-    void* const tramps[] = {g_edLookupJmp, g_edWaitJmp, g_edLoopJmp, g_edMountJmp, g_edAfterJmp};
+    void* const tramps[] = {g_edLookupJmp, g_edWaitJmp, g_edLoopJmp, g_edMountJmp, g_edAfterJmp, g_edKeyJmp, g_edValJmp, g_edCallJmp};
     int n = 0;
     for (void* t : tramps) n += t ? 1 : 0;
-    Log("%s EaDiag: ProductGate log-only hooks, %d/5 installed (docs/234)", n == 5 ? "OK  " : "WARN", n);
+    Log("%s EaDiag: ProductGate log-only hooks, %d/8 installed (docs/234)", n == 8 ? "OK  " : "WARN", n);
     return n > 0;
 }
 #endif
