@@ -76,6 +76,14 @@ namespace Ts3Agent
             switch (s) { case "normal": return GameSpeed.Normal; case "fast": return GameSpeed.Double; default: return GameSpeed.Triple; }
         }
 
+        // One ts3native log line per cleared dialog at once (UserDiag text channel, as ts3fixes DiagLine), so a crash keeps the click history.
+        static void ApLog(string title, string clicked)
+        {
+            string t = (title ?? "").Replace("\r", " ").Replace("\n", " ");
+            if (t.Length > 80) t = t.Substring(0, 80);
+            DiagLine("ap click: " + t + " -> " + clicked);
+        }
+
         static void AutopilotStep(ref int lastDialog, ref int lastSpeed)
         {
             Dictionary<string, object> c = ApCfg();
@@ -89,6 +97,7 @@ namespace Ts3Agent
                 {
                     Dictionary<string, object> d = AutoDialog(new Args(new Dictionary<string, object>())) as Dictionary<string, object>;
                     if (d != null && sApCleared.Count < 200) sApCleared.Add(d["title"] + " -> " + d["clicked"]);
+                    if (d != null) ApLog(d["title"] as string, d["clicked"] as string);
                     return; // let the dialog close before touching the speed
                 }
             }

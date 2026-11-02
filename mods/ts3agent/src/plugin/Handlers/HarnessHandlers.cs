@@ -297,6 +297,8 @@ namespace Ts3Agent
             new[] { new[] { "save your town before continuing" }, new[] { "just continue", "continue" } },
             new[] { new[] { "name your saved game" }, new[] { "cancel" } },
             new[] { new[] { "come over", "invite", "would like to visit", "wants to visit", "join them" }, new[] { "decline", "not now", "no", "cancel" } },
+            // Long-distance move offers: accepting one leaves LiveMode (1.69 run 7h/7j2 exits, crash at 0x00AD04EC); a player does not accept one in a 10 min test.
+            new[] { new[] { "new towns available", "long-distance move", "preparing to move" }, new[] { "not now", "cancel", "later", "decline", "no" } },
             new[] { new[] { "mod scripts found" }, new[] { "accept", "ok", "continue" } },
         };
 
