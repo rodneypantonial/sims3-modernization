@@ -1921,7 +1921,7 @@ function unrequestedModeGuard(from = 0, clicksFile = ''): () => string { // from
           const na = (tail.match(/ap click: .* -> dialog_expect accept:/g) ?? []).length;
           if (na > nAccept) { nAccept = na; acceptAt = Date.now(); }
         }
-        if (ns) { verdict = `autopilot: dialog with no safe button, nothing clicked (${ns.slice(0, 300)})`; return; }
+        if (ns) { verdict = emptyButtons(ns) ? `autopilot: window with no buttons stayed over ${2 * GUARD_MS / 1000} s (${ns.slice(0, 300)})` : `autopilot: dialog with no safe button, nothing clicked (${ns.slice(0, 300)})`; return; }
         const ago = (await get('status'))?.state_cmd_ago_s, acc = acceptAt ? (Date.now() - acceptAt) / 1000 : null;
         // an accept the harness armed (dialog_expect accept) may leave live mode for a long time (a move): excused for ACCEPT_WINDOW_S
         const cur = modeSnap(await agent('game_state')), why = acc !== null && acc <= ACCEPT_WINDOW_S ? '' : modeExit(prev, cur, ago);
