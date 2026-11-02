@@ -1,7 +1,7 @@
-# 228. EA app 1.69.47 port of ts3native: design (2026-11-02 PHT)
+# 232. EA app 1.69.47 port of ts3native: design (2026-11-02 PHT)
 
-Question: ship EA app 1.69.47 support with the least new machinery and no risk to the Steam build. Inputs: docs/226
-(coverage of the first EA image), docs/68 §7-§7.5 (tools), docs/227 (mod-version popup), `out/port/ts3-ea169-file-fec39efa/`
+Question: ship EA app 1.69.47 support with the least new machinery and no risk to the Steam build. Inputs: docs/230
+(coverage of the first EA image), docs/68 §7-§7.5 (tools), docs/231 (mod-version popup), `out/port/ts3-ea169-file-fec39efa/`
 (EA-derived, never committed). [verified] = read in the CSVs/sources this session, [inferred] = reading of them.
 
 ## 1. What the map says [verified]
@@ -14,7 +14,7 @@ Question: ship EA app 1.69.47 support with the least new machinery and no risk t
   0x1038590, 3 votes), 10 shifted or resized (0xFEB848 221 -> 73 slots). `map.offsets.csv` 9 groups, 5 sites (steerro, watchpt,
   rtoro, memexp).
 - Not in any source file with `ai=yes`: decompress.cpp, optsinit.cpp, waterjps*.cpp, alloc.cpp, cellmemo.cpp, movedwait.cpp
-  (sigmap: 24 features fully mapped, docs/226). These are the first-smoke pool.
+  (sigmap: 24 features fully mapped, docs/230). These are the first-smoke pool.
 - `Matches` = `Readable(addr, n) && memcmp` (ts3native.cpp:47); `InstallDetour`/`PatchImm32` go through it. Plain data reads
   (`*(DWORD*)0x0116...`) have no check. Host gate today: name `TS3W.exe` + base 0x400000, else `SKIP all` (ts3native.cpp:4688). <!-- docs-code: ok -->
 
@@ -53,7 +53,7 @@ see ciphertext. Largest new machinery; its one advantage (future EA patches with
   Not in this milestone; later a per-build byte table from the same `gen`. First smoke uses only files whose expectations are
   all `ok`.
 - 407 slot-shifted vtables, 5 offset-changed sites: slot numbers and struct displacements are not addresses, the codemod does
-  not touch them. steerro, watchpt, rtoro, memexp, lotfd (vt_Portal) OFF on EA; re-derive by hand later (docs/226 reading).
+  not touch them. steerro, watchpt, rtoro, memexp, lotfd (vt_Portal) OFF on EA; re-derive by hand later (docs/230 reading).
 - Gating rule: EA ini = Steam ini with every section `Enabled=0` except an allowlist in build.yml (same awk style as the
   release check); CI fails if an allowlisted section's module file appears in the header's `// unresolved` list.
 - Steam identity proof: the `--apply` commit is a separate PR; CI artifact of its parent (main) vs the PR artifact: sha256 of
@@ -64,8 +64,8 @@ see ciphertext. Largest new machinery; its one advantage (future EA patches with
   Rerun after any merge that adds literals.
 - Managed lane (separate, after native smoke): extract the 1.69 assemblies on the EA laptop (`tools/extract-assemblies.ts`,
   into a gitignored dir), `port-report` managed stage -> `.managed.csv` (ts3fixes methods changed), rebuild ts3fixes with
-  `REF_DIR` pointed at 1.69 -> `ts3fixes-ea169.package`. Version-1 S3SA header, so no mod-version popup from ours (docs/227);
-  the popup itself comes from 1.67 core mods and is answered by the harness guard in docs/227 §2.
+  `REF_DIR` pointed at 1.69 -> `ts3fixes-ea169.package`. Version-1 S3SA header, so no mod-version popup from ours (docs/231);
+  the popup itself comes from 1.67 core mods and is answered by the harness guard in docs/231 §2.
 
 ## 4. Branch and merge plan around v0.2.5 (PHT)
 - Mon 11-02 .. Thu 11-05: branch `ea169-port` from main. Only tooling + ts3addr.h + host check + build.yml there; no
@@ -85,7 +85,7 @@ see ciphertext. Largest new machinery; its one advantage (future EA patches with
 | 5 | resolve the 9 ts3native.cpp rows + any zero row in the smoke pool in Ghidra (main laptop), `docs/data/ea169-overrides.csv` | docs/data/ea169-overrides.csv, tools/addr-codemod.ts (read overrides) | reasoning | 2 h | 0 | port-run: those rows leave the unresolved list with evidence text |
 | 6 | first smoke (§6) **done 2026-11-02: PASS on the second run (ini fix 80b215b, Verify=1; lot reached, 5 min soak, see end)** | ts3native-ea169.ini on the EA laptop | reasoning | 1 h | 1 (+1 rerun) | log: host line, no `SKIP all`, every on-feature logs its install line, no `FAIL`, reach the main menu and a lot |
 | 7 | widen: features with only `ok` expectations and no zero rows, one per run | allowlist in build.yml | sonnet | 30 min each | 1 each | same as 6 plus the feature's own first log line |
-| 8 | managed lane (§3 last bullet) | tools/setup/build-fixes.ts (REF_DIR arg), docs/227 | reasoning | 3 h | 1 | `.managed.csv` reviewed; game starts with ts3fixes-ea169 and no popup |
+| 8 | managed lane (§3 last bullet) | tools/setup/build-fixes.ts (REF_DIR arg), docs/231 | reasoning | 3 h | 1 | `.managed.csv` reviewed; game starts with ts3fixes-ea169 and no popup |
 | 9 | post-release: `--apply` on main, PR, docs/68 §7.1 "applied" | as task 4 | sonnet | 30 min | 0 | identity proof repeated on main |
 
 ## 6. First smoke on the EA laptop
@@ -98,7 +98,7 @@ logs `bytes differ`, suspect `.text` still encrypted at DllMain [inferred]: then
 
 ## 7. Open
 - Decryption timing at asi load (first smoke answers it). - 120 `ported` byte expectations need per-build bytes before most
-features can go on. - steerro/watchpt struct layouts: rewrite, not port (docs/226).
+features can go on. - steerro/watchpt struct layouts: rewrite, not port (docs/230).
 - Not checked by the design: the ini-section-to-source-file map the task 3 allowlist assert needs (by hand), and whether
   selftest.exe compiles under `/DTS3A_TABLE` (task 3 skips it). Risk: a feature left ON whose data read hits a zero table
   row crashes at load; the ini allowlist + CI assert is the only guard.
@@ -119,11 +119,11 @@ the menu and the save load: `calls 21135 fails 0 mismatches 0 in 54 MB out 131 M
   `__except` [inferred from the log order and the unresolved list]. Task 7 rerun: set both to 0 or resolve the row first.
 - Run stable: no. `load_save Baseline-SV-Spring` ended in `A serious error has occurred while loading 'Baseline-SV-Spring'` after 10 s (no
   new `ScriptError*.xml`, no crash, game alive at the menu). Rerun 12:43 with the `.pre-ea169` pair (`SKIP all`, c035abe5a3a6) and the
-  same Mods and save: identical failure at 9 s. So the load failure is not the ea169 asi. Cause (isolated 13:04, docs/229): the smoke
+  same Mods and save: identical failure at 9 s. So the load failure is not the ea169 asi. Cause (isolated 13:04, docs/233): the smoke
   driver passed `file: "Baseline-SV-Spring"` without `.sims3`; cycle.ts passes `Baseline-SV-Spring.sims3` and the same save then loads
   in ~12 s. Not the cause: ts3agent/ts3fixes (sha256 `e9b98bf37d90`/`b067efaa9047`, identical to the 12:09 change set `344a2752d415`),
   the 260 B `scriptCache.package` (the game writes it at every start). The restamped ErrorTrap P169 is a separate failure: it crashes
-  the load (`0xc0000005`), so it is disabled (docs/229). Task 7 reruns must load `Baseline-SV-Spring.sims3`.
+  the load (`0xc0000005`), so it is disabled (docs/233). Task 7 reruns must load `Baseline-SV-Spring.sims3`.
 - Verdict: host check PASS, decryption timing PASS, Decompress + OptsInit installed PASS, lot reached FAIL (environment). CPU/WS: only
   at the menu (300 MB WS at attach), no soak. Both runs' logs: `probe-out/ea-smoke6-1102*.log`, `probe-out/ea-smoke6-1102.ts3native.log`.
 - Task 7 candidates (files with 0 unresolved rows and 0 problems.csv rows, own ini gate): `[WaterJps]` (waterjps.cpp + wastar.cpp, §6

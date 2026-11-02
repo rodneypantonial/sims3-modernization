@@ -40,7 +40,7 @@ export function cpuMask(spec: string, n = N): bigint {
 export const maskCpus = (m: bigint) => [...m.toString(2)].reverse().flatMap((b, i) => (b === '1' ? [i] : []));
 // default: everything from CPU 4 up; null on machines too small to split
 export const defaultCpus = (n = N) => (n > 8 ? `4-${n - 1}` : null);
-// ea-laptop: Core Ultra 7 155U, 14 logical CPUs (GetLogicalProcessorInformationEx, docs/226): P-cores (EfficiencyClass 1, SMT) =
+// ea-laptop: Core Ultra 7 155U, 14 logical CPUs (GetLogicalProcessorInformationEx, docs/230): P-cores (EfficiencyClass 1, SMT) =
 // logical 0-1 and 10-11, E-cores 2-9, LP E-cores 12-13. Game on both P-cores + 4 E-cores, apps on the remaining 6.
 export const MACHINES: Record<string, string> = { 'ea-laptop': '0-5,10-11' };
 export const gameCpus = (env = process.env, n = N) => {

@@ -39,7 +39,7 @@ Run of 13:02 (other agent, loaded a lot): same shape, request 05:02:02.331, resp
   `Locale`, `Product GUID`, `ProductID`, `SKU`. Compare with the Steam machine before assuming the game needs the extra values. [verified]
 
 ## Next
-1. Read-only trace of one pack through the loop (late attach after the menu is safe for Frida, docs/226 dump-image pattern): log the
+1. Read-only trace of one pack through the loop (late attach after the menu is safe for Frida, docs/230 dump-image pattern): log the
    id `[edi+8]`, the matched table entry and the 0xA421F0 argument/result; compare with the 26 answered `ItemId`s.
 2. Diff the pack registry values with the Steam machine; if the EA app install lacks values the loop reads, that is an EA install bug:
    report it in the forum thread with this timeline as evidence.

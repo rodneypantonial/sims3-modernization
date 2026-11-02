@@ -1,4 +1,4 @@
-"""Print or patch S3SA (0x073FAA07) header version and the version-2 UTF-16 build stamp of each resource in DBPF packages (docs/227 method). `--set-stamp NEW IN OUT` writes a personal-use copy with NEW (same length).
+"""Print or patch S3SA (0x073FAA07) header version and the version-2 UTF-16 build stamp of each resource in DBPF packages (docs/231 method). `--set-stamp NEW IN OUT` writes a personal-use copy with NEW (same length).
 Header per s3pi ScriptResource: 1 byte version; if > 1: int32 char count + UTF-16 string. RefPack port of tools/extract-assemblies.ts."""
 import struct, sys
 
