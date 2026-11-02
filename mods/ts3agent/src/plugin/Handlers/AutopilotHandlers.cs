@@ -23,6 +23,10 @@ namespace Ts3Agent
         static int sApSpeedFixes;
         static volatile int sApLastStep = int.MinValue / 2; // TickCount of the task's last step
         static readonly List<object> sApCleared = new List<object>();
+        // every click line with its UTC time, never drained (cap 400): `cleared` is drained by each autopilot call, and a call whose reply the harness gave up on
+        // (game busy loading a world, Round 6 vh-move) lost its lines. dialog_expect {status:true} and the autopilot reply `history` return it.
+        static readonly List<object> sApHistory = new List<object>();
+        static void ApHist(string line) { lock (sApHistory) { if (sApHistory.Count >= 400) sApHistory.RemoveAt(0); sApHistory.Add(System.DateTime.UtcNow.ToString("HH:mm:ss") + " " + line); } }
         // dialog_expect {seconds?, title?, accept?, rules?}: the harness is about to answer a dialog itself (auto_dialog accept:true); until it times out
         // (seconds 0 clears) the autopilot leaves a matching dialog alone (title = lowercase text fragment, none = any dialog).
         // accept:true (accept-on-match): the autopilot itself clicks the accepting button of the first matching dialog inside the window,
@@ -82,6 +86,7 @@ namespace Ts3Agent
             r["speed_fixes"] = sApSpeedFixes;
             r["cleared"] = new List<object>(sApCleared);
             r["blocked"] = sApBlocked;
+            lock (sApHistory) r["history"] = new List<object>(sApHistory);
             sApSpeedFixes = 0;
             sApCleared.Clear();
             return r;
@@ -89,6 +94,13 @@ namespace Ts3Agent
 
         static object DialogExpect(Args a)
         {
+            if (a.Bool("status", false)) // read only: the window stays as it is
+            {
+                Dictionary<string, object> st = Util.Obj();
+                st["armed"] = sExpectUntil != 0; st["accept_all"] = sExpectAll; st["clicks"] = sExpectAllClicks;
+                lock (sApHistory) st["history"] = new List<object>(sApHistory);
+                return st;
+            }
             int sec = (int)a.Long("seconds", 30);
             sExpectTitle = a.Has("title") ? a.Str("title").ToLowerInvariant() : null;
             sExpectAccept = a.Bool("accept", false);
@@ -154,12 +166,14 @@ namespace Ts3Agent
             {
                 string end = "dialog_expect accept_all ended: " + sExpectAllClicks + " clicks";
                 DiagLine("ap click: " + end);
+                ApHist(end);
                 if (sApCleared.Count < 200) sApCleared.Add(end);
                 return;
             }
             if (sExpectMatched) return;
             string line = "dialog_expect expired (no match)" + (sExpectTitle != null ? ": " + sExpectTitle : "") + (sExpectAccept ? " [accept]" : "");
             DiagLine("ap click: " + line);
+            ApHist(line);
             if (sApCleared.Count < 200) sApCleared.Add(line);
         }
 
@@ -185,6 +199,7 @@ namespace Ts3Agent
             string t = (title ?? "").Replace("\r", " ").Replace("\n", " ");
             if (t.Length > 80) t = t.Substring(0, 80);
             DiagLine("ap click: " + t + " -> " + clicked);
+            ApHist(t + " -> " + clicked);
         }
 
         static void AutopilotStep(ref int lastDialog, ref int lastSpeed)
