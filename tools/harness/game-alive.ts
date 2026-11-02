@@ -447,6 +447,8 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
     const src = (f: string) => readFileSync(join(import.meta.dirname, f), 'utf8');
     for (const f of ['cycle.ts', 'save-matrix.ts', 'travel-trip.ts', 'new-save.ts']) assert.match(src(f), /dialog_expect/, `${f}: accept:true needs dialog_expect`);
     assert.match(src('story-fuzzer.ts'), /dialog_expect/, 'story-fuzzer.ts: the step before an accept:true auto_dialog arms dialog_expect');
+    // round 4: the in-game accept-on-match (dialog_expect accept:true) closes the window/poll race of H-move run 1
+    for (const f of ['cycle.ts', 'save-matrix.ts', 'travel-trip.ts', 'new-save.ts', 'story-fuzzer.ts', 'vanilla-steps.ts']) assert.match(src(f), /'dialog_expect', \{[^}]*accept: true/, `${f}: dialog_expect without accept:true`);
   }
   console.log('self-check ok');
 }

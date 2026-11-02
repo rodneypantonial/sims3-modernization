@@ -160,8 +160,9 @@ if (values.save) {
     await agent('enter_live_mode');
     // leaving Edit Town asks "save your town before continuing?"; clear it or the switch never happens
     await until('live mode', 120, async () => {
-      await agent('dialog_expect', { seconds: 60 });
-      const d = await agent('auto_dialog', { accept: true }); // the switch we asked for (docs/236 #3)
+      // accept-on-match (ts3agent 413f985): the agent answers the town-save prompt itself; its rule picks "just continue" (no save)
+      await agent('dialog_expect', { seconds: 60, title: 'save your town before continuing', accept: true });
+      const d = await agent('auto_dialog', { accept: true }); // the switch we asked for (docs/236 #3); fallback for older agents
       if (d.ok && d.result.open) log(`dialog "${d.result.title}" -> ${d.result.clicked}`);
       return (await agent('game_state')).result?.sub_state === 'LiveModeState';
     }, 1000, stallGuard('enter live mode', { port: Number(values.port) }));

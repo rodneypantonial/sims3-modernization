@@ -20,7 +20,7 @@ async function agent(cmd: string, args?: object): Promise<any> {
 // accept: dialogs of the new-game flow this script started (world load, household pick); else the safe button (docs/236 #3)
 async function clearDialogs(accept = false) {
   for (let i = 0; i < 8; i++) {
-    if (accept) await agent('dialog_expect', { seconds: 60 }).catch(() => null); // autopilot off this dialog (ts3agent 03e2bfe)
+    if (accept) await agent('dialog_expect', { seconds: 60, accept: true }).catch(() => null); // the agent accepts the new-game dialog (413f985); older agents: autopilot off it (03e2bfe)
     const d = await agent('auto_dialog', accept ? { accept: true } : undefined).catch(() => null);
     if (!d?.ok || !d.result.open) return;
     log(`dialog "${String(d.result.title).slice(0, 60)}" -> ${d.result.clicked}`);

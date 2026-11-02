@@ -49,7 +49,7 @@ async function until(what: string, limitS: number, check: () => Promise<boolean>
 }
 // accept: the trip's own dialogs (travel confirm); elsewhere the agent's safe button (docs/236 #3)
 async function dialog(accept = false): Promise<void> {
-  if (accept) await agent('dialog_expect', { seconds: 60 }); // the autopilot leaves the dialog to this call (ts3agent 03e2bfe)
+  if (accept) await agent('dialog_expect', { seconds: 60, accept: true }); // the agent accepts it the frame it opens (413f985; rules apply); older agents leave it to this call (03e2bfe)
   const d = await agent('auto_dialog', accept ? { accept: true } : undefined);
   if (d.ok && d.result.open) log(`dialog "${String(d.result.title ?? '').slice(0, 60)}" -> ${d.result.clicked}`);
 }
@@ -93,7 +93,7 @@ async function leg(name: string, cmd: string, args: object, fromWorld: string) {
   };
   const tripGuard = (g: () => Promise<string>) => async () => dead || await g();
   // boarding: the van/portal routes and confirm dialogs happen here; the world flag drops when the old world unloads
-  await agent('dialog_expect', { seconds: 60 }); // travel confirm: the autopilot must not cancel it first (ts3agent 03e2bfe)
+  await agent('dialog_expect', { seconds: 60, accept: true }); // travel confirm: accepted by the agent, never cancelled by the autopilot (ts3agent 413f985)
   const boardS = await until(`${name}: left ${fromWorld}`, 600, async () => {
     if (++n % 3 === 0) await dialog(true);
     if ((await get('agentstatus', 5000)).worldLoaded === false) return true;

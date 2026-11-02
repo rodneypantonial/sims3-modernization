@@ -379,8 +379,9 @@ function nextName(label: string): string {
   return name;
 }
 // accept: a dialog this step opened itself (trip confirm, PlayFlow venue prompt); else the agent's safe button (docs/236 #3)
-// accept also tells the in-game autopilot to leave the dialog to this call for 60 s (dialog_expect; ts3agent 03e2bfe, older agents answer ok:false)
-async function dialogs(accept = false) { if (accept) await ag('dialog_expect', { seconds: 60 }); const d = await ag('auto_dialog', accept ? { accept: true } : {}); if (d.ok && d.result?.open) log(`dialog "${String(d.result.title ?? '').slice(0, 60)}" -> ${d.result.clicked}`); }
+// accept also arms the in-game accept-on-match for 60 s (dialog_expect accept:true, ts3agent 413f985: the agent clicks it the frame it opens,
+// kDialogRules still apply); older agents ignore accept and leave the dialog to this call (03e2bfe)
+async function dialogs(accept = false) { if (accept) await ag('dialog_expect', { seconds: 60, accept: true }); const d = await ag('auto_dialog', accept ? { accept: true } : {}); if (d.ok && d.result?.open) log(`dialog "${String(d.result.title ?? '').slice(0, 60)}" -> ${d.result.clicked}`); }
 async function pause() { await ag('set_speed', { speed: 'pause' }); }
 
 // label: new save Matrix-<world>-<label>-<n>; overwrite: that existing Matrix-* name again. Always by name: a nameless
@@ -655,7 +656,7 @@ async function enterWorldInner(cmd: string, args: object, from: string, who: str
   let leftBy = '';
   // left = the start world unloaded or another world answers; in_travel alone is not enough (2026-10-16 future: in_travel
   // set, Bridgeport never unloaded): the stall rule covers that phase
-  await ag('dialog_expect', { seconds: 60 }); // the trip confirm: the autopilot must not cancel it first
+  await ag('dialog_expect', { seconds: 60, accept: true }); // the trip confirm: the agent accepts it, the autopilot must not cancel it first
   await until(`left ${from}`, 900, async () => {
     if (++n % 3 === 0) await dialogs(true); // trip confirm
     if (n % 5 === 0 && (dead = gameTaskError(await asyncLog()))) return true;
@@ -677,7 +678,7 @@ async function enterWorldInner(cmd: string, args: object, from: string, who: str
   if (dead) throw new Error(dead);
   log(`left ${from}: ${leftBy}`); // which signal ended the wait (2026-10-16 future run: passed within ~30 s, cause not logged)
   misses = 0;
-  await ag('dialog_expect', { seconds: 60 });
+  await ag('dialog_expect', { seconds: 60, accept: true });
   await until('arrived in live mode', 1200, async () => {
     await tripStatus();
     if (watchTravelSaves(off)) { stallSince = 0; stale('', Date.now()); }
