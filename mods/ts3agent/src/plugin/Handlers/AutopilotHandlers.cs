@@ -28,13 +28,14 @@ namespace Ts3Agent
         // accept:true (accept-on-match): the autopilot itself clicks the accepting button of the first matching dialog inside the window,
         // logs it and ends the window; no race with a harness poll that comes after the window (docs/236 H-move run 1). kDialogRules still
         // apply (e.g. Edit Town "save your town" -> just continue) unless rules:false (H-move: accept the move offer the move rule declines).
-        // accept_all:true: accept-on-match for the whole window, every dialog (title ignored), one log line per click, ends with "dialog_expect accept_all ended: N clicks".
+        // accept_all:true: every dialog is accepted, one log line per click, ends with "dialog_expect accept_all ended: N clicks". Without title the window is
+        // `seconds`. With title the window `seconds` only waits for the first matching dialog (trigger); that click starts the accept_all window of all_seconds (180).
         // A window that ends without a match logs "dialog_expect expired (no match)".
         static int sExpectUntil;
         static string sExpectTitle, sExpectLogged;
         static bool sExpectAccept, sExpectMatched, sExpectRules = true, sExpectAll;
         // accept_all: every dialog in the window is accepted (rules and safe default off), the window stays open; reproduces the old unattended autopilot for a whole flow (docs/236 Round 6)
-        static int sExpectAllClicks, sExpectAllTick;
+        static int sExpectAllClicks, sExpectAllTick, sExpectAllSec;
         static object sExpectAllModal;
         static string sApBlocked; // last dialog the autopilot would not click (AutoDialog: no safe button); logged once per dialog
 
@@ -93,11 +94,12 @@ namespace Ts3Agent
             sExpectAccept = a.Bool("accept", false);
             sExpectRules = a.Bool("rules", true);
             sExpectAll = a.Bool("accept_all", false); sExpectAllClicks = 0; sExpectAllModal = null;
-            if (sExpectAll) { sExpectAccept = true; sExpectRules = false; sExpectTitle = null; }
+            sExpectAllSec = (int)a.Long("all_seconds", 180);
+            if (sExpectAll) { sExpectAccept = true; sExpectRules = false; }
             sExpectUntil = sec > 0 ? System.Environment.TickCount + Math.Min(sec, 900) * 1000 : 0;
             sExpectLogged = null; sExpectMatched = false;
             Dictionary<string, object> r = Util.Obj();
-            r["seconds"] = sec; r["title"] = sExpectTitle; r["accept"] = sExpectAccept; r["rules"] = sExpectRules; r["accept_all"] = sExpectAll;
+            r["seconds"] = sec; r["title"] = sExpectTitle; r["accept"] = sExpectAccept; r["rules"] = sExpectRules; r["accept_all"] = sExpectAll; r["all_seconds"] = sExpectAllSec;
             return r;
         }
 
@@ -113,6 +115,7 @@ namespace Ts3Agent
             string t = texts.Count > 0 ? texts[0] : "";
             if (sExpectAll)
             {
+                if (sExpectTitle != null) { sExpectTitle = null; sExpectUntil = System.Environment.TickCount + Math.Min(sExpectAllSec, 900) * 1000; } // trigger: the accept_all window starts now
                 // the dialog may stay modal for a few ticks after the click: do not click the same one twice within 2 s
                 if (object.ReferenceEquals(modal, sExpectAllModal) && System.Environment.TickCount - sExpectAllTick < 2000) return true;
                 sExpectAllModal = modal; sExpectAllTick = System.Environment.TickCount;
@@ -147,7 +150,7 @@ namespace Ts3Agent
         {
             if (sExpectUntil == 0 || sExpectUntil - System.Environment.TickCount > 0) return;
             sExpectUntil = 0;
-            if (sExpectAll)
+            if (sExpectAll && sExpectMatched)
             {
                 string end = "dialog_expect accept_all ended: " + sExpectAllClicks + " clicks";
                 DiagLine("ap click: " + end);
