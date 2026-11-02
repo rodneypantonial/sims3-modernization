@@ -5,7 +5,7 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [main, ea169-port]
     tags: ['v*']
   pull_request:
 
@@ -26,6 +26,64 @@ jobs:
           path: |
             native/ts3native/out/ts3native.asi
             native/ts3native/out/ts3native.ini
+
+  # EA app 1.69.47 build (docs/228): the same sources with /DTS3A_TABLE take their addresses from the committed
+  # native/ts3native/ts3addr-ea169.h. No selftest.exe (not compile-checked under the table). The EA ini is the Steam ini with
+  # every section off except the allowlist, and an allowlisted section's source file must not have a 0 (unresolved) row.
+  native-ea169:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ts3native-ea169.asi (/DTS3A_TABLE)
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+          if not defined VSDIR (echo Visual Studio with the C++ tools not found & exit /b 1)
+          call "%VSDIR%\VC\Auxiliary\Build\vcvars32.bat" >nul || exit /b 1
+          cd native\ts3native
+          mkdir out-ea169
+          cl /nologo /LD /O2 /MT /W4 /WX /DTS3A_TABLE /Foout-ea169\ /Feout-ea169\ts3native-ea169.asi ts3native.cpp /link /DLL /MAP:out-ea169\ts3native-ea169.map kernel32.lib || exit /b 1
+      - name: EA ini (allowlist) and unresolved-row assert
+        shell: bash
+        env:
+          # sections left on for EA (docs/228 §6 first smoke); everything else: Enabled=0, or every non-zero switch =0 in a
+          # section without an Enabled key ([Compat], [GoalGen], [GoalValidRO], [MonoFast], [ResourceCache], [EaCrashFixes])
+          ALLOW: Decompress OptsInit
+        # tools/ini-sections.json (section -> .cpp files naming it as L"<Section>") was built with:
+        #   node -e 'const fs=require("fs"),p=require("path"),d="native/ts3native";const secs=[...fs.readFileSync(d+"/ts3native.ini","utf8").matchAll(/^\[(\w+)\]/gm)].map(m=>m[1]);const cpp=fs.readdirSync(d).filter(f=>f.endsWith(".cpp")&&!/test/.test(f)).sort();console.log(JSON.stringify(Object.fromEntries(secs.map(s=>[s,cpp.filter(f=>fs.readFileSync(p.join(d,f),"utf8").includes("L\""+s+"\""))]))))'
+        run: |
+          node -e '
+          const fs = require("fs"), allow = process.env.ALLOW.split(" ");
+          const map = JSON.parse(fs.readFileSync("tools/ini-sections.json", "utf8"));
+          const hdr = fs.readFileSync("native/ts3native/ts3addr-ea169.h", "utf8");
+          const zero = new Set([...hdr.matchAll(/^\/\/ unresolved: .*native\/ts3native\/([^:\s]+)/gm)].map((m) => m[1]));
+          for (const s of allow) {
+            if (!map[s]) throw new Error("[" + s + "] is not in tools/ini-sections.json");
+            const hit = map[s].filter((f) => zero.has(f));
+            if (hit.length) throw new Error("[" + s + "] reads " + hit.join(", ") + ", which has unresolved (0) rows in ts3addr-ea169.h: it cannot be on for EA");
+          }
+          const lines = fs.readFileSync("native/ts3native/ts3native.ini", "utf8").split(/\r?\n/), hasEnabled = new Set();
+          let sec = "";
+          for (const l of lines) { const m = /^\[(\w+)\]/.exec(l); if (m) sec = m[1]; else if (/^Enabled=/.test(l)) hasEnabled.add(sec); }
+          sec = "";
+          const out = lines.map((l) => {
+            const m = /^\[(\w+)\]/.exec(l);
+            if (m) { sec = m[1]; return l; }
+            if (allow.includes(sec)) return l;
+            if (/^Enabled=/.test(l)) return "Enabled=0";
+            if (!hasEnabled.has(sec) && /^\w+=[1-9]\d*$/.test(l)) return l.replace(/=.*/, "=0");
+            return l;
+          });
+          fs.writeFileSync("native/ts3native/out-ea169/ts3native-ea169.ini", out.join("\r\n"));
+          console.log("EA ini: on = " + allow.map((s) => "[" + s + "]").join(" ") + "; " + zero.size + " source files have unresolved rows");
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ts3native-ea169
+          path: |
+            native/ts3native/out-ea169/ts3native-ea169.asi
+            native/ts3native/out-ea169/ts3native-ea169.ini
+            native/ts3native/ts3addr-ea169.h
 
   node:
     runs-on: ubuntu-latest
