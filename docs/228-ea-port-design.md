@@ -83,7 +83,7 @@ see ciphertext. Largest new machinery; its one advantage (future EA patches with
 | 3 | build.yml job `native-ea169`: one `cl ... /DTS3A_TABLE` line (no selftest), EA ini from the Steam ini via awk allowlist, assert allowlist vs unresolved list, artifact `ts3native-ea169` | .github/workflows/build.yml | sonnet | 40 min | 0 | PR artifact has asi + ini; a deliberately wrong allowlist entry fails the job |
 | 4 | `--apply` on the branch, identity proof vs main artifact (`.text`/`.rdata` sha256, .map diff) | native/ts3native/*.cpp (79 files), docs/68 §7.1 note | sonnet | 30 min | 0 | both hashes equal; second scan 0 `wrap` rows |
 | 5 | resolve the 9 ts3native.cpp rows + any zero row in the smoke pool in Ghidra (main laptop), `docs/data/ea169-overrides.csv` | docs/data/ea169-overrides.csv, tools/addr-codemod.ts (read overrides) | reasoning | 2 h | 0 | port-run: those rows leave the unresolved list with evidence text |
-| 6 | first smoke (§6) **done 2026-11-02, partial: asi PASS, lot FAIL (Mods, see end)** | ts3native-ea169.ini on the EA laptop | reasoning | 1 h | 1 (+1 rerun) | log: host line, no `SKIP all`, every on-feature logs its install line, no `FAIL`, reach the main menu and a lot |
+| 6 | first smoke (§6) **done 2026-11-02: PASS on the second run (ini fix 80b215b, Verify=1; lot reached, 5 min soak, see end)** | ts3native-ea169.ini on the EA laptop | reasoning | 1 h | 1 (+1 rerun) | log: host line, no `SKIP all`, every on-feature logs its install line, no `FAIL`, reach the main menu and a lot |
 | 7 | widen: features with only `ok` expectations and no zero rows, one per run | allowlist in build.yml | sonnet | 30 min each | 1 each | same as 6 plus the feature's own first log line |
 | 8 | managed lane (§3 last bullet) | tools/setup/build-fixes.ts (REF_DIR arg), docs/227 | reasoning | 3 h | 1 | `.managed.csv` reviewed; game starts with ts3fixes-ea169 and no popup |
 | 9 | post-release: `--apply` on main, PR, docs/68 §7.1 "applied" | as task 4 | sonnet | 30 min | 0 | identity proof repeated on main |
@@ -129,3 +129,25 @@ the menu and the save load: `calls 21135 fails 0 mismatches 0 in 54 MB out 131 M
 - Task 7 candidates (files with 0 unresolved rows and 0 problems.csv rows, own ini gate): `[WaterJps]` (waterjps.cpp + wastar.cpp, §6
   names it), `[SlotEnabledRO]` (slotro.cpp), `[CellMemoProbe]` (cellmemo.cpp, probe only). replandedupe/plandeadline/movedwait are clean
   too but need `[RouteAsync]` (unseen.cpp 5 rows, routing sites offset-changed).
+
+### Second run 2026-11-02 (ini fix 80b215b, Verify=1)
+13:22 PHT, CI artifact of 80b215b (asi sha256 `ff4f6ef2...f87366`, ini `730b6afa...944f0` with `[ArenaGuard]` `TailPad=0` / `InitobjFix=0`),
+installed as the Bin pair with the 12:43 pair backed up as `.pre-ea169b` (`c035abe5a3a6` / `8aa37522782a`, restored after the run, sha-checked);
+`[Decompress] Verify=1` set in the installed ini for this run only. Driver: `ts3probe.py serve --launch` + `cycle.ts --save Baseline-SV-Spring.sims3`
+(agent after 14 s, "Mod Scripts Found" accepted, world loaded 14 s, `LiveModeState`, households 32, Keaton). **Verdict: PASS** [verified]:
+- Log: `host Sims3Launcher.exe base 0x00400000 pe 6707155C size 0xEB5000`, `host build: EA app 1.69.47`, no `SKIP all`, no `FAIL`, no `bytes differ`.
+  `OK   decompress: call 0x004EC1A5 -> RefpackHook, mode 1 verify 1`; `OK   detour RoutePlanOptions_ctor (I-94-322 hub refs) at 0x00654240`;
+  `OK   OptsInit: search options hub references +4 / +0x34 start at 0 (I-94-322)`. ArenaGuard off as intended: `arena guard disabled (Enabled=0)`,
+  `arena tail pad disabled (TailPad=0)`, `initobj size fix disabled (InitobjFix=0)`; no exception inside the asi (run 1's `0x5D40CC02` is gone).
+- Decompress with verification over menu, load, 5 min live, one in-world reload and a clean quit (`quit_game`, process exit writes the
+  end line): `decompress: mode 1 verify 1 calls 45625 fails 0 mismatches 0 in 215 MB out 619 MB time 450 ms max 14502 us`: the RefpackFast
+  output equals the game decoder's on 1.69.47 too.
+- Soak 13:24-13:29 (every 30 s): WS 1580 -> 1541 MB flat (1542 at the end), commit 1415 MB flat, game CPU 3.4-3.7 % of 16 logical CPUs
+  (about half a core), 67 threads; no new `ScriptError*.xml` (only the 12:11 one from before the run). Logs: `probe-out/ea-smoke6b-1102.log`,
+  `probe-out/ea-smoke6b-1102.drive.log`, `probe-out/ea-smoke6b-1102.ts3native.log`, events `probe-out/20261102-132245`.
+- Not ours, logged by the asi's first-chance exception logger: 3x `exception C0000005 at 0x04697CC2` on thread 27868 (page-aligned read faults at
+  `0x42841000`, `0x38DB1000`, `0x41485000`, eip in a JIT/heap region, outside the asi module 0x5D400000-0x5DB74000, ebp 0, same esp each time),
+  during the lot load; the game did not notice. Steam logs show no such lines [inferred: Mono/GC first-chance faults on 1.69; check against a
+  `SKIP all` run before reading anything into it].
+- Also in this run: the ts3agent `LoadSave` fix (bare name gets `.sims3`, package `3eb7bb6fc994`) checked live: `load_save {"file":"Baseline-SV-Spring","reload":true}`
+  answered `{"loading":"Baseline-SV-Spring.sims3"}` and reached `LiveModeState` again in ~40 s. No EA app relaunch followed the clean quit (150 s watch).
