@@ -49,12 +49,16 @@ jobs:
           # sections left on for EA (docs/228 §6 first smoke); everything else: every integer-valued key =0
           # (Enabled and independent switches such as [ArenaGuard] TailPad/InitobjFix)
           # [EaDiag] is EA-only (eadiag.cpp, docs/234): kept so its ProductGate=0 default line stays editable for a diagnostic run
-          ALLOW: Decompress OptsInit EaDiag WaterJps
+          # [WaterJps] is not allowed: its hash guard SKIPs on 1.69 (docs/232 §7), so it would only log a skip
+          ALLOW: Decompress OptsInit EaDiag
+          # like ALLOW, but Enabled=1 is forced (the Steam ini ships it 0 until verified in game). [FootprintIndex]: standalone,
+          # footprint.cpp has no unresolved row, its byte-check site is ok; an FNV mismatch on 1.69 only logs SKIP
+          ALLOW_ON: FootprintIndex
         # tools/ini-sections.json (section -> .cpp files naming it as L"<Section>") was built with:
         #   node -e 'const fs=require("fs"),p=require("path"),d="native/ts3native";const secs=[...fs.readFileSync(d+"/ts3native.ini","utf8").matchAll(/^\[(\w+)\]/gm)].map(m=>m[1]);const cpp=fs.readdirSync(d).filter(f=>f.endsWith(".cpp")&&!/test/.test(f)).sort();console.log(JSON.stringify(Object.fromEntries(secs.map(s=>[s,cpp.filter(f=>fs.readFileSync(p.join(d,f),"utf8").includes("L\""+s+"\""))]))))'
         run: |
           node -e '
-          const fs = require("fs"), allow = process.env.ALLOW.split(" ");
+          const fs = require("fs"), on = process.env.ALLOW_ON.split(" "), allow = process.env.ALLOW.split(" ").concat(on);
           const map = JSON.parse(fs.readFileSync("tools/ini-sections.json", "utf8"));
           const hdr = fs.readFileSync("native/ts3native/ts3addr-ea169.h", "utf8");
           const zero = new Set([...hdr.matchAll(/^\/\/ unresolved: .*native\/ts3native\/([^:\s]+)/gm)].map((m) => m[1]));
@@ -69,6 +73,7 @@ jobs:
           const out = lines.map((l) => {
             const m = /^\[(\w+)\]/.exec(l);
             if (m) { sec = m[1]; return l; }
+            if (on.includes(sec) && /^Enabled=/.test(l)) { console.log("forced on [" + sec + "]"); return "Enabled=1"; }
             const k = /^(\w+)=-?\d+\s*$/.exec(l);
             if (!k || allow.includes(sec)) return l;
             if (!/=0\s*$/.test(l)) (zeroed[sec] = zeroed[sec] || []).push(l.trim());
