@@ -233,7 +233,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         for (const f of sourceFiles()) {
             const text = readFileSync(join(SRC, f), "utf8");
             const rows = scanText(text, f, data);
-            if (!rows.length) continue;
+            if (!rows.length || text.slice(0, 600).includes("raw 1.69.47")) continue;  // EA-only module (eadiag.cpp): literals are EA addresses already
             if (generated(text)) { gens.push(`${f} (${rows.length})`); continue; }
             all.push(...rows);
             if (v.apply && cmd === "scan" && rows.some((r) => r.kind === "wrap")) writeFileSync(join(SRC, f), applyText(text, rows));
