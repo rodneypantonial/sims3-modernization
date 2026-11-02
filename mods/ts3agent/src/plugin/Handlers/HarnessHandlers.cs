@@ -264,6 +264,9 @@ namespace Ts3Agent
 
         static readonly string[] kAcceptWords = { "ok", "accept", "yes", "continue", "done", "confirm", "close", "got it" };
         static readonly string[] kRejectWords = { "cancel", "no", "back", "quit", "exit", "decline", "never", "customize" }; // customize opens a second picker (lifetime wish) the autopilot cannot answer
+        // Answers for a dialog no rule knows when nobody asked to accept it, in this order (the long-distance move offer was
+        // accepted by the old highest-score default and took the household out of the world: runs 7h, 7j2).
+        static readonly string[] kSafeWords = { "cancel", "not now", "later", "no", "decline", "close", "don't", "dont" };
         static readonly string[] kNames = { "Alex", "Sam", "Jamie", "Robin", "Casey", "Morgan", "Riley", "Quinn", "Avery", "Reese" };
         static int sNameIndex;
 
@@ -351,8 +354,11 @@ namespace Ts3Agent
             return true;
         }
 
-        // Clears whatever modal dialog blocks the game: fills empty text fields (e.g. naming a newborn),
-        // then clicks the most "accepting" enabled button. Prefers tooltips because EA icon buttons have no caption.
+        // Clears whatever modal dialog blocks the game. Known dialogs follow kDialogRules. Otherwise: a naming dialog
+        // (empty text field, e.g. a newborn) is filled and accepted, a dialog with one enabled button gets that button,
+        // args {accept: true} (a harness step that opened the dialog itself) clicks the most "accepting" button, and any
+        // other dialog gets the first kSafeWords button; with none, nothing is clicked and McpException says why
+        // ("no safe button"). r["how"] names the path. Prefers tooltips because EA icon buttons have no caption.
         static object AutoDialog(Args a)
         {
             WindowBase modal = UIManager.GetModalWindow();
@@ -413,6 +419,25 @@ namespace Ts3Agent
                 if (s > bestScore) { bestScore = s; best = kv; }
             }
             r["buttons"] = seen;
+            string how = preferred != null && bestScore == 100 ? "rule" : filled.Count > 0 ? "name dialog" : a.Bool("accept", false) ? "accept requested" : null;
+            if (how == null)
+            {
+                List<KeyValuePair<WindowBase, object>> live = buttons.FindAll(kv => { try { return kv.Key.Enabled; } catch (Exception) { return true; } });
+                best = null;
+                if (live.Count == 1) { best = live[0]; how = "only button"; }
+                foreach (string w in kSafeWords)
+                {
+                    if (best != null) break;
+                    foreach (KeyValuePair<WindowBase, object> kv in live)
+                    {
+                        string words = Words(kv.Key);
+                        if (words == w || words.StartsWith(w + " ") || (w.Length > 2 && words.IndexOf(w) >= 0)) { best = kv; how = "safe default"; break; }
+                    }
+                }
+                if (best == null) throw new McpException("no safe button, nothing clicked: '" + (r["title"] ?? "") + "' buttons: " + string.Join(", ", seen.ConvertAll(o => (string)o).ToArray()));
+                bestScore = 0;
+            }
+            r["how"] = how;
             if (best == null || bestScore < 0) throw new McpException("no acceptable button: " + string.Join(", ", seen.ConvertAll(o => (string)o).ToArray()));
             WindowBase btn = best.Value.Key;
             object glue = best.Value.Value;
@@ -420,7 +445,7 @@ namespace Ts3Agent
             UIButtonClickEventArgs args = new UIButtonClickEventArgs();
             args.Init(kButtonClick, btn, btn, (int)btn.ID, 0, 0, 0f, 0f, 0f, 0f, false, null);
             RunAsync("auto_dialog #" + btn.ID, delegate { invoke.Invoke(glue, new object[] { btn, args }); });
-            r["clicked"] = "#" + btn.ID + " " + Words(btn);
+            r["clicked"] = "#" + btn.ID + " " + Words(btn) + " (" + how + ")";
             return r;
         }
 

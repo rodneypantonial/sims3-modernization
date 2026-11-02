@@ -23,6 +23,7 @@ namespace Ts3Agent
         static int sApSpeedFixes;
         static volatile int sApLastStep = int.MinValue / 2; // TickCount of the task's last step
         static readonly List<object> sApCleared = new List<object>();
+        static string sApBlocked; // last dialog the autopilot would not click (AutoDialog: no safe button); logged once per dialog
 
         static void StartAutopilot()
         {
@@ -66,6 +67,7 @@ namespace Ts3Agent
             foreach (KeyValuePair<string, object> kv in c) r[kv.Key] = kv.Value;
             r["speed_fixes"] = sApSpeedFixes;
             r["cleared"] = new List<object>(sApCleared);
+            r["blocked"] = sApBlocked;
             sApSpeedFixes = 0;
             sApCleared.Clear();
             return r;
@@ -95,7 +97,15 @@ namespace Ts3Agent
                 lastDialog = now;
                 if (Sims3.UI.UIManager.GetModalWindow() != null)
                 {
-                    Dictionary<string, object> d = AutoDialog(new Args(new Dictionary<string, object>())) as Dictionary<string, object>;
+                    Dictionary<string, object> d;
+                    try { d = AutoDialog(new Args(new Dictionary<string, object>())) as Dictionary<string, object>; }
+                    catch (McpException e)
+                    {
+                        // the harness fails the run on this line (queue.ts mode guard): a click here could change the game state
+                        if (e.Message != sApBlocked) { sApBlocked = e.Message; ApLog("(not clicked)", e.Message); if (sApCleared.Count < 200) sApCleared.Add("BLOCKED " + e.Message); }
+                        return;
+                    }
+                    sApBlocked = null;
                     if (d != null && sApCleared.Count < 200) sApCleared.Add(d["title"] + " -> " + d["clicked"]);
                     if (d != null) ApLog(d["title"] as string, d["clicked"] as string);
                     return; // let the dialog close before touching the speed
