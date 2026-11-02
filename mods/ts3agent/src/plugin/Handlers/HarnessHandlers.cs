@@ -430,7 +430,14 @@ namespace Ts3Agent
                 if (s > bestScore) { bestScore = s; best = kv; }
             }
             r["buttons"] = seen;
-            string how = preferred != null && bestScore == 100 ? "rule" : filled.Count > 0 ? "name dialog" : a.Bool("accept", false) ? "accept requested" : null;
+            // dialog_expect accept_all (decline_save): a save offer is declined, never accepted (DialogPick, docs/236 + docs/232 Run 8)
+            bool saveDeclined = false;
+            if (a.Bool("decline_save", false))
+            {
+                int d = DialogPick.DeclineSave(buttons.ConvertAll(kv => Words(kv.Key)), buttons.ConvertAll(kv => { try { return kv.Key.Enabled; } catch (Exception) { return true; } }));
+                if (d >= 0) { best = buttons[d]; bestScore = 100; saveDeclined = true; }
+            }
+            string how = saveDeclined ? "save declined" : preferred != null && bestScore == 100 ? "rule" : filled.Count > 0 ? "name dialog" : a.Bool("accept", false) ? "accept requested" : null;
             if (how == null)
             {
                 List<KeyValuePair<WindowBase, object>> live = buttons.FindAll(kv => { try { return kv.Key.Enabled; } catch (Exception) { return true; } });
