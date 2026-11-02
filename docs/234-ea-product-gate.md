@@ -44,3 +44,46 @@ Run of 13:02 (other agent, loaded a lot): same shape, request 05:02:02.331, resp
 2. Diff the pack registry values with the Steam machine; if the EA app install lacks values the loop reads, that is an EA install bug:
    report it in the forum thread with this timeline as evidence.
 Scripts: `tools/probe/ep-gate-probe.js` (Frida, late attach only); the ReadProcessMemory reader lived in the scratchpad (not kept).
+
+## Diagnostic run 2026-11-02 (EaDiag hooks)
+13:44:24 PHT, `ts3native-ea169.asi` 2ac69a35 (CI 27dea5d) with `[EaDiag] ProductGate=1`, probe launch, no save loaded, log
+`probe-out/ea-eadiag-1102.ts3native.log` (gitignored). EA app LSX: `QueryEntitlements` 05:44:25.051Z, response 05:44:25.488Z
+(t≈2.4 s, 55 entitlements, 26 distinct `ItemId`, as before; fields `Type ItemId EntitlementId EntitlementTag Group ResourceId ...`,
+`Group=""`, `EntitlementTag="ORIGIN_DOWNLOAD"`: the only pack-identifying field is `ItemId`).
+- `OK   EaDiag: ProductGate log-only hooks, 5/5 installed` but **the three gate hooks never fired** (no `after wait`, no product
+  line, no mount line): the gate 0x596990 was not called. 296 lookups, all from 0x5949BC/0x5949F9 (the follow-up scan 0x594980,
+  which tries every row of the offer table 0x11A7B40 and ORs the row's product bit into this+0xC) plus one `"TESTID"`.
+- `eadiag: after gate: flags [0x1227E50] 0x00000000 [0x1227E54] 0x00000000; service ... +0x28 1 +0x24 0x00000000; 296 lookups, 0 products`
+  (the flags get their 0x1 later than 0x597E34; runs B/C read them at 100 ms granularity).
+- Lookups: 273 distinct offer ids tried, 21 found (`-> 1`), none `-> 2`: the answer was loaded in time. Found per product id of the
+  12-byte table (pid, bit, folder name from 0x594780, matched `ItemId`): 1 base `OFB-EAST:55107` · 4 EP01 `DR:137311600` ·
+  5 SP01 `DR:156751300` · 6 EP02 `DR:169598400` · 7 SP02 `DR:191313700` · 8 EP03 `DR:194011300`+`Origin.OFR.50.0001227` ·
+  9 SP03 `DR:215625800` · 10 EP04 `DR:219720800` · 11 SP04 `DR:227821700` · 12 EP05 `OFB-EAST:60968` · 13 SP05 `DR:231553700` ·
+  14 EP06 `OFB-EAST:60970` · 15 SP06 none (folder absent, not owned) · 16 SP07 `OFB-EAST:43769` · 17 EP07 `OFB-EAST:49019` ·
+  18 EP08 `OFB-EAST:60964` · 19 SP08 `OFB-EAST:60962` · 20 EP09 `OFB-EAST:109545788` · 21 EP10 `Origin.OFR.50.0000058` ·
+  22 SP09 `Origin.OFR.50.0000124` · 23 EP11 `OFB-EAST:64320`. Every installed pack has an answered id in the game's own table, so
+  the bundle id `Origin.OFR.50.0001139` (22 entries) is irrelevant: the game compares `ItemId` and would have matched. [verified]
+
+### Verdict: the packs never reach the gate (not pending); the entitlement data is complete
+Static trace of the gate's caller (0x5979xx-0x597E34, image `probe-out/ts3-ea169.bin`) [inferred from the disassembly, not traced live]:
+1. Per product row of 0x11A7A38 `{seq, pid, pid+1}` the loop calls 0x7D1820(seq): `RegOpenKeyExW(HKLM, "Software\Sims")`, enumerates
+   the subkeys, reads each key's `ProductID` (1001 = base, else must equal `seq`: EP01=2, SP01=3, EP02=4 ... EP11=21) and only then its
+   `Install Dir`. The EA app wrote the 19 pack keys with **`Install Dir` only** (section above, re-checked today), so no pack is found.
+2. Fallback: `GetFileAttributesW(<found dir> + "/" + "EP01")` must be a directory, then `<dir>/GameData/Shared/Packages/FullBuild_pNN.package`
+   (table 0x11A8940) must exist. The found dir is the empty string when 0x7D1820 failed, so the path is `/EP01` = drive root: not a
+   directory, product skipped (0x597C1A -> 0x597DB5). The folders `C:\Program Files\EA Games\The Sims 3\EP01..EP11, SP01..SP09` and their
+   FullBuild packages exist, the game never looks there.
+3. Only the base (`ProductID` 1001 present) is found and mounted directly (0x597D84 -> 0x596810, no entitlement check). The pending list
+   this+0x4BC stays empty, `0x597E0F: cmp [eax],eax; je 0x597E20` skips the gate, the follow-up scan 0x594980 still builds the full
+   entitlement mask (20 bits) but nothing uses it for mounting. Flags end as 0x1 = BaseGame only.
+Not verified live: the `/EP01` path string and the mask check `(bit & this+8) == bit` at 0x597D0F (both need one more log-only run with hooks
+at 0x597B33, 0x597C18, 0x597CA1, 0x597D14). The registry diff with the Steam machine (expected: pack keys with `ProductID`) is still open.
+
+### EA-app-side fix options (no code patch of the check, project policy)
+- Repair the game in the EA app (Manage > Repair) and re-add the packs in Manage > Add-ons: the installer should write `ProductID` (plus the
+  `DisplayName`/`Locale`/`Product GUID`/`SKU` the base key has) into every `HKLM\SOFTWARE\WOW6432Node\Sims\The Sims 3 <Pack>` key.
+- Re-login / entitlement refresh is **not** the fix: the answer already carries every installed pack.
+- Forum post to EA: 1.69.47 EA-app installs of the packs write only `Install Dir` to the pack registry keys; the game identifies an
+  installed pack by the key's `ProductID` value (1001 base, 2..21 packs) and otherwise looks for `/EP01` on the drive root, so all 19 packs
+  are treated as not installed although the entitlements are granted; ask for the installer to write `ProductID` per pack (give the
+  registry dump and this timeline; log lines above as evidence).
