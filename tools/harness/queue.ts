@@ -240,6 +240,10 @@ export const missingHistory = (hist: string[], fileLines: string[]): string[] =>
   return hist.filter(l => !have.has(l.replace(/^\d\d:\d\d:\d\d /, '')));
 };
 export const vanillaBlock = (prev: string | null, cur: string | null): string => cur && cur === prev && !/nothing clicked: 'Saving/.test(cur) ? cur : '';
+// docs/236 Round 7: a window with no buttons at all ("Entering Create a Household...", a transition text) has nothing to click; it is a block only
+// when it stays (sinceMs = how long the same empty-button text has been there), not on two polls in a row
+export const emptyButtons = (cur: string | null): boolean => !!cur && /buttons: *$/.test(cur);
+export const vanillaBlockFor = (prev: string | null, cur: string | null, sinceMs: number): string => emptyButtons(cur) && sinceMs <= 2 * GUARD_MS ? '' : vanillaBlock(prev, cur);
 
 export function parseQueue(json: unknown): Job[] {
   const jobs = Array.isArray(json) ? json : (json as any)?.jobs;
@@ -1528,6 +1532,9 @@ if (values['self-check']) {
     assert.equal(vanillaBlock('no safe button: x', 'no safe button: x'), 'no safe button: x');
     assert.equal(vanillaBlock("no safe button, nothing clicked: 'Saving... ' buttons: ", "no safe button, nothing clicked: 'Saving... ' buttons: "), '');
     assert.equal(vanillaBlock('a', null), '');
+    const eb = "no safe button, nothing clicked: 'Entering Create a Household... ' buttons: ";
+    assert.equal(vanillaBlockFor(eb, eb, 5000), '', 'no-button window seen briefly'); assert.equal(vanillaBlockFor(eb, eb, 2 * GUARD_MS + 1), eb, 'no-button window that stays');
+    assert.equal(vanillaBlockFor('x buttons: #1 ok', 'x buttons: #1 ok', 0), 'x buttons: #1 ok', 'buttons but no safe one: block at once');
     assert.deepEqual(missingHistory(['12:00:01 A -> #1 ok', '12:00:02 B -> #3 cancel (safe default)'], ['12:00:09 A -> #1 ok']), ['12:00:02 B -> #3 cancel (safe default)']);
     assert.deepEqual(safeDefaultWarns(['12:00:01 x -> #2 yes (accept requested)', '12:00:02 Hot Dogs -> #3 cancel (safe default; buttons: #1 a, #3 cancel)', '12:00:03 Y -> #3 cancel (safe default)']),
       ['Hot Dogs -> #3 cancel (safe default; buttons: #1 a, #3 cancel)', 'Y -> #3 cancel (safe default)']);
@@ -1843,7 +1850,7 @@ let modeGuard: (() => string) | null = null;
 let clicksOn = false;
 const ACCEPT_WINDOW_S = 900;
 function unrequestedModeGuard(from = 0, clicksFile = ''): () => string { // from 0: set at launch, and every start rewrites ts3native.log
-  let prev: ModeSnap | null = null, verdict = '', busy = false, prevBlocked: string | null = null, acceptAt = 0, nAccept = 0;
+  let prev: ModeSnap | null = null, verdict = '', busy = false, prevBlocked: string | null = null, acceptAt = 0, nAccept = 0, emptySince = 0;
   const recent: string[] = [];
   return () => {
     if (!busy && !verdict) {
@@ -1857,7 +1864,8 @@ function unrequestedModeGuard(from = 0, clicksFile = ''): () => string { // from
           recent.push(...cl); recent.splice(0, Math.max(0, recent.length - 10));
           if (cl.some(c => c.startsWith('dialog_expect accept'))) acceptAt = Date.now();
           const b: string | null = ap ? ap.blocked ?? null : prevBlocked;
-          ns = vanillaBlock(prevBlocked, b); prevBlocked = b;
+          if (!emptyButtons(b) || b !== prevBlocked) emptySince = Date.now();
+          ns = vanillaBlockFor(prevBlocked, b, Date.now() - emptySince); prevBlocked = b;
           clicks = [...recent];
         } else {
           const tail = logTail(1 << 20, from);
