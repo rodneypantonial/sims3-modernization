@@ -85,9 +85,18 @@ warning; `build/ea169/ts3fixes.package` (1284854 B) and `ts3agent.package` (4544
   renamed class bodies.
 - Build: Steam default and `TS3_REF_DIR=game-copy/assemblies-ea169 TS3_BUILD_DIR=build/ea169` both compile (1293174 B
   `ts3fixes.package`, identical size). `tools/selftest/autshadow` PASS (incl. G-M6 e2e).
-- EA laptop managed load test must check: world lines show no `G-M6 GUARD FAULT` (counter 605 = 0), `G-M6` miss lines only
-  for `CreateTooltipCallback` (`autshadow_gm6_mismatch` = 1, one `G-M6 skips <owner>` group), `game modules not on the
-  content accept list` appears (expected), `[AutShadow]` stays on, and `c[602]` hashed count ~3568 with load cost in c[604].
+- EA laptop managed load test must check (corrected after Run 7j3, see §8): no `G-M6 GUARD FAULT` (c[605] = 0), `[AutShadow]`
+  stays on, `game modules not on the content accept list` appears, and, by the Sims3GameplaySystems/Sims3GameplayObjects loaded:
+  - **1.69's own SGS/SGO** (no 1.67 core mod; they then also show in the not-on-the-accept-list line): `G-M4 sweep: 682 of 688`
+    (688 closure keys minus the 5 we swap minus `<>c__DisplayClass1::.ctor()`, absent in 1.69), c[602] = 682,
+    `autshadow_gm6_mismatch` (c[603]) = 1 with the `CreateTooltipCallback` G-M6 line, c[606] = 1
+    (`G-M6 skips Sims3.Gameplay.Core.VisitCommunityLot+Definition`, the only owner reaching it), c[2024] about 2880 (all
+    hierarchy keys minus our swapped ones), c[2025] = 0.
+  - **a 1.67 core mod's SGS/SGO** (`accepted set N (by content)`, the 7j3 setup): `683 of 688`, c[602] = 683, c[603] = 0,
+    c[606] = 0, c[2024] = 376, c[2025] = 0. The withheld key cannot miss there: the loaded CreateTooltipCallback is the Steam
+    body, whose hash is in `Known`.
+  - The old "~3568" was wrong: 3570 is closure (688) plus hierarchy (2882) keys of the generator; c[602] counts only resolved
+    closure keys, hierarchy keys are hashed only in modules not accepted by content (c[2024]).
 
 ## 8. Live load test (EA laptop, 2026-11-02 17:21 PHT)
 Managed side only: `ts3fixes.package` `a82ad09c0461` and `ts3agent.package` `dd7a7cd67f52` (both built with `TS3_REF_DIR=game-copy/assemblies-ea169 TS3_BUILD_DIR=build/ea169`, head d2879d3; replaced `ac2c3f8799af` / `1921c00c4c14`), script cache cleared, Bin ts3native pair at baseline (`c035abe5a3a6` / `8aa37522782a`, unchanged), `NRaas_ErrorTrap` stays in `Mods\_disabled-steam-1.67\`. Driver as run 7i (TS3_LAUNCH=ea TS3_EXE=Sims3Launcher.exe TS3_MACHINE=ea-laptop, 2 s memory sampler, 2600 MB guard, `cycle.ts --save Baseline-SV-Spring.sims3`, autopilot normal, window never focused). Logs: `probe-out/ea-235-0211.*` (main repo, ignored by git); counters read with the agent action `patches` (`.patches1.json`, `.patches2.json` at +11 min).
@@ -108,3 +117,22 @@ Managed side only: `ts3fixes.package` `a82ad09c0461` and `ts3agent.package` `dd7
 - **Run 7j (docs/232, 2026-11-02 17:40 PHT): G-M6 still not exercised; the combined run crashed at game start.** Native `05c1f1ecbf2c` with the 7i ini plus `[RouteSnap] Count=1`, `[MonoThread] Enabled=1`, `[AutShadow] Enabled=1` (ini `cb9c88e481fa`) and the managed packages of this section. MonoThread and AutShadow init lines were `OK` (`mono thread ... hooked (Mode=0 ...)`, `autonomy shadow: ... 44 of 45 descriptor ICs ... change tracking from routesnap's World_FireEvent detour`), then about 20 s after the launch, before the agent answered and so before the `autshadow` switch could be set and before any world load: `exception C0000005 at 0x00E824B2 (info 00000000 00000000)`, a null read in the game's Mono code. c[602], c[605], c[606] were not read, so the §7 criteria are still open. Both changes were on at once, so the cause is not separated.
 - **Run 7j2 (docs/232, 2026-11-02 17:52 PHT): G-M6 still not exercised; the 7j startup crash is fixed, the world run crashed.** AutShadow fix 15697ea (16-byte alignment, the bogus 0x10FF6BC icall-desc hit is gone, init line says 1775 IC slots guarded) removed the 7j crash at 0x00E824B2: MonoThread and AutShadow init OK, the agent answered, `autshadow` switch verified, world loaded. About 90 s in the world the sim thread crashed at 0x00AD04EC (null read at +0x24, stack refs inside the asi). c[602]/c[605]/c[606] were not read, so the G-M6 criteria in §7 stay open.
 - **Run 7j3 (docs/232, 2026-11-02 18:10 PHT): G-M6 exercised, no crash; the counters differ from the expectation above.** With the move dialogs declined (ts3agent 04a5609) the 7j2 build ran 10 min in the world, one save, clean quit (the 7h/7j2 exits were caused by the accepted move dialog; whether vanilla 1.69 also crashes on it is open, needs a control run Rodney approves). AutShadow init OK (1775 IC slots), `game modules not on the content accept list: ScriptCore, SimIFace, Sims3Metadata, Sims3StoreObjects, UI` present, c[605] = 0, **c[602] = 683 (expected about 3568), c[606] = 0 and `autshadow_gm6_mismatch` = 0 (expected one CreateTooltipCallback skip group)**, `autshadow_gm6_cha_methods` = 376, `autshadow_content_modules` = 7, `autshadow_content_unknown` = 5. So: no GUARD FAULT, but the 1.69 hash set is smaller than §7 predicted and the CreateTooltipCallback key never missed; to analyse (which method keys the 683 are, why the renamed closure class did not surface as a miss).
+- **Run 7j3 analysis (2026-11-02, static, no game run): the counters are expected for that load, no bug.**
+  - c[602] = resolved closure keys hashed, not the generator's 3570. Steam runs show the same 683 (golive-final 10-31 and
+    golive-unseen 11-01 profile jsonl) [verified]. 688 - 683 = our own swaps active in 7j3 (`Autonomy.CalculateScore(IOP)`,
+    `SeasonsManager.IsShelteredFromPrecipitation(IGameObject,InteractionInstance)`, `Lot.GetHoursOfOperation`,
+    `MetaAutonomyManager.GetTuning`, `SimIFace.Queries.GetObjects(Type,ulong)`, all `: ok` in the applied log); a swapped
+    method no longer resolves by its key under the game's Mono (monohost without swaps: 688 of 688) [inferred from the exact
+    count; the per-key list is not logged]. So ClosureSweep's `OwnSwap` branch never runs, and a foreign swap of a closure
+    method likely drops out the same way (only the `N of 688 found` line shows it): open G-M4 item, not a G-M6 one.
+  - c[606] = 0: 7j3 loaded SGS/SGO accepted by content (`accepted set 1`, a 1.67 core mod build), not 1.69's. Their
+    CreateTooltipCallback is the Steam body (hash `ff4b9f22e3d4a2b5`, in `Known`); 1.69's body hashes `d908a120138b33fb`, not in
+    `Known` [verified offline: Steam and 1.69 assemblies through `AutShadowCore.Resolve`/`MethodIlHash` under .NET reflection].
+  - The 1.69 hashes do take effect: 56 methods of the five 1.69 modules not on the accept list (1 closure + 7 hierarchy in
+    SimIFace, 48 hierarchy in Sims3StoreObjects) match only ea169 values; all passed (c[603] = c[2025] = 0; c[2024] = 376 =
+    378 hierarchy keys in those modules minus 2 own swaps [inferred]). Package `a82ad09c0461`: its Ts3Fixes.dll holds 960 of
+    the 961 ea169-only hashes, the withheld `d908a120138b33fb` absent, Steam `ff4b9f22e3d4a2b5` present [verified, byte search].
+  - Not EA-specific: `44 of 45 descriptor ICs` is the same in all 112 Steam ts3native logs (the missing one is
+    `Simulator_GetTaskImpl`, unregistered in the game, docs/122 row c). `Version`/`ImageSha`/`Config` worked: the content check
+    hashed every module and the sweep ran; Mode=0 (count only) does not gate G-M6.
+  - To close G-M6 on 1.69: one load with 1.69's own SGS/SGO (the 1.67 core mod out of the load) meeting the §7 criteria.
