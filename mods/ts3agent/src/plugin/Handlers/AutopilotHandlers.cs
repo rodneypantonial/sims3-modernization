@@ -23,10 +23,14 @@ namespace Ts3Agent
         static int sApSpeedFixes;
         static volatile int sApLastStep = int.MinValue / 2; // TickCount of the task's last step
         static readonly List<object> sApCleared = new List<object>();
-        // dialog_expect {seconds?, title?}: the harness is about to answer a dialog itself (auto_dialog accept:true); until it times out
+        // dialog_expect {seconds?, title?, accept?}: the harness is about to answer a dialog itself (auto_dialog accept:true); until it times out
         // (seconds 0 clears) the autopilot leaves a matching dialog alone (title = lowercase text fragment, none = any dialog).
+        // accept:true (accept-on-match): the autopilot itself clicks the accepting button of the first matching dialog inside the window,
+        // rules skipped, logs it and ends the window; no race with a harness poll that comes after the window (docs/236 H-move run 1).
+        // A window that ends without a match logs "dialog_expect expired (no match)".
         static int sExpectUntil;
         static string sExpectTitle, sExpectLogged;
+        static bool sExpectAccept, sExpectMatched;
         static string sApBlocked; // last dialog the autopilot would not click (AutoDialog: no safe button); logged once per dialog
 
         static void StartAutopilot()
@@ -81,14 +85,15 @@ namespace Ts3Agent
         {
             int sec = (int)a.Long("seconds", 30);
             sExpectTitle = a.Has("title") ? a.Str("title").ToLowerInvariant() : null;
+            sExpectAccept = a.Bool("accept", false);
             sExpectUntil = sec > 0 ? System.Environment.TickCount + Math.Min(sec, 900) * 1000 : 0;
-            sExpectLogged = null;
+            sExpectLogged = null; sExpectMatched = false;
             Dictionary<string, object> r = Util.Obj();
-            r["seconds"] = sec; r["title"] = sExpectTitle;
+            r["seconds"] = sec; r["title"] = sExpectTitle; r["accept"] = sExpectAccept;
             return r;
         }
 
-        // true (and logged once per dialog) while the harness expects to answer this dialog itself
+        // true (and logged once per dialog) while the harness expects to answer this dialog itself; with accept:true it is answered here
         static bool ApExpected(Sims3.UI.WindowBase modal)
         {
             if (sExpectUntil == 0 || sExpectUntil - System.Environment.TickCount <= 0) return false;
@@ -96,9 +101,33 @@ namespace Ts3Agent
             CollectTexts(modal, texts, 0);
             string all = string.Join(" ", texts.ToArray());
             if (sExpectTitle != null && all.ToLowerInvariant().IndexOf(sExpectTitle) < 0) return false;
+            sExpectMatched = true;
             string t = texts.Count > 0 ? texts[0] : "";
+            if (sExpectAccept)
+            {
+                Dictionary<string, object> args = new Dictionary<string, object>();
+                args["accept"] = true; args["rules"] = false; // the harness named this dialog: a decline rule must not answer it
+                string clicked;
+                try { Dictionary<string, object> d = AutoDialog(new Args(args)) as Dictionary<string, object>; clicked = d != null ? d["clicked"] as string : "(no dialog)"; }
+                catch (McpException e) { clicked = "(not clicked: " + e.Message + ")"; }
+                sExpectUntil = 0; // one accept per window
+                ApLog(t, "dialog_expect accept: " + clicked);
+                if (sApCleared.Count < 200) sApCleared.Add("dialog_expect accept: " + t + " -> " + clicked);
+                return true;
+            }
             if (t != sExpectLogged) { sExpectLogged = t; ApLog(t, "(left to the harness, dialog_expect)"); }
             return true;
+        }
+
+        // a window that ran out without any matching dialog: one line in the log and in `cleared` (the clicks poll reads it without ts3native)
+        static void ApExpectExpiry()
+        {
+            if (sExpectUntil == 0 || sExpectUntil - System.Environment.TickCount > 0) return;
+            sExpectUntil = 0;
+            if (sExpectMatched) return;
+            string line = "dialog_expect expired (no match)" + (sExpectTitle != null ? ": " + sExpectTitle : "") + (sExpectAccept ? " [accept]" : "");
+            DiagLine("ap click: " + line);
+            if (sApCleared.Count < 200) sApCleared.Add(line);
         }
 
         static GameSpeed ApTarget(string s)
@@ -116,6 +145,7 @@ namespace Ts3Agent
 
         static void AutopilotStep(ref int lastDialog, ref int lastSpeed)
         {
+            ApExpectExpiry();
             Dictionary<string, object> c = ApCfg();
             if (!(bool)c["enabled"] || !GameStates.IsInWorld()) return;
             int now = System.Environment.TickCount;
