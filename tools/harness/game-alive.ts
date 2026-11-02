@@ -313,14 +313,16 @@ export const dumpDir = () => process.env.TS3_DUMP_DIR ?? join(import.meta.dirnam
 const PS32 = 'C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe';
 
 // what to do (pure, covered by --self-check)
-export function dumpPlan(o: { pid: number | null; freeBytes: number; existing: string[]; procdump: string | null; dir: string; off?: boolean; now?: Date }):
+// mini (low address space, ts3probe.py): threads + stacks + the full region list, no memory contents; seconds, so it lands before
+// an out-of-memory crash whose own EA .mdmp comes out 0 bytes (docs/232 Run 8c). One full and one mini dump per PID.
+export function dumpPlan(o: { pid: number | null; freeBytes: number; existing: string[]; procdump: string | null; dir: string; off?: boolean; now?: Date; mini?: boolean }):
   { skip: string } | { tool: 'procdump' | 'powershell'; file: string } {
   if (o.off) return { skip: 'dump off (TS3_KILL_DUMP=off)' };
   if (!o.pid) return { skip: `no ${GAME_EXE} running` };
-  if (o.existing.some(f => f.startsWith(`ts3w-${o.pid}-`) && f.endsWith('.dmp'))) return { skip: `already dumped (PID ${o.pid})` };
+  if (o.existing.some(f => f.startsWith(`ts3w-${o.pid}-`) && f.endsWith('.dmp') && f.endsWith('.mini.dmp') === !!o.mini)) return { skip: `already dumped (PID ${o.pid}${o.mini ? ', mini' : ''})` };
   if (o.freeBytes < DUMP_MIN_FREE) return { skip: `disk free ${Math.round(o.freeBytes / 2 ** 30)} GB < 10 GB` };
   const ts = (o.now ?? new Date()).toISOString().replace(/[-:]/g, '').slice(0, 15);
-  return { tool: o.procdump ? 'procdump' : 'powershell', file: join(o.dir, `ts3w-${o.pid}-${ts}.dmp`) };
+  return { tool: o.procdump ? 'procdump' : 'powershell', file: join(o.dir, `ts3w-${o.pid}-${ts}${o.mini ? '.mini' : ''}.dmp`) };
 }
 
 const findProcdump = (): string | null => {
@@ -331,32 +333,39 @@ const gamePid = (image: string): number | null => {
   try { return Number(/^"[^"]+","(\d+)"/m.exec(execFileSync('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${image}`], { timeout: 15000 }).toString())?.[1]) || null; } catch { return null; }
 };
 
-export function dumpHungGame(reason: string, o: { pid?: number; image?: string; dir?: string; timeoutMs?: number } = {}): string {
+export function dumpHungGame(reason: string, o: { pid?: number; image?: string; dir?: string; timeoutMs?: number; mini?: boolean } = {}): string {
   const dir = o.dir ?? dumpDir(), timeout = o.timeoutMs ?? 180000;
   try { mkdirSync(dir, { recursive: true }); } catch { /* statfs below says why */ }
   let freeBytes = 0, existing: string[] = [];
   try { const s = statfsSync(dir); freeBytes = s.bavail * s.bsize; existing = readdirSync(dir); } catch { /* no dir: plan skips on 0 free */ }
   const procdump = findProcdump();
-  const plan = dumpPlan({ pid: o.pid ?? gamePid(o.image ?? GAME_EXE), freeBytes, existing, procdump, dir, off: process.env.TS3_KILL_DUMP === 'off' });
-  const tag = `${stamp()} kill dump (${reason})`;
+  const plan = dumpPlan({ pid: o.pid ?? gamePid(o.image ?? GAME_EXE), freeBytes, existing, procdump, dir, off: process.env.TS3_KILL_DUMP === 'off', mini: o.mini });
+  const tag = `${stamp()} ${o.mini ? 'mini' : 'kill'} dump (${reason})`;
   if ('skip' in plan) { console.log(`${tag}: skipped, ${plan.skip}`); return `kill dump skipped: ${plan.skip}`; }
   const pid = Number(/ts3w-(\d+)-/.exec(plan.file)![1]), t0 = Date.now();
   let err = '';
   try {
-    if (plan.tool === 'procdump') execFileSync(procdump!, ['-accepteula', '-ma', String(pid), plan.file], { timeout, stdio: 'ignore', windowsHide: true });
+    if (plan.tool === 'procdump') execFileSync(procdump!, ['-accepteula', o.mini ? '-mm' : '-ma', String(pid), plan.file], { timeout, stdio: 'ignore', windowsHide: true });
     else execFileSync(PS32, ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference='Stop'
 Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;using Microsoft.Win32.SafeHandles;public static class Dh{[DllImport("dbghelp.dll",SetLastError=true)]public static extern bool MiniDumpWriteDump(IntPtr p,uint id,SafeFileHandle f,uint t,IntPtr e,IntPtr u,IntPtr c);}'
 $p=Get-Process -Id ${pid}; $f=[IO.File]::Create('${plan.file.replace(/'/g, "''")}')
-try { if(-not [Dh]::MiniDumpWriteDump($p.Handle,${pid},$f.SafeFileHandle,0x1826,[IntPtr]::Zero,[IntPtr]::Zero,[IntPtr]::Zero)){ throw "MiniDumpWriteDump error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" } } finally { $f.Close() }`],
+try { if(-not [Dh]::MiniDumpWriteDump($p.Handle,${pid},$f.SafeFileHandle,${o.mini ? '0x1824' : '0x1826'},[IntPtr]::Zero,[IntPtr]::Zero,[IntPtr]::Zero)){ throw "MiniDumpWriteDump error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" } } finally { $f.Close() }`],
       { timeout, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true }); // 0x1826 = FullMemory|HandleData|UnloadedModules|FullMemoryInfo|ThreadInfo
   } catch (e: any) { err = e?.killed || e?.signal ? `timeout ${Math.round(timeout / 1000)} s` : String(e?.stderr || e?.message || e).trim().split(/\r?\n/)[0]; }
   let size = 0; try { size = statSync(plan.file).size; } catch { /* none written */ }
-  const line = size && !err ? `kill dump ${plan.tool} ${Math.round(size / 2 ** 20)} MB in ${Math.round((Date.now() - t0) / 1000)} s: ${plan.file}`
+  const line = size && !err ? `${o.mini ? 'mini' : 'kill'} dump ${plan.tool} ${Math.round(size / 2 ** 20)} MB in ${Math.round((Date.now() - t0) / 1000)} s: ${plan.file}`
     : `kill dump failed (${plan.tool}: ${err || 'no file'})${size ? `, partial ${plan.file}` : ''}`;
   console.log(`${tag}: ${line}`);
   return line;
 }
 
+// node tools/harness/game-alive.ts --dump <pid> [--mini] [--reason text]: one dump now (ts3probe.py calls it with --mini on low address space)
+if (process.argv[1]?.endsWith('game-alive.ts') && process.argv[2] === '--dump') {
+  const a = process.argv.slice(3), pid = Number(a[0]), ri = a.indexOf('--reason');
+  if (!(pid > 0)) { console.error('usage: node tools/harness/game-alive.ts --dump <pid> [--mini] [--reason text]'); process.exit(2); }
+  const line = dumpHungGame(ri >= 0 ? a[ri + 1] ?? '' : 'requested', { pid, mini: a.includes('--mini') });
+  process.exit(/failed|skipped/.test(line) ? 1 : 0);
+}
 if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-check')) {
   const assert = (await import('node:assert')).strict;
   const st = { last: null as string | null, misses: 0 }, smp = (mark: string, running = true, answering = true) => ({ running, answering, mark });
@@ -414,6 +423,11 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
   assert.match((dumpPlan({ ...dp, freeBytes: 9 * 2 ** 30 }) as any).skip, /disk free 9 GB < 10 GB/);
   assert.match((dumpPlan({ ...dp, pid: null }) as any).skip, new RegExp(`no ${GAME_EXE.replace(/\./g, '\\.')} running`));
   assert.match((dumpPlan({ ...dp, off: true }) as any).skip, /dump off/);
+  // low-address-space mini dump (docs/232 Run 8c): own suffix, does not block the full kill dump of the same PID, nor the reverse
+  assert.deepEqual(dumpPlan({ ...dp, mini: true }), { tool: 'powershell', file: join('probe-out', 'dumps', 'ts3w-4242-20261026T030405.mini.dmp') });
+  assert.equal((dumpPlan({ ...dp, existing: ['ts3w-4242-20261026T010000.mini.dmp'] }) as any).tool, 'powershell', 'mini does not block the full dump');
+  assert.equal((dumpPlan({ ...dp, mini: true, existing: ['ts3w-4242-20261026T010000.dmp'] }) as any).tool, 'powershell', 'full does not block the mini dump');
+  assert.match((dumpPlan({ ...dp, mini: true, existing: ['ts3w-4242-20261026T010000.mini.dmp'] }) as any).skip, /already dumped \(PID 4242, mini\)/);
   assert.match(dumpHungGame('self-check', { image: 'no-such-image-ts3.exe', dir: join((await import('node:os')).tmpdir(), 'ts3-killdump-check') }), /skipped: no TS3W\.exe running/);
   // hang capture against fake probes (fixtures): healthy, dead (refused), hung (never answers)
   const { mkdtempSync, readdirSync, rmSync } = await import('node:fs'), { tmpdir } = await import('node:os');

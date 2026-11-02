@@ -171,7 +171,7 @@ import { ledgerReport } from './mono-ledger-report.ts';
 import { saveStats } from './save-stats.ts';
 import { matchKnown } from './known-script-errors.ts';
 import { clickLines, dumpHungGame, GUARD_MS, logTail, type ModeSnap, modeExit, modeSnap, noSafeButton } from './game-alive.ts';
-import { BIN, EA_ASI, EA_ASI_MARK, EA_INI, EA_LAUNCHER, EA_URI, eaLogProblem, editionOf, GAME_EXE, gameRunning, nativeDirProblem, isSteamGame, killLeftovers, LAUNCH, logUntrackedGame, MACHINE, machineTag, seenPids } from './game-exe.ts';
+import { BIN, EA_ASI, EA_ASI_MARK, EA_INI, EA_LAUNCHER, EA_URI, eaLogProblem, editionOf, GAME_EXE, GAME_NAME, gameRunning, nativeDirProblem, isSteamGame, killLeftovers, LAUNCH, logUntrackedGame, MACHINE, machineTag, seenPids } from './game-exe.ts';
 import { checkCfg as checkFailFast, describe as describeFailFast, routingGuard, type FailFast } from './routing-failfast.ts';
 import { checkRequire, flatDelta, parseRequire } from './fixes-require.ts';
 import { parseHitchTasks } from './hitch-tasks.ts';
@@ -1604,7 +1604,9 @@ if (values['self-check']) {
     assert.ok(!eq.vanilla);
     assert.deepEqual(ej.map(j => j.id), parseQueue(vq).map(j => j.id).filter(id => id !== 'hf-kill'));
     for (const j of ej) {
-      assert.ok(j.asi === 'tested' && releaseDefaults(j) && !Object.keys(rowIni(j)).length, `ea-mod-matrix ${j.id}: shipped ini as is`);
+      // shipped ini plus only the light memory logging (docs/232 Run 8c triage: [MemDiag] Light + AllocSites virtual hooks, EA heap hooks off)
+      assert.ok(j.asi === 'tested' && releaseDefaults(j) && Object.keys(rowIni(j)).every(k => k.startsWith('MemDiag.')), `ea-mod-matrix ${j.id}: shipped ini + MemDiag logging only`);
+      assert.equal(Number(rowIni(j)['MemDiag.AllocSitesHeap'] ?? 0), 0, `ea-mod-matrix ${j.id}: EA heap hooks use Steam addresses, keep them off`);
       const v = parseQueue(vq).find(x => x.id === j.id)!;
       assert.deepEqual({ ...j.run, script: j.run.script?.map(a => a.replace('EaMod-', 'Vanilla-')) }, { ...v.run, script: v.run.script }, `ea-mod-matrix ${j.id}: same run as vanilla-matrix`);
     }
@@ -2638,6 +2640,9 @@ for (const [n, j] of jobs.entries()) {
   // the game rewrites Bin/ts3native.log at every start: keep this job's copy (travel save lines, hook OK lines); in a shared load
   // the start-up part plus this job's own lines (session-reuse.ts logCopy)
   if (launched && existsSync(LOG)) try { writeFileSync(row.nativeLog = join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-ts3native.log`), sess && (sess.reuse || row.repros) ? logCopy(readFileSync(LOG), sess.logOff, jobLogOff) : readFileSync(LOG)); } catch (e) { log(`${j.id}: copy ts3native.log: ${e}`); }
+  // EA (docs/232 Run 8c): DXVK writes <exe>_d3d9.log fresh at every launch, so keep this job's copy (map failures, heap types)
+  const dxvkLog = join(BIN, `${GAME_NAME}_d3d9.log`);
+  if (EA && launched && existsSync(dxvkLog)) try { copyFileSync(dxvkLog, row.dxvkLog = join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-d3d9.log`)); } catch (e) { log(`${j.id}: copy ${dxvkLog}: ${e}`); }
   // docs/133 §7: call-site coverage lines of this run into the cumulative DB (a failed merge only costs coverage)
   // every game start of the row: profile.repros reloads keep their starts only in the per-repro slices (docs/133 §8)
   if (launched && Number(rowIni(j)['ProbeSnap.CallSites'])) for (const f of callsiteLogs(row)) try { log(`${j.id}: ${mergeCallsites(f, j.id)}`); } catch (e) { log(`${j.id}: callsites merge ${f}: ${e}`); }

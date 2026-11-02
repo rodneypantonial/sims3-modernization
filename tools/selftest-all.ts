@@ -41,6 +41,7 @@ const ARGS: Record<string, string[]> = {
   'tools/harness/stuck-rule.ts': [],
   'tools/hook-sites.ts': ['--check'],          // own self-check, then every native address must be in docs/68
   'tools/probe/g11-check.mjs': [],
+  'tools/probe/split-check.mjs': [],
   'tools/probe/vcache-check.mjs': [],
 };
 
@@ -153,7 +154,7 @@ const NO_SELF_CHECK: Record<string, string> = {
   'tools/mts-helper/ext/src/poll.ts': MTS_EXT,
   'tools/mts-helper/ext/src/sel.ts': MTS_EXT,
   'tools/mts-helper/ext/src/wizard-main.ts': MTS_EXT,
-  'tools/probe/agent.js': `${FRIDA}; its g11 and vcache blocks run in tools/probe/g11-check.mjs and vcache-check.mjs`,
+  'tools/probe/agent.js': `${FRIDA}; its g11, vcache and split blocks run in tools/probe/g11-check.mjs, vcache-check.mjs and split-check.mjs`,
   'tools/probe/ep-gate-probe.js': `${FRIDA} (EA app 1.69 gate probe, docs/234)`,
   'tools/probe/gc-read.mjs': LIVE,
   'tools/probe/managed-sample.mjs': LIVE,
