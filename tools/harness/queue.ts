@@ -171,7 +171,7 @@ import { ledgerReport } from './mono-ledger-report.ts';
 import { saveStats } from './save-stats.ts';
 import { matchKnown } from './known-script-errors.ts';
 import { clickLines, dumpHungGame, GUARD_MS, logTail, type ModeSnap, modeExit, modeSnap, noSafeButton } from './game-alive.ts';
-import { BIN, EA_LAUNCHER, EA_URI, GAME_EXE, gameRunning, isSteamGame, killLeftovers, LAUNCH, logUntrackedGame, MACHINE, machineTag, seenPids } from './game-exe.ts';
+import { BIN, EA_ASI, EA_ASI_MARK, EA_INI, EA_LAUNCHER, EA_URI, eaLogProblem, editionOf, GAME_EXE, gameRunning, nativeDirProblem, isSteamGame, killLeftovers, LAUNCH, logUntrackedGame, MACHINE, machineTag, seenPids } from './game-exe.ts';
 import { checkCfg as checkFailFast, describe as describeFailFast, routingGuard, type FailFast } from './routing-failfast.ts';
 import { checkRequire, flatDelta, parseRequire } from './fixes-require.ts';
 import { parseHitchTasks } from './hitch-tasks.ts';
@@ -196,8 +196,9 @@ const { values, positionals } = parseArgs({ allowPositionals: true, options: {
 } });
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const H = (f: string) => join(ROOT, 'tools', 'harness', f);
-const TESTED_ASI = join(ROOT, 'native', 'ts3native', 'out', 'ts3native.asi');
-const REPO_INI = join(ROOT, 'native', 'ts3native', 'ts3native.ini');
+// EA app 1.69.47 mod mode replaces both with TS3_NATIVE_DIR's EA build and shipped-default EA ini (queue run, `EA` below)
+let TESTED_ASI = join(ROOT, 'native', 'ts3native', 'out', 'ts3native.asi');
+let REPO_INI = join(ROOT, 'native', 'ts3native', 'ts3native.ini');
 const OUT = join(ROOT, 'probe-out', 'queue');
 const USER = process.env.TS3_USER ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3'); // as cycle.ts / install-fixes.ts
 // next to the user folder (same volume, so moves are renames), outside Mods so the game never mounts it
@@ -1598,6 +1599,15 @@ if (values['self-check']) {
       assert.deepEqual(vanillaRefusals(j), [], `vanilla-matrix ${j.id}`);
       if (j.run.script) assert.ok(existsSync(H(j.run.script[0])), `vanilla-matrix ${j.id}: ${j.run.script[0]} missing`);
     }
+    // EA mod mode (docs/232): the vanilla-matrix jobs but hf-kill, same runs, mod mode, the EA build ("tested") with the shipped ini as is
+    const eq = JSON.parse(readFileSync(H('queues/ea-mod-matrix.json'), 'utf8')), ej = parseQueue(eq);
+    assert.ok(!eq.vanilla);
+    assert.deepEqual(ej.map(j => j.id), parseQueue(vq).map(j => j.id).filter(id => id !== 'hf-kill'));
+    for (const j of ej) {
+      assert.ok(j.asi === 'tested' && releaseDefaults(j) && !Object.keys(rowIni(j)).length, `ea-mod-matrix ${j.id}: shipped ini as is`);
+      const v = parseQueue(vq).find(x => x.id === j.id)!;
+      assert.deepEqual({ ...j.run, script: j.run.script?.map(a => a.replace('EaMod-', 'Vanilla-')) }, { ...v.run, script: v.run.script }, `ea-mod-matrix ${j.id}: same run as vanilla-matrix`);
+    }
   }
   console.log('self-check ok');
   process.exit(0);
@@ -1656,6 +1666,21 @@ if (VANILLA) {
   const bad = all.flatMap(j => vanillaRefusals(j).map(r => `${j.id}: ${r}`));
   if (bad.length) { console.error(`vanilla mode: these need ts3native or ts3fixes: ${bad.join('; ')}`); process.exit(2); }
 }
+// mod mode on the EA app 1.69.47 exe (game-exe.ts editionOf: PE stamp + sha256 of TS3_BIN/TS3_EXE, not the env): asi "tested" =
+// TS3_NATIVE_DIR/ts3native-ea169.asi, base ini = TS3_NATIVE_DIR/ts3native-ea169-rc.ini (shipped defaults, clean sections only), and
+// ts3native.log must carry the asi's EA host line. Every job must run that EA build; a Steam asi pinned by path is refused. The Steam
+// set-up (TS3W.exe, TS3_LAUNCH direct) keeps native/ts3native/out + the repo ini, unchanged. Restore: the bin-before pair, as on Steam.
+const EDITION = VANILLA ? null : editionOf(existsSync(join(BIN, GAME_EXE)) ? readFileSync(join(BIN, GAME_EXE)) : null);
+if (EDITION?.why) { console.error(`edition: ${EDITION.why}; refused, nothing run`); process.exit(2); }
+const EA = EDITION?.edition === 'ea169';
+if (EA) {
+  const nd = process.env.TS3_NATIVE_DIR, why = nativeDirProblem(nd);
+  if (why) { console.error(`EA mod mode: ${why}; refused, nothing run`); process.exit(2); }
+  TESTED_ASI = join(resolve(nd!), EA_ASI); REPO_INI = join(resolve(nd!), EA_INI);
+  const steamPins = all.filter(j => j.asi !== 'tested' && !(existsSync(resolve(ROOT, j.asi)) && readFileSync(resolve(ROOT, j.asi)).toString('latin1').includes(EA_ASI_MARK))).map(j => `${j.id} (${j.asi})`);
+  if (steamPins.length) { console.error(`EA mod mode: these jobs pin an asi that is not an EA 1.69.47 build: ${steamPins.join(', ')}; use "tested" (TS3_NATIVE_DIR)`); process.exit(2); }
+  console.log(`${new Date().toISOString().slice(11, 19)} queue: edition ea169 (${GAME_EXE} PE stamp + sha256): asi ${TESTED_ASI}, base ini ${REPO_INI}`);
+}
 let jobs = all;
 if (values.from) {
   const i = all.findIndex(j => j.id === values.from);
@@ -1676,7 +1701,7 @@ const asiPath = (j: Job) => (j.asi === 'tested' ? TESTED_ASI : resolve(ROOT, j.a
 // and crashed bp-watch-stalk-worker (docs/113 §8.6). The DLL holds the log line format "ts3native <version> %04d".
 const SRC_VERSION = /#define TS3NATIVE_VERSION "([^"]+)"/.exec(readFileSync(join(ROOT, 'native', 'ts3native', 'ts3native.cpp'), 'utf8'))?.[1];
 const staleAsi = (j: Job) => {
-  if (j.asi !== 'tested' || !existsSync(TESTED_ASI)) return '';
+  if (EA || j.asi !== 'tested' || !existsSync(TESTED_ASI)) return ''; // EA: the CI build of the port branch, not this tree's source
   const v = /ts3native (\d+\.\d+\.\d+) %04d/.exec(readFileSync(TESTED_ASI).toString('latin1'))?.[1];
   return v === SRC_VERSION ? '' : `tested build is ts3native ${v ?? '?'}, source is ${SRC_VERSION}: rebuild with native/ts3native/build.cmd`;
 };
@@ -1816,7 +1841,7 @@ if (values['dry-run']) {
     console.log(`  2 save guard: ${Object.entries(hashSaves(SAVES, guardedSaves(s))).map(([k, v]) => `${k} ${v}`).join(', ')} hashed before and after; a change FAILs the job and stops the queue`);
     const ji = jobIni(j);
     if (callSitesOffNote(j)) console.log(`  3 ${callSitesOffNote(j)}`);
-    if (!VANILLA) console.log(`  3 Bin/ts3native.ini = repo ini${Object.keys(ji ?? {}).length ? ` + ${Object.entries(ji!).map(([k, v]) => `${k}=${v}`).join(', ')}` : ' (unchanged)'}`);
+    if (!VANILLA) console.log(`  3 Bin/ts3native.ini = ${EA ? `EA ini ${REPO_INI}` : 'repo ini'}${Object.keys(ji ?? {}).length ? ` + ${Object.entries(ji!).map(([k, v]) => `${k}=${v}`).join(', ')}` : ' (unchanged)'}`);
     if (j.run.worldimage && !existsSync(String(ji!['WorldImage.Helper']))) console.log(`  3 ** helper MISSING: build native\\worldimage\\build.cmd; the job refuses before touching the game **`);
     if (j.defaultIni) console.log(`  3 Bin/Default.ini + ${Object.entries(j.defaultIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
     if (j.s3ppIni) console.log(`  3 Bin/Sims3Performance.ini + ${Object.entries(j.s3ppIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
@@ -2128,7 +2153,7 @@ const logSize = () => { try { return statSync(LOG).size; } catch { return 0; } }
 type BuildRec = { asiSha: string; asiDb: string[]; version?: string; fixesSha?: string; fixesTuning?: string; fixesDb: string[]; fixesExpected: string; fixesExpectedTuning?: string; logVersion?: string; launchedAt: number };
 let lastBuild: BuildRec | null = null;
 function buildCheck(j: Job, binAsi: Buffer): { fails: string[]; rec: BuildRec } {
-  const a = asiCheck(BUILDS, readFileSync(asiPath(j)), j.asi === 'tested' ? 'native/ts3native/out/ts3native.asi' : j.asi, binAsi);
+  const a = asiCheck(BUILDS, readFileSync(asiPath(j)), j.asi === 'tested' ? (EA ? TESTED_ASI : 'native/ts3native/out/ts3native.asi') : j.asi, binAsi);
   const f = fixesCheck(BUILDS, readOr(FIXES_INST), { name: j.fixesBuild, built: readOr(fixesSrc(j)) });
   return { fails: [...a.fails, ...f.fails], rec: { asiSha: a.sha, asiDb: a.names, version: a.version, fixesSha: f.sha, fixesTuning: f.digest, fixesDb: f.names,
     fixesExpected: j.fixesBuild ?? j.fixesPackage ?? 'build/ts3fixes.package', fixesExpectedTuning: f.expected, launchedAt: Date.now() } };
@@ -2140,7 +2165,7 @@ function logVersionGate() {
   if (VANILLA) return; // no ts3native.log in vanilla: N/A
   const b = lastBuild!;
   const why = !existsSync(LOG) ? 'Bin/ts3native.log missing after start-up (asi not loaded?)'
-    : statSync(LOG).mtimeMs < b.launchedAt - 5000 ? 'Bin/ts3native.log not rewritten by this start (asi not loaded?)' : logVersionCheck(readFileSync(LOG, 'latin1'), b.version);
+    : statSync(LOG).mtimeMs < b.launchedAt - 5000 ? 'Bin/ts3native.log not rewritten by this start (asi not loaded?)' : logVersionCheck(readFileSync(LOG, 'latin1'), b.version) || (EA ? eaLogProblem(readFileSync(LOG, 'latin1')) : '');
   if (why) throw new Error(`build check: ${why}; refused, nothing run`);
   b.logVersion = b.version;
   log(`build check ok: ${buildLine(b)}`);
