@@ -61,6 +61,8 @@
 // earlyGates: [{ afterSec, counter, op, value, why }] (Rodney 2026-10-31, profile jobs): live /native paths (autshadow.req) or ts3fixes
 // counters (fixes:autshadow_gm6_faults, + sums) read every GUARD_MS from the profile start; past afterSec a gate that does not hold
 // stops the job at once with FAIL: early gate: <why> (<counter>=<v>) (see earlyGateGuard / gateFail).
+// report: ["rm2Why_", "rm2Quat", ...] (optional, needs earlyGates): the FAIL line ends with "; name=v ..." for the non-zero /native
+// counters of the same poll whose names start with a listed prefix.
 // stopQueueOnFail: true (job or queue level) or --stop-on-fail: after a FAIL row the queue stops with 'STOP: <job> failed (stopQueueOnFail): ...'
 // (chain scripts grep it); a noisy timing job whose -rerun was queued does not stop it.
 // scriptErrorsMax: N = at most N new ScriptError_*.xml in the user folder since the job start (known EA errors, known-script-errors.json,
@@ -214,11 +216,11 @@ function machineCols(tag: string) { return tag ? { head: ' machine |', sep: '---
 function machineField(tag: string): { machineTag?: string } { return tag ? { machineTag: tag } : {}; }
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
   save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; run: { repro?: string; saveReload?: string[]; script?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
-    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; stopQueueOnFail?: boolean; scriptErrorsMax?: number; timeoutMin?: number; pin?: false | PinOpts;
+    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; report?: string[]; stopQueueOnFail?: boolean; scriptErrorsMax?: number; timeoutMin?: number; pin?: false | PinOpts;
   saveMatrix?: { fixes?: 'all' | 'shipped' }; fixesBuild?: string; fixesPackage?: string; pinReason?: string; rerunOf?: string; shadowCheck?: boolean };
 
 // every top-level job key queue.ts reads (Job type plus the optional extras); anything else is a typo or a profile key at the wrong level
-const JOB_KEYS = new Set(['id', 'note', 'asi', 'ini', 'defaultIni', 's3ppIni', 's3ssToml', 'dxvkConf', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'noiseCheck', 'earlyGates', 'routingFailFast', 'scriptErrorsMax', 'stopQueueOnFail', 'reuseSession', 'releaseDefaults']);
+const JOB_KEYS = new Set(['id', 'note', 'asi', 'ini', 'defaultIni', 's3ppIni', 's3ssToml', 'dxvkConf', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'noiseCheck', 'earlyGates', 'report', 'routingFailFast', 'scriptErrorsMax', 'stopQueueOnFail', 'reuseSession', 'releaseDefaults']);
 // ---- vanilla mode (docs/236): what a job may not ask for without ts3native/ts3fixes, and the checks the row names as N/A
 export const VANILLA_NA = ['asi build check', 'ts3fixes build check', 'ts3native.log version gate', 'ts3native.ini features', 'hook FAIL lines and route hook state', 'counter gate and /native counters', 'ts3fixes activity'];
 export function vanillaRefusals(j: Job): string[] {
@@ -357,6 +359,8 @@ export function parseQueue(json: unknown): Job[] {
       const late = (j.earlyGates as EarlyGate[]).filter(g => g.afterSec >= j.run.profile!.minutes * 60);
       if (late.length) throw new Error(`${at}: earlyGates ${late.map(g => `${g.counter} from ${g.afterSec} s`).join(', ')} never run: the profile ends at ${j.run.profile.minutes * 60} s`);
     }
+    if (j.report !== undefined && !(j.earlyGates && Array.isArray(j.report) && j.report.length && j.report.every((p: unknown) => typeof p === 'string' && /^\w+$/.test(p))))
+      throw new Error(`${at}: report must be a non-empty list of counter-name prefixes (e.g. ["rm2Why_", "rm2Quat"]) on a job with earlyGates`);
     const ccDir = (x: unknown) => typeof x === 'string' && /^game-copy\/cc-synth\/[\w.-]+$/.test(x);
     if (j.ccSet !== undefined && !(ccDir(j.ccSet) || (Array.isArray(j.ccSet) && j.ccSet.length && j.ccSet.every(ccDir) && new Set(j.ccSet.map(x => basename(x))).size === j.ccSet.length))) throw new Error(`${at}: ccSet must be "game-copy/cc-synth/<set>" (a tools/cc-gen.ts output dir) or a list of distinct ones`);
     if (j.ccLots !== undefined && !ccDir(j.ccLots)) throw new Error(`${at}: ccLots must be "game-copy/cc-synth/<dir>" (a tools/cc-lot-gen.ts output dir)`);
@@ -439,8 +443,16 @@ function gateTerm(t: string, native: any, fixes: any): number | null | undefined
   const v = fx ? src[t.slice(6)] : t.split('.').reduce((o: any, k) => o?.[k], src);
   return typeof v === 'number' ? v : typeof v === 'boolean' ? Number(v) : null;
 }
-// '' = all due gates hold (or a source did not answer), else the FAIL reason of the first failing gate
-export function gateFail(gs: EarlyGate[], elapsedSec: number, native: any, fixes: any): string {
+// report (per job, 2026-11-02: the Mode 2 smoke FAILed rm2Elig=0 and the cause, rm2Why_6, needed a separate read): the
+// non-zero top-level /native counters whose names start with one of the prefixes, from the poll that failed the gate
+export const reportCounters = (native: any, pre?: string[]) => !pre?.length || !native ? '' : Object.entries(native)
+  .filter(([k, v]) => typeof v === 'number' && v !== 0 && pre.some(p => k.startsWith(p))).map(([k, v]) => `${k}=${v}`).join(' ');
+// '' = all due gates hold (or a source did not answer), else the FAIL reason of the first failing gate (+ "; " report counters)
+export function gateFail(gs: EarlyGate[], elapsedSec: number, native: any, fixes: any, report?: string[]): string {
+  const r = gateFail1(gs, elapsedSec, native, fixes), rc = r && reportCounters(native, report);
+  return rc ? `${r}; ${rc}` : r;
+}
+function gateFail1(gs: EarlyGate[], elapsedSec: number, native: any, fixes: any): string {
   for (const g of gs) {
     if (elapsedSec < g.afterSec) continue;
     const vs = g.counter.split('+').map(t => gateTerm(t, native, fixes));
@@ -634,8 +646,16 @@ const COUNTERS: Record<string, RegExp> = {
   RouteCache: /^(enabled|calls|hits|misses|stored|otherFails)$/, RouteWorker: /^(worker\w*|waitUs|fallbacks|watchdogs|invoke\w*|hostCalls|planO\w*)$/,
   RouteAsync: /^async\w*$/, RouteBudget: /^budget\w*$/, SaveWrite: /^save\w*$/, Decompress: /^decompress\w*$/, Alloc: /^alloc\w*$/,
   WaterJps: /^waterJps\w*$/, SaveFlush: /^flush\w*$/, SaveCompress: /^compress\w*$/, HeightCache: /^height\w*$/, GcThreadCheck: /^gc\w*$/,
-  LotStream: /^(ls[A-Z]\w*|lot[A-Z]\w*|pump[A-Z]\w*|sync[A-Z]\w*|objScene\w*)$/, Verify: /^vf\w*$/,
+  LotStream: /^(ls[A-Z]\w*|lot[A-Z]\w*|pump[A-Z]\w*|sync[A-Z]\w*|objScene\w*)$/, Verify: /^vf\w*$/, UnseenCost: /^uc[A-Z]\w*$/,
+  UnseenAnim: /^(aa[A-Z]\w*|ao[A-Z]\w*)$/, UnseenRootMotion: /^rm[A-Z]\w*$/, UnseenTable: /^utb[A-Z]\w*$/,
 };
+// a COUNTERS section the job turns on (<Sec>.Enabled non-zero) whose fields never reached the row: FAIL, so a no-data run
+// (2026-11-02: bp/ip-uao-hist, UnseenAnim had no entry here) can't PASS again
+export function counterGaps(ini: Record<string, unknown>, after: Record<string, unknown> | null): string[] {
+  if (!after) return [];
+  return Object.keys(COUNTERS).filter(s => Number(ini[`${s}.Enabled`]) && !Object.keys(after).some(k => COUNTERS[s].test(k)))
+    .map(s => `counters not recorded: ${s}`);
+}
 // minCounters gate on the /native answer after the load: '' = go, else why the job refuses
 export function counterGate(c: Record<string, unknown> | null, min?: number): string {
   if (min === undefined) return '';
@@ -1097,6 +1117,12 @@ if (values['self-check']) {
   assert.deepEqual(pickCounters(c, ['Alloc']), { version: 14, allocHitsK: 10, allocMode: 1 });
   assert.deepEqual(pickCounters(c, ['HeightCache', 'SaveFlush', 'GC']), { version: 14, heightHits: 3, flushJobs: 2 });
   assert.equal(pickCounters(null, ['Alloc']), null);
+  // unseen sections reach the row; an enabled section with no recorded field fails the job
+  const u = { version: 152, aoKindN0: 3, aaPasses: 2, rmPasses: 1, utbRowCalc: 4, ucReady: 1, auMode: 1 };
+  assert.deepEqual(pickCounters(u, ['UnseenAnim', 'UnseenRootMotion', 'UnseenTable']), { version: 152, aoKindN0: 3, aaPasses: 2, rmPasses: 1, utbRowCalc: 4 });
+  assert.deepEqual(counterGaps({ 'UnseenAnim.Enabled': 1, 'UnseenRootMotion.Enabled': 0 }, pickCounters(u, ['UnseenAnim'])), []);
+  assert.deepEqual(counterGaps({ 'UnseenAnim.Enabled': 1, 'UnseenTable.Enabled': 1 }, { version: 152, aaPasses: 2 }), ['counters not recorded: UnseenTable']);
+  assert.deepEqual(counterGaps({ 'UnseenTable.Enabled': 1 }, null), []);
   // Verify group (docs/51): every vf* key, nothing else
   const v = { version: 20, vfEnabled: 1, vfThreadsOffMain: 3, vfRaceCellSwap: 0, verbose: 1, lotAdds: 2 };
   assert.deepEqual(pickCounters(v, ['Verify']), { version: 20, vfEnabled: 1, vfThreadsOffMain: 3, vfRaceCellSwap: 0 });
@@ -1380,6 +1406,16 @@ if (values['self-check']) {
   assert.equal(gateFail(gates, 310, null, null), ''); // probe/agent did not answer: skip the round (the game guard covers a dead probe)
   assert.equal(gateFail(gates, 160, nat(5), {}), 'early gate: G-M6 guard faults (fixes:autshadow_gm6_faults missing)'); // old package / wrong name
   assert.equal(gateFail([{ afterSec: 1, counter: 'p.1', op: '>=', value: 2, why: 'arr' }], 5, { p: [0, 2] }, null), '');
+  // report (2026-11-02): a FAIL line carries the non-zero counters of the listed prefixes from the same poll; a pass stays ''
+  const eligGate: EarlyGate[] = [{ afterSec: 60, counter: 'rm2Elig', op: '>', value: 0, why: 'no eligible decision' }];
+  const rmNat = { rm2Elig: 0, rm2Why_3: 12, rm2Why_6: 9560, rm2Why_7: 0, rm2QuatBad: 284640, rm2RouteRecs: 284640, rm2CamIc_1: 2, rm2Coarse: 4 };
+  const rep = ['rm2Why_', 'rm2CamIc_', 'rm2Quat'];
+  assert.equal(gateFail(eligGate, 70, rmNat, null, rep), 'early gate: no eligible decision (rm2Elig=0) [want >0 from 60 s]; rm2Why_3=12 rm2Why_6=9560 rm2QuatBad=284640 rm2CamIc_1=2');
+  assert.equal(gateFail(eligGate, 70, { ...rmNat, rm2Elig: 3 }, null, rep), '');
+  assert.equal(gateFail(eligGate, 70, rmNat, null), 'early gate: no eligible decision (rm2Elig=0) [want >0 from 60 s]');
+  assert.throws(() => parseQueue([{ ...eg(g1)[0], report: [] }]), /report must be/);
+  assert.throws(() => parseQueue([{ id: 'g', asi: 'x', save: 'S', report: ['rm2Why_'], run: { profile: { minutes: 5 } } }]), /report must be/);
+  assert.deepEqual(parseQueue([{ ...eg(g1)[0], report: ['rm2Why_'] }])[0].report, ['rm2Why_']);
 
   // content stash round trip on a temp Mods tree
   const tmp = mkdtempSync(join(tmpdir(), 'queue-content-')), mods = join(tmp, 'Mods'), stash = join(tmp, 'stash');
@@ -1894,7 +1930,7 @@ async function addAgentHistory(file: string) {
     if (cl.length || add.length) appendFileSync(file, [...cl.map(c => `${stamp()} ${c}\n`), ...add.map(l => `${l}\n`)].join(''));
   } catch { /* the game is gone or busy: the file keeps what the polls got */ }
 }
-function earlyGateGuard(gs: EarlyGate[]): () => string {
+function earlyGateGuard(gs: EarlyGate[], report?: string[]): () => string {
   const t0 = Date.now(), needFixes = gs.some(g => g.counter.includes('fixes:'));
   let verdict = '', busy = false;
   return () => {
@@ -1902,7 +1938,7 @@ function earlyGateGuard(gs: EarlyGate[]): () => string {
       busy = true;
       (async () => {
         const sec = (Date.now() - t0) / 1000, n = await get('native'), f = needFixes ? (await agent('patches'))?.result ?? null : null;
-        verdict = gateFail(gs, sec, n, f);
+        verdict = gateFail(gs, sec, n, f, report);
       })().catch(() => { /* next round */ }).finally(() => { busy = false; });
     }
     return verdict;
@@ -2367,7 +2403,7 @@ for (const [n, j] of jobs.entries()) {
       noiseGuard = () => { const v = earlyNoise(machineFile, from); if (v !== null) noiseGuard = null; return v ?? ''; };
     }
     if (j.routingFailFast) { routeGuard = routingGuard(j.routingFailFast, LOG, join(ROOT, 'probe-out', 'profile', profileTag(j))); log(`${j.id}: ${describeFailFast(j.routingFailFast)}`); }
-    if (j.earlyGates) { gateGuard = earlyGateGuard(j.earlyGates); log(`${j.id}: ${describeGates(j.earlyGates)}`); }
+    if (j.earlyGates) { gateGuard = earlyGateGuard(j.earlyGates, j.report); log(`${j.id}: ${describeGates(j.earlyGates)}`); }
     if (items) {
       // ---- profile.repros (docs/170 §1): one window per repro in this load, each its own tag, pass rules and log slice
       row.repros = [];
@@ -2543,6 +2579,7 @@ for (const [n, j] of jobs.entries()) {
     }
     row.counters ={ before: pickCounters(c0, sections), after: pickCounters(c1, sections) };
     row.counters.delta = delta(row.counters.before, row.counters.after);
+    for (const f of counterGaps(j.ini ?? {}, row.counters.after)) { row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f; }
   } catch (e) { row.error = String((e as Error).message ?? e); log(`${j.id}: ${row.error}`); }
   noiseGuard = null; routeGuard = null; gateGuard = null; // modeGuard stays for the next job of a shared load
   if (stopLoad) { stopLoad(); const ml = loadSummary(machineFile); Object.assign(row, { machine: ml.line, noise: ml.noise, noiseNote: ml.short, machineLog: machineFile }); log(`${j.id}: ${ml.line}`); }

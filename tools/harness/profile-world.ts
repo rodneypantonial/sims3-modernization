@@ -78,7 +78,8 @@ import { checkHitchTasks, parseHitchTasks } from './hitch-tasks.ts';
 import { checkTag, parseRule } from './frame-lead.ts';
 import { isSetup, runLoop, runStep, stopLine, untilUnlocked, withRule } from './repro-loop.ts';
 import { loadStory } from './story-fuzzer.ts';
-import { counterSwitches, nativeNames, nativeValues } from './native-switches.ts';
+import { counterSwitches, nativeModeFields, nativeNames, nativeValues } from './native-switches.ts';
+import { addArmColumns } from './arm-ms.ts';
 import { leadInCut, sliceFrames } from './session-reuse.ts';
 import { reproSave } from './repro-save.ts';
 import { focusGame, giveFocusBack } from './focus-game.ts';
@@ -424,12 +425,27 @@ const toggler = (async () => {
     // ts3fixes counters too (2026-10-22: the spreads pair had no proof the nightly passes ran inside counted slices)
     await ag('patches').then(r => appendFileSync(`${pre}-ab-fixes.jsonl`, JSON.stringify({ i, s: (Date.now() - t0) / 1000, c: numericFields(r.result) }) + '\n')).catch(() => {});
     const patchNames = abNames.filter(n => !nativeNames.includes(n) && !(n in counterSwitches));
-    if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
-    for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);
-    for (const n of abNames.filter(n => n in counterSwitches))
-      await get(`nativeexport?name=ts3native_counters&offset=${counterSwitches[n]}&value=${on ? 1 : 0}`);
+    // per-slice read-back (2026-11-02: early gates must not test an --ab switch, it alternates per slice): a switch that did not
+    // take stops the run with FAIL (the 'native_set: ... did not stick' text is what queue.ts smokeProblems looks for)
+    const bad: string[] = [], want = on ? 1 : 0;
+    if (patchNames.length) {
+      const r = await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
+      for (const n of patchNames) if (r.result?.[n] !== on) bad.push(`${n}=${on} did not stick (reads ${r.result?.[n]})`);
+    }
+    for (const n of abNames.filter(n => nativeNames.includes(n))) {
+      const v = Number((await get(`native?${n}=${want}`))?.[nativeModeFields[n]]);
+      if (v !== want) bad.push(`${n}=${want} did not stick (reads ${v})`);
+    }
+    for (const n of abNames.filter(n => n in counterSwitches)) {
+      const w = await get(`nativeexport?name=ts3native_counters&offset=${counterSwitches[n]}&value=${want}`);
+      if (w?.value !== want) bad.push(`${n}=${want} did not stick (reads ${w?.value})`);
+    }
+    if (bad.length) {
+      console.log(`${stamp()} FAIL: --ab slice ${i} read-back: native_set: ${bad.join('; ')}`);
+      await restoreFixes(); process.exit(1);
+    }
     slices.push({ from: (Date.now() - t0) / 1000, on, ...(i === 0 && { warmup: true }) });
-    console.log(`${stamp()} ${abNames.join(',')} ${on ? 'on' : 'off'}`);
+    console.log(`${stamp()} ${abNames.join(',')} ${on ? 'on' : 'off'} (read back)`);
   }
 })();
 const reproFail = async (why: string) => {
@@ -597,6 +613,12 @@ if (hitchTasks.length) {
   if (fails.length) process.exitCode = 1;
 }
 if (abNames.length) { writeFileSync(`${pre}-ab.json`,JSON.stringify({ names: abNames, slices }, null, 1)); await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
+// per-arm ms/s (arm-ms.ts): slice + arm columns on the seconds rows (arm 1 on, 0 off, -1 not counted)
+if (slices.length && (abNames.length || reproLoop)) {
+  const sf = `${pre}-${secs}-seconds.csv`;
+  try { writeFileSync(sf, addArmColumns(readFileSync(sf, 'utf8'), reproLoop ? slices.map(sl => ({ ...sl, loop: true })) : slices)); }
+  catch (e: any) { console.log(`${stamp()} arm columns not added to ${sf}: ${e.message}`); }
+}
 if (reproLoop && slices.length) { // the last firing's end snapshot, then the arm slices (loop: hitch-ab keeps every firing slice whole)
   await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i: slices.length, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
   writeFileSync(`${pre}-ab.json`, JSON.stringify({ names: [`loop:${values.repro}`], loop: true, slices }, null, 1));

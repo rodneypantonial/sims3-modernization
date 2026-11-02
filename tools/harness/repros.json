@@ -48097,5 +48097,1863 @@
     "steps": [],
     "expect": "harness declines the move dialogs: no LiveMode -> None exit, no crash",
     "switches": []
+  },
+  {
+    "id": "showoff-badges-route",
+    "bug": "player report (docs/226): a child of the active household cannot do the scouting Show Off Badges social to any adult, inside or outside (\"cannot go there\"); fine without our mods. Sim+DoShowOffMove.Run plans the child to the adult (PlanToPoint, only for jig placement; SocialJigTwoPerson.PlaceJigAlongRoute ignores that route), places the jig next to the adult, plans RouteToJigA and runs DoRoute; DoRoute false = the balloon",
+    "fix": "none yet (triage): ts3fixes RouteFailLog.cs logs every plan / jig / DoRoute of the social (routefaillog, on); suspects [inferred]: [RouteAsync] own job (routeasync), KindDeadlines own-plan cut at 250 ms (kinddeadlines), [Discourage] / DeferFootprint (discourage, deferfootprint) delaying the jig's footprint, [OptsInit] (ini only: the job with OptsInit.Enabled=0)",
+    "save": "Baseline-BP",
+    "note": "Needs an active household with a home lot, a child and a young adult or older; make_sim {age: Child} adds a child when the active Sim is at home (optional: skipped when the household is full or already has one). Test shortcuts (labelled): Scouting set to 1 on the child and both Sims placed (outside next to the mailbox, inside next to the first ground-floor object in a room), then EA's own ShowOffNewSkills (Badges) is queued as the pie menu does. Per arm (all shipped, then each suspect switched off in the same load): outside and inside, each waits until DoRoute ran, the jig failed or the social left the queue (60 s cap), then records the outcome. The final verdict throws when any arm failed and lists every arm, so one failing arm does not hide the others.",
+    "expect": "pass = every arm 'route ok'. A bug repro: the shipped arm records 'DoRoute false (balloon)' (or 'jig not placed'); the arm whose switch is off and that records 'route ok' names the suspect. ts3native.log has the matching 'showoff:' lines (plan kind, async/sync, result, goal, ms).",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "routefaillog": true
+        },
+        "note": "logging on (its default); applied log lists SimRoutingComponent.DoRoute and SocialJigTwoPerson.PlaceJigAlongRoute: ok",
+        "waitS": 1
+      },
+      {
+        "cmd": "make_sim",
+        "args": {
+          "age": "Child"
+        },
+        "waitS": 10,
+        "optional": true,
+        "note": "joins the active household when the active Sim is at home"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "setup outside"
+          ]
+        },
+        "note": "shipped: child and adult placed outside on the home lot",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "fire"
+          ]
+        },
+        "note": "shipped outside: Show Off Badges queued on the child",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "done",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 2
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "record shipped outside"
+          ]
+        },
+        "note": "shipped outside: outcome noted (route ok / DoRoute false = the balloon / jig not placed)",
+        "waitS": 3
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "setup inside"
+          ]
+        },
+        "note": "shipped: child and adult placed inside on the home lot",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "fire"
+          ]
+        },
+        "note": "shipped inside: Show Off Badges queued on the child",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "done",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 2
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "record shipped inside"
+          ]
+        },
+        "note": "shipped inside: outcome noted (route ok / DoRoute false = the balloon / jig not placed)",
+        "waitS": 3
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "routeasync": 0
+        },
+        "waitS": 1,
+        "note": "routeasync off: routeasync off"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "setup outside"
+          ]
+        },
+        "note": "routeasync off: child and adult placed outside on the home lot",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "fire"
+          ]
+        },
+        "note": "routeasync off outside: Show Off Badges queued on the child",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "done",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 2
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "record routeasync off outside"
+          ]
+        },
+        "note": "routeasync off outside: outcome noted (route ok / DoRoute false = the balloon / jig not placed)",
+        "waitS": 3
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "setup inside"
+          ]
+        },
+        "note": "routeasync off: child and adult placed inside on the home lot",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "fire"
+          ]
+        },
+        "note": "routeasync off inside: Show Off Badges queued on the child",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "done",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 2
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "record routeasync off inside"
+          ]
+        },
+        "note": "routeasync off inside: outcome noted (route ok / DoRoute false = the balloon / jig not placed)",
+        "waitS": 3
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "routeasync": 1
+        },
+        "waitS": 1,
+        "note": "routeasync back on"
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "kinddeadlines": 0
+        },
+        "waitS": 1,
+        "note": "kinddeadlines off: kinddeadlines off"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "setup outside"
+          ]
+        },
+        "note": "kinddeadlines off: child and adult placed outside on the home lot",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "fire"
+          ]
+        },
+        "note": "kinddeadlines off outside: Show Off Badges queued on the child",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "done",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 2
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "record kinddeadlines off outside"
+          ]
+        },
+        "note": "kinddeadlines off outside: outcome noted (route ok / DoRoute false = the balloon / jig not placed)",
+        "waitS": 3
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "setup inside"
+          ]
+        },
+        "note": "kinddeadlines off: child and adult placed inside on the home lot",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "fire"
+          ]
+        },
+        "note": "kinddeadlines off inside: Show Off Badges queued on the child",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "done",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 2
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "record kinddeadlines off inside"
+          ]
+        },
+        "note": "kinddeadlines off inside: outcome noted (route ok / DoRoute false = the balloon / jig not placed)",
+        "waitS": 3
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "kinddeadlines": 1
+        },
+        "waitS": 1,
+        "note": "kinddeadlines back on"
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "discourage": 0
+        },
+        "waitS": 1,
+        "note": "discourage off: discourage off"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "setup outside"
+          ]
+        },
+        "note": "discourage off: child and adult placed outside on the home lot",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "fire"
+          ]
+        },
+        "note": "discourage off outside: Show Off Badges queued on the child",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "done",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 2
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "record discourage off outside"
+          ]
+        },
+        "note": "discourage off outside: outcome noted (route ok / DoRoute false = the balloon / jig not placed)",
+        "waitS": 3
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "setup inside"
+          ]
+        },
+        "note": "discourage off: child and adult placed inside on the home lot",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "fire"
+          ]
+        },
+        "note": "discourage off inside: Show Off Badges queued on the child",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "done",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 2
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "record discourage off inside"
+          ]
+        },
+        "note": "discourage off inside: outcome noted (route ok / DoRoute false = the balloon / jig not placed)",
+        "waitS": 3
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "discourage": 1
+        },
+        "waitS": 1,
+        "note": "discourage back on"
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "deferfootprint": 0
+        },
+        "waitS": 1,
+        "note": "deferfootprint off: deferfootprint off"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "setup outside"
+          ]
+        },
+        "note": "deferfootprint off: child and adult placed outside on the home lot",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "fire"
+          ]
+        },
+        "note": "deferfootprint off outside: Show Off Badges queued on the child",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "done",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 2
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "record deferfootprint off outside"
+          ]
+        },
+        "note": "deferfootprint off outside: outcome noted (route ok / DoRoute false = the balloon / jig not placed)",
+        "waitS": 3
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "setup inside"
+          ]
+        },
+        "note": "deferfootprint off: child and adult placed inside on the home lot",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "fire"
+          ]
+        },
+        "note": "deferfootprint off inside: Show Off Badges queued on the child",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "done",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 2
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "record deferfootprint off inside"
+          ]
+        },
+        "note": "deferfootprint off inside: outcome noted (route ok / DoRoute false = the balloon / jig not placed)",
+        "waitS": 3
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "deferfootprint": 1
+        },
+        "waitS": 1,
+        "note": "deferfootprint back on"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowOffBadgesCheck",
+          "args": [
+            "verdict"
+          ]
+        },
+        "note": "throws when any arm failed (lists every arm)",
+        "waitS": 1
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "native_set",
+        "args": {
+          "routeasync": 1
+        }
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "kinddeadlines": 1
+        }
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "discourage": 1
+        }
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "deferfootprint": 1
+        }
+      }
+    ]
+  },
+  {
+    "id": "age-up-abort-check",
+    "bug": "issue #166 build 32: AgingState.PreInstantiateSim waits (Simulator.Sleep) for a deferred age-up's outfit build; AbortSimBuilderTask during the wait nulls the task field, the next Done read throws NullReferenceException, EA's catch rethrows and SimDescription.Instantiate never creates the Sim",
+    "fix": "ts3fixes AgeUpAbort.cs: ageupabort (default off), docs/512",
+    "save": "Baseline-BP",
+    "note": "Needs EA's PreInstantiateSim: run it with the original core mod (a core with the player's Build 32 leaves the wait when the task is gone). Built on a townie that is not instantiated. ageupkeepoutfits is on in both arms so the aborted build does not wipe the townie's outfits (docs/205).",
+    "expect": "off: expect thrown sees EA's NullReferenceException, seen +1, caught +0, age unchanged. on: expect caught sees no exception, seen +1, caught +1, age and outfit key unchanged.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "ageupabort": false,
+          "ageupkeepoutfits": true
+        },
+        "note": "applied log lists AgingState.PreInstantiateSim: ok",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.AgeUpAbortCheck",
+          "args": [
+            "arm"
+          ]
+        },
+        "note": "off: the race in a game task (age-up marked deferred, abort queued, PreInstantiateSim called); throws when there is no townie",
+        "waitS": 8
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.AgeUpAbortCheck",
+          "args": [
+            "expect thrown"
+          ]
+        },
+        "note": "off: the bug: NullReferenceException, seen +1, caught +0 (throws otherwise)",
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "ageupabort": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.AgeUpAbortCheck",
+          "args": [
+            "arm"
+          ]
+        },
+        "note": "on: the same race (on the first townie that qualifies: the off arm leaves its age and outfit unchanged)",
+        "waitS": 8
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.AgeUpAbortCheck",
+          "args": [
+            "expect caught"
+          ]
+        },
+        "note": "on: the fix: no exception, seen +1, caught +1, age and outfit key unchanged (throws otherwise)",
+        "waitS": 1
+      }
+    ],
+    "cleanup": []
+  },
+  {
+    "id": "unseen-rm-snapback",
+    "bug": "none (fix check, Rodney 2026-11-02: unseen Sims with coarse root-motion steps must look exact when the camera reaches them): docs/228 §11",
+    "fix": "ts3native [UnseenRootMotion] Mode 2 (Mode=2): almost-visible margin + lead, camera-jump hold (script camera ICs rm2CamIc + 20 m fallback rm2CamJump, rm2CamHold, CamIcPasses), owed steps never leave the pass, snap of owed steps at a switch-off (rm2Snap, rm2SnapMaxCm)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-11-02): never run. Needs the unseenrm3 build with [UnseenRootMotion] Mode=2 and [UnseenAnim] Enabled=1. Ultra speed: merges need k > 1 sub-steps per pass. Map view and portrait clicks go through the UI paths (map_view, focus_sim: the script camera ICs Mode 2 hooks, docs/228 §11.6); camera_jumps add instant lot jumps (SetPositionAndTarget). Only the in-game camera moves.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2,
+        "note": "Mode 2 merges only when a pass has several 1/30 s sub-steps (k ~10 at catch-up, docs/228 §10.1)"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 20,
+        "note": "unseen walkers mid-route"
+      },
+      {
+        "cmd": "unseen_snapback",
+        "args": {
+          "count": 4
+        },
+        "waitS": 180,
+        "optional": true,
+        "note": "camera onto unseen Sims one by one (no require step: its pass rule is [UnseenThrottle] Rate)"
+      },
+      {
+        "cmd": "map_view",
+        "args": {
+          "on": true
+        },
+        "waitS": 10,
+        "note": "map-view button path: CameraController.EnableMapViewMode (script camera IC hooked by Mode 2)"
+      },
+      {
+        "cmd": "map_view",
+        "args": {
+          "on": false
+        },
+        "waitS": 10,
+        "note": "back from map view: DisableMapViewMode"
+      },
+      {
+        "cmd": "focus_sim",
+        "args": {
+          "pick": "far",
+          "index": 0
+        },
+        "waitS": 8,
+        "note": "portrait-click path onto the farthest walker: RequestLerpToTarget (+ FollowSim when routing)"
+      },
+      {
+        "cmd": "focus_sim",
+        "args": {
+          "pick": "far",
+          "index": 1
+        },
+        "waitS": 8
+      },
+      {
+        "cmd": "focus_sim",
+        "args": {
+          "pick": "far",
+          "index": 2
+        },
+        "waitS": 8
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "order": "populated",
+          "lots": 6,
+          "dwellS": 8,
+          "loops": 2
+        },
+        "waitS": 110,
+        "note": "portrait-like instant jumps onto lots with Sims"
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      },
+      {
+        "cmd": "map_view",
+        "args": {
+          "on": true
+        },
+        "waitS": 10,
+        "note": "map-view button path: CameraController.EnableMapViewMode (script camera IC hooked by Mode 2)"
+      },
+      {
+        "cmd": "map_view",
+        "args": {
+          "on": false
+        },
+        "waitS": 10,
+        "note": "back from map view: DisableMapViewMode"
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "order": "far",
+          "lots": 4,
+          "dwellS": 8,
+          "loops": 1
+        },
+        "waitS": 40,
+        "note": "jumps across town"
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 40
+      }
+    ],
+    "expect": "no crash; native rm2CamIc_9 > 0 and rm2CamIc_10 > 0 (map view on/off), rm2CamIc_1 > 0 (portrait lerp), rm2CamIcOff 0, rm2CamHold > 0, rm2Coarse > 0, rm2SnapMaxCm < 100, rm2Faults 0; screenshots at the jumps show no frozen or jumping Sims"
+  },
+  {
+    "id": "ua1-churn-loop",
+    "bug": "2026-11-02 drain crash (docs/144 §3.5.1): a render-message destroy in FrameDb_DrainEvents called a freed manager on the [UnseenAnim] build; U-A1 owed-time paths never ran against Sims and objects that are created and destroyed off screen",
+    "fix": "ts3native 0.36.163 [UnseenAnim] stale owed-time drop (aaStale) + list reset (aaSlotReset), drain fault dump; run with [UnseenAnim] Mode 1 CapPasses=4 (and Objects=1 for the object arm)",
+    "save": "Baseline-BP-Spring",
+    "expect": "no crash; aaSkipped and aoSkipped rise; aaStale may rise; no drain fault line in ts3native.log",
+    "note": "Loop form of alloc-churn-loop without CAS: 8 Sims spawned at non-active households' home lots (off screen from the active lot), 30 EA objects placed in 6 calls of 5 (residential/community lots alternating; one 30-object call exceeded the agent reply timeout), removed, Sims removed. Ends on quiet. UNVERIFIED: first run failed on the single 30-object call, now batched.",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "spawn_sims",
+          "setup": false,
+          "args": {
+            "count": 8
+          },
+          "waitS": 30,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 5,
+          "maxS": 30
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 5,
+            "lot": "residential"
+          },
+          "waitS": 15,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 1,
+          "maxS": 15
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 5,
+            "lot": "community"
+          },
+          "waitS": 15,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 1,
+          "maxS": 15
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 5,
+            "lot": "residential"
+          },
+          "waitS": 15,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 1,
+          "maxS": 15
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 5,
+            "lot": "community"
+          },
+          "waitS": 15,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 1,
+          "maxS": 15
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 5,
+            "lot": "residential"
+          },
+          "waitS": 15,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 1,
+          "maxS": 15
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 5,
+            "lot": "community"
+          },
+          "waitS": 15,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 1,
+          "maxS": 15,
+          "count": {
+            "result": "tracked"
+          }
+        },
+        {
+          "cmd": "remove_objects",
+          "setup": false,
+          "args": {},
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 2,
+          "maxS": 20
+        },
+        {
+          "cmd": "remove_sims",
+          "setup": false,
+          "args": {},
+          "waitS": 30,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 2,
+          "maxS": 30,
+          "note": "fire: Sims and their objects released"
+        }
+      ],
+      "arms": [
+        "on"
+      ],
+      "until": {
+        "events": 120
+      },
+      "maxMinutes": 15
+    }
+  },
+  {
+    "id": "dart-gone-check",
+    "bug": "A dartboard keeps a Sim that was reset or destroyed mid-game in Players, its Team, CurrentPlayer and CheatingSim: EA clears those only in DoFinishGame, and Quit (every cleanup) never runs for a Sim that is gone; the fields are saved with the board (issue #166 build 42)",
+    "fix": "ts3fixes DeadRefs.cs: deadrefsweep phase 9 (default off), docs/516",
+    "save": "Baseline-BP",
+    "note": "Hard state built by the agent check (DeadRefDartCheck seed): a dartboard made out of world, one townie added as team player, CurrentPlayer and CheatingSim, then that Sim object destroyed as a reset does (the description stays; it is instantiated again where it stood at the end of each arm). Off arm: the sweep refuses, the entries stay. On arm: the spread pass is started at once and polled until the board is clean. The on arm's seed poll waits for the destroy only: the hourly pass (an alarm that fires on its own clock) may clean the board before the poll, as it did on 2026-11-01 23:42.",
+    "expect": "off: expect left sees gone 3 with the switch off. on: expect cleaned sees gone 0, Players 0, Teams 0, CurrentPlayer and CheatingSim null; deadrefsweep_dartboards >= 3.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefDartCheck",
+          "args": [
+            "seed"
+          ]
+        },
+        "note": "off: a dartboard out of world with one townie as player, current player and cheating Sim; the Sim object destroyed",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefDartCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "destroyed",
+              "equals": true
+            },
+            {
+              "path": "gone",
+              "atLeast": 3
+            }
+          ],
+          "maxS": 60,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "note": "off: started False (switch off); nothing runs",
+        "waitS": 20
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefDartCheck",
+          "args": [
+            "expect left"
+          ]
+        },
+        "note": "off: the three gone entries still on the board; board destroyed, townie put back"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefDartCheck",
+          "args": [
+            "seed"
+          ]
+        },
+        "note": "on: the same hard state again (another townie)",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefDartCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "destroyed",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "note": "on: started True (safe); phase 9 reaches the board within the pass",
+        "waitS": 20
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefDartCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "note": "on: poll until the board holds no gone entry",
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefDartCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "gone",
+              "equals": 0
+            }
+          ],
+          "maxS": 240,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefDartCheck",
+          "args": [
+            "expect cleaned"
+          ]
+        },
+        "note": "on: gone 0, Players and Teams empty, CurrentPlayer and CheatingSim null; deadrefsweep_dartboards +3"
+      }
+    ]
+  },
+  {
+    "id": "use-list-gone-check",
+    "bug": "A Sim reset or destroyed while using, referencing or routing to an object stays in that object's mActorsUsingMe, mReferenceList and mRoutingReferenceList (persisted List<Sim>s); the paired Remove never runs for a Sim that is gone, and the destroyed Sim object goes into every save (issue #166 build 40)",
+    "fix": "ts3fixes DeadRefs.cs: deadrefsweep phase 10 (default off), docs/517",
+    "save": "Baseline-BP",
+    "note": "Hard state built by the agent check (DeadRefUseListCheck seed): a social jig made out of world, one townie added to its use, reference and routing reference lists, then that Sim object destroyed as a reset does (the description stays; it is instantiated again where it stood at the end of each arm). Off arm: the sweep refuses, the entries stay. On arm: the spread pass is started at once and polled until the jig is clean; phase 10 walks every GameObject, so the pass takes longer than the dartboard one. The on arm's seed poll waits for the destroy only: the hourly pass (an alarm on its own clock) may clean the seeded object before the poll.",
+    "expect": "off: expect left sees gone 3 with the switch off. on: expect cleaned sees gone 0 and all three lists empty; deadrefsweep_uselists >= 3.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefUseListCheck",
+          "args": [
+            "seed"
+          ]
+        },
+        "note": "off: a jig out of world with one townie in its three lists; the Sim object destroyed",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefUseListCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "destroyed",
+              "equals": true
+            },
+            {
+              "path": "gone",
+              "atLeast": 3
+            }
+          ],
+          "maxS": 60,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "note": "off: started False (switch off); nothing runs",
+        "waitS": 20
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefUseListCheck",
+          "args": [
+            "expect left"
+          ]
+        },
+        "note": "off: the three gone entries still on the jig; jig destroyed, townie put back"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefUseListCheck",
+          "args": [
+            "seed"
+          ]
+        },
+        "note": "on: the same hard state again (another townie)",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefUseListCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "destroyed",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "note": "on: started True (safe); phase 10 reaches the jig within the pass",
+        "waitS": 20
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefUseListCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "note": "on: poll until the jig holds no gone entry",
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefUseListCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "gone",
+              "equals": 0
+            }
+          ],
+          "maxS": 300,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefUseListCheck",
+          "args": [
+            "expect cleaned"
+          ]
+        },
+        "note": "on: gone 0, all three lists empty; deadrefsweep_uselists +3"
+      }
+    ]
+  },
+  {
+    "id": "object-owner-gone-check",
+    "bug": "ObjectOwnerComponent.mOwner (the Sim a reward came from, or a theft's victim) and mThief are saved by description id and re-read as CreatedSim at load; in a running world nothing updates them when that Sim object is destroyed, so a destroyed Sim object sits on the object until the next load (ErrorTrap's load scan then resets the object; issue #166 build 43)",
+    "fix": "ts3fixes DeadRefs.cs: deadrefsweep phase 11 (default off), docs/519",
+    "save": "Baseline-BP",
+    "note": "Hard state built by the agent check (DeadRefOwnerCheck seed): two social jigs made out of world, each a reward from one townie (AddComponent<ObjectOwnerComponent> + the owner field), both Sim objects destroyed as a reset does; putback instantiates the first townie again (a live instance exists: the relink case), the second stays gone (the drop case). Off arm: the sweep refuses, both gone entries stay. On arm: the spread pass is started at once and polled until the first jig is relinked and the second has no component. The jigs are destroyed and the second townie put back at the end of each arm. The seed puts the first townie back at once when the destroy was synchronous; the on arm's seed poll waits for the destroy only, since the hourly pass (an alarm on its own clock) may run before the poll.",
+    "expect": "off: expect left sees gone 2, nothing relinked or dropped, with the switch off. on: expect cleaned sees gone 0, relinked, dropped; deadrefsweep_objectowners >= 2.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+          "args": [
+            "seed"
+          ]
+        },
+        "note": "off: two jigs out of world, a reward-giver component with one townie each; both Sim objects destroyed",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "destroyed",
+              "equals": true
+            },
+            {
+              "path": "gone",
+              "equals": 2
+            }
+          ],
+          "maxS": 60,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+          "args": [
+            "putback"
+          ]
+        },
+        "note": "off: the first townie's Sim object again (the relink case)",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "live",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "note": "off: started False (switch off); nothing runs",
+        "waitS": 20
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+          "args": [
+            "expect left"
+          ]
+        },
+        "note": "off: both gone entries still there; jigs destroyed, second townie put back"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+          "args": [
+            "seed"
+          ]
+        },
+        "note": "on: two jigs out of world, a reward-giver component with one townie each; both Sim objects destroyed",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "destroyed",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+          "args": [
+            "putback"
+          ]
+        },
+        "note": "on: the first townie's Sim object again (the relink case)",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "live",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": true
+        },
+        "note": "on (after the seed and the put-back, so no pass runs before the relink case exists)",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "note": "on: started True (safe); phase 11 reaches the jigs within the pass",
+        "waitS": 20
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "note": "on: poll until the first jig is relinked and the second dropped",
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "gone",
+              "equals": 0
+            },
+            {
+              "path": "relinked",
+              "equals": true
+            },
+            {
+              "path": "dropped",
+              "equals": true
+            }
+          ],
+          "maxS": 300,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefOwnerCheck",
+          "args": [
+            "expect cleaned"
+          ]
+        },
+        "note": "on: gone 0, relinked, dropped; deadrefsweep_objectowners +2"
+      }
+    ]
+  },
+  {
+    "id": "disposed-handler-gone-check",
+    "bug": "GameObjectRelationship's constructor subscribes its GameObjectDisposed handler to the object's ObjectDisposed event and nothing unsubscribes it; a deleted description or a decayed relationship stays reachable from the car, and a load-time graph reset (ErrorTrap) resets the car (issue #166 build 41)",
+    "fix": "ts3fixes DeadRefs.cs: deadrefsweep phase 12 (default off), docs/522",
+    "save": "Baseline-BP",
+    "note": "Hard state built by the agent check (DeadRefHandlerCheck seed) without destroying anything: a car relationship of a townie's description with a vehicle of the world, made through EA's Vehicle.GetNewRelationship (subscribes the handler) and never added to the description's list, so nobody holds it. Off arm: the sweep refuses, the handler stays. On arm: the spread pass is started at once and polled until the handler is gone (the hourly pass may run first; same outcome). The check removes a handler of ours that is still subscribed at the end of each arm.",
+    "expect": "off: expect left sees our handler still subscribed with the switch off. on: expect cleaned sees it gone; deadrefsweep_handlers >= 1.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefHandlerCheck",
+          "args": [
+            "seed"
+          ]
+        },
+        "note": "off: a relationship nobody holds, subscribed to a car's ObjectDisposed (the car made out of world)",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefHandlerCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "mine",
+              "equals": true
+            }
+          ],
+          "maxS": 30,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "note": "off: started False (switch off); nothing runs",
+        "waitS": 20
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefHandlerCheck",
+          "args": [
+            "expect left"
+          ]
+        },
+        "note": "off: our handler still subscribed; removed by the check"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefHandlerCheck",
+          "args": [
+            "seed"
+          ]
+        },
+        "note": "on: the same hard state again",
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "note": "on: started True (safe); phase 12 reaches the vehicle within the pass",
+        "waitS": 20
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefHandlerCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "note": "on: poll until our handler is gone",
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefHandlerCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "mine",
+              "equals": false
+            }
+          ],
+          "maxS": 300,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefHandlerCheck",
+          "args": [
+            "expect cleaned"
+          ]
+        },
+        "note": "on: our handler gone; deadrefsweep_handlers +1"
+      }
+    ]
+  },
+  {
+    "id": "celebrity-waiting-gone-check",
+    "bug": "A celebrity Sim's Celebrity.mWaitingToReact keeps the Sims who rolled a reaction and have not reacted yet; a reactor reset or destroyed before its reaction never leaves the list, which is saved with the Sim (issue #166, docs/205 §4)",
+    "fix": "ts3fixes DeadRefs.cs: deadrefsweep phase 13 (default off), docs/523",
+    "save": "Baseline-BP",
+    "note": "Hard state built by the agent check (DeadRefCelebrityCheck seed): a Sim of the world whose Celebrity object exists gets one townie in its waiting-to-react list; that townie's Sim object is destroyed as a reset does (the description stays; put back at the end of each arm). Off arm: the sweep refuses, the entry stays. On arm: the pass started by the switch or by the sweep step removes it; the seed poll waits for the destroy only.",
+    "expect": "off: expect left sees gone >= 1 with the switch off. on: expect cleaned sees gone 0; deadrefsweep_celebrity >= 1.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCelebrityCheck",
+          "args": [
+            "seed"
+          ]
+        },
+        "note": "off: a townie in a celebrity's waiting list, then destroyed",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefCelebrityCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "destroyed",
+              "equals": true
+            },
+            {
+              "path": "gone",
+              "atLeast": 1
+            }
+          ],
+          "maxS": 60,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "note": "off: started False (switch off); nothing runs",
+        "waitS": 20
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCelebrityCheck",
+          "args": [
+            "expect left"
+          ]
+        },
+        "note": "off: the gone entry still there; removed by the check, townie put back"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCelebrityCheck",
+          "args": [
+            "seed"
+          ]
+        },
+        "note": "on: the same hard state again (another townie)",
+        "waitS": 2,
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefCelebrityCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "destroyed",
+              "equals": true
+            }
+          ],
+          "maxS": 60,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "note": "on: started True (safe); phase 13 reaches the celebrity within the pass",
+        "waitS": 20
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCelebrityCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "note": "on: poll until the list holds no gone entry",
+        "until": {
+          "cmd": "reflect_call",
+          "args": {
+            "path": "Ts3Fixes.Fixes.DeadRefCelebrityCheck",
+            "args": [
+              "state"
+            ]
+          },
+          "all": [
+            {
+              "path": "gone",
+              "equals": 0
+            }
+          ],
+          "maxS": 300,
+          "everyS": 3
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCelebrityCheck",
+          "args": [
+            "expect cleaned"
+          ]
+        },
+        "note": "on: gone 0; deadrefsweep_celebrity +1"
+      }
+    ]
+  },
+  {
+    "id": "reward-giver-check",
+    "bug": "GameObject.SetRewardGiver(sim) calls AddComponent<ObjectOwnerComponent>(sim, null); AddComponentInternal types every argument with GetType(), so the null thief throws NullReferenceException. Its only caller is RewardsManager.GiveRewards' ObjectInMail case (an opportunity reward object sent by a named Sim): the object is never mailed and the rest of the reward list, the completion text and the follow-up opportunity are skipped; no shipped opportunity uses this reward type, custom ones only (docs/525)",
+    "fix": "ts3fixes RewardGiver.cs: rewardgiver (default off), docs/525",
+    "save": "Baseline-BP",
+    "note": "The agent check (RewardGiverCheck) makes a SocialJigTwoPerson out of world, calls SetRewardGiver(active Sim) once and destroys it. Off arm: EA's NullReferenceException, no owner component. On arm: no exception, an owner component owned by that Sim; rewardgiver_added +1.",
+    "expect": "off: expect broken sees NullReferenceException and no owner component. on: expect fixed sees no exception and the owner component; rewardgiver_added >= 1.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "rewardgiver": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RewardGiverCheck",
+          "args": [
+            "expect broken"
+          ]
+        },
+        "note": "off: EA's NullReferenceException, no owner component"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "rewardgiver": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RewardGiverCheck",
+          "args": [
+            "expect fixed"
+          ]
+        },
+        "note": "on: no exception, an owner component owned by the Sim; rewardgiver_added +1"
+      }
+    ]
   }
 ]
