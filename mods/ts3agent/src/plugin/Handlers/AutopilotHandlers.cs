@@ -225,7 +225,7 @@ namespace Ts3Agent
                         return;
                     }
                     sApBlocked = null;
-                    if (d != null && sApCleared.Count < 200) sApCleared.Add(d["title"] + " -> " + d["clicked"]);
+                    if (d != null && sApCleared.Count < 200) sApCleared.Add(d["title"] + " -> " + ApClicked(d));
                     if (d != null) ApLog(d["title"] as string, ApClicked(d));
                     return; // let the dialog close before touching the speed
                 }
