@@ -297,3 +297,25 @@ Run 7e2 (rerun of 7e) 16:00 PHT: **PASS.** Cause of 7e: `rtsites.cpp` rebuilt th
 | [ResourceCache] | - | kept | files clean |
 | [EaCrashFixes] | - | kept | files clean |
 | [EaDiag] | - | zeroed | always off: EA-only diagnostics, log only, minimal ini only |
+
+## Range-guard ports (2026-11-02, static only)
+
+Method for each guarded range: decode the Steam 1.67 range and its table-mapped 1.69.47 range (`probe-out/ts3-ea169-file.exe`)
+with iced-x86, function by function, jump tables compared as data. Every instruction must have the same opcode and length;
+a byte difference is accepted only where it is a branch/call target that maps through the range, an absolute data pointer
+whose target holds the same bytes (strings, float constants), or a call out of the range whose callee has the same
+instruction shape on both builds. No game run.
+
+### WaterJps on 1.69 [verified, static]
+
+Verdict: **relocation only.** The Steam range `0x61F750..0x61FF93` holds the jump's seven functions plus one heap sift-up
+helper at `0x61F830` (0x60 bytes) that is not on the jump's path (nothing in the range calls it); EA links that helper
+elsewhere, so the mapped EA range `0x620880..0x621063` is 0x60 shorter and holds only the seven. Those seven are the same
+code: 0 bad rows; the only differing bytes are the two `jmp [eax*4+table]` operands and their 8-entry jump tables, which
+map entry for entry. The near-callback `0x66DC50` -> `0x66F0B0` (0x60 bytes) is byte-identical (FNV `0x585FD97D` on both).
+The caller (search `0x620560` -> `0x6215D0`) has the same shape; its differences are data pointers (profiler names, floats
+1.0/2.0, same bytes) and calls out. The patched site `0x6207FB` -> `0x62186B` is `E8` to `0x620EE0` (= mapped `0x61FE10`);
+`PatchCalls` checks that at run time and writes only the rel32. Change: under `TS3A_TABLE` the expected range hash is the
+EA one, `0x201847A4` (Steam stays `0x5A2C1E2B`); the SKIP line now prints the measured hash. `[WaterJps]` added to the
+minimal EA ini's `ALLOW` list (it is `Enabled=1` in the Steam ini). Next smoke must show
+`OK   water jps: call 0x0062186B -> WaterJumpHook, mode 1 verify 0, callback 0x0066F0B0 inlined`.

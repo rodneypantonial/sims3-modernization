@@ -52,8 +52,8 @@ jobs:
           # sections left on for EA (docs/228 §6 first smoke); everything else: every integer-valued key =0
           # (Enabled and independent switches such as [ArenaGuard] TailPad/InitobjFix)
           # [EaDiag] is EA-only (eadiag.cpp, docs/234): kept so its ProductGate=0 default line stays editable for a diagnostic run
-          # [WaterJps] is not allowed: its hash guard SKIPs on 1.69 (docs/232 §7), so it would only log a skip
-          ALLOW: Decompress OptsInit EaDiag
+          # [WaterJps]: EA range hash added (docs/232 "WaterJps on 1.69"), Enabled=1 in the Steam ini
+          ALLOW: Decompress OptsInit EaDiag WaterJps
           # like ALLOW, but Enabled=1 is forced (the Steam ini ships it 0 until verified in game). [FootprintIndex]: standalone,
           # footprint.cpp has no unresolved row, its byte-check site is ok; an FNV mismatch on 1.69 only logs SKIP
           ALLOW_ON: FootprintIndex
