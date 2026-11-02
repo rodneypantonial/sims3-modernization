@@ -409,3 +409,24 @@ Restore verified:
 - ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`.
 - Mods listing identical (174 files).
 - Saves robocopy `/L` against the backup: 0 differences (2602 files).
+
+### Run 8b: rerun after the save-offer fix (2026-11-03)
+
+Why the save was accepted: mod mode and vanilla used the same dialog rule (`dialog_expect accept_all`, rules off). In AutoDialog, "save" and "don't save" both score 1, so the button listed first got the click. Vanilla Round 8 happened to get "don't save"; Run 8 got "save". Fix on PR #226 (45f2284): accept_all passes `decline_save`, and any dialog with an enabled "don't save" button gets that button (logged `save declined`). All other move-flow dialogs are accepted as before. The pick is in `DialogPick.cs`, with an offline self-check in `tools/selftest/dialogpick`. selftest-all: 191 PASS, 0 FAIL. CI is green.
+
+Same set-up as Run 8, with the fixed ts3agent built by `cycle.ts --restart` from the ea-mod-mode tree. Saves were backed up again first.
+
+| job | result | notes |
+|---|---|---|
+| vh-move | **PASS** (12.6 min) | `PASS: moved (out of the world), game up 10 min after the move, no crash`. Clicks: `#2 yes`, `#2 accept`, `#2 yes`, `#3 don't save (save declined)`. Save guard ok: Baseline-SV-Spring `9ded84456f8254e2` before and after. 0 new script errors. |
+| vh1-soak | **FAIL** (9.7 min) | No crash and 0 native `FAIL` lines; ts3fixes was active (stuckcheck 153 runs, owspread 40). The watchdog stopped on `autopilot: dialog with no safe button, nothing clicked: 'Marty was talked into running an obstacle course at practice against some teammates. Should Marty compete or just watch the competition?' buttons: #2 'compete', #3 'watch'`. |
+| vh-cycle-a, vh-cycle-b, vh-travel-matrix, vh-travel-trip, vh-newsave, vh-matrix, vh-repro, hf-statecmd | not run | Stopped at the first FAIL. |
+
+Triage of vh1-soak (static) [verified for the dialog; cause inferred]: a random school-practice event offered a choice that no ts3agent rule covers, and neither button is a safe word. The harness refuses such dialogs on purpose and does not default-accept them (docs/236). This is a harness rule gap, not a mod fault. A rule for this event (for example, answer "watch") is needed before the soak can pass; not done.
+
+Restore verified:
+- Bin pair `c035abe5a3a6` / `8aa37522782a`.
+- ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`.
+- Mods listing identical (174 files).
+- Saves: 0 differences against the backup (2602 files).
+- No game process left.
