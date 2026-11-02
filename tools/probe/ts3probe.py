@@ -561,6 +561,10 @@ def session_verdict(cur, console, state):
     return NO_DISPLAY if state == 'Disconnected' or (cur != console and state != 'Active') else None
 
 
+def console_holder(cur, console):
+    return 'our session' if cur == console else 'another user' if console != 0xFFFFFFFF else 'nobody'
+
+
 def check_session():
     """(log line, refusal reason or None) from the WTS API (no quser text, no user names). Not Windows: always fine."""
     if os.name != 'nt':
@@ -577,7 +581,7 @@ def check_session():
     code = ctypes.cast(buf, ctypes.POINTER(ctypes.c_int))[0]
     w.WTSFreeMemory(buf)
     state = WTS_STATES[code] if 0 <= code < len(WTS_STATES) else str(code)
-    on_console = 'yes' if cur.value == console else 'another user' if console != 0xFFFFFFFF else 'none'
+    on_console = console_holder(cur.value, console)
     return f'console session state: session {cur.value} {state}, console held by {on_console}', session_verdict(cur.value, console, state)
 
 
@@ -672,6 +676,7 @@ def main():
         assert set_ini_keys(out, AUDIO_OFF) == out
         assert all(STATE_CMD.match(c) for c in ('travel_vacation', 'load_save', 'play_household', 'cas_open', 'main_menu', 'switch_household'))
         assert not any(STATE_CMD.match(c) for c in ('auto_dialog', 'autopilot', 'time', 'game_state', 'pending_dialogs', 'do_interaction'))
+        assert [console_holder(*a) for a in ((2, 2), (2, 1), (2, 0xFFFFFFFF))] == ['our session', 'another user', 'nobody']
         assert [session_verdict(*a) for a in ((2, 1, 'Disconnected'), (1, 1, 'Active'), (1, 1, 'Active'), (2, 1, 'Active'), (2, 1, 'Idle'))] == [NO_DISPLAY, None, None, None, NO_DISPLAY]
         assert check_session()[0].startswith('console session state:')
         print('self-check ok')

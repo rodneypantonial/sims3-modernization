@@ -411,7 +411,7 @@ async function save(label: string, o: { overwrite?: string; keepSpeed?: boolean;
       const gs = await ag('game_state');
       if (gs.result?.save_in_progress === true) seenBusy = true;
       if (!ev && Date.now() >= idleAt) { idleAt = Date.now() + GUARD_MS; idle = gs.ok && gs.result?.save_in_progress === false ? idle + 1 : 0; }
-      if (lineless) return fileDone = savedWithoutLine(existsSync(dirOf(name)) && statSync(dirOf(name)).mtimeMs >= t0 - 2000, gs.result?.save_in_progress, seenBusy, idle);
+      if (lineless) return fileDone = savedWithoutLine(newestMtime(dirOf(name)) >= t0 - 2000, gs.result?.save_in_progress, seenBusy, idle);
       return !!ev && gs.result?.save_in_progress === false;
     }, 500, async () => idle >= 2 ? `save ${name}: not in progress and no save line in ts3native.log for ~${2 * GUARD_MS / 1000} s (fail-fast guard)` : '');
     if (ev && ev.deferred > 0 && o.flushWait !== false)
@@ -426,7 +426,9 @@ async function save(label: string, o: { overwrite?: string; keepSpeed?: boolean;
 function saveChecks(s: SaveRec, strict = false): Check[] {
   const c: Check[] = [];
   const ev = s.ev;
-  c.push({ name: `${s.name} result 0`, status: s.ok ? 'pass' : 'fail', why: s.error ?? (ev ? `result ${ev.result}` : s.ok ? 'save folder written; [SaveWrite] off, so no save line and no result code' : 'no save line in ts3native.log') });
+  c.push({ name: `${s.name} result 0`, status: s.ok ? 'pass' : 'fail', why: s.error ?? (ev ? `result ${ev.result}` : s.ok ? (vanilla() ? 'save folder written, agent save_in_progress went false (vanilla: no ts3native save line, no result code)' : 'save folder written; [SaveWrite] off, so no save line and no result code') : 'no save line in ts3native.log') });
+  // vanilla (docs/236): compress, flush, footprint and the save fallback counters are ts3native's; N/A, never PASS
+  if (vanilla()) { c.push({ name: `${s.name} compress/flush/footprint/fallback checks`, status: 'skip', why: 'N/A: vanilla (no ts3native log or counters)' }); return c; }
   const cm = delta(s.before, s.after, 'compressMismatches') + (ev?.compressMismatches ?? 0) + (ev?.mismatchLines ?? 0);
   c.push({ name: `${s.name} compress mismatches`, status: cm ? 'fail' : 'pass', why: `counter +${delta(s.before, s.after, 'compressMismatches')}, log ${ev?.compressMismatches ?? '-'} / ${ev?.mismatchLines ?? 0} lines` });
   const ff = delta(s.before, s.after, 'flushFails') + (ev?.flush?.fails ?? 0);
@@ -439,6 +441,8 @@ function saveChecks(s: SaveRec, strict = false): Check[] {
 }
 
 const dirOf = (n: string) => join(SAVES, `${n}.sims3`);
+// an overwrite rewrites files in place: the folder's own mtime may not move, so the newest file counts too
+const newestMtime = (d: string) => existsSync(d) ? Math.max(statSync(d).mtimeMs, ...readdirSync(d).map(f => statSync(join(d, f)).mtimeMs)) : 0;
 function snapshot(dir: string): Snap {
   const out: Snap = new Map();
   for (const f of readdirSync(dir)) {
@@ -582,7 +586,7 @@ async function asyncLog(): Promise<string[]> {
 // who: the travellers for the autonomy switch (agent sim arg: active | household)
 async function enterWorld(cmd: string, args: object, from: string, who: string): Promise<{ world: string; travelEvs: SaveEv[] }> {
   const off = logSize();
-  tripEvs = [];
+  tripEvs = []; travelSaveSeen = false;
   const before = await asyncLog();
   try { return await enterWorldInner(cmd, args, from, who, off, before); }
   catch (e) {
@@ -647,8 +651,9 @@ async function enterWorldInner(cmd: string, args: object, from: string, who: str
     return '';
   };
   const stalled = async (loaded: boolean, t: any): Promise<string> => {
-    const why = t ? tripStall({ loaded, inTravel: t.in_travel === true, world: t.world, household: t.household,
-      saving: t.in_travel === true && (await ag('game_state')).result?.save_in_progress === true }, from) : '';
+    const saving = !!t && t.in_travel === true && (await ag('game_state')).result?.save_in_progress === true;
+    if (saving) travelSaveSeen = true;
+    const why = t ? tripStall({ loaded, inTravel: t.in_travel === true, world: t.world, household: t.household, saving }, from) : '';
     if (!why) { stallSince = 0; return ''; }
     stallSince ||= Date.now();
     return Date.now() - stallSince > STALL_S * 1000 ? `no progress: ${why} for ${STALL_S} s (loaded, no save running)` : '';
@@ -703,7 +708,11 @@ async function enterWorldInner(cmd: string, args: object, from: string, who: str
   watchTravelSaves(off); // final read: the flush line of the last travel save may have come since
   return { world: w, travelEvs: tripEvs };
 }
+// vanilla: no `save: ... travel 1/1` line; the agent's save_in_progress seen during in_travel (stalled(), polled every ~1 s) is the only signal
+let travelSaveSeen = false;
 function travelSaveChecks(what: string, evs: SaveEv[]): Check[] {
+  if (vanilla()) return [{ name: `${what} travel save`, status: travelSaveSeen ? 'pass' : 'skip',
+    why: travelSaveSeen ? 'agent game_state save_in_progress true while in_travel (vanilla: no ts3native result line, so no result code)' : 'N/A: vanilla, save_in_progress not seen true during the leg (polled ~1 s; the leg itself is judged by the world switches)' }];
   if (!evs.length) return [{ name: `${what} travel save`, status: 'fail', why: 'no `save: ... travel 1/1` line during the trip' }];
   return evs.map((e, i) => ({ name: `${what} travel save ${i + 1}`, status: e.result === 0 && !(e.flush?.fails) && !e.compressMismatches && !e.mismatchLines && e.footprint?.verify !== 'mismatches' ? 'pass' : 'fail',
     why: `result ${e.result} travel ${e.travel} total ${e.totalMs} ms, flush fails ${e.flush?.fails ?? '-'}, compress mismatches ${e.compressMismatches ?? '-'}` }));
@@ -773,7 +782,7 @@ const CASES: Case[] = [
     a.ev = parseLog(logFrom(a.off))[0] ?? a.ev; // the first save's flush line came while the second waited
     const fw = delta(a.before, b.after, 'flushWaits');
     return { fixes, saves: [a, b], checks: [...availableCheck(fixes), ...saveChecks(a), ...saveChecks(b),
-      { name: 'flush waits', status: 'info', why: `+${fw} (0 means the worker had finished before the second save)` }] };
+      { name: 'flush waits', status: vanilla() ? 'skip' : 'info', why: vanilla() ? 'N/A: vanilla (no ts3native counters)' : `+${fw} (0 means the worker had finished before the second save)` }] };
   } },
   { id: 'unpaused', desc: 'fixes on: save while the game runs at speed 3 (normal player behaviour)', run: async () => {
     const fixes = await setFixes(allOn);
@@ -939,7 +948,7 @@ const { watchGame } = await import('./game-alive.ts');
 const st = await ag('game_state');
 if (!st.ok || !st.result?.in_world) { console.error(`not in a world: ${JSON.stringify(st)}`); process.exit(2); }
 world = String((await ag('travel_state')).result?.world ?? 'World').replace(/[^A-Za-z0-9]/g, '');
-if (!existsSync(LOG)) { console.error(`no ts3native.log at ${LOG} (set TS3_BIN)`); process.exit(2); }
+if (!vanilla() && !existsSync(LOG)) { console.error(`no ts3native.log at ${LOG} (set TS3_BIN)`); process.exit(2); }
 
 if (values['reload-check']) {
   const p = existsSync(PENDING) ? JSON.parse(readFileSync(PENDING, 'utf8')) : null;
