@@ -331,3 +331,13 @@ is `E8` to `0x63DC80` (= mapped `0x63C690`, same shape), `0xAAC320` -> `0xAAAF20
 `0xC6D460`, same shape), same surrounding instructions. Change: under `TS3A_TABLE` the expected hash is `0xCA5029BC` (Steam
 `0xF2CDC1C1`); the SKIP line prints the measured hash. Already in `ALLOW_ON`. Next smoke must show
 `OK   footprint index: 0x006678A8, 0x0082B610, 0x00AAAF20 (Mode=1 Verify=0)` and, after a save, the per-save `footprint:` line.
+
+### LotSinCos on 1.69 [verified, static]
+
+Verdict: **relocation only.** `Lot_WorldToLocal2D` `0xAB8540` -> `0xAB71B0`, whole body to `ret 10h` (0x11C bytes): one
+differing instruction, the `movss xmm2,[-0.0 constant]` operand (`0xF988F0` -> `0xFE29F0`, both `00 00 00 80`). The fields our
+replacement reads (lot `+0x190`, `+0x198`, `+0x1A0`), the x87 fsin/fcos order and the packed SSE operand order are the same
+bytes, so the bit-exact claim carries over. No range hash in this feature; the 6-byte prologue `55 8B EC 83 E4 F0` is a
+ts3bytes `ok` row. No code change; `[LotSinCos]` added to `ALLOW_ON` (minimal EA ini, `Enabled=1` forced). Next smoke must
+show `OK   lot sin/cos cache: 0x00AB71B0 (Mode=1 Verify=0, 256 angles)`; a run with `Verify=1` would confirm bit-exactness live
+(`lotsincos MISMATCH` lines = stop).
