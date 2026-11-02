@@ -14,7 +14,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { GAME_EXE, GAME_NAME } from './game-exe.ts';
+import { GAME_EXE, GAME_NAME, MACHINE } from './game-exe.ts';
 
 export type PinOpts = { cpus?: string; priority?: string; others?: boolean | string[] };
 export type PinCfg = { cpus: string; gameMask: bigint; otherMask: bigint; fullMask: bigint; priority: string | null; others: string[] };
@@ -45,9 +45,10 @@ export const defaultCpus = (n = N) => (n > 8 ? `4-${n - 1}` : null);
 export const MACHINES: Record<string, string> = { 'ea-laptop': '0-5,10-11' };
 export const gameCpus = (env = process.env, n = N) => {
   if (env.TS3_GAME_CPUS) return env.TS3_GAME_CPUS;
-  if (!env.TS3_MACHINE) return defaultCpus(n);
-  if (!(env.TS3_MACHINE in MACHINES)) throw new Error(`TS3_MACHINE "${env.TS3_MACHINE}": use ${Object.keys(MACHINES).join(', ')} or unset`);
-  return MACHINES[env.TS3_MACHINE];
+  const m = env === process.env ? MACHINE : env.TS3_MACHINE ?? 'main'; // an injected env (self-check) is read as is
+  if (m === 'main') return defaultCpus(n);
+  if (!(m in MACHINES)) throw new Error(`TS3_MACHINE "${m}": use ${Object.keys(MACHINES).join(', ')} or unset`);
+  return MACHINES[m];
 };
 
 export function pinConfig(job?: false | PinOpts, env: NodeJS.ProcessEnv = process.env, n = N): PinCfg | null {

@@ -183,6 +183,10 @@ The harness defaults to the Steam edition. For the EA app edition set these befo
 - `TS3_EXE`: game file and process name, default `TS3W.exe`. EA installs have `TS3.exe` or, after the community swap, `Sims3Launcher.exe`. Not derived: set it.
 - `TS3_LAUNCH`: `direct` (default, starts `<TS3_BIN>\<TS3_EXE>`) or `ea`. With `ea`, `ts3probe.py --launch` runs `TS3_EA_LAUNCHER` (default `C:\Program Files\Electronic Arts\EA Desktop\EA Desktop\EALauncher.exe`) with `TS3_EA_URI` (default `origin2://game/launch/?offerIds=sims3_dd,1002441,70384_CE,70384_Unrevised`) and polls up to 60 s for the `TS3_EXE` process. No Steam check; game arguments cannot be passed (a warning is logged).
 - Why: a direct start of `TS3.exe` is bounced by the DRM to the EA app, which starts `Sims3Launcher.exe -test`; only the EA launch URI works. Steam runs are unchanged when none of this is set.
+- `TS3_MACHINE`: machine tag, default `main`. Every other machine's runs get their own tag so they never mix with the main machine's (Rodney, 2026-11-02): `queue.ts` writes `machine` into each row of `probe-out/queue/<queue>-<date>.jsonl` and a `machine` column into the results table.
+- File naming: results of the main machine stay `docs/data/results/<date>-queue-<name>.md`; any other machine writes `<date>-queue-<name>.<machine>.md` (e.g. `2026-11-02-queue-ea-smoke.ea-laptop.md`) with a `Machine: <tag>` header line.
+- Aggregation: `release-check.ts` job-time estimates skip result files with a non-main `Machine:` header; `queue-digest.ts`, `status.ts` and `run-verdict.ts` show `[<tag>]` for such rows. Known tags (and their game CPU set): `MACHINES` in `tools/harness/pin.ts`.
+- `node tools/harness/game-exe.ts --installed` lists the base game plus every `EPnn`/`SPnn` folder with `GameData` under the game root (`TS3_BIN` two levels up), the same on both editions. The `Installed` line in ScriptError xml is written by the game, not by the harness.
 
 ## 7. Baseline saves
 

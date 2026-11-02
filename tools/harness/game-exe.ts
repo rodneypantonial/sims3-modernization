@@ -3,12 +3,28 @@
 //   TS3_EXE          game process/file name (default TS3W.exe; EA app: TS3.exe or Sims3Launcher.exe)
 //   TS3_LAUNCH       direct (default: start <TS3_BIN>\<TS3_EXE>) | ea (EALauncher.exe with TS3_EA_URI, then wait for the TS3_EXE process)
 //   TS3_EA_URI, TS3_EA_LAUNCHER   EA launch URI and EALauncher.exe path (defaults below)
+//   TS3_MACHINE      machine tag (default main): result rows/files of any other machine carry it and never mix with the main machine's (docs/TESTING.md)
 //   node tools/harness/game-exe.ts --self-check   no process is started
+//   node tools/harness/game-exe.ts --installed    base game + EP/SP folders found under the game root
 import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+export const MACHINE = process.env.TS3_MACHINE || 'main';
+export const machineTag = (m = MACHINE) => (m === 'main' ? '' : m); // '' on the main machine: its file names and labels stay unchanged
 
 export const GAME_EXE = process.env.TS3_EXE ?? 'TS3W.exe';
 export const GAME_NAME = GAME_EXE.replace(/\.exe$/i, ''); // PowerShell Get-Process / Windows counters name
 export const BIN = process.env.TS3_BIN ?? 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Sims 3\\Game\\Bin';
+// Installed products from the game root (<TS3_BIN>/../..), same on Steam and the EA app: base game + every EPnn/SPnn folder that holds GameData.
+// The "Installed" line in ScriptError xml is written by the game itself (not by the harness) from its own check; the HKLM Uninstall keys list the same set.
+export const gameRoot = (bin = BIN) => resolve(bin, '..', '..');
+export const installedProducts = (bin = BIN): string[] => {
+  const root = gameRoot(bin);
+  if (!existsSync(root)) return [];
+  return ['BaseGame', ...readdirSync(root).filter(d => /^(EP|SP)\d+$/i.test(d) && existsSync(join(root, d, 'GameData'))).sort()];
+};
 export const LAUNCH = process.env.TS3_LAUNCH ?? 'direct';
 export const EA_URI = process.env.TS3_EA_URI ?? 'origin2://game/launch/?offerIds=sims3_dd,1002441,70384_CE,70384_Unrevised';
 export const EA_LAUNCHER = process.env.TS3_EA_LAUNCHER ?? 'C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EALauncher.exe';
@@ -22,6 +38,18 @@ if (import.meta.main) {
     assert.ok(GAME_EXE.length > 0 && GAME_NAME === GAME_EXE.replace(/\.exe$/i, '') && !/\.exe$/i.test(GAME_NAME));
     assert.ok(['direct', 'ea'].includes(LAUNCH), `TS3_LAUNCH "${LAUNCH}": use direct or ea`);
     assert.match(EA_URI, /^origin2:\/\/game\/launch\/\?offerIds=/);
+    assert.equal(machineTag('main'), ''); assert.equal(machineTag('ea-laptop'), 'ea-laptop');
+    const tmp = mkdtempSync(join(tmpdir(), 'ts3-game-')); // Steam (<lib>/steamapps/common/The Sims 3) and EA (Program Files/EA Games/The Sims 3) layouts: same shape under different roots
+    try {
+      for (const root of ['steam/The Sims 3', 'ea/The Sims 3']) {
+        mkdirSync(join(tmp, root, 'Game', 'Bin'), { recursive: true });
+        for (const d of ['EP01', 'EP11', 'SP08']) mkdirSync(join(tmp, root, d, 'GameData'), { recursive: true });
+        mkdirSync(join(tmp, root, 'EP02'), { recursive: true }); mkdirSync(join(tmp, root, 'Support'), { recursive: true }); // no GameData / not a pack
+        assert.deepEqual(installedProducts(join(tmp, root, 'Game', 'Bin')), ['BaseGame', 'EP01', 'EP11', 'SP08'], root);
+      }
+      assert.deepEqual(installedProducts(join(tmp, 'none', 'Game', 'Bin')), [], 'missing root');
+    } finally { rmSync(tmp, { recursive: true, force: true }); }
     console.log('self-check ok');
-  } else { console.error('usage: node tools/harness/game-exe.ts --self-check'); process.exit(2); }
+  } else if (process.argv[2] === '--installed') console.log(`${gameRoot()}: ${installedProducts().join(' ')}`);
+  else { console.error('usage: node tools/harness/game-exe.ts --self-check | --installed'); process.exit(2); }
 }
