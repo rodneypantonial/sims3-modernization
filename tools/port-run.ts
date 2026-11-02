@@ -40,7 +40,7 @@ export type Problem = { prio: number; stage: string; addr: number | null; label:
 
 // best map row per Steam address (a site can be both a site row and a ref row)
 export function bestMap(rows: MapRow[]): Map<number, MapRow> {
-    const rank = (k: string) => (k === "exact" ? 4 : k === "masked" ? 3 : k === "ref" ? 2 : k === "near" || k === "offset-changed" ? 1 : 0);
+    const rank = (k: string) => (k === "exact" ? 4 : k === "masked" ? 3 : k === "ref" ? 2 : k === "near" || k === "offset-changed" || k === "xref" ? 1 : 0);
     const out = new Map<number, MapRow>();
     for (const m of rows) { const b = out.get(m.ref); if (!b || rank(m.kind) > rank(b.kind) || (rank(m.kind) === rank(b.kind) && b.new === null && m.new !== null)) out.set(m.ref, m); }
     return out;
@@ -74,7 +74,7 @@ export function problems(inp: Inputs): Problem[] {
         p.ai = p.ai || hardAi || !cand;
         by.set(addr, p);
     };
-    for (const m of best.values()) if (!GOOD.has(m.kind) && m.kind !== "not-code") add("map", m.ref, m.kind, m.kind === "ref-conflict");
+    for (const m of best.values()) if (!GOOD.has(m.kind) && m.kind !== "not-code") add("map", m.ref, m.kind, m.kind === "ref-conflict" || m.kind === "xref-conflict");
     for (const x of inp.patch) if (x.kind2 !== "ok") add("patch", x.addr, `${x.kind2} (${x.mapKind})`, x.kind2 === "mismatch", x.name, x.where);
     for (const e of inp.genErrors) { const a = e.match(/^0x([0-9A-F]+) (.*)$/i); if (a) add("gen", parseInt(a[1], 16), a[2], false); }
     for (const g of inp.managed) extra.push({ prio: 2, stage: "managed", addr: null, label: `${g.module} ${g.method}`, kind: g.status, cand: "", ai: true, where: "mods/ts3fixes/src" });

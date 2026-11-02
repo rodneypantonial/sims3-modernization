@@ -128,7 +128,7 @@ export type GenOpts = { zeroUnresolved?: boolean; byValue?: Map<number, number>;
 export function gen(csv: string, needed: number[], allowInferred: boolean, src = "map", o: GenOpts = {}): { header: string; errors: string[]; inferred: number; zero: number; byValue: number; rows: number } {
     const lines = csv.trim().split(/\r?\n/), head = csvRow(lines[0]);
     const ci = (k: string) => head.indexOf(k);
-    const rank = (k: string) => (k === "exact" ? 3 : k === "masked" ? 2 : k === "near" || k === "ref" || k === "offset-changed" ? 1 : 0);
+    const rank = (k: string) => (k === "exact" ? 3 : k === "masked" ? 2 : k === "near" || k === "ref" || k === "offset-changed" || k === "xref" ? 1 : 0);
     const best = new Map<number, { nw: number; kind: string }>();
     for (const l of lines.slice(1)) {
         const c = csvRow(l), ref = parseInt(c[ci("ref")], 16), nw = parseInt(c[ci("new")], 16), kind = c[ci("kind")];

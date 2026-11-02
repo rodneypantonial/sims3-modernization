@@ -41,6 +41,7 @@ see ciphertext. Largest new machinery; its one advantage (future EA patches with
 `docs/data/sigmap-ea169.json`), and Steam stays provably byte-identical.
 
 ## 3. Handling the problem classes under A
+- 2026-11-02 `--xrefs` pass (docs/68 §7): 109 of the 140 data/`.rdata` rows resolved by Steam xref windows (kind `xref`, inferred); 140 -> 38 zero rows, `AI needed` 186 -> 82. The leftovers are code rows and data nobody references directly.
 - 186 `ai=yes`: 44 by-value IC rows -> `gen` takes patch-bytes `ported (by-value)` as table rows (port-run already has them).
   142 left -> `0` in the table + their 42 files OFF on EA. Resolve only the ones a wanted feature needs, in Ghidra on the main
   laptop (`probe-out/ts3-ea169-file.exe` + `ghidra-names.csv`), recorded in `docs/data/ea169-overrides.csv`
