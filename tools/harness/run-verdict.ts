@@ -118,7 +118,7 @@ export function verdictTable(file: string, baseline?: string): string {
   };
   for (const row of rows) {
     const t = row.timing ? { timing: row.timing, why: row.timingWhy ?? '' } : rowTiming(row); // stored by queue.ts, else computed
-    const tag = row.machine && row.machine !== 'main' ? ` [${row.machine}]` : '';
+    const tag = row.machineTag ? ` [${row.machineTag}]` : '';
     add(row.job + tag, row, row.repros?.length ? null : row.profileTag ?? null, row.minutes ?? '-', t);
     for (const rr of row.repros ?? []) add(`${row.job}${tag} / ${rr.id}`, subPass(rr), rr.tag, '', rr.timing ? { timing: rr.timing, why: rr.timingWhy ?? '' } : (t as any).windows?.[rr.id]);
   }

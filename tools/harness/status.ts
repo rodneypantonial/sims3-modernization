@@ -73,7 +73,7 @@ export function queueStatus(name: string, date: string, dir: string, now = Date.
     eta = Math.max(now, ...jobs.filter(j => j.state === 'running').map(j => j.end ?? now));
     for (const j of jobs) if (j.state === 'left') { const d = byId.get(j.id); j.start = eta; eta += (d ? estMin(d, overhead) : 60) * 60000; j.end = eta; }
   }
-  const machine = rows.map(r => r.machine).filter(m => m && m !== 'main').at(-1); // tag of a non-main machine's run
+  const machine = rows.map(r => r.machineTag).filter(m => m && m !== 'main').at(-1); // tag of a non-main machine's run
   return { machine, name, date, dir, jobs, alive, last, eta, overhead };
 }
 

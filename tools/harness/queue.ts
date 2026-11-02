@@ -144,7 +144,7 @@
 // Crash (TS3W.exe gone or "game died"): crash-ledger triage goes in the row, the queue goes on; it stops when the same job has
 // crashed twice (today's rows of this queue count, so a resume remembers) or two jobs crash in a row.
 // After each job: `ai-usage.ts G <job id>`; at >= 80% in either window the queue pauses and prints the --from line to resume.
-// Output: probe-out/queue/<queue>-<date>.jsonl (one row per job, times UTC), docs/data/results/<date>-queue-<queue>.md (table, UTC + PHT; TS3_MACHINE other than main: <date>-queue-<queue>.<machine>.md, row.machine and a machine column).
+// Output: probe-out/queue/<queue>-<date>.jsonl (one row per job, times UTC), docs/data/results/<date>-queue-<queue>.md (table, UTC + PHT; TS3_MACHINE other than main: <date>-queue-<queue>.<machine>.md, row.machineTag and a machine column).
 // After each job the game's Bin/ts3native.log is copied to probe-out/queue/<queue>-<date>-<job>-<HHMM>-ts3native.log (row.nativeLog),
 // and Bin/ts3native-shadow.jsonl (P4 shadow records) to ...-<HHMM>-shadow.jsonl (row.shadowLog) when the job wrote one;
 // Bin/autshadow.jsonl ([AutShadow] records; emptied at job start) to ...-<HHMM>-autshadow.jsonl (row.autshadowLog) when not empty.
@@ -203,7 +203,7 @@ const log = (m: string) => console.log(`${stamp()} queue: ${m}`);
 // ---------------------------------------------------------------- pure parts (covered by --self-check)
 // machine column / jsonl field only off the main machine: main-machine results stay byte-identical (docs/TESTING.md)
 function machineCols(tag: string) { return tag ? { head: ' machine |', sep: '---|', cell: (m: string) => ` ${m} |` } : { head: '', sep: '', cell: (_m: string) => '' }; }
-function machineField(tag: string): { machine?: string } { return tag ? { machine: tag } : {}; }
+function machineField(tag: string): { machineTag?: string } { return tag ? { machineTag: tag } : {}; }
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
   save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; run: { repro?: string; saveReload?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
     profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; stopQueueOnFail?: boolean; scriptErrorsMax?: number; timeoutMin?: number; pin?: false | PinOpts;
@@ -900,7 +900,7 @@ export function crashStop(crashed: boolean, earlierCrashesOfJob: number, prevCra
 if (values['self-check']) {
   const assert = (await import('node:assert')).strict;
   assert.equal(machineCols('').head + machineCols('').sep + machineCols('').cell('main'), ''); assert.deepEqual(machineField(''), {}); // main: no column, no field
-  assert.equal(machineCols('ea-laptop').head, ' machine |'); assert.equal(machineCols('ea-laptop').sep, '---|'); assert.equal(machineCols('ea-laptop').cell('ea-laptop'), ' ea-laptop |'); assert.deepEqual(machineField('ea-laptop'), { machine: 'ea-laptop' });
+  assert.equal(machineCols('ea-laptop').head, ' machine |'); assert.equal(machineCols('ea-laptop').sep, '---|'); assert.equal(machineCols('ea-laptop').cell('ea-laptop'), ' ea-laptop |'); assert.deepEqual(machineField('ea-laptop'), { machineTag: 'ea-laptop' });
   const ok = parseQueue([{ id: 'a', asi: 'tested', save: 'Baseline-BP', run: { soak: { minutes: 5 } } }, { id: 'b', asi: 'x', run: { repro: 'r1' } },
     { id: 'c', asi: 'tested', save: 'menu', run: { menuMemory: { waitS: 30 } } }]);
   assert.equal(ok.length, 3);
