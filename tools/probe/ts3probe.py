@@ -25,6 +25,15 @@ frida = None  # imported in serve only, so `get` runs without it
 ROOT = Path(__file__).resolve().parents[2]
 GAME_BIN = Path(os.environ.get('TS3_BIN', r'C:\Program Files (x86)\Steam\steamapps\common\The Sims 3\Game\Bin'))
 GAME_EXE = os.environ.get('TS3_EXE', 'TS3W.exe')
+# Native start-up warning "unofficial game modification that does not match your current version" (docs/227): a Win32
+# dialog (template 104 in the exe: buttons 1001 Quit, 1004 Continue, static 1003) shown before the script VM runs, so the
+# in-game agent cannot answer it. The probe posts the Continue click (no focus, nothing else changes).
+MOD_VERSION_DIALOG = {'quit': 1001, 'continue': 1004, 'text': 1003}
+
+def is_mod_version_dialog(class_name, control_ids):
+    """Only the exe's own warning template: dialog class and all three control ids present."""
+    return class_name == '#32770' and set(MOD_VERSION_DIALOG.values()) <= set(control_ids)
+
 USER_DIR = Path(os.environ.get('TS3_USER', Path.home() / 'Documents' / 'Electronic Arts' / 'The Sims 3'))
 FUNCTIONS_CSV = ROOT / 'game-copy' / 'analysis' / 'functions.csv'
 
@@ -128,6 +137,7 @@ class Probe:
             prof.load()
             prof.exports_sync.init('late', {'out': str(self.out / 'profile').replace('\\', '/')})
         threading.Thread(target=self.watch_script_errors, daemon=True).start()
+        threading.Thread(target=self.answer_startup_dialog, daemon=True).start()
         threading.Thread(target=self.sample_memory, daemon=True).start()
         if sys.platform == 'win32':
             threading.Thread(target=self.keep_window_place, daemon=True).start()
@@ -148,6 +158,36 @@ class Probe:
             info['crash'] = {'summary': crash.summary, 'report': crash.report}
         self.log(info)
         self.alive = False
+
+    def answer_startup_dialog(self):
+        """Clicks Continue on the mod-version warning (MOD_VERSION_DIALOG) for up to 5 min after start, polling once a second."""
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        u.GetDlgItem.restype = wintypes.HWND
+        pid = frida.get_local_device().get_process(GAME_EXE).pid
+        buf = ctypes.create_unicode_buffer(1024)
+        t0 = time.time()
+        while self.alive and time.time() - t0 < 300:
+            hits = []
+            def cb(h, _):
+                p = wintypes.DWORD()
+                u.GetWindowThreadProcessId(h, ctypes.byref(p))
+                if p.value == pid and u.GetClassNameW(h, buf, 64) and u.IsWindowVisible(h):
+                    ids = [i for i in MOD_VERSION_DIALOG.values() if u.GetDlgItem(h, i)]
+                    if is_mod_version_dialog(buf.value, ids):
+                        hits.append(h)
+                return True
+            u.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(cb), 0)
+            for h in hits:
+                u.GetWindowTextW(u.GetDlgItem(h, MOD_VERSION_DIALOG['text']), buf, 1024)
+                btn = u.GetDlgItem(h, MOD_VERSION_DIALOG['continue'])
+                # WM_COMMAND(BN_CLICKED) to the dialog, as the button itself would send it; PostMessage never blocks the probe
+                ok = bool(u.PostMessageW(h, 0x0111, MOD_VERSION_DIALOG['continue'], btn))
+                self.log({'kind': 'startup-dialog', 'reason': f"Continue {'posted' if ok else 'failed'}: {buf.value[:160]}"})
+                if ok:
+                    return
+            time.sleep(1)
 
     def sample_memory(self):
         """Address-space timeline (memory.csv): shows what fills the 4 GB before an out-of-memory crash."""
@@ -446,7 +486,13 @@ def main():
     g = sub.add_parser('get')
     g.add_argument('path')
     g.add_argument('--port', type=int, default=47891)
+    sub.add_parser('self-check', help='asserts the start-up dialog matcher; no game needed')
     args = ap.parse_args()
+    if args.cmd == 'self-check':
+        assert is_mod_version_dialog('#32770', [1001, 1004, 1003]) and is_mod_version_dialog('#32770', [1003, 1004, 1001, 2])
+        assert not is_mod_version_dialog('#32770', [1001, 1004]) and not is_mod_version_dialog('Canvas', [1001, 1004, 1003])
+        print('self-check ok')
+        return
     serve(args) if args.cmd == 'serve' else get(args)
 
 
