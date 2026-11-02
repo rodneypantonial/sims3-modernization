@@ -112,6 +112,7 @@ class Probe:
 
     def launch(self):
         ea = os.environ.get('TS3_LAUNCH', 'direct') == 'ea'
+        ensure_audio_off(USER_DIR / 'Options.ini')  # every launch, vanilla or not (docs/236 round 4)
         if ea:  # EA app edition: only EALauncher.exe with the offer URI works (a direct start is bounced by the DRM)
             ensure_selected_flags(USER_DIR / 'LoadOption.ini')
             cmd = [os.environ.get('TS3_EA_LAUNCHER', r'C:\Program Files\Electronic Arts\EA Desktop\EA Desktop\EALauncher.exe'),
@@ -507,6 +508,44 @@ def ensure_selected_flags(path, flags=None):
         print(f'[ts3probe] WARN: cannot set selectedflags in {path}: {e}', flush=True)
 
 
+AUDIO_OFF = {**{k: '0' for k in ('voicelevel', 'soundfxlevel', 'ambientlevel', 'musiclevel')},
+             **{k: '1' for k in ('voicemute', 'soundfxmute', 'ambientmute', 'musicmute')}}
+
+
+def set_ini_keys(text, want):
+    """Options.ini text with `key = value` set for every key in want (existing lines edited in place, missing ones appended)."""
+    import re
+    for k, v in want.items():
+        pat = re.compile(rf'(?im)^([ \t]*{re.escape(k)}[ \t]*=[ \t]*)([^\r\n]*)')
+        text = pat.sub(lambda m: m.group(1) + v, text) if pat.search(text) else text.rstrip('\r\n') + f'\r\n{k} = {v}\r\n'
+    return text
+
+
+def ini_values(text, keys):
+    import re
+    return {k: (m.group(1).strip() if (m := re.search(rf'(?im)^[ \t]*{re.escape(k)}[ \t]*=([^\r\n]*)', text)) else None) for k in keys}
+
+
+def ensure_audio_off(path):
+    """Unattended runs are silent: audio levels 0, mutes 1 in Options.ini before every launch, read back from disk. The game itself
+    rewrites Options.ini (a new `lastdevice` resets every option to its defaults, audio on: docs/236 round 4), so a one-time manual
+    edit does not hold. A failed read-back stops the launch. Also logs resolution and lastdevice (the 2026-11-02 launcher hangs
+    followed such a reset)."""
+    if not path.exists():
+        print(f'[ts3probe] WARN: {path} missing (first start writes it): audio not set for this launch', flush=True)
+        return
+    old = path.read_bytes().decode('latin-1')  # bytes: keep the game's CRLF
+    new = set_ini_keys(old, AUDIO_OFF)
+    if new != old:
+        path.write_bytes(new.encode('latin-1'))
+    got = ini_values(path.read_bytes().decode('latin-1'), list(AUDIO_OFF) + ['resolution', 'lastdevice'])
+    bad = {k: got[k] for k in AUDIO_OFF if got[k] != AUDIO_OFF[k]}
+    if bad:
+        raise SystemExit(f'[ts3probe] Options.ini audio read-back failed: {bad}; launch refused')
+    print(f"[ts3probe] Options.ini audio off ({'set' if new != old else 'already'}, read back ok); resolution {got['resolution']}, "
+          f"lastdevice {got['lastdevice']}", flush=True)
+
+
 def serve(args):
     global frida
     import frida
@@ -578,6 +617,10 @@ def main():
         assert set_selected_flags('', '001fefff') == '[productoption]\r\nselectedflags = 001fefff\r\n'
         assert [next_misses(m, p) for m, p in ((0, True), (0, False), (1, False), (1, True))] == [0, 1, 2, 0]
         assert launcher_product_flags() is None or len(launcher_product_flags()) == 8
+        ini = 'musiclevel = 255\r\nmusicmute = 0\r\nfocusmute = 1\r\n'
+        out = set_ini_keys(ini, AUDIO_OFF)
+        assert ini_values(out, list(AUDIO_OFF) + ['focusmute']) == {**AUDIO_OFF, 'focusmute': '1'} and out.count('musiclevel') == 1
+        assert set_ini_keys(out, AUDIO_OFF) == out
         assert all(STATE_CMD.match(c) for c in ('travel_vacation', 'load_save', 'play_household', 'cas_open', 'main_menu', 'switch_household'))
         assert not any(STATE_CMD.match(c) for c in ('auto_dialog', 'autopilot', 'time', 'game_state', 'pending_dialogs', 'do_interaction'))
         print('self-check ok')
