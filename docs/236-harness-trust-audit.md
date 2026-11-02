@@ -358,3 +358,122 @@ Proposed cause [inferred, not shown]: the three hung launches are the first thre
 1. Without the game: copy the graphics keys of `Options.ini.bak-gfx-2026-11-02` (resolution 1600 900 0, low detail, `advancedrendering = 0`, ...) into the current Options.ini and keep `lastdevice = 0;10de;1080;65535`; restoring the backup whole would bring back the Intel device and trigger the reset again. Audio is now set by the probe.
 2. First launch: if the agent answers, the cause above holds. If it hangs, the new guard ends it in about 90 s with `hung at launcher stage` and kills the leftovers; read the EA process line, then try `dxvk.conf` without the custom device id (one change at a time).
 3. Then the vanilla matrix queue with the ea169-port 4c15cdf build as `TS3_AGENT_PACKAGE`, vh-move first. Per job read: the clicks log (`dialog_expect accept`, `expired (no match)`, any blocked dialog), the `N/A (vanilla)` line, and the audio and EA process lines in the probe log.
+
+## Round 4 results (2026-11-02, EA laptop, vanilla matrix rerun, stopped at the launch)
+
+Options.ini fix (game closed): every key of `Options.ini.bak-gfx-2026-11-02` copied into Options.ini except `lastdevice`, which stays `0;10de;1080;65535` (21 keys changed: resolution 1600 900 0, fullscreen 0, low detail incl. drawdistance 1, advancedrendering 0, audio levels 0 and mutes 1). Diff against the backup afterwards: only the `lastdevice` line. Pre-fix copy: `Options.ini.bak-reset-2026-11-02`. The game did not reset the file in any of the launches below. ts3agent = `build/ea169/ts3agent.package` of 4c15cdf, 458,586 B, sha256 ec1e97c67347 (clean tree). vanilla.ts install and read-back OK.
+
+| Job | Verdict | Reason |
+|---|---|---|
+| attempt 0 (vh-cycle-a, launch test) | harness environment error, not a game result | `python` on the PATH is a pyenv shim that `spawn('python')` cannot run (exit 9009): the probe server never started; fail-fast ended it after 60 s. Fixed for the session by putting `pyenv\versions\3.13.5-win32` first on PATH. |
+| launch 1 (vh-cycle-a, house Options.ini, faked GTX 580 device) | HANG | `hung at launcher stage: Sims3Launcher.exe up at 283 MB committed with no growth for ~60 s, agent never answered`; leftovers killed by the guard. `Sims3Launcher_d3d9.log` ends at `Found device: Intel(R) Graphics (Intel Corporation 101.8826.0)` and `Process set as DPI aware`. Options.ini was not the cause. |
+| launch 2 (same, `d3d9.custom*` lines commented out in dxvk.conf, `lastdevice` set to the Intel id for that try) | HANG | same message, same DXVK log end. The faked device is not the cause. |
+| vh-move, vh1-soak, vh-cycle-a/b, vh-travel-matrix, vh-travel-trip, vh-newsave, vh-matrix, vh-repro, hf-statecmd, hf-kill | not run | stopped at the launch (instruction: no variant works). |
+
+vh-move answer: none (not reached). Unknown dialogs: none seen. Harness failures: none from the code under test; the launch hang reproduces with the new fail-fast guard working as designed (about 90 s, leftovers killed, EA Desktop left alone). The probe logged `EA processes before launch: EABackgroundService.exe, EADesktop.exe` (no leftover launcher).
+
+Open: the hang is at DXVK Vulkan device or swap chain creation on the Intel iGPU, before the agent loads, in a state that worked at 18:54. Not tried: reboot or EA app restart, removing DXVK for one launch, a launch from the EA app by hand, Intel driver state (101.8826.0).
+Root cause of the launcher hang (found later 2026-11-02): a fast user switch at 19:50:58. Another account took the console, our Windows session became Disconnected, and D3D device creation blocks without a display; the Open item above (Intel iGPU, DXVK) was a wrong lead. Locked sessions on the console launched fine. Fix: launch preflight in ts3probe.py (WTS API, `session-check`, queue.ts throws so the job is FAIL), main 56a4f10.
+
+Restore: dxvk.conf sha ad935e6920de, Options.ini byte-equal to the house copy (`lastdevice` `0;10de;1080;65535`), Bin pair c035abe5a3a6 / 8aa37522782a, ts3fixes ac2c3f8799af, original ts3agent 1921c00c4c14, scriptCache db69b1b6a862, Saves listing equal after `vanilla.ts saves-restore`, Mods listing equal, Bin listing equal except dir times and `Sims3Launcher_d3d9.log`. The 18 GB "vanilla-stash saves" folder is untouched.
+
+## Round 5 results (2026-11-02, EA laptop, vanilla matrix, stopped after vh-move)
+
+Session preflight (56a4f10): `console session state: session 2 Active, console held by yes` before the run and before every job. ts3agent = ea169-port 4c15cdf `build/ea169/ts3agent.package`, 458,586 B, sha256 prefix ec1e97c6734f (the brief said ec1e97c67347; size and clean tree at 4c15cdf match). Real python first on PATH. Options.ini checked, not changed (1600 900 0, fullscreen 0, audio mutes 1, `lastdevice` `0;10de;1080;65535`). Launch: no hang this time (the Round 4 hang was the disconnected session).
+
+| Job | Verdict | Reason |
+|---|---|---|
+| launch (start of vh-move) | PASS | world loaded after 43 s, "Mod Scripts Found" answered by rule, agent answered, 37 households |
+| vh-move | PASS (13.4 min) | offer armed 13:32:55, dialog_expect accept-on-match at 13:33:25 (`-> #2 yes`), game up 10 min after, no crash, no xcpt, 0 new script errors; the follow-up dialog "Moving to a New Town" was cancelled by the safe default, so the household did not move |
+| vh1-soak | stopped, not a result | queue killed at its start (see unknown dialogs) |
+| vh-cycle-a/b, vh-travel-matrix, vh-travel-trip, vh-newsave, vh-matrix, vh-repro, hf-statecmd, hf-kill | not run | stopped after vh-move |
+
+vh-move answer: vanilla 1.69 does not crash when the offer is accepted (10 min up), but the accept only opens the move flow; the next dialog "Moving to a New Town" got the safe-default cancel, so no move happened. Crash 0x00AD04EC (7h/7j2) is not reproduced because the move itself was never carried out.
+
+Unknown dialogs (no rule, safe-default cancel `#3 cancel`; the clicks log keeps the chosen button only, not the button list): "Moving to a New Town" (13:33:25), "Committee Hearing" (13:36:55), "The Dish Showdown" (13:37:25), "The Complete Circuit" (13:38:25). Per the fail-fast rule the matrix was stopped here. Fix to make: log the full button list for safe-default clicks, add rules for these four titles (and decide whether the move flow should be completed to test the move).
+
+Harness notes: `ai-usage.ts` failed (ignored, no usage file). Options.ini differs from `Options.ini.bak-gfx-2026-11-02` only by `enabletelemetry` (0 now, 1 in the backup) and `lastdevice`; changed by the game or EA app during the run, left as is. Results file `2026-11-02-queue-vanilla-matrix.ea-laptop.md` committed like the ea-smoke one.
+
+Restore verified: Bin pair c035abe5a3a6 / 8aa37522782a, ts3fixes ac2c3f8799af, original ts3agent 1921c00c4c14, scriptCache db69b1b6a862, Saves mirrored back, no game process left. The 18 GB stash folder untouched.
+
+## Round 6 results (2026-11-02, EA laptop, vanilla matrix, stopped at vh-travel-matrix)
+
+ts3agent = ea169-port, final build b58ab59 (`build/ea169/ts3agent.package` sha256 prefix 995699294ac4; the runs used 495d100+history `ed69f42a0229` for vh-move, 995699294ac4 for the vh1-soak rerun). Harness = main 50fffc0 plus the dump fix below. Session check before every job: `session 2 Active, console held by yes`. Real python first on PATH, window never focused, Saves backed up before and mirrored back after every job (vanilla.ts saves-backup/saves-restore; the 18 GB stash left alone).
+
+Fixes in this round (ts3agent 7120ef2, 495d100, 6528ff4, b58ab59; main d5a55ea, 50fffc0, dump fix): safe-default clicks log the full button list; decline rules for the three event dialogs and "Moving to a New Town"; `dialog_expect {title, accept_all:true, all_seconds, seconds}` (title trigger starts a window that accepts every dialog, rules and safe default off); click history that `autopilot` polls cannot drain (`dialog_expect {status:true}`); safe-default clicks are a WARN line in the job verdict; vh-move waits 6 min for the offer.
+
+| Job | Verdict | Reason |
+|---|---|---|
+| vh-move run 1 | void (harness bug, fixed 6528ff4/50fffc0) | the household moved, but the `autopilot` poll that drained the click lines timed out while the game loaded the new world, so the script saw no click and printed UNKNOWN not triggered |
+| vh-move run 2 | PASS (12.8 min) | offer at 14:10:28, accept_all clicked 4 dialogs in the same second (`#2 yes`, "Moving to a New Town" `#2 accept`, "preparing to move" `#2 yes`, save prompt `#3 don't save`), game left the world 26 s later (`out of the world`, later `PlayFlowState` in IslaParadiso.world), game up 10 min after, no crash, no xcpt |
+| vh1-soak | PASS (12.3 min, WARN 4) | 10 min ultra soak, 0 script errors; safe-default clicks below |
+| vh-cycle-a | PASS (4.4 min) | 2 min soak after the fresh start |
+| vh-cycle-b | PASS (4.2 min) | second fresh start, vanilla read-back passed |
+| vh-travel-matrix | FAIL (harness) | save-matrix.ts exits 2 at once: `no ts3native.log at ...Bin\ts3native.log`. save-matrix needs the ts3native log, which vanilla mode removes. Real harness failure: matrix stopped (fail-fast) |
+| vh-travel-trip, vh-newsave, vh-matrix, vh-repro, hf-statecmd, hf-kill | not run | stopped after vh-travel-matrix |
+
+vh-move answer: the household moved and vanilla 1.69 did not crash in the 10 min after it. The move flow is all dialogs (offer, "Moving to a New Town", "preparing to move", save prompt); after them the game sits in the new world's play flow (`PlayFlowState`, active household none), which needs a household or lot pick in the UI; that was not clicked. Crash 0x00AD04EC (7h/7j2) did not reproduce on vanilla, so it needs the ts3native/ts3fixes of 7h/7j2 to appear.
+
+Safe-default WARN dialogs (vh1-soak rerun, buttons as logged): "Learn Martial Arts" `#3 cancel` (buttons #2 accept, #3 cancel, #18 see location); "Add It Up" `#3 cancel` (#2 accept, #18 see location, #3 cancel); "The coach wants Marty to start drinking a new energy drink..." `#3 decline` (#3 decline, #2 drink it!); "Super Stir-Fry" `#3 cancel` (#3 cancel, #2 accept, #18 see location). First soak run: "Add It Up" and "Hot Dogs, Please" (no button list yet, older agent). These are opportunity offers; declining is safe, no rule needed.
+
+Kill dumps: four ~2 GB full dumps (`probe-out/dumps/ts3w-<pid>-...`, PIDs 15424, 24816, 33964 and 42604) were written at the end of every soak job, not by a hang or crash. Cause: the soak runs `watchdog.ts` with the soak length as its deadline, and queue.ts `run()` treats that deadline as "job deadline" and calls `dumpHungGame` before killing the child. The game was healthy (PASS rows). Harness misfire, fixed: soak and routelock pass `plannedEnd` and skip the dump. Disk: C: 310 GB free, the dump planner also refuses below 10 GB free.
+
+Restore verified: Bin pair c035abe5a3a6 / 8aa37522782a, ts3fixes ac2c3f8799af, original ts3agent 1921c00c4c14, scriptCache db69b1b6a862, Options.ini byte-equal to the start of the round (50cb641832f8), Saves identical to the backup, no game process left.
+
+## Round 7 results (2026-11-02, EA laptop, vanilla matrix, stopped at vh-repro)
+
+Same set-up as Round 6: ts3agent ea169-port b58ab59 (`build/ea169/ts3agent.package` sha256 prefix 995699294ac4), real python first on PATH, `TS3_LAUNCH=ea TS3_EXE=Sims3Launcher.exe TS3_MACHINE=ea-laptop`, vanilla stash installed once and read back before every job (`queue.ts --only <job>`), session check before every job (`session 2 Active, console held by our session`; the preflight wording is fixed, was "held by yes"), window never focused, Saves backed up before and mirrored back after every job. No safe-default click and no unknown dialog in any job (the move offer was declined by its rule, "Check Out Your Smart Phone!" had one button).
+
+Harness fixes (main 6739491, 1854755, 3837896, a53c09b): save-matrix.ts and the session line (6739491), store-cas-browse waits (1854755), empty-button window (3837896), stale `blocked` text (a53c09b, not run against the game).
+
+| Job | Verdict | Reason |
+|---|---|---|
+| vh-travel-matrix | PASS (7.8 min) | travel case to University: travel save, save away, trip home, save home all done; per-save compress, flush, footprint, fallback checks and the fix arms are listed as `skip ... N/A: vanilla`. The trip-out and trip-back travel save were not seen through `save_in_progress` (polled about 1 s), so those two checks are N/A too |
+| vh-travel-trip | PASS (7.5 min) | one round trip to France: out 90 s, back 43 s + 69 s, commit 2004 -> 2082 MB |
+| vh-newsave | PASS (3 min) | menu to Sunset Valley, Andrews household (2 Sims), saved as Vanilla-SV-fresh in 42 s (scratch save removed by the Saves mirror) |
+| vh-matrix | PASS (5.5 min) | control, identical, overwrite, back-to-back, unpaused: 5 of 5; result check is the save folder plus `save_in_progress`, no result code in vanilla |
+| vh-repro | FAIL x3 (harness), not a result | see below |
+| hf-statecmd, hf-kill | not run | stopped after vh-repro; the two-cycle limit was used up |
+
+vh-repro failures, all harness, none a game result:
+1. 2.7 min: `cas_open` is a queued game task and CAS needed 59 s to open on this laptop; the fixed `waitS 30` then hit `cas_category` with "CAS is not open". Fix: `until` on `cas_state` (cas_ready, buy_catalog, back in LiveModeState) for the four open/close steps (1854755).
+2. 4.1 min: the CAS entry shows "Entering Create a Household..." (no buttons) and the vanilla mode guard stopped the job after two polls. Fix: a window with an empty button list is a block only after 60 s (2 x GUARD_MS); a dialog with buttons but no safe one still stops at the second poll (3837896).
+3. 6.8 min: all CAS and Buy steps passed (CAS open 59 s, 8 CAS categories 0.3-2.8 s each, Buy open and 6 categories 0.1-1.3 s), then the guard stopped on `'' buttons:` about two minutes after a blank Buy-mode transition window had closed. The agent keeps `blocked` until its next successful click, so the same stale text was seen twice. Fix: the guard asks `pending_dialogs` and drops the text when no modal is open (a53c09b). Not run against the game: that was the third fix-and-rerun and the limit is two. The CAS and Buy timings above are from a run that the guard ended, so they are indicative only (machine load other CPU 58%, NOT comparable).
+
+Vanilla job count: 11 jobs. PASS so far: vh-move, vh1-soak, vh-cycle-a, vh-cycle-b (Round 6), vh-travel-matrix, vh-travel-trip, vh-newsave, vh-matrix (Round 7) = 8. vh-repro (fix 3 untested), hf-statecmd and hf-kill are still open; hf-kill FAILs by design. Next round: `queue.ts ... --only vh-repro`, then hf-statecmd (it also changes modes, so it needs fix 3), then hf-kill.
+
+Restore verified: Bin pair c035abe5a3a6 / 8aa37522782a, ts3fixes ac2c3f8799af, original ts3agent 1921c00c4c14, scriptCache db69b1b6a862, Options.ini byte-equal to the start (50cb641832f8), Saves identical to the backup (robocopy /MIR list run: 0 differences), no game process left. The 18 GB stash and the four 2 GB plannedEnd dumps in probe-out/dumps were left alone.
+
+## Round 8 results (2026-11-02, EA laptop, vanilla matrix, last three jobs)
+
+Same set-up as Round 7 (ts3agent ea169-port b58ab59, sha256 prefix 995699294ac4; real python first on PATH; `TS3_LAUNCH=ea TS3_EXE=Sims3Launcher.exe TS3_MACHINE=ea-laptop`; session check `console held by our session` before every job; window never focused; Saves backed up before and mirrored back after every job). Harness environment slip, not counted: the first launch of vh-repro ran with the pyenv shim first on PATH (probe server exit 9009, as in Round 4), nothing ran; rerun with `pyenv\versions\3.13.5-win32` first on PATH.
+
+| Job | Verdict | Reason |
+|---|---|---|
+| vh-repro | PASS (7.2 min) | store-cas-browse: CAS open 58 s, 8 CAS categories, Buy open and 6 categories, back to LiveModeState; the stale-`blocked` fix (a53c09b) held, no guard stop. No safe-default click |
+| hf-statecmd | PASS (4.9 min, after 2 harness fixes) | buy_open (53 s), buy_close (15 s), enter_live_mode all ran and the unrequested-mode-exit guard stayed quiet. Clicks: the move offer and one date offer answered by rule, no safe-default (WARN) click |
+| hf-kill | CRASH, i.e. FAIL by design (7 min) | game killed 60 s into the job (`taskkill /F /IM Sims3Launcher.exe`); the queue ended the child through the probe-server fail-fast guard ("probe server exited (0) for ~60 s"), row CRASH, exit 1, not PASS. "no crash report of this run written since ... with pid 26840" is the xcpt triage line (a kill writes no xcpt). Vanilla state restored (7 files, sha read back), no game process left |
+
+hf-statecmd failures, both harness, none a game result:
+1. 20 s fixed wait after `buy_open` (a queued task, Buy took 53 s here): `buy_close` answered "Buy mode is not open". Fix c198539: poll `cas_state` (buy_catalog / LiveModeState) up to 180 s.
+2. The c198539 poll read `buy_catalog` and `state` from the top level of the agent reply but they are under `result`, so it never saw Buy open and failed after 180 s. Fix c85cc13: read `result.*`; also enables autopilot with dialogs (a modal move offer blocks `buy_open`) and logs the `buy_open` reply and, on failure, the last `cas_state` and `pending_dialogs`. One extra diagnostic rerun was needed to see the reply layout (the third run of the job, no fix in between).
+
+Final vanilla matrix, 11 jobs:
+
+| # | Job | Verdict |
+|---|---|---|
+| 1 | vh-move | PASS (Round 6) |
+| 2 | vh1-soak | PASS, 4 safe-default WARN (Round 6) |
+| 3 | vh-cycle-a | PASS (Round 6) |
+| 4 | vh-cycle-b | PASS (Round 6) |
+| 5 | vh-travel-matrix | PASS (Round 7) |
+| 6 | vh-travel-trip | PASS (Round 7) |
+| 7 | vh-newsave | PASS (Round 7) |
+| 8 | vh-matrix | PASS (Round 7) |
+| 9 | vh-repro | PASS (Round 8) |
+| 10 | hf-statecmd | PASS (Round 8) |
+| 11 | hf-kill | FAIL by design, reported as CRASH with the right reason (Round 8) |
+
+10 of 10 PASS jobs pass and the one designed failure fails correctly: the harness now passes all vanilla flows. Each PASS was in a separate `--only` run, not one uninterrupted queue run, so the full-queue run (install once, restore once) is not demonstrated end to end.
+
+Restore verified: Bin pair c035abe5a3a6 / 8aa37522782a, ts3fixes ac2c3f8799af, original ts3agent 1921c00c4c14, scriptCache db69b1b6a862, Options.ini 50cb641832f8 (byte-equal to the start), Saves identical to the backup (robocopy /MIR /L: 2602 files skipped, 0 to copy or delete), no game process left. The 18 GB stash and probe-out/dumps were left alone.
