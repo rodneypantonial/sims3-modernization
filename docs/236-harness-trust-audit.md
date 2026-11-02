@@ -286,3 +286,75 @@ Findings:
 6. Not harness failures found: no harness crash, no wrong verdict, no failed restore, and the only unrequested action was the autopilot's documented safe default. The launch hang is open: not shown to be the harness.
 
 Restore: Bin pair c035abe5a3a6 / 8aa37522782a, ts3fixes ac2c3f8799af, original ts3agent 1921c00c4c14 and scriptCache db69b1b6a862 back by sha (`ea-H0-1102.sha-before/after.txt` equal); Mods/Bin listings equal except `Sims3Launcher_d3d9.log` (DXVK rewrites it each start). The 18 GB Saves mirror folder is still there; delete it when no more vanilla runs are planned.
+
+## Round 4: harness fixes after the vanilla baseline (2026-11-02, EA laptop, code and logs only, no game run)
+
+| Commit | Branch | Item | What changed | Check |
+|---|---|---|---|---|
+| 8f2a239 | ea169-port | dialog rules | `kDialogRules`: career job offer gets `keep job` (fragments `leave her current position`, `leave his current position`, `keep job`); `go on a date` and `to the prom` join the invite rule; NPC move-in request and pet adoption (`move in with`, `wants to move in`, `move into your`, `join your household`, `adopt`) get cancel/decline/no; school dialogs (`field trip`, `boarding school`, `homesick`, `visit a friend`) get cancel/decline/no. `kSafeWords` gains ignore, reject, refuse. | builds ea169 + Steam |
+| 413f985 | ea169-port | dialog_expect race | `dialog_expect {seconds, title?, accept:true}`: the agent itself clicks the accepting button of the first matching dialog in the window, logs `dialog_expect accept: <title> -> <clicked>` (diag line and `cleared`) and ends the window. A window that ends with no match logs `dialog_expect expired (no match)` plus the title. | builds ea169 + Steam, CI green |
+| 4c15cdf | ea169-port | dialog_expect rules | An accepting window still applies `kDialogRules` (Edit Town town-save prompt stays "just continue"); `rules:false` turns them off for that window only (H-move: accept the move offer that the move rule declines). | builds ea169 + Steam |
+| ab072ff | main | 1 vanilla queue | See "Vanilla queue" below. | queue.ts, vanilla-steps.ts --self-check |
+| 708ad8f | main | 3 callers | save-matrix.ts, travel-trip.ts, new-save.ts, story-fuzzer.ts send `dialog_expect {accept:true}`; cycle.ts arms the Edit Town switch by title (`save your town before continuing`). The old auto_dialog accept polls stay as the fallback for older agents (they ignore `accept`). | game-alive.ts --self-check asserts accept:true at every caller |
+| 6653071 | main | 4 audio | ts3probe sets every audio level to 0 and every mute to 1 in Options.ini before each launch (Steam and EA, vanilla or not), byte-exact with CRLF kept, and reads them back; a failed read-back refuses the launch. The line also logs `resolution` and `lastdevice`. | ts3probe self-check |
+| d733119 | main | 5 launch hang | `launchGuard` in the "agent answering" wait: committed memory under 400 MB and flat (within 2 MB) over two 30 s samples while the agent never answered gives `hung at launcher stage: <exe> up at N MB committed with no growth for ~60 s, agent never answered`; the probe is detached and the game, EALauncher.exe and TSLHelper.exe are killed (never EADesktop.exe). queue.ts `closeGame` kills the same leftovers. ts3probe logs the EA processes before every EA launch. | game-alive.ts, game-exe.ts --self-check |
+
+`node tools/selftest-all.ts --ci`: main 138 PASS, 0 FAIL, 48 SKIP; ea169-port 136 PASS, 0 FAIL, 48 SKIP. ts3agent builds: ea169 and Steam, 458,586 B each. ea169-port is pushed. A rebase of ea169-port onto origin/main was tried and aborted: origin/main holds a squash of the EA harness work (#198, #207), and the 76 commits conflict from the first one on.
+
+### Vanilla queue
+
+`TS3_AGENT_PACKAGE=<ea169-port build>/ts3agent.package node tools/harness/queue.ts tools/harness/queues/vanilla-matrix.json --no-smoke` (EA laptop: also `TS3_MACHINE=ea-laptop TS3_LAUNCH=ea TS3_EXE=Sims3Launcher.exe TS3_BIN=<EA Bin>`). The queue file sets `"vanilla": true`; `TS3_VANILLA=1` does the same for any queue.
+
+- vanilla.ts install at the start and restore at the end; a stash that was installed before the run is only read back and left in place.
+- Every game start reads the vanilla state back and fails before the launch on a miss; the job guard fails a running job whose Bin or Mods leave that state.
+- Skipped checks are written as `N/A (vanilla): ...` in every row (asi and ts3fixes build checks, ts3native.log version gate, ini features, hook lines, counters, ts3fixes activity), never as PASS.
+- Refused before anything moves: asi other than `"none"`, ini, fixes, counter minimums, native log rules and the other ts3native-only job keys.
+- Click log: the autopilot poll after the load writes `probe-out/queue/<queue>-<date>-<job>.clicks.log` (`TS3_CLICKS_LOG` for child scripts). An accepted `dialog_expect` excuses mode exits for 900 s (a move takes long).
+- New run kind `run.script: ["<harness script>.ts", args...]`; `vanilla-steps.ts` holds `accept`, `state-cmd` and `kill-game`.
+
+Jobs: vh-move, vh1-soak, vh-cycle-a/b, vh-travel-matrix (University), vh-travel-trip (France), vh-newsave (menu, Vanilla-SV-fresh), vh-matrix (control, identical, overwrite, back-to-back, unpaused), vh-repro (store-cas-browse), hf-statecmd (PASS expected), hf-kill (FAIL expected, last). Not covered by a job: the Edit Town round trip, `quit_game` (the queue counts a game that is gone as a crash), H-fault #3 (vh-move is the accepted dialog), H-fault #4 (queue.ts and vanilla.ts self-checks).
+
+### Dialogs a soak can raise
+
+From the H-run click logs and the decompiled scripts (call sites in Occupation, Career, NPCAskToMoveIn, SocialCallback StrayPets, BoardingSchool, School, AlienUtils, PlayDateManager, AttractionDateCall, PromSituation). AcceptCancelDialog has `accept` and `cancel` buttons, so the safe default already cancels it; the rules make the decline explicit where a fragment is known. Texts marked [inferred] come from the code, not from a seen dialog.
+
+| Dialog | Answer | Status |
+|---|---|---|
+| Career job offer ("Should Justine leave her current position, Squad Leader (job level 4)?", change job / keep job) | keep job (rule) | was "no safe button" in H1 [verified text] |
+| Opportunities (career joins, skill offers) | cancel (safe default) | [verified] |
+| Date ask, prom, phone invites | decline/cancel (invite rule) | [inferred texts for prom] |
+| NPC move-in request | cancel (rule) | [inferred text] |
+| Stray pet adoption | no (rule) | [inferred text] |
+| Field trip, visit a friend, play date | cancel (rule or safe default) | [inferred texts] |
+| Boarding school homesick | no (rule) | [inferred text] |
+| Long-distance move offer | no (move rule) | [verified] |
+| Alien pregnancy (accept/reject labels) | reject (safe word) | [inferred label] |
+| Career branch choice, career event choice | none: every answer changes the household | still fails fast with the "no safe button" line |
+
+### Audio (item 4)
+
+No harness code ever set audio. The 11:53 change in docs/226 was a one-time manual edit (backups `Options.ini.bak-2026-11-02`, `.bak-audio-`, `.bak-gfx-2026-11-02` in `Documents\Electronic Arts\The Sims 3`). At 19:51:46, during H-move run 2, the game rewrote Options.ini with every option at its default: audio levels 255 and mutes 0, `resolution = 1024 768 60`, `advancedrendering = 1`, high detail, and `lastdevice` changed from `0;8086;7d45;8826` (the Intel GPU) to `0;10de;1080;65535`, the GeForce GTX 580 that `dxvk.conf` (customVendorId/customDeviceId, written 12:02) reports [verified: file diff]. A changed device resets the options [inferred]. Why the reset came only at 19:51 is not explained. Fixed for all runs by setting audio before every launch (6653071); the Steam machine gets the same.
+
+### Launch hang (item 5, static)
+
+| Launch | Gap since the previous game exit | Previous exit | Options.ini in effect | Result |
+|---|---|---|---|---|
+| H-move 1 | 61 s | H1 clean `quit_game` | pre-reset (1600x900, low) | ok |
+| H-move 2 | 29 s | kill | pre-reset; reset to defaults while running | ok |
+| H-move 3a | 15 s | kill | defaults (window place moved to 549,378 from 350,117) | hung |
+| H-move 3b | 20 s | kill | defaults | hung |
+| H-move 3c | 36 s | kill | defaults | hung |
+
+- selectedflags was `001fefff` ("already") in every launch, so it is not the difference [verified: probe logs].
+- The gap does not separate good from bad: H-move 2 started 29 s after a kill, 3c hung 36 s after one [verified].
+- No process listing existed for any launch, so leftovers cannot be compared; ts3probe now logs them (d733119).
+- The EA app reported `authenticated: false` in all runs, the good ones too.
+- The DXVK log of the last hung start (`Sims3Launcher_d3d9.log`, 865 B) ends after `Found device: Intel(R) Graphics` and `Process set as DPI aware`, before any device or swap chain line; a good start (18:54) left 13,685 B. `DeviceConfig.log` was created empty at 20:27:31. Hung processes stayed flat at about 80 MB private, 103 MB working set [verified: files, sampler].
+
+Proposed cause [inferred, not shown]: the three hung launches are the first three after the game reset Options.ini for the spoofed DXVK device. With the defaults (1024x768 at 60 Hz, advanced rendering, high detail) the game stalls in D3D9 device or swap chain creation through DXVK on the Intel GPU, before scripts and the agent load. A short relaunch after a kill is at most a weaker second factor. Nothing points at a licence or entitlement step.
+
+### Next vanilla rerun
+
+1. Without the game: copy the graphics keys of `Options.ini.bak-gfx-2026-11-02` (resolution 1600 900 0, low detail, `advancedrendering = 0`, ...) into the current Options.ini and keep `lastdevice = 0;10de;1080;65535`; restoring the backup whole would bring back the Intel device and trigger the reset again. Audio is now set by the probe.
+2. First launch: if the agent answers, the cause above holds. If it hangs, the new guard ends it in about 90 s with `hung at launcher stage` and kills the leftovers; read the EA process line, then try `dxvk.conf` without the custom device id (one change at a time).
+3. Then the vanilla matrix queue with the ea169-port 4c15cdf build as `TS3_AGENT_PACKAGE`, vh-move first. Per job read: the clicks log (`dialog_expect accept`, `expired (no match)`, any blocked dialog), the `N/A (vanilla)` line, and the audio and EA process lines in the probe log.
