@@ -8,10 +8,10 @@ import { execFileSync } from 'node:child_process';
 
 export const GAME_EXE = process.env.TS3_EXE ?? 'TS3W.exe';
 export const GAME_NAME = GAME_EXE.replace(/\.exe$/i, ''); // PowerShell Get-Process / Windows counters name
-export const BIN = process.env.TS3_BIN ?? 'C:\Program Files (x86)\Steam\steamapps\common\The Sims 3\Game\Bin';
+export const BIN = process.env.TS3_BIN ?? 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Sims 3\\Game\\Bin';
 export const LAUNCH = process.env.TS3_LAUNCH ?? 'direct';
 export const EA_URI = process.env.TS3_EA_URI ?? 'origin2://game/launch/?offerIds=sims3_dd,1002441,70384_CE,70384_Unrevised';
-export const EA_LAUNCHER = process.env.TS3_EA_LAUNCHER ?? 'C:\Program Files\Electronic Arts\EA Desktop\EA Desktop\EALauncher.exe';
+export const EA_LAUNCHER = process.env.TS3_EA_LAUNCHER ?? 'C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EALauncher.exe';
 export const isSteamGame = (exe = GAME_EXE) => exe.toLowerCase() === 'ts3w.exe';
 export const gameRunning = () => { try { return execFileSync('tasklist', ['/NH', '/FI', `IMAGENAME eq ${GAME_EXE}`]).toString().includes(GAME_EXE); } catch { return true; } }; // tasklist failed: no verdict
 
