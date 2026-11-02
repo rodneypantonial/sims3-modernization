@@ -3711,13 +3711,6 @@ static void TestLotSinCos() {
     g_fakeW2LLie = false;
     LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);
     assert(k.lscMismatches == m0 + 1 && LscBits(o1[0]) == LscBits(r[0]));
-    // a torn entry (check word not matching) is a miss, never a wrong answer
-    g_lscVerify = false;
-    LscEntry& e = LscSlot(LscBits(0.0f));
-    e.s = 0.75f;
-    const int calls = g_fakeW2LCalls;
-    LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);
-    assert(LscBits(o1[0]) == LscBits(r[0]) && LscBits(o1[1]) == LscBits(r[1]) && g_fakeW2LCalls == calls);
     // the stub keeps edx and xmm4-xmm7 on a miss and on a hit, with and without Verify (docs/232 run 7j2: a miss left
     // edx = &g_lsc[slot] in a caller that keeps the lot in edx); the answer is the hook's
     for (int v = 0; v < 2; v++) {
@@ -3732,7 +3725,13 @@ static void TestLotSinCos() {
             assert(LscBits(o1[0]) == LscBits(r[0]) && LscBits(o1[1]) == LscBits(r[1]));
         }
     }
+    // a torn entry (check word not matching) is a miss, never a wrong answer
     g_lscVerify = false;
+    LscEntry& e = LscSlot(LscBits(0.0f));
+    e.s = 0.75f;
+    const int calls = g_fakeW2LCalls;
+    LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);
+    assert(LscBits(o1[0]) == LscBits(r[0]) && LscBits(o1[1]) == LscBits(r[1]) && g_fakeW2LCalls == calls);
     // mode 0: the game's function only
     k.lscMode = 0;
     LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);
