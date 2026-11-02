@@ -5,7 +5,7 @@ name: build
 
 on:
   push:
-    branches: [main, ea169-port]
+    branches: [main, ea169-port, ea169-bytes]
     tags: ['v*']
   pull_request:
 
@@ -90,6 +90,7 @@ jobs:
             native/ts3native/out-ea169/ts3native-ea169.asi
             native/ts3native/out-ea169/ts3native-ea169.ini
             native/ts3native/ts3addr-ea169.h
+            native/ts3native/ts3bytes-ea169.h
 
   node:
     runs-on: ubuntu-latest

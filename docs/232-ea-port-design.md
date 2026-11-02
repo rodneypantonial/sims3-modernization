@@ -50,8 +50,7 @@ see ciphertext. Largest new machinery; its one advantage (future EA patches with
   stay 0 -> their files (eafix, watchpt, crashfx, gcroots, routephases, allocsites, steerro, p4clone, avoidro, memexp, rtoro)
   OFF until hand-verified.
 - 120 `ported` byte expectations: expected bytes embed Steam rel32/pointers, so `Matches` SKIPs on EA (safe, feature inert).
-  Not in this milestone; later a per-build byte table from the same `gen`. First smoke uses only files whose expectations are
-  all `ok`.
+  Done on branch ea169-bytes: `native/ts3native/ts3bytes-ea169.h`, written by `patch-bytes-check.ts --table` / `port-run.ts` (244 ok + 120 ported = 364 rows: EA address, length, the game's own bytes), used by `Matches`/`InstallDetour` under `TS3A_TABLE` (docs/68 7.3). The 5 mismatches and 4 unmapped get no row and still SKIP.
 - 407 slot-shifted vtables, 5 offset-changed sites: slot numbers and struct displacements are not addresses, the codemod does
   not touch them. steerro, watchpt, rtoro, memexp, lotfd (vt_Portal) OFF on EA; re-derive by hand later (docs/230 reading).
 - Gating rule: EA ini = Steam ini with every section `Enabled=0` except an allowlist in build.yml (same awk style as the

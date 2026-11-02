@@ -45,8 +45,27 @@ static bool Readable(const void* p, size_t n) {
     return (const u8*)p + n <= (const u8*)mbi.BaseAddress + mbi.RegionSize;
 }
 
+#ifdef TS3A_TABLE
+#include "ts3bytes-ea169.h"  // ts3bytes_rows[] sorted by (addr, len), ts3bytes_pool[], ts3bytes_count (tools/patch-bytes-check.ts --table)
+// EA build: the bytes the game itself has at an already translated site replace the caller's Steam literal (they differ
+// only in rel32 / absolute-pointer operands, docs/68 7.3). Same address and length required, else the literal stays.
+static const u8* ExpectedAt(const void* addr, const u8* lit, size_t n) {
+    const DWORD a = (DWORD)(uintptr_t)addr, len = (DWORD)n;
+    int lo = 0, hi = ts3bytes_count - 1;
+    while (lo <= hi) {
+        const int mid = (lo + hi) / 2;
+        const DWORD ra = ts3bytes_rows[mid].a, rl = ts3bytes_rows[mid].len;
+        if (ra == a && rl == len) return ts3bytes_pool + ts3bytes_rows[mid].off;
+        if (ra < a || (ra == a && rl < len)) lo = mid + 1; else hi = mid - 1;
+    }
+    return lit;
+}
+#else
+#define ExpectedAt(addr, lit, n) (lit)
+#endif
+
 static bool Matches(const void* addr, const u8* expect, size_t n) {
-    return Readable(addr, n) && memcmp(addr, expect, n) == 0;
+    return Readable(addr, n) && memcmp(addr, ExpectedAt(addr, expect, n), n) == 0;
 }
 
 static bool Write(void* addr, const void* bytes, size_t n) {
@@ -100,7 +119,7 @@ void* InstallDetour(const char* name, DWORD target, const u8* prologue, size_t l
     }
     u8* tramp = (u8*)VirtualAlloc(NULL, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!tramp) return NULL;
-    memcpy(tramp, prologue, len);
+    memcpy(tramp, ExpectedAt(t, prologue, len), len);
     tramp[len] = 0xE9;
     *(LONG*)(tramp + len + 1) = (LONG)((t + len) - (tramp + len + 5));
     u8 jmp[16];
