@@ -312,7 +312,7 @@ static void InstallRtSites(const wchar_t* ini, bool gate) {
         if ((g_rtTramp[i] = InstallDetour(name, kRtSites[i].addr, kRtSites[i].pro, kRtSites[i].len, (void*)kRtStubs[i])) != NULL) {
             u8* tr = (u8*)g_rtTramp[i];
             if (tr[0] == 0xE8) {  // the copied call rel32 points at the original callee again
-                const u8* callee = (const u8*)(uintptr_t)kRtSites[i].addr + 5 + *(const LONG*)(kRtSites[i].pro + 1);
+                const u8* callee = (const u8*)(uintptr_t)kRtSites[i].addr + 5 + *(const LONG*)(tr + 1);
                 *(LONG*)(tr + 1) = (LONG)(callee - (tr + 5));
             }
             ready |= 1 << i;
