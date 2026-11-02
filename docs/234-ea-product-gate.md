@@ -87,3 +87,26 @@ at 0x597B33, 0x597C18, 0x597CA1, 0x597D14). The registry diff with the Steam mac
   installed pack by the key's `ProductID` value (1001 base, 2..21 packs) and otherwise looks for `/EP01` on the drive root, so all 19 packs
   are treated as not installed although the entitlements are granted; ask for the installer to write `ProductID` per pack (give the
   registry dump and this timeline; log lines above as evidence).
+
+## EA app Repair attempt 2026-11-02
+14:14-14:17 PHT, EA laptop, screen locked, triggered remotely. [verified]
+- No repair URI or command line exists: `EADesktop.exe` strings hold only `origin2://game/launch/`, `library/open/`, `store/open/`,
+  `store/checkout` and link2ea `LaunchGame/`; `origin2://game/repair/?offerIds=OFB-EAST:55107` and `game/verify/` are logged by
+  `EALaunchHelper` as `ProtocolParser::parseProtocolOrigin2 Unsupported origin2 protocol command=[game/repair/]` (no action). The
+  `RepairGame` LSX message (game SDK), `app.repairOfferId` cfg key (`DEBUG_REPAIR_GAME_VIA_CFG`, "configurable[false]" build) and the
+  `Link2EA.exe` repair strings are not reachable from outside. EA's own help: Repair is a Library tile menu item only
+  (https://forums.ea.com/kb/ea-app-tutorials-and-guides-en/infoguide-how-to-repair-a-game-on-the-ea-app/11894905).
+- Working remote method: the EA app is a CEF app and accepts Chromium's `--remote-debugging-port`. Restart
+  `EADesktop.exe --remote-debugging-port=9222`, then over CDP (`http://127.0.0.1:9222/json`, `Runtime.evaluate` on the `https://pc.ea.com`
+  page): open the Library, click the Sims 3 sidebar tile (`/en/games/the-sims-3`), the `MANAGE` button (aria-label `More options`), the
+  `Repair` menu item. No confirmation dialog; log `GamesManagerProxy::initiateRepair Initiate repair for offerId=[OFB-EAST:55107]`
+  at 06:14:14Z, "Repairing 2% .. 86%", done 06:16:32Z (~2.5 min: base + all 19 DLC `__Installer\...\InstallLog.txt` rerun, each logs
+  `Setting up registry ...` then exit code 0). Restart the EA app without the flag afterwards (the port is open to every local process).
+- Registry: `reg export HKLM\SOFTWARE\WOW6432Node\Sims` before and after are identical (151 lines). Base key: `DisplayName`, `Locale`,
+  `Product GUID`, `Install Dir`, `ProductID`=1001, `SKU`, `InstallStart`; all 19 pack keys: `Install Dir` only, before and after. The DLC
+  `installerdata.xml` files name only `...\DLCs\<pack>\UninstallerPath`; the base one only `Install Dir` and the Uninstall key.
+- Bin: Repair rewrote `Sims3Launcher.exe` back to the original (sha 845199D3ED66, undoing the docs/230 swap); `wininet.dll`,
+  `d3d9.dll`, `dxvk.conf`, `ts3native.asi`/`.ini` untouched (shas unchanged). Swap redone (`TS3.exe` over `Sims3Launcher.exe`, sha 7352DD6E599F).
+- **Verdict: Repair does not add `ProductID` to the pack keys.** The player FAQ step "repair the game" cannot fix the BaseGame-only
+  load; the per-key `ProductID` dword (registry probe section above) or an EA installer fix remains the only route. Re-adding the packs in
+  Manage > Add-ons was not tried (needs the same CDP route; expected to rerun the same DLC installer). [inferred for Add-ons]
