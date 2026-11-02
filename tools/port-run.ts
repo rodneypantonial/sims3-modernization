@@ -1,6 +1,8 @@
 // One command for a port to another exe build (docs/68 §7.5): map -> expected bytes -> TS3A table, one screen out.
 //
 //   node tools/port-run.ts --exe <decrypted TS3W.exe|TS3.exe> [--ref <Steam exe>] [--allow-inferred] [--build] [--ghidra-names]
+//   node tools/port-run.ts --exe <exe> --allow-inferred --zero-unresolved --table native/ts3native/ts3addr-ea169.h --host-name "EA app 1.69.47"
+//                                              the committed TS3A_TABLE header (docs/228 task 1: addresses only, review = git diff)
 //   node tools/port-run.ts --zip <Sims3PortReport-xxxxxxxx.zip> [same options]
 //   node tools/port-run.ts --self-check
 //
@@ -11,7 +13,8 @@
 // `AI needed: N rows (see <file>)`. A row with a candidate address (near, hint, fingerprint guess) is ai=no: it needs
 // --allow-inferred plus the bytes check, not a manual hunt. Everything under out/port/ is derived from EA bytes: never commit.
 // --build prints (never runs) the TS3A_TABLE build and the smoke queue command; --ghidra-names writes
-// <id>/ghidra-names.csv for tools/ghidra/ImportSymbols.java (tools/port-ghidra-names.ts).
+// <id>/ghidra-names.csv for tools/ghidra/ImportSymbols.java (tools/port-ghidra-names.ts). --zero-unresolved writes unresolved
+// addresses as 0 rows (addr-codemod gen), --table <repo path> puts the header there, --host-name adds the TS3A_HOST_* defines.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -90,7 +93,7 @@ const node = (args: string[]) => {
     catch (e: any) { console.error(`${args[0]} failed (exit ${e.status}):\n${String(e.stdout ?? "").split("\n").slice(-5).join("\n")}${e.stderr ?? ""}`); process.exit(1); }
 };
 
-function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow-inferred"?: boolean; build?: boolean; "ghidra-names"?: boolean; "min-score"?: string }) {
+function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow-inferred"?: boolean; "zero-unresolved"?: boolean; table?: string; "host-name"?: string; build?: boolean; "ghidra-names"?: boolean; "min-score"?: string }) {
     const refPath = v.ref ?? join(repo, "game-copy", "bin", "TS3W.exe");
     if (!existsSync(refPath)) { console.error(`Steam exe not found: ${refPath} (--ref)`); process.exit(2); }
     const refBuf = readFileSync(refPath), input = (v.zip ?? v.exe)!;
@@ -143,11 +146,14 @@ function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow
     const kinds = [...new Set(patch.map((x) => x.kind2))].filter((k) => k !== "ok");
     console.log(`patch: ${patch.length} expectations at ${new Set(patch.map((x) => x.addr)).size} addresses: ok ${pc("ok")}${kinds.map((k) => `, ${k} ${pc(k)}`).join("")}; probe-only (generated headers) skipped ${all.length - exp.length}${v.zip ? " (zip: from map kinds, no bytes)" : ""}`);
 
-    // 3. TS3A table
-    const g = gen(mapText, needed, !!v["allow-inferred"], basename(mapCsv)), table = join(dir, "ts3addr-table.h");
-    if (!g.errors.length) writeFileSync(table, g.header);
+    // 3. TS3A table (docs/228: --table writes the committed header, with the host's PE timestamp + SizeOfImage for the host check)
+    const zero = !!v["zero-unresolved"], table = v.table ? join(repo, v.table) : join(dir, "ts3addr-table.h");
+    const byValue = new Map(patch.filter((x) => x.mapKind === "by-value" && x.new !== null).map((x) => [x.addr, x.new!]));
+    const hostOf = (b: Buffer) => { const pe = b.readUInt32LE(0x3c); return { pe: b.readUInt32LE(pe + 8), size: b.readUInt32LE(pe + 24 + 56), name: v["host-name"]! }; };
+    const g = gen(mapText, needed, !!v["allow-inferred"], basename(mapCsv), { zeroUnresolved: zero, byValue, where: whereBy, host: otherBuf && v["host-name"] ? hostOf(otherBuf) : undefined });
+    if (zero || !g.errors.length) writeFileSync(table, g.header);
     const notApplied = scan.some((r) => r.kind === "wrap");
-    console.log(`gen: ${new Set(needed).size} addresses, ${g.inferred} inferred, ${g.errors.length} without a usable row${v["allow-inferred"] ? "" : " (strict)"}${g.errors.length ? "" : ` -> ${rel(table)}`}`);
+    console.log(`gen: ${g.rows} table rows (${g.zero} zero, ${g.byValue} by-value, ${g.inferred} inferred), ${g.errors.length} without a usable row${v["allow-inferred"] ? "" : " (strict)"}${zero || !g.errors.length ? ` -> ${rel(table)}` : ""}`);
 
     // problems
     let managed: Inputs["managed"] = [];
@@ -178,7 +184,7 @@ function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow
         console.log("build (printed, not run):");
         if (notApplied) console.log("  sources not on TS3A yet: run addr-codemod --apply first (post-Mono refactor)");
         if (g.errors.length) console.log(`  no table: gen has ${g.errors.length} addresses without a usable row (problems.csv stage gen${v["allow-inferred"] ? "" : "; or --allow-inferred"})`);
-        console.log(`  copy ${rel(table).replace(/\//g, "\\")} native\\ts3native\\out\\ts3addr-table.h`);
+        if (!v.table) console.log("  rerun with --table native/ts3native/ts3addr-ea169.h --host-name <build> (ts3addr.h includes that header)");
         console.log(`  cmd /c "set CL=/DTS3A_TABLE&& native\\ts3native\\build.cmd ${outDir}"`);
         if (v.exe) console.log(`  node tools/patch-bytes-check.ts --other "${v.exe}"`);
         const rc = join(repo, "tools", "harness", "queues", "release-check.json");
@@ -221,9 +227,9 @@ function selfCheck() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-    const { values: v } = parseArgs({ options: { zip: { type: "string" }, exe: { type: "string" }, ref: { type: "string" }, asm: { type: "string" }, "allow-inferred": { type: "boolean" },
+    const { values: v } = parseArgs({ options: { zip: { type: "string" }, exe: { type: "string" }, ref: { type: "string" }, asm: { type: "string" }, "allow-inferred": { type: "boolean" }, "zero-unresolved": { type: "boolean" }, table: { type: "string" }, "host-name": { type: "string" },
         build: { type: "boolean" }, "ghidra-names": { type: "boolean" }, "min-score": { type: "string" }, "self-check": { type: "boolean" } } });
     if (v["self-check"]) selfCheck();
-    else if (!v.zip === !v.exe) { console.error("usage: node tools/port-run.ts (--exe <exe> | --zip <player report>) [--ref <Steam exe>] [--asm <dir>] [--allow-inferred] [--build] [--ghidra-names] [--min-score 6] | --self-check"); process.exit(2); }
+    else if (!v.zip === !v.exe) { console.error("usage: node tools/port-run.ts (--exe <exe> | --zip <player report>) [--ref <Steam exe>] [--asm <dir>] [--allow-inferred] [--zero-unresolved] [--table <repo path>] [--host-name <s>] [--build] [--ghidra-names] [--min-score 6] | --self-check"); process.exit(2); }
     else run(v);
 }
