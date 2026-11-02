@@ -2976,7 +2976,7 @@ static int AsInstallGuards(DWORD* lo, DWORD* hi, DWORD imgLo, DWORD imgHi, DWORD
         const DWORD name = *p, fn = p[-1];
         if (name < imgLo || name >= imgHi || !AsIsName((const char*)(uintptr_t)name, imgHi)) continue;
         const bool chained = AsIsSnShim(fn);
-        if (!chained && (fn < textLo || fn >= textHi)) continue;
+        if (!chained && ((fn & 15) || fn < textLo || fn >= textHi)) continue;  // real IC fns are 16-byte aligned; 1.69 has a bogus unaligned pair in the icall desc table
         const char* s = (const char*)(uintptr_t)name;
         const AsDesc* d = NULL;
         for (int i = 0; i < AS_NDESC && !d; i++) if (!strcmp(s, kAsDesc[i].name)) d = &kAsDesc[i];
