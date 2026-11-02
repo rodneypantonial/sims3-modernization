@@ -28,7 +28,7 @@ static char g_edLastId[65];  // offer id of the last lookup
 static LONG g_edLookups, g_edLoops, g_edAfterHits;
 
 static const DWORD kEdService = 0x01244FB0, kEdFlags0 = 0x01227E50, kEdFlags1 = 0x01227E54;
-static const DWORD kEdOfferVec = 0x01227E48, kEdOfferTable = 0x011A7B40;
+static const DWORD kEdOfferVec = TS3A(0x01227E48), kEdOfferTable = TS3A(0x011A7B40);
 
 static bool EdRd(DWORD addr, DWORD* v) {
     if (!Readable((const void*)(uintptr_t)addr, 4)) return false;
@@ -243,11 +243,11 @@ static bool ApplyEaDiag(const wchar_t* ini) {
     static const u8 kLoop[] = {0x33, 0xF6, 0x39, 0x35, 0x40, 0x7B, 0x1A, 0x01};  // xor esi,esi; cmp [0x11A7B40],esi
     static const u8 kMount[] = {0x8B, 0x47, 0x10, 0x8B, 0x4F, 0x0C};             // mov eax,[edi+0x10]; mov ecx,[edi+0xC]
     static const u8 kAfter[] = {0x8B, 0x84, 0x24, 0xE4, 0x08, 0x00, 0x00};       // mov eax,[esp+0x8E4]
-    g_edLookupJmp = InstallDetour("EaDiag entitlement lookup", 0x00A421F0, kLookup, sizeof(kLookup), (void*)EdLookupStub);
-    g_edWaitJmp = InstallDetour("EaDiag gate after wait", 0x00596999, kWait, sizeof(kWait), (void*)EdWaitStub);
-    g_edLoopJmp = InstallDetour("EaDiag gate product loop", 0x005969C2, kLoop, sizeof(kLoop), (void*)EdLoopStub);
-    g_edMountJmp = InstallDetour("EaDiag gate mount", 0x00596A3D, kMount, sizeof(kMount), (void*)EdMountStub);
-    g_edAfterJmp = InstallDetour("EaDiag after gate", 0x00597E34, kAfter, sizeof(kAfter), (void*)EdAfterStub);
+    g_edLookupJmp = InstallDetour("EaDiag entitlement lookup", TS3A(0x00A421F0), kLookup, sizeof(kLookup), (void*)EdLookupStub);
+    g_edWaitJmp = InstallDetour("EaDiag gate after wait", TS3A(0x00596999), kWait, sizeof(kWait), (void*)EdWaitStub);
+    g_edLoopJmp = InstallDetour("EaDiag gate product loop", TS3A(0x005969C2), kLoop, sizeof(kLoop), (void*)EdLoopStub);
+    g_edMountJmp = InstallDetour("EaDiag gate mount", TS3A(0x00596A3D), kMount, sizeof(kMount), (void*)EdMountStub);
+    g_edAfterJmp = InstallDetour("EaDiag after gate", TS3A(0x00597E34), kAfter, sizeof(kAfter), (void*)EdAfterStub);
     void* const tramps[] = {g_edLookupJmp, g_edWaitJmp, g_edLoopJmp, g_edMountJmp, g_edAfterJmp};
     int n = 0;
     for (void* t : tramps) n += t ? 1 : 0;
