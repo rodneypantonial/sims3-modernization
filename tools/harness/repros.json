@@ -544,7 +544,17 @@
     "steps": [
       {
         "cmd": "cas_open",
-        "waitS": 30
+        "waitS": 30,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "cas_ready",
+              "equals": true
+            }
+          ],
+          "maxS": 180
+        }
       },
       {
         "cmd": "cas_category",
@@ -601,11 +611,30 @@
       },
       {
         "cmd": "cas_close",
-        "waitS": 20
+        "waitS": 20,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
       },
       {
         "cmd": "buy_open",
-        "waitS": 15
+        "waitS": 15,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 180
+        }
       },
       {
         "cmd": "buy_category",
@@ -651,7 +680,17 @@
       },
       {
         "cmd": "buy_close",
-        "waitS": 10
+        "waitS": 10,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
       },
       {
         "cmd": "cas_state"
