@@ -1,5 +1,9 @@
 # 234. EA 1.69 product/entitlement gate: live diagnosis (BaseGame-only flags)
 
+> **Verdict (2026-11-02):** BaseGame-only loads on the EA laptop came from our launcher swap skipping the real launcher's write of
+> `selectedflags` to `LoadOption.ini` (section "LoadOption.ini selectedflags test"), not from timing or the registry.
+> Fix: `ts3probe.py` `ensure_selected_flags` on EA launches (commit 9890067); sections between are the investigation trail.
+
 EA laptop, EA app 1.69.47 (`Sims3Launcher.exe` = TS3.exe, base 0x400000, no ASLR), 2026-11-02 13:09-13:20 PHT. Question: do the
 19 installed packs stay unmounted because the entitlement answer arrives after the gate (timing), or because the game does not
 match what the EA app answers (data)? Static context: mount at 0x596A70, gate 0x596990 -> service create + wait 0xA42A30, loaded test
@@ -87,6 +91,14 @@ at 0x597B33, 0x597C18, 0x597CA1, 0x597D14). The registry diff with the Steam mac
   installed pack by the key's `ProductID` value (1001 base, 2..21 packs) and otherwise looks for `/EP01` on the drive root, so all 19 packs
   are treated as not installed although the entitlements are granted; ask for the installer to write `ProductID` per pack (give the
   registry dump and this timeline; log lines above as evidence).
+
+## ProductID registry theory (superseded)
+Static read of the registry probe `0x7D1820` (called from the caller loop 0x597AC6-0x597DE6 at 0x597B28): it enumerates the subkeys of
+`HKLM\Software\Sims` (WOW64 view), reads the `ProductID` dword of each (1001 maps to 1, values <= 0 skipped) and accepts a key only when
+`ProductID == seq`, the row's first field in the table at 0x11A7A38 (base 1, EP01 2, SP01 3 ... EP11 21); key names are not compared. [verified in the disassembly]
+Measured on the EA laptop: the base key has `ProductID` 1001, all 19 pack keys carry `Install Dir` only. This theory turned out irrelevant:
+the real blocker was the launcher's `selectedflags` in `LoadOption.ini` (next sections), and the EA app Repair does not write `ProductID` either.
+No registry edit is needed or recommended; the per-pack script and the forum request to EA for `ProductID` writes are dropped.
 
 ## EA app Repair attempt 2026-11-02
 14:14-14:17 PHT, EA laptop, screen locked, triggered remotely. [verified]
