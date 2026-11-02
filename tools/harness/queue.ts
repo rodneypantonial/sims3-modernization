@@ -234,6 +234,11 @@ export function vanillaRefusals(j: Job): string[] {
 // "Saving..." text stays in `blocked` after a save (docs/236 finding 2) and is not one
 // docs/236 Round 6: a safe-default click is a WARN in the job verdict (the run goes on); click log lines look like `<time> <title> -> #3 cancel (safe default; buttons: ...)`
 export const safeDefaultWarns = (lines: string[]): string[] => lines.filter(l => /\(safe default[;)]/.test(l)).map(l => l.replace(/^\d\d:\d\d:\d\d /, '').replace(/^.*ap click: /, ''));
+// the agent's never-drained click history (`autopilot` reply `history`, lines `HH:MM:SS text` in UTC) minus the lines the click file already has (ignoring the time)
+export const missingHistory = (hist: string[], fileLines: string[]): string[] => {
+  const have = new Set(fileLines.map(l => l.replace(/^\d\d:\d\d:\d\d /, '').replace(/^.*ap click: /, '')));
+  return hist.filter(l => !have.has(l.replace(/^\d\d:\d\d:\d\d /, '')));
+};
 export const vanillaBlock = (prev: string | null, cur: string | null): string => cur && cur === prev && !/nothing clicked: 'Saving/.test(cur) ? cur : '';
 
 export function parseQueue(json: unknown): Job[] {
@@ -1523,6 +1528,7 @@ if (values['self-check']) {
     assert.equal(vanillaBlock('no safe button: x', 'no safe button: x'), 'no safe button: x');
     assert.equal(vanillaBlock("no safe button, nothing clicked: 'Saving... ' buttons: ", "no safe button, nothing clicked: 'Saving... ' buttons: "), '');
     assert.equal(vanillaBlock('a', null), '');
+    assert.deepEqual(missingHistory(['12:00:01 A -> #1 ok', '12:00:02 B -> #3 cancel (safe default)'], ['12:00:09 A -> #1 ok']), ['12:00:02 B -> #3 cancel (safe default)']);
     assert.deepEqual(safeDefaultWarns(['12:00:01 x -> #2 yes (accept requested)', '12:00:02 Hot Dogs -> #3 cancel (safe default; buttons: #1 a, #3 cancel)', '12:00:03 Y -> #3 cancel (safe default)']),
       ['Hot Dogs -> #3 cancel (safe default; buttons: #1 a, #3 cancel)', 'Y -> #3 cancel (safe default)']);
     assert.deepEqual(parseQueue([{ id: 's', asi: 'none', save: 'S', run: { script: ['travel-trip.ts', '--to', 'france'] } }])[0].run.script, ['travel-trip.ts', '--to', 'france']);
@@ -1870,6 +1876,15 @@ function unrequestedModeGuard(from = 0, clicksFile = ''): () => string { // from
     }
     return verdict;
   };
+}
+async function addAgentHistory(file: string) {
+  try {
+    const ap = (await agent('autopilot'))?.result;
+    if (!ap) return;
+    const have = existsSync(file) ? readFileSync(file, 'latin1').split(/\r?\n/) : [], cl: string[] = (ap.cleared ?? []).map(String);
+    const add = missingHistory((ap.history ?? []).map(String), [...have, ...cl]);
+    if (cl.length || add.length) appendFileSync(file, [...cl.map(c => `${stamp()} ${c}\n`), ...add.map(l => `${l}\n`)].join(''));
+  } catch { /* the game is gone or busy: the file keeps what the polls got */ }
 }
 function earlyGateGuard(gs: EarlyGate[]): () => string {
   const t0 = Date.now(), needFixes = gs.some(g => g.counter.includes('fixes:'));
@@ -2562,6 +2577,7 @@ for (const [n, j] of jobs.entries()) {
     if (bad) row.pass = false;
   }
   if (VANILLA) { // safe-default clicks: WARN, never FAIL (no safe button still stops the run in the mode guard)
+    if (clicksOn || gameRunning()) await addAgentHistory(join(OUT, `${queueName}-${date}-${j.id}.clicks.log`)); // lines a late poll lost
     const cf = join(OUT, `${queueName}-${date}-${j.id}.clicks.log`), w = existsSync(cf) ? safeDefaultWarns(readFileSync(cf, 'latin1').split(/\r?\n/)) : [];
     if (w.length) row.verdict.push(`WARN: ${w.length} safe-default click(s): ${w.join(' | ')}`);
   }

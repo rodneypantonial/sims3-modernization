@@ -41,6 +41,17 @@ export const allEnded = (lines: string[]) => lines.some(l => /dialog_expect acce
 const snap = async (): Promise<Snap | null> => { const g = await agent('game_state'); return g.ok && g.result ? { inWorld: !!g.result.in_world, sub: g.result.sub_state ?? null, hh: g.result.active_household ?? null } : null; };
 const triageNow = (since: string) => { try { return execFileSync(process.execPath, [join(import.meta.dirname, 'crash-ledger.ts'), 'triage', '--since', since], { timeout: 60000 }).toString().trim().split(/\n\s*\n/).at(-1) ?? ''; } catch (e) { return `crash-ledger triage failed: ${String(e).split('\n')[0]}`; } };
 
+// the ts3agent keeps every click line (dialog_expect {status:true}, never drained): the queue's `autopilot` poll drains `cleared`, and a poll the game answered
+// too late (world load) loses its lines (Round 6 vh-move run 1)
+let histSeen = 0;
+async function histNew(): Promise<string[]> {
+  const r = await agent('dialog_expect', { status: true });
+  if (!r.ok || !Array.isArray(r.result?.history)) return [];
+  const h: string[] = r.result.history.map(String), n = h.slice(Math.min(histSeen, h.length));
+  histSeen = h.length;
+  return n;
+}
+
 let readOff = 0;
 async function newClicks(): Promise<string[]> {
   const file = process.env.TS3_CLICKS_LOG || (existsSync(join(BIN, 'ts3native.log')) ? join(BIN, 'ts3native.log') : '');
@@ -55,7 +66,7 @@ async function newClicks(): Promise<string[]> {
 // Round 6 vh-move: wait for the offer, accept every dialog of the flow for --all-seconds, then watch for the move and --after minutes of survival
 async function acceptFlow(title: string, minutes: number, after: number, allSec: number) {
   const started = new Date().toISOString();
-  await newClicks();
+  await histNew();
   await agent('autopilot', { enabled: true, speed: values.speed, dialogs: true });
   const base = await snap();
   if (!base || !base.inWorld) throw new Error(`no world to start from: ${JSON.stringify(base)}`);
@@ -71,7 +82,7 @@ async function acceptFlow(title: string, minutes: number, after: number, allSec:
       log(`dialog_expect armed: "${title}", accept_all ${allSec} s after the first match, waiting ${sec} s (window ${windows})`);
     }
     await sleep(5000);
-    const c = await newClicks(); clicks.push(...c.filter(l => /ap click|dialog_expect/.test(l)));
+    const c = await histNew(); clicks.push(...c.filter(l => /dialog_expect/.test(l)));
     for (const e of expiryLines(c)) log(`agent: ${e.replace(/^.*?dialog_expect/, 'dialog_expect')}`);
     triggered = allLines(c).length > 0;
     const why = await guard();
@@ -85,7 +96,7 @@ async function acceptFlow(title: string, minutes: number, after: number, allSec:
   const flowEnd = Date.now() + (allSec + 120) * 1000;
   while ((!ended || !movedAt) && Date.now() < flowEnd) {
     await sleep(5000);
-    const c = await newClicks(); clicks.push(...c.filter(l => /ap click|dialog_expect/.test(l)));
+    const c = await histNew(); clicks.push(...c.filter(l => /dialog_expect/.test(l)));
     for (const l of allLines(c)) log(`click: ${l.replace(/^.*?dialog_expect accept_all: /, '')}`);
     ended ||= allEnded(c);
     if (!movedAt) { const s = await snap(), w = s ? movedWhy(base, s) : ''; if (w) { movedAt = Date.now(); movedBy = w; log(`moved: ${w}`); } }
