@@ -68,3 +68,23 @@ warning; `build/ea169/ts3fixes.package` (1284854 B) and `ts3agent.package` (4544
   the `ts3fixes:` world lines; then decide whether an `ea169` AutShadow hash set ships in v0.2.5 or after.
 - Drop the `.managed.csv` stage from the 1.69 port checklist (docs/232 task 8): it over-reports on a recompile; use
   `mod-method-diff.ts --pkg` instead, or give port-fingerprints the ilShape hash (docs/23 idea, not planned).
+
+## 7. AutShadow ea169 hash set (2026-11-02, branch ea169-port)
+- `AutShadowIlHashes.Known` is already one sorted union over all checked builds (EA 1.67, simler90, ErrorTrap), so no
+  per-build selection was added: `tools/autshadow-il-hashes.ts` now also hashes `game-copy/assemblies-ea169` when present
+  ("EA app 1.69.47") and the file gains 960 hashes (to 5437 hashes in total). Steam hashes are untouched;
+  a Steam load looks up the same values as before. On 1.69 the modules are not on the content accept list, so ClosureSweep
+  checks each closure/hierarchy method against `Known` (the per-definition path of docs/218 §5).
+- 960 of 3570 closure methods hash differently from Steam, with identical token names: the hash mixes the raw token of
+  generic-instance references (TypeSpec/MethodSpec), which a recompile renumbers [verified: the name traces of all 3570 keys
+  are equal between the builds except the one below].
+- Guarded off: `InteractionInstance::CreateTooltipCallback(string)`. 1.69 renamed its closure class `<>c__DisplayClass1` to
+  `<>c__DisplayClassb` (members `<...>b__0` -> `b__a`); the key `DisplayClass1::.ctor()` does not exist in 1.69 and the renamed
+  class is not in `AutShadowLists.Methods`, so its body was never closure-checked. `GUARDED_OFF` in the tool withholds that
+  one ea169 hash: the owners whose closure reaches it skip on 1.69 (counter 606), the rest run. Lift it after reading the
+  renamed class bodies.
+- Build: Steam default and `TS3_REF_DIR=game-copy/assemblies-ea169 TS3_BUILD_DIR=build/ea169` both compile (1293174 B
+  `ts3fixes.package`, identical size). `tools/selftest/autshadow` PASS (incl. G-M6 e2e).
+- EA laptop managed load test must check: world lines show no `G-M6 GUARD FAULT` (counter 605 = 0), `G-M6` miss lines only
+  for `CreateTooltipCallback` (`autshadow_gm6_mismatch` = 1, one `G-M6 skips <owner>` group), `game modules not on the
+  content accept list` appears (expected), `[AutShadow]` stays on, and `c[602]` hashed count ~3568 with load cost in c[604].

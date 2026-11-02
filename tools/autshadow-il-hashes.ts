@@ -6,7 +6,8 @@
 // game bytes in the output.
 // Usage:
 //   node tools/autshadow-il-hashes.ts [--set "<label>=<a.dll>[,<b.dll>]"]... [--check]
-//     default builds: EA (game-copy/assemblies) and simler90 UPDATE242 (game-copy/simler90-242/dll SGS + SGO over EA);
+//     default builds: EA (game-copy/assemblies), simler90 UPDATE242 (game-copy/simler90-242/dll SGS + SGO over EA), ErrorTrap, and
+//     EA app 1.69.47 (game-copy/assemblies-ea169) when present: one union set, so a new build only adds hashes and Steam is unchanged;
 //     --set adds a build = the given DLLs over EA's (mod copies of game assemblies: extract with tools/extract-assemblies.ts).
 //     --check: compare with the committed file instead of writing it (exit 1 when they differ).
 //     NRaas ErrorTrap ScriptCore: game-copy/errortrap/ScriptCore.dll (extract-assemblies from NRaas_ErrorTrap.package); 0 new
@@ -155,6 +156,12 @@ async function hashMethods(dir: string, keys: string[]): Promise<{ hashes: Recor
   return { hashes, missing, stubs: [...stubs], mvids: asms.filter((a) => ORDER.includes(a.name)).map((a) => a.mvid) };
 }
 
+// Keys whose hash is withheld for a build: the body differs from the checked one in a way the closure check cannot cover, so
+// the definitions reaching them stay guarded off there (docs/235 section 7). Steam builds are not listed.
+const GUARDED_OFF: Record<string, string[]> = {
+  'EA app 1.69.47': ['Sims3.Gameplay.Interactions.InteractionInstance::CreateTooltipCallback(string)'], // closure class renamed DisplayClass1 -> DisplayClassb
+};
+
 // ---------- main ----------
 const argv = process.argv.slice(2);
 const listKeys = () => {
@@ -204,10 +211,13 @@ if (argv[0] === '--one') {
   const builds: [string, string[]][] = [['EA Steam 1.67', []]];
   if (existsSync(join(SIMLER, 'Sims3GameplaySystems.dll'))) builds.push(['simler90 Gameplay Core Mod UPDATE242 (Steam)', ['Sims3GameplaySystems.dll', 'Sims3GameplayObjects.dll'].map((f) => join(SIMLER, f))]);
   if (existsSync(join(ROOT, 'game-copy/errortrap/ScriptCore.dll'))) builds.push(['NRaas ErrorTrap ScriptCore (VersionStamp 100)', [join(ROOT, 'game-copy/errortrap/ScriptCore.dll')]]);
+  const EA169 = join(ROOT, 'game-copy/assemblies-ea169'); // EA app 1.69.47 (docs/235): all its script DLLs over EA's
+  if (existsSync(join(EA169, 'ScriptCore.dll'))) builds.push(['EA app 1.69.47', readdirSync(EA169).filter((n) => n.endsWith('.dll')).map((n) => join(EA169, n))]);
   for (let i = 0; i < argv.length; i++) if (argv[i] === '--set') { const [l, fs] = argv[++i].split('='); builds.push([l, fs.split(',')]); }
   const all = new Set<string>(), mvids = new Set<string>(), lines: string[] = [];
   for (const [label, overlay] of builds) {
     const r = runBuild(label, overlay);
+    for (const k of GUARDED_OFF[label] ?? []) delete r.hashes[k];
     const before = all.size;
     for (const h of Object.values(r.hashes)) all.add(h);
     for (const m of r.mvids) mvids.add(m);
