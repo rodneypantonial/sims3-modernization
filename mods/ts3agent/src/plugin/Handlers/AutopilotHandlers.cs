@@ -23,14 +23,15 @@ namespace Ts3Agent
         static int sApSpeedFixes;
         static volatile int sApLastStep = int.MinValue / 2; // TickCount of the task's last step
         static readonly List<object> sApCleared = new List<object>();
-        // dialog_expect {seconds?, title?, accept?}: the harness is about to answer a dialog itself (auto_dialog accept:true); until it times out
+        // dialog_expect {seconds?, title?, accept?, rules?}: the harness is about to answer a dialog itself (auto_dialog accept:true); until it times out
         // (seconds 0 clears) the autopilot leaves a matching dialog alone (title = lowercase text fragment, none = any dialog).
         // accept:true (accept-on-match): the autopilot itself clicks the accepting button of the first matching dialog inside the window,
-        // rules skipped, logs it and ends the window; no race with a harness poll that comes after the window (docs/236 H-move run 1).
+        // logs it and ends the window; no race with a harness poll that comes after the window (docs/236 H-move run 1). kDialogRules still
+        // apply (e.g. Edit Town "save your town" -> just continue) unless rules:false (H-move: accept the move offer the move rule declines).
         // A window that ends without a match logs "dialog_expect expired (no match)".
         static int sExpectUntil;
         static string sExpectTitle, sExpectLogged;
-        static bool sExpectAccept, sExpectMatched;
+        static bool sExpectAccept, sExpectMatched, sExpectRules = true;
         static string sApBlocked; // last dialog the autopilot would not click (AutoDialog: no safe button); logged once per dialog
 
         static void StartAutopilot()
@@ -86,10 +87,11 @@ namespace Ts3Agent
             int sec = (int)a.Long("seconds", 30);
             sExpectTitle = a.Has("title") ? a.Str("title").ToLowerInvariant() : null;
             sExpectAccept = a.Bool("accept", false);
+            sExpectRules = a.Bool("rules", true);
             sExpectUntil = sec > 0 ? System.Environment.TickCount + Math.Min(sec, 900) * 1000 : 0;
             sExpectLogged = null; sExpectMatched = false;
             Dictionary<string, object> r = Util.Obj();
-            r["seconds"] = sec; r["title"] = sExpectTitle; r["accept"] = sExpectAccept;
+            r["seconds"] = sec; r["title"] = sExpectTitle; r["accept"] = sExpectAccept; r["rules"] = sExpectRules;
             return r;
         }
 
@@ -106,7 +108,7 @@ namespace Ts3Agent
             if (sExpectAccept)
             {
                 Dictionary<string, object> args = new Dictionary<string, object>();
-                args["accept"] = true; args["rules"] = false; // the harness named this dialog: a decline rule must not answer it
+                args["accept"] = true; args["rules"] = sExpectRules;
                 string clicked;
                 try { Dictionary<string, object> d = AutoDialog(new Args(args)) as Dictionary<string, object>; clicked = d != null ? d["clicked"] as string : "(no dialog)"; }
                 catch (McpException e) { clicked = "(not clicked: " + e.Message + ")"; }
