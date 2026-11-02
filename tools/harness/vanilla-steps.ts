@@ -2,6 +2,9 @@
 //   node tools/harness/vanilla-steps.ts accept --title "<lowercase fragment>" [--minutes 30] [--after 10] [--speed ultra]
 //       H-move: autopilot on, dialog_expect {title, accept:true, rules:false} armed (re-armed when a window expires) until the agent itself accepts
 //       a matching dialog, then the game must stay up --after minutes. No match in --minutes: UNKNOWN (exit 1), nothing else accepted.
+//       --all-seconds N (Round 6): the first match starts dialog_expect accept_all for N s (every dialog of the move flow accepted, each click logged);
+//       PASS needs the household to have moved (mode exit / other household / out of the world) and the game up --after minutes after the move.
+//       Offer taken but no move: UNKNOWN with the clicks. A crash after the accept is a RESULT line (crash ledger triage), the queue row shows CRASH.
 //   node tools/harness/vanilla-steps.ts state-cmd     H-fault #2: buy_open, buy_close, enter_live_mode; the queue's mode guard must stay quiet
 //   node tools/harness/vanilla-steps.ts kill-game [--after 60]   H-fault #1: kills the game; the queue must FAIL the job (never PASS)
 //   node tools/harness/vanilla-steps.ts --self-check
@@ -15,7 +18,7 @@ import { GUARD_MS, stallGuard } from './game-alive.ts';
 import { BIN, GAME_EXE } from './game-exe.ts';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-  title: { type: 'string' }, minutes: { type: 'string', default: '30' }, after: { type: 'string' }, speed: { type: 'string', default: 'ultra' },
+  title: { type: 'string' }, 'all-seconds': { type: 'string' }, minutes: { type: 'string', default: '30' }, after: { type: 'string' }, speed: { type: 'string', default: 'ultra' },
   port: { type: 'string', default: '47891' }, 'self-check': { type: 'boolean' },
 } });
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -30,6 +33,14 @@ async function agent(cmd: string, args?: object): Promise<any> {
 export const acceptLines = (lines: string[]) => lines.filter(l => /dialog_expect accept: /.test(l));
 export const expiryLines = (lines: string[]) => lines.filter(l => /dialog_expect expired \(no match\)/.test(l));
 
+// pure (self-check): did the household move? Baseline snapshot vs now (world flag, sub state, active household)
+export type Snap = { inWorld: boolean; sub: string | null; hh: string | null };
+export const movedWhy = (base: Snap, cur: Snap): string => !cur.inWorld ? 'out of the world' : cur.sub !== base.sub ? `sub state ${base.sub} -> ${cur.sub}` : cur.hh !== base.hh ? `household ${base.hh} -> ${cur.hh}` : '';
+export const allLines = (lines: string[]) => lines.filter(l => /dialog_expect accept_all: /.test(l));
+export const allEnded = (lines: string[]) => lines.some(l => /dialog_expect accept_all ended: /.test(l));
+const snap = async (): Promise<Snap | null> => { const g = await agent('game_state'); return g.ok && g.result ? { inWorld: !!g.result.in_world, sub: g.result.sub_state ?? null, hh: g.result.active_household ?? null } : null; };
+const triageNow = (since: string) => { try { return execFileSync(process.execPath, [join(import.meta.dirname, 'crash-ledger.ts'), 'triage', '--since', since], { timeout: 60000 }).toString().trim().split(/\n\s*\n/).at(-1) ?? ''; } catch (e) { return `crash-ledger triage failed: ${String(e).split('\n')[0]}`; } };
+
 let readOff = 0;
 async function newClicks(): Promise<string[]> {
   const file = process.env.TS3_CLICKS_LOG || (existsSync(join(BIN, 'ts3native.log')) ? join(BIN, 'ts3native.log') : '');
@@ -40,9 +51,70 @@ async function newClicks(): Promise<string[]> {
   return out;
 }
 
+
+// Round 6 vh-move: wait for the offer, accept every dialog of the flow for --all-seconds, then watch for the move and --after minutes of survival
+async function acceptFlow(title: string, minutes: number, after: number, allSec: number) {
+  const started = new Date().toISOString();
+  await newClicks();
+  await agent('autopilot', { enabled: true, speed: values.speed, dialogs: true });
+  const base = await snap();
+  if (!base || !base.inWorld) throw new Error(`no world to start from: ${JSON.stringify(base)}`);
+  const end = Date.now() + minutes * 60000, guard = stallGuard('offer wait', { port: Number(values.port) });
+  const clicks: string[] = [], acc = () => clicks.filter(l => /accept_all: /.test(l)).map(l => l.replace(/^.*?dialog_expect accept_all: /, '')).join(' | ') || 'none';
+  let armedUntil = 0, windows = 0, triggered = false;
+  while (!triggered && Date.now() < end) {
+    if (Date.now() >= armedUntil) {
+      const sec = Math.min(900, Math.ceil((end - Date.now()) / 1000));
+      const r = await agent('dialog_expect', { title, accept_all: true, all_seconds: allSec, seconds: sec });
+      if (!r.ok || r.result?.accept_all !== true) throw new Error(`dialog_expect accept_all not supported by this ts3agent: ${JSON.stringify(r).slice(0, 200)}`);
+      armedUntil = Date.now() + sec * 1000; windows++;
+      log(`dialog_expect armed: "${title}", accept_all ${allSec} s after the first match, waiting ${sec} s (window ${windows})`);
+    }
+    await sleep(5000);
+    const c = await newClicks(); clicks.push(...c.filter(l => /ap click|dialog_expect/.test(l)));
+    for (const e of expiryLines(c)) log(`agent: ${e.replace(/^.*?dialog_expect/, 'dialog_expect')}`);
+    triggered = allLines(c).length > 0;
+    const why = await guard();
+    if (why) { console.log(`FAIL: ${why}`); process.exit(1); }
+  }
+  if (!triggered) { console.log(`UNKNOWN: not triggered: no dialog matching "${title}" in ${minutes} min (${windows} windows); nothing accepted`); process.exit(1); }
+  log('offer shown, accept_all window started');
+  // move phase: until accept_all ended and the move was seen (or allSec + 120 s); a dead game here is the RESULT
+  const g1 = stallGuard('move flow', { port: Number(values.port), liveOnly: true });
+  let movedAt = 0, movedBy = '', ended = false;
+  const flowEnd = Date.now() + (allSec + 120) * 1000;
+  while ((!ended || !movedAt) && Date.now() < flowEnd) {
+    await sleep(5000);
+    const c = await newClicks(); clicks.push(...c.filter(l => /ap click|dialog_expect/.test(l)));
+    for (const l of allLines(c)) log(`click: ${l.replace(/^.*?dialog_expect accept_all: /, '')}`);
+    ended ||= allEnded(c);
+    if (!movedAt) { const s = await snap(), w = s ? movedWhy(base, s) : ''; if (w) { movedAt = Date.now(); movedBy = w; log(`moved: ${w}`); } }
+    const why = await g1();
+    if (why) return crashResult(started, why, movedBy, acc());
+  }
+  if (!movedAt) {
+    console.log(`UNKNOWN: offer accepted, household did not move (no mode exit, same household ${base.hh}); clicks: ${acc()}; the move may need a world pick in the UI (not clicked)`);
+    process.exit(1);
+  }
+  const g2 = stallGuard('after the move', { port: Number(values.port) });
+  for (const stop = movedAt + after * 60000; Date.now() < stop;) {
+    await sleep(5000);
+    // no autopilot call here: it drains `cleared`, which the queue's mode guard writes to the click log (it also restarts the task after a world switch)
+    const why = await g2();
+    if (why) return crashResult(started, why, movedBy, acc());
+  }
+  console.log(`PASS: moved (${movedBy}), game up ${after} min after the move, no crash; clicks: ${acc()}`);
+}
+function crashResult(since: string, why: string, movedBy: string, clicks: string) {
+  const t = triageNow(since).replace(/\s+/g, ' ').slice(0, 600);
+  console.log(`RESULT: vanilla game died ${movedBy ? `after the move (${movedBy})` : 'in the move flow before a move was seen'}: ${why.split(';')[0]}; crash ledger: ${t}; clicks: ${clicks}`);
+  process.exit(1); // the queue row shows CRASH with its own triage: a result of the test, not a harness failure
+}
+
 async function accept() {
   const title = values.title?.toLowerCase(), minutes = Number(values.minutes), after = Number(values.after ?? 10);
   if (!title) throw new Error('accept needs --title');
+  if (values['all-seconds']) return acceptFlow(title, minutes, after, Number(values['all-seconds']));
   await newClicks(); // skip what is already there
   await agent('autopilot', { enabled: true, speed: values.speed, dialogs: true });
   const end = Date.now() + minutes * 60000, guard = stallGuard('accept wait', { port: Number(values.port) });
@@ -97,6 +169,11 @@ if (values['self-check']) {
     '12:00:02 dialog_expect expired (no match): new towns available [accept]', '12:00:03 Hot Dogs -> #3 cancel (safe default)'];
   console.assert(acceptLines(lines).length === 2 && expiryLines(lines).length === 1, 'accept/expiry line match');
   if (acceptLines(lines).length !== 2 || expiryLines(lines).length !== 1) process.exit(1);
+  const b: Snap = { inWorld: true, sub: 'LiveModeState', hh: 'A' };
+  const sc = movedWhy(b, b) === '' && movedWhy(b, { ...b, inWorld: false }) === 'out of the world' && movedWhy(b, { ...b, hh: 'B' }).includes('A -> B') && movedWhy(b, { ...b, sub: 'CASState' }).includes('sub state')
+    && allLines(['x dialog_expect accept_all: #1 ok']).length === 1 && allEnded(['dialog_expect accept_all ended: 3 clicks']) && !allEnded(['dialog_expect accept: x']);
+  console.assert(sc, 'moved/accept_all line match');
+  if (!sc) process.exit(1);
   console.log('vanilla-steps.ts self-check OK');
 } else if (positionals[0] === 'accept') await accept();
 else if (positionals[0] === 'state-cmd') await stateCmd();

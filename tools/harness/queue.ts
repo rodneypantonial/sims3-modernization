@@ -232,6 +232,8 @@ export function vanillaRefusals(j: Job): string[] {
 }
 // autopilot poll in place of the ts3native.log click lines: the same `blocked` dialog in two polls in a row is a live block; the
 // "Saving..." text stays in `blocked` after a save (docs/236 finding 2) and is not one
+// docs/236 Round 6: a safe-default click is a WARN in the job verdict (the run goes on); click log lines look like `<time> <title> -> #3 cancel (safe default; buttons: ...)`
+export const safeDefaultWarns = (lines: string[]): string[] => lines.filter(l => /\(safe default[;)]/.test(l)).map(l => l.replace(/^\d\d:\d\d:\d\d /, '').replace(/^.*ap click: /, ''));
 export const vanillaBlock = (prev: string | null, cur: string | null): string => cur && cur === prev && !/nothing clicked: 'Saving/.test(cur) ? cur : '';
 
 export function parseQueue(json: unknown): Job[] {
@@ -1521,6 +1523,8 @@ if (values['self-check']) {
     assert.equal(vanillaBlock('no safe button: x', 'no safe button: x'), 'no safe button: x');
     assert.equal(vanillaBlock("no safe button, nothing clicked: 'Saving... ' buttons: ", "no safe button, nothing clicked: 'Saving... ' buttons: "), '');
     assert.equal(vanillaBlock('a', null), '');
+    assert.deepEqual(safeDefaultWarns(['12:00:01 x -> #2 yes (accept requested)', '12:00:02 Hot Dogs -> #3 cancel (safe default; buttons: #1 a, #3 cancel)', '12:00:03 Y -> #3 cancel (safe default)']),
+      ['Hot Dogs -> #3 cancel (safe default; buttons: #1 a, #3 cancel)', 'Y -> #3 cancel (safe default)']);
     assert.deepEqual(parseQueue([{ id: 's', asi: 'none', save: 'S', run: { script: ['travel-trip.ts', '--to', 'france'] } }])[0].run.script, ['travel-trip.ts', '--to', 'france']);
     assert.throws(() => parseQueue([{ id: 's', asi: 'none', save: 'S', run: { script: ['../x.ts'] } }]), /run.script/);
     const vq = JSON.parse(readFileSync(H('queues/vanilla-matrix.json'), 'utf8'));
@@ -2556,6 +2560,10 @@ for (const [n, j] of jobs.entries()) {
     const bad = unknown.length > j.scriptErrorsMax;
     row.verdict.push(`${bad ? 'FAIL' : 'PASS'}: ${unknown.length} new script errors (max ${j.scriptErrorsMax}${news.length > unknown.length ? `, ${news.length - unknown.length} known EA ignored` : ''})${unknown.length ? `: ${unknown.slice(0, 3).join(', ')}` : ''}`);
     if (bad) row.pass = false;
+  }
+  if (VANILLA) { // safe-default clicks: WARN, never FAIL (no safe button still stops the run in the mode guard)
+    const cf = join(OUT, `${queueName}-${date}-${j.id}.clicks.log`), w = existsSync(cf) ? safeDefaultWarns(readFileSync(cf, 'latin1').split(/\r?\n/)) : [];
+    if (w.length) row.verdict.push(`WARN: ${w.length} safe-default click(s): ${w.join(' | ')}`);
   }
   // story jobs (docs/171): stories ran, story.jsonl written, story-report joins hitches (census-only jobs run no stories)
   const st = j.run.profile?.story as any;
