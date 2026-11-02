@@ -112,6 +112,10 @@ class Probe:
 
     def launch(self):
         ea = os.environ.get('TS3_LAUNCH', 'direct') == 'ea'
+        line, why = check_session()
+        print(f'[ts3probe] {line}', flush=True)
+        if why:
+            raise SystemExit(f'[ts3probe] {why}; launch refused')
         ensure_audio_off(USER_DIR / 'Options.ini')  # every launch, vanilla or not (docs/236 round 4)
         if ea:  # EA app edition: only EALauncher.exe with the offer URI works (a direct start is bounced by the DRM)
             ensure_selected_flags(USER_DIR / 'LoadOption.ini')
@@ -547,6 +551,36 @@ def ensure_audio_off(path):
           f"lastdevice {got['lastdevice']}", flush=True)
 
 
+WTS_STATES = ['Active', 'Connected', 'ConnectQuery', 'Shadow', 'Disconnected', 'Idle', 'Listen', 'Reset', 'Down', 'Init']
+NO_DISPLAY = 'session disconnected from console (another user is active); no display for D3D'
+
+
+def session_verdict(cur, console, state):
+    """None when the game can get a display, else the refusal reason. Locked stays Active, so it passes. Another user's session on the
+    console leaves ours Disconnected and D3D device creation blocks (docs/236 round 4). An Active non-console session is RDP with a display."""
+    return NO_DISPLAY if state == 'Disconnected' or (cur != console and state != 'Active') else None
+
+
+def check_session():
+    """(log line, refusal reason or None) from the WTS API (no quser text, no user names). Not Windows: always fine."""
+    if os.name != 'nt':
+        return 'console session state: n/a (not Windows)', None
+    import ctypes
+    from ctypes import wintypes
+    k, w = ctypes.windll.kernel32, ctypes.windll.wtsapi32
+    cur = wintypes.DWORD()
+    k.ProcessIdToSessionId(os.getpid(), ctypes.byref(cur))
+    console = k.WTSGetActiveConsoleSessionId()
+    buf, n = ctypes.c_void_p(), wintypes.DWORD()
+    if not w.WTSQuerySessionInformationW(None, cur.value, 8, ctypes.byref(buf), ctypes.byref(n)):  # 8 = WTSConnectState
+        return f'console session state: query failed (error {ctypes.GetLastError()})', None  # unknown: do not block a launch on it
+    code = ctypes.cast(buf, ctypes.POINTER(ctypes.c_int))[0]
+    w.WTSFreeMemory(buf)
+    state = WTS_STATES[code] if 0 <= code < len(WTS_STATES) else str(code)
+    on_console = 'yes' if cur.value == console else 'another user' if console != 0xFFFFFFFF else 'none'
+    return f'console session state: session {cur.value} {state}, console held by {on_console}', session_verdict(cur.value, console, state)
+
+
 def log_ea_processes():
     """EA launch: which EA app / launcher / game processes run before this launch (docs/236 round 4: the launcher-stage hangs had no
     process record to compare with the good launches)."""
@@ -620,6 +654,7 @@ def main():
     g = sub.add_parser('get')
     g.add_argument('path')
     g.add_argument('--port', type=int, default=47891)
+    sub.add_parser('session-check', help='launch preflight only: prints the console session line; exit 3 + reason when no display; no game')
     sub.add_parser('self-check', help='asserts the start-up dialog matcher; no game needed')
     args = ap.parse_args()
     if args.cmd == 'self-check':
@@ -637,7 +672,16 @@ def main():
         assert set_ini_keys(out, AUDIO_OFF) == out
         assert all(STATE_CMD.match(c) for c in ('travel_vacation', 'load_save', 'play_household', 'cas_open', 'main_menu', 'switch_household'))
         assert not any(STATE_CMD.match(c) for c in ('auto_dialog', 'autopilot', 'time', 'game_state', 'pending_dialogs', 'do_interaction'))
+        assert [session_verdict(*a) for a in ((2, 1, 'Disconnected'), (1, 1, 'Active'), (1, 1, 'Active'), (2, 1, 'Active'), (2, 1, 'Idle'))] == [NO_DISPLAY, None, None, None, NO_DISPLAY]
+        assert check_session()[0].startswith('console session state:')
         print('self-check ok')
+        return
+    if args.cmd == 'session-check':
+        line, why = check_session()
+        print(line)
+        if why:
+            print(why)
+            sys.exit(3)
         return
     serve(args) if args.cmd == 'serve' else get(args)
 

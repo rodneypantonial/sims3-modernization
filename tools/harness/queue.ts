@@ -158,7 +158,7 @@
 // At the end the Bin ts3native.asi and ts3native.ini found at the start are put back as a pair (copies in probe-out/queue/bin-before/;
 // until 2026-10-24 the asi came from native/ts3native/out/, which left an old build next to a job ini in Bin). The restored asi is
 // named from docs/data/builds.json; a WARN line says when it is not a release build. Windows-only by nature (TS3W.exe, taskkill).
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, copyFileSync, cpSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -2072,6 +2072,10 @@ const startProbe = (j: Job) => {
   lastBuild = bc.rec;
   if (bc.fails.length) throw new Error(`build check: ${bc.fails.join('; ')}; refused before the game started`);
   }
+  const sc = spawnSync('python', [join(ROOT, 'tools', 'probe', 'ts3probe.py'), 'session-check'], { encoding: 'utf8', timeout: 30000 });
+  const scOut = sc.stdout.split(/\r?\n/);
+  log(`${j.id}: ${scOut[0]}`);
+  if (sc.status === 3) throw new Error(`${scOut[1]}; refused before the game started`); // FAIL, never PASS
   const pf =createWriteStream(join(OUT, `${queueName}-${date}-${j.id}-probe.log`), { flags: 'a' });
   const pr = probe = spawn('python', [join(ROOT, 'tools', 'probe', 'ts3probe.py'), 'serve', '--launch', '--port', values.port!, ...(j.gameArgs?.length ? ['--', ...j.gameArgs] : [])], { cwd: ROOT });
   pr.stdout?.pipe(pf); pr.stderr?.pipe(pf); launched = true;
