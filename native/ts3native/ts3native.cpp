@@ -12,6 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 #include <psapi.h>  // K32GetMappedFileNameW (XcptOtherModule)
+#include "ts3addr.h"  // TS3A(x): TS3W.exe addresses by Steam 1.67 value (tools/addr-codemod.ts)
 
 #define TS3NATIVE_VERSION "0.36.152"
 
@@ -4685,9 +4686,17 @@ static void Run(HMODULE self) {
     // = 52DEC247 / 0xE5A000, EA app 1.69.47 TS3.exe = 6707155C / 0xEB5000) so a SKIP line from another edition is identifiable
     const IMAGE_NT_HEADERS* hostNt = (const IMAGE_NT_HEADERS*)((const u8*)base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
     Log("host %ls base 0x%p pe %08lX size 0x%lX", name ? name + 1 : exe, base, hostNt->FileHeader.TimeDateStamp, hostNt->OptionalHeader.SizeOfImage);
+#ifdef TS3A_TABLE
+    // docs/228: the table names the build (PE timestamp + SizeOfImage), any file name: the EA game may run as Sims3Launcher.exe
+    if (base != (HMODULE)0x400000 || hostNt->FileHeader.TimeDateStamp != (DWORD)TS3A_HOST_PE || hostNt->OptionalHeader.SizeOfImage != (DWORD)TS3A_HOST_SIZE) {
+        Log("SKIP all: host is not " TS3A_HOST_NAME " (pe %08lX size 0x%lX)", hostNt->FileHeader.TimeDateStamp, hostNt->OptionalHeader.SizeOfImage);
+    } else {
+        Log("host build: " TS3A_HOST_NAME);
+#else
     if (base != (HMODULE)0x400000 || _wcsicmp(name ? name + 1 : exe, L"TS3W.exe") != 0) {
         Log("SKIP all: host is not TS3W.exe at 0x400000");
     } else {
+#endif
         SeedWaitKeys();
         InstallXcptLog(ini);
         ApexDetect(ini);  // docs/148 §7: before every install (stand-downs, crash report line)
