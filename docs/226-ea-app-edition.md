@@ -26,7 +26,7 @@ Facts from the EA laptop. Tags: [verified] = observed here, [inferred] = not con
 - The `host` line now also prints PE timestamp and SizeOfImage (Steam 1.67 = 52DEC247 / 0xE5A000, EA app 1.69.47 = 6707155C / 0xEB5000).
 
 ## Windowed
-- `Documents\Electronic Arts\The Sims 3\Options.ini`: `fullscreen = 0`, `resolution = 1600 900 0` (laptop screen 1920x1200). The EA launch cannot pass `-w`.
+- `Documents\Electronic Arts\The Sims 3\Options.ini`: `fullscreen = 0`, `resolution = 1600 900 0` (laptop screen 1920x1200). The EA launch cannot pass `-w`. Audio off too: `voicelevel`, `soundfxlevel`, `ambientlevel`, `musiclevel` = 0 and `soundfxmute`, `musicmute`, `ambientmute`, `voicemute` = 1, for unattended tests on the EA laptop (backup `Options.ini.bak-audio-2026-11-02`).
 
 ## Permissions
 - The Bin folder is admin-only by default. One-time, elevated: `icacls "<Bin>" /grant "<user>:(OI)(CI)M" /T`.
