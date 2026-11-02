@@ -33,6 +33,7 @@ import { readIndex, refpack } from '../extract-assemblies.ts';
 import { GUARD_MS, stallGuard } from './game-alive.ts';
 import { matchKnown } from './known-script-errors.ts';
 import { BIN } from './game-exe.ts';
+import { vanilla } from './vanilla.ts';
 
 const { values } = parseArgs({ options: {
   cases: { type: 'string' }, list: { type: 'boolean' }, 'self-check': { type: 'boolean' }, travel: { type: 'boolean' },
@@ -340,6 +341,7 @@ async function probeReady() {
   for (const f of ['footprint', 'compress', 'flush'] as Fix[]) notReady[f] = ready[f] ? '' : nl.why[f];
   for (const f of nl.broken) if (!ready[f]) broken.add(f);
   if (!ready.fastreftable) { broken.add('fastreftable'); notReady.fastreftable = p.ok ? 'not in ts3fixes patches (shipped on)' : `patches: ${p.error}`; }
+  if (vanilla()) { broken.clear(); for (const f of FIXES) notReady[f] = 'N/A: vanilla (TS3_VANILLA=1, no ts3native or ts3fixes)'; } // docs/236: fix arms run as plain saves
   // shipped routing features: installed, and on at start (= the shipped ini turned them on)
   ready.routeasync = n?.asyncReady === 1 && n?.asyncMode === 1;
   ready.discourage = n?.discReady === 1 && n?.discMode === 1;
@@ -398,7 +400,7 @@ async function save(label: string, o: { overwrite?: string; keepSpeed?: boolean;
   } catch { /* still refused after 30 s: reported below with the game's last answer */ }
   if (!r.ok) { log(`save ${name}: refused: ${r.error}`); return { name, ok: false, error: String(r.error), wallMs: 0, before, after: before, off }; }
   let ev: SaveEv | undefined, fileDone = false;
-  const lineless = /^save write disabled/m.test(logFrom(0)); // [SaveWrite] Enabled=0: no `save:` line will come
+  const lineless = vanilla() || /^save write disabled/m.test(logFrom(0)); // [SaveWrite] Enabled=0 or vanilla (no ts3native): no `save:` line will come
   try {
     // fail fast: the agent answers, no save in progress and no save line in ts3native.log, twice ~30 s apart = the save
     // never ran (the heartbeat moves while paused, so only this sees it); the 600 s limit stays for slow saves

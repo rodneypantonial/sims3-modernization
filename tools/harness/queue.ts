@@ -4,10 +4,17 @@
 //   node tools/harness/queue.ts --restore-content     put CC/Store packages back from the stash manifest of an unfinished run
 // Queue file: a JSON list of jobs (or { "jobs": [...] }):
 //   { id, note?, asi: "tested" | "<path from repo root>", ini?: { "Section.Key": value }, fixes?: { install?: [ids], uninstall?: [ids] },
-//     save?: "<name>[.sims3]" | "menu", content?: "as-is" | "no-cc" | "no-store", run: {repro: id} | {matrix: [args]} | {saveReload: [save-reload.ts args]} | {soak: {minutes, speed?}} | {menuMemory: {waitS?, draws?}}
+//     save?: "<name>[.sims3]" | "menu", content?: "as-is" | "no-cc" | "no-store", run: {repro: id} | {matrix: [args]} | {saveReload: [save-reload.ts args]} | {script: ["<tools/harness script>.ts", args...]} | {soak: {minutes, speed?}} | {menuMemory: {waitS?, draws?}}
 //     | {profile: {minutes, seed?, repro?, mainstack?}} | {routelock: {minutes, speed?}} | {age: {days, checkpoint, keepAlive?, save?}}, gameArgs?: ["-disablestoryprogression"], defaultIni?: { "Config.SimulatorRandomSeed": n },
 //     s3ppIni?: { "Patches.MonoTypeEHashProbe": 0 }, s3ssToml?: { "patches.LotStreamingOptimizations.enabled": false }, minCounters?: 20, timeoutMin?,
 //     pin?: false | { cpus?: "4-15", priority?: "High", others?: boolean | [names] } }   (also queue-level beside "jobs"; pin.ts)
+// Vanilla mode (docs/236, TS3_VANILLA=1 or queue-level "vanilla": true): the game runs without ts3native and ts3fixes, only the
+// ts3agent package from TS3_AGENT_PACKAGE. vanilla.ts installs the state at the start (unless a stash is already installed, which
+// is then only read back) and restores it at the end; jobs must say asi "none" and use no ini, fixes, counters, log rules, profile,
+// routelock or worldimage. No asi, ini or ts3fixes copy; every game start reads the vanilla state back (a miss FAILs the job before
+// the game starts) and the jobGuard fails a run whose Bin or Mods leave that state. The asi/build/ts3native.log/counter/ts3fixes
+// checks are skipped and named as "N/A (vanilla): ..." in the row (never PASS). The click log comes from the autopilot poll
+// (<queue>-<date>-<job>.clicks.log); the same `blocked` dialog in two polls in a row fails the job (no safe button).
 // pinReason: why a job pins a game-copy asi / fixesPackage (release or baseline arm, published-release check, a job about one old
 // build); without it, an asi older than the source or a game-copy package older than the ts3fixes source gets a WARN pin line.
 // pin (default on, TS3_PIN=off): while the game is up TS3W.exe runs on the game CPUs at High priority and heavy user apps on
@@ -180,6 +187,7 @@ import { jsonlRows, queueFile, rowTiming, timingText } from './run-verdict.ts';
 import { loadRun as hitchRun, runIters, toolCosts, toolsOn, withBaseIni } from './hitch-ab.ts';
 import { mergeFile as mergeCallsites } from '../callsite-db.ts';
 import { asiCheck, asiVersion, fixesCheck, loadDb, logVersionCheck, packageTuning, type Build } from '../builds.ts';
+import { defaultSpec as vanillaSpec, install as vanillaInstall, problems as vanillaProblems, restore as vanillaRestore, vanilla as vanillaEnv } from './vanilla.ts';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
   'dry-run': { type: 'boolean' }, from: { type: 'string' }, only: { type: 'string' }, 'self-check': { type: 'boolean' }, 'restore-content': { type: 'boolean' }, 'no-smoke': { type: 'boolean' }, 'stop-on-fail': { type: 'boolean' }, 'close-spotify': { type: 'boolean' }, port: { type: 'string', default: '47891' },
@@ -205,12 +213,27 @@ const log = (m: string) => console.log(`${stamp()} queue: ${m}`);
 function machineCols(tag: string) { return tag ? { head: ' machine |', sep: '---|', cell: (m: string) => ` ${m} |` } : { head: '', sep: '', cell: (_m: string) => '' }; }
 function machineField(tag: string): { machineTag?: string } { return tag ? { machineTag: tag } : {}; }
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
-  save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; run: { repro?: string; saveReload?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
+  save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; run: { repro?: string; saveReload?: string[]; script?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
     profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; stopQueueOnFail?: boolean; scriptErrorsMax?: number; timeoutMin?: number; pin?: false | PinOpts;
   saveMatrix?: { fixes?: 'all' | 'shipped' }; fixesBuild?: string; fixesPackage?: string; pinReason?: string; rerunOf?: string; shadowCheck?: boolean };
 
 // every top-level job key queue.ts reads (Job type plus the optional extras); anything else is a typo or a profile key at the wrong level
 const JOB_KEYS = new Set(['id', 'note', 'asi', 'ini', 'defaultIni', 's3ppIni', 's3ssToml', 'dxvkConf', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'noiseCheck', 'earlyGates', 'routingFailFast', 'scriptErrorsMax', 'stopQueueOnFail', 'reuseSession', 'releaseDefaults']);
+// ---- vanilla mode (docs/236): what a job may not ask for without ts3native/ts3fixes, and the checks the row names as N/A
+export const VANILLA_NA = ['asi build check', 'ts3fixes build check', 'ts3native.log version gate', 'ts3native.ini features', 'hook FAIL lines and route hook state', 'counter gate and /native counters', 'ts3fixes activity'];
+export function vanillaRefusals(j: Job): string[] {
+  const out: string[] = [];
+  if (j.asi !== 'none') out.push(`asi "${j.asi}" (vanilla jobs say "none")`);
+  if (Object.keys(j.ini ?? {}).length) out.push('ini');
+  for (const k of ['fixes', 'fixesBuild', 'fixesPackage', 'fixesRequire', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'earlyGates', 'routingFailFast', 'saveMatrix', 'callSites', 'releaseDefaults'] as const)
+    if ((j as any)[k] !== undefined) out.push(k);
+  for (const k of ['profile', 'routelock', 'worldimage'] as const) if ((j.run as any)[k]) out.push(`run.${k}`);
+  return out;
+}
+// autopilot poll in place of the ts3native.log click lines: the same `blocked` dialog in two polls in a row is a live block; the
+// "Saving..." text stays in `blocked` after a save (docs/236 finding 2) and is not one
+export const vanillaBlock = (prev: string | null, cur: string | null): string => cur && cur === prev && !/nothing clicked: 'Saving/.test(cur) ? cur : '';
+
 export function parseQueue(json: unknown): Job[] {
   const jobs = Array.isArray(json) ? json : (json as any)?.jobs;
   if (!Array.isArray(jobs) || !jobs.length) throw new Error('queue: expected a non-empty list of jobs (or { "jobs": [...] })');
@@ -232,8 +255,9 @@ export function parseQueue(json: unknown): Job[] {
     for (const k of Object.keys(j.dxvkConf ?? {})) if (!/^\w+\.\w+$/.test(k)) throw new Error(`${at}: dxvkConf key "${k}" must be component.option (e.g. d3d9.textureMemory)`);
     if (j.gameArgs && !(Array.isArray(j.gameArgs) && j.gameArgs.every((x: unknown) => typeof x === 'string' && x.startsWith('-')))) throw new Error(`${at}: gameArgs must be a list of -switches`);
     for (const k of ['install', 'uninstall']) if (j.fixes?.[k] && !Array.isArray(j.fixes[k])) throw new Error(`${at}: fixes.${k} must be a list of ids`);
-    const kinds = Object.keys(j.run ?? {}).filter(k => ['repro', 'matrix', 'soak', 'menuMemory', 'profile', 'routelock', 'worldimage', 'age', 'saveReload'].includes(k));
-    if (kinds.length !== 1 || Object.keys(j.run).length !== 1) throw new Error(`${at}: run needs exactly one of repro, matrix, soak, menuMemory, profile, routelock, worldimage, age, saveReload`);
+    const kinds = Object.keys(j.run ?? {}).filter(k => ['repro', 'matrix', 'soak', 'menuMemory', 'profile', 'routelock', 'worldimage', 'age', 'saveReload', 'script'].includes(k));
+    if (kinds.length !== 1 || Object.keys(j.run).length !== 1) throw new Error(`${at}: run needs exactly one of repro, matrix, soak, menuMemory, profile, routelock, worldimage, age, saveReload, script`);
+    if (j.run.script !== undefined && !(Array.isArray(j.run.script) && j.run.script.every((x: unknown) => typeof x === 'string') && /^[\w-]+\.ts$/.test(j.run.script[0] ?? ''))) throw new Error(`${at}: run.script must be ["<tools/harness script>.ts", args...]`);
     if (j.run.saveReload !== undefined && !(Array.isArray(j.run.saveReload) && j.run.saveReload.every((x: unknown) => typeof x === 'string'))) throw new Error(`${at}: run.saveReload must be a list of save-reload.ts args`);
     if (j.run.worldimage) {
       const w = j.run.worldimage;
@@ -1488,6 +1512,24 @@ if (values['self-check']) {
   assert.deepEqual(smokeProblems({ row: okRow, wins: [{ ...win, arms: false, iters: null, wait: null }], log: '', p6: false, nativeLog: '' }), [], 'no arms: no split needed'); }
   assert.throws(() => parseQueue([{ id: 'k', asi: 'x', save: 'S', fixesOff: 'a', run: { profile: { minutes: 5 } } }]), /job 1 .k.: unknown job key "fixesOff".*run[.]profile/); // job-level profile key
   assert.throws(() => parseQueue([{ id: 'k', asi: 'x', save: 'S', bogus: 1, run: { profile: { minutes: 5 } } }]), /unknown job key "bogus"/);
+  { // vanilla mode (docs/236): refusals, the autopilot-poll block rule, the script run kind, and the vanilla queue file itself
+    const v = (j: any) => vanillaRefusals(parseQueue([{ id: 'v', save: 'S', run: { soak: { minutes: 1 } }, ...j }])[0]);
+    assert.deepEqual(v({ asi: 'none' }), []);
+    assert.deepEqual(v({ asi: 'tested', ini: { 'GC.Enabled': 0 }, minCounters: 20, logRequire: { x: 1 } }), ['asi "tested" (vanilla jobs say "none")', 'ini', 'minCounters', 'logRequire']);
+    assert.deepEqual(v({ asi: 'none', run: { profile: { minutes: 5 } } }), ['run.profile']);
+    assert.equal(vanillaBlock(null, 'no safe button: x'), '');
+    assert.equal(vanillaBlock('no safe button: x', 'no safe button: x'), 'no safe button: x');
+    assert.equal(vanillaBlock("no safe button, nothing clicked: 'Saving... ' buttons: ", "no safe button, nothing clicked: 'Saving... ' buttons: "), '');
+    assert.equal(vanillaBlock('a', null), '');
+    assert.deepEqual(parseQueue([{ id: 's', asi: 'none', save: 'S', run: { script: ['travel-trip.ts', '--to', 'france'] } }])[0].run.script, ['travel-trip.ts', '--to', 'france']);
+    assert.throws(() => parseQueue([{ id: 's', asi: 'none', save: 'S', run: { script: ['../x.ts'] } }]), /run.script/);
+    const vq = JSON.parse(readFileSync(H('queues/vanilla-matrix.json'), 'utf8'));
+    assert.equal(vq.vanilla, true);
+    for (const j of parseQueue(vq)) {
+      assert.deepEqual(vanillaRefusals(j), [], `vanilla-matrix ${j.id}`);
+      if (j.run.script) assert.ok(existsSync(H(j.run.script[0])), `vanilla-matrix ${j.id}: ${j.run.script[0]} missing`);
+    }
+  }
   console.log('self-check ok');
   process.exit(0);
 }
@@ -1529,7 +1571,6 @@ if (values['restore-content']) {
 
 // ---------------------------------------------------------------- queue run
 const file = positionals[0];
-if (process.env.TS3_VANILLA === '1' && !process.argv.includes('--dry-run')) { console.error('TS3_VANILLA=1: queue.ts installs the job asi, ini and fixes and would undo the vanilla state; drive vanilla runs with cycle.ts (docs/236)'); process.exit(2); }
 if (!file) { console.error('usage: node tools/harness/queue.ts <queue.json> [--from id] [--only id,id] [--dry-run] [--no-smoke] [--stop-on-fail] | --self-check | --restore-content'); process.exit(2); }
 // an unfinished run's packages are still in the stash: put them back before measuring anything
 const staleDir = [CONTENT_STASH, CC_DIR].find(d => existsSync(manifestOf(d)));
@@ -1539,6 +1580,13 @@ if (stale && !values['dry-run']) { console.error(`refusing to start: ${stale}`);
 const queueName = basename(file).replace(/\.json$/i, '');
 const queueJson = JSON.parse(readFileSync(resolve(file), 'utf8'));
 const all = parseQueue(queueJson);
+// vanilla mode (header): the env or the queue file turns it on; children (cycle.ts, save-matrix.ts) read TS3_VANILLA
+const VANILLA = vanillaEnv() || queueJson?.vanilla === true;
+if (VANILLA) {
+  process.env.TS3_VANILLA = '1';
+  const bad = all.flatMap(j => vanillaRefusals(j).map(r => `${j.id}: ${r}`));
+  if (bad.length) { console.error(`vanilla mode: these need ts3native or ts3fixes: ${bad.join('; ')}`); process.exit(2); }
+}
 let jobs = all;
 if (values.from) {
   const i = all.findIndex(j => j.id === values.from);
@@ -1580,7 +1628,7 @@ const profileArgs = (j: Job, p: any = j.run.profile!, tag = profileTag(j), extra
       ...(p.ab ? ['--ab', p.ab, '--slice', String(p.slice ?? 2), ...(p.abOnFirst ? ['--ab-on-first'] : [])] : []), ...(p.untilCompares ? ['--until-compares', String(p.untilCompares)] : []), ...(p.fixesOff ? ['--fixes-off', p.fixesOff] : []), ...(p.fixesOn ? ['--fixes-on', p.fixesOn] : []), ...(p.taskstall ? ['--taskstall', String(p.taskstall)] : []),
       ...(p.inroom ? ['--inroom'] : []), ...(p.watchstalk ? ['--watchstalk'] : []), ...(p.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(p.livereads2 ? ['--livereads2'] : []), ...(p.f4b ? ['--f4b'] : []), ...(p.vres ? ['--vres'] : []), ...(p.vresDry ? ['--vres-dry', String(p.vresDry)] : []), ...(p.noSamplers ? ['--no-samplers'] : []), ...(p.noFrames ? ['--no-frames'] : []), ...(p.cameraPan ? ['--camera-pan'] : []), ...(p.profOpts ? ['--prof-opts', JSON.stringify(p.profOpts)] : []), ...(p.noEnv ? ['--no-env'] : []), ...(p.envGuard === false ? ['--no-env-guard'] : []), ...(p.story ? ['--story', JSON.stringify(p.story)] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) || p.noProf ? ['--no-prof'] : []), ...(p.travel ? ['--travel', p.travel] : []), ...(p.fixesRequire ? ['--fixes-require', p.fixesRequire] : []), ...(p.frameLead ? ['--frame-lead', JSON.stringify(p.frameLead)] : []), ...(p.hitchTasks ? ['--hitch-tasks', JSON.stringify(p.hitchTasks)] : []), ...extra];
 const runArgs = (j: Job): string[] | null =>
-  j.run.repro ? [H('repro.ts'), 'run', j.run.repro, '--no-load'] : j.run.saveReload ? [H('save-reload.ts'), ...j.run.saveReload, '--port', values.port!] : j.run.matrix ? [H('save-matrix.ts'), ...j.run.matrix, ...(j.saveMatrix?.fixes ? ['--fixes', j.saveMatrix.fixes] : [])]
+  j.run.script ? [H(j.run.script[0]), ...j.run.script.slice(1)] : j.run.repro ? [H('repro.ts'), 'run', j.run.repro, '--no-load'] : j.run.saveReload ? [H('save-reload.ts'), ...j.run.saveReload, '--port', values.port!] : j.run.matrix ? [H('save-matrix.ts'), ...j.run.matrix, ...(j.saveMatrix?.fixes ? ['--fixes', j.saveMatrix.fixes] : [])]
     : j.run.profile ? profileArgs(j)
     : j.run.age ? [H('age-save.ts'), '--days', String(j.run.age.days), '--checkpoint', String(j.run.age.checkpoint), '--save', ageName(j), '--port', values.port!,
       '--keep-alive', String(j.run.age.keepAlive ?? -50)] : null;
@@ -1653,6 +1701,7 @@ const smokeLine = smoke ? `measurement smoke ${smoke.id} (${smoke.run.profile!.m
 
 if (values['dry-run']) {
   console.log(`queue ${queueName}: ${jobs.length} of ${all.length} jobs (dry run, nothing touched)`);
+  if (VANILLA) console.log(`  vanilla mode (docs/236): ${existsSync(join(vanillaSpec().stash, 'manifest.json')) ? 'stash already installed: read back only, left in place' : `vanilla.ts install at the start (agent ${vanillaSpec().agent ?? '** TS3_AGENT_PACKAGE unset: a real run refuses **'}), restore at the end`}; N/A per row: ${VANILLA_NA.join(', ')}`);
   console.log(`  ${smokeLine}`);
   if (stale) console.log(`** a real run would refuse to start: ${stale}`);
   for (const w of pairs) console.log(`** ${w}`);
@@ -1679,6 +1728,8 @@ if (values['dry-run']) {
       console.log(`  0 ccLots ${j.ccLots}: ${n ? `manifest ${LOTS_MANIFEST}, copy ${n} lots into ${LIBRARY}; deleted after the job` : '** MISSING or empty: make it with tools/cc-lot-gen.ts; the job refuses before touching the game **'}`);
     }
     console.log(`  1 node tools/harness/cycle.ts --restart`);
+    if (VANILLA) console.log('  2 vanilla read-back (no *.asi, no ts3native.*, no ts3fixes, agent/wininet/d3d9 sha): a miss FAILs before the game starts; no asi, ini or ts3fixes copy');
+    else {
     console.log(`  2 asi ${j.asi === 'tested' ? 'tested build' : j.asi}${existsSync(a) ? '' : '  ** MISSING: the job refuses before touching the game **'}${staleAsi(j) ? `  ** STALE: ${staleAsi(j)}; the job refuses **` : ''} -> Bin/ts3native.asi`);
     // build check (what a real run verifies before the game starts; cycle.ts installs build/ts3fixes.package)
     if (existsSync(a)) {
@@ -1692,10 +1743,11 @@ if (values['dry-run']) {
     let instT = 'missing';
     try { if (inst) instT = packageTuning(inst).digest.slice(0, 12); } catch (e: any) { instT = e.message; }
     console.log(`  2 build check: ts3fixes expected ${j.fixesBuild ?? j.fixesPackage ?? 'build/ts3fixes.package'} tuning ${fc.expected?.slice(0, 12) ?? '?'}; ${j.fixesPackage ? 'package' : 'build/'} tuning ${fc.digest?.slice(0, 12) ?? 'missing'} (${fc.names.join(', ') || 'not in DB'}); installed now ${instT}${fc.fails.length ? `  ** once cycle.ts installs build/: ${fc.fails.join('; ')}: the job refuses **` : ''}`);
+    }
     console.log(`  2 save guard: ${Object.entries(hashSaves(SAVES, guardedSaves(s))).map(([k, v]) => `${k} ${v}`).join(', ')} hashed before and after; a change FAILs the job and stops the queue`);
     const ji = jobIni(j);
     if (callSitesOffNote(j)) console.log(`  3 ${callSitesOffNote(j)}`);
-    console.log(`  3 Bin/ts3native.ini = repo ini${Object.keys(ji ?? {}).length ? ` + ${Object.entries(ji!).map(([k, v]) => `${k}=${v}`).join(', ')}` : ' (unchanged)'}`);
+    if (!VANILLA) console.log(`  3 Bin/ts3native.ini = repo ini${Object.keys(ji ?? {}).length ? ` + ${Object.entries(ji!).map(([k, v]) => `${k}=${v}`).join(', ')}` : ' (unchanged)'}`);
     if (j.run.worldimage && !existsSync(String(ji!['WorldImage.Helper']))) console.log(`  3 ** helper MISSING: build native\\worldimage\\build.cmd; the job refuses before touching the game **`);
     if (j.defaultIni) console.log(`  3 Bin/Default.ini + ${Object.entries(j.defaultIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
     if (j.s3ppIni) console.log(`  3 Bin/Sims3Performance.ini + ${Object.entries(j.s3ppIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
@@ -1776,16 +1828,39 @@ let gateGuard: (() => string) | null = null;
 // set while a launched game runs: '' or "unrequested mode exit ..." / the autopilot's "no safe button" line (docs/236). Sync like
 // gateGuard: each call starts one async game_state + /status read and returns the previous verdict. Log lines from `from` on only.
 let modeGuard: (() => string) | null = null;
-function unrequestedModeGuard(from = 0): () => string { // from 0: set at launch, and every start rewrites ts3native.log
-  let prev: ModeSnap | null = null, verdict = '', busy = false;
+// vanilla (clicksFile set): no ts3native.log, so the autopilot poll is the click log; it starts after the load (clicksOn: the agent
+// mailbox takes one call at a time, docs/236 finding 1). A dialog_expect accept-on-match counts as a requested state change.
+let clicksOn = false;
+const ACCEPT_WINDOW_S = 900;
+function unrequestedModeGuard(from = 0, clicksFile = ''): () => string { // from 0: set at launch, and every start rewrites ts3native.log
+  let prev: ModeSnap | null = null, verdict = '', busy = false, prevBlocked: string | null = null, acceptAt = 0, nAccept = 0;
+  const recent: string[] = [];
   return () => {
     if (!busy && !verdict) {
       busy = true;
       (async () => {
-        const tail = logTail(1 << 20, from), ns = noSafeButton(tail);
-        if (ns) { verdict = `autopilot: dialog with no safe button, nothing clicked (${ns.replace(/^.*ap click: /, '').slice(0, 300)})`; return; }
-        const cur = modeSnap(await agent('game_state')), why = modeExit(prev, cur, (await get('status'))?.state_cmd_ago_s);
-        if (why) verdict = `${why}; last clicks: ${clickLines(tail).map(l => l.replace(/^.*ap click: /, '')).join(' | ') || 'none in ts3native.log'}`;
+        let ns = '', clicks: string[];
+        if (clicksFile) {
+          if (!clicksOn) return;
+          const ap = (await agent('autopilot'))?.result, cl: string[] = (ap?.cleared ?? []).map(String);
+          if (cl.length) appendFileSync(clicksFile, cl.map(c => `${stamp()} ${c}\n`).join(''));
+          recent.push(...cl); recent.splice(0, Math.max(0, recent.length - 10));
+          if (cl.some(c => c.startsWith('dialog_expect accept'))) acceptAt = Date.now();
+          const b: string | null = ap ? ap.blocked ?? null : prevBlocked;
+          ns = vanillaBlock(prevBlocked, b); prevBlocked = b;
+          clicks = [...recent];
+        } else {
+          const tail = logTail(1 << 20, from);
+          ns = noSafeButton(tail).replace(/^.*ap click: /, '');
+          clicks = clickLines(tail).map(l => l.replace(/^.*ap click: /, ''));
+          const na = (tail.match(/ap click: .* -> dialog_expect accept:/g) ?? []).length;
+          if (na > nAccept) { nAccept = na; acceptAt = Date.now(); }
+        }
+        if (ns) { verdict = `autopilot: dialog with no safe button, nothing clicked (${ns.slice(0, 300)})`; return; }
+        const ago = (await get('status'))?.state_cmd_ago_s, acc = acceptAt ? (Date.now() - acceptAt) / 1000 : null;
+        // an accept the harness armed (dialog_expect accept) may leave live mode for a long time (a move): excused for ACCEPT_WINDOW_S
+        const cur = modeSnap(await agent('game_state')), why = acc !== null && acc <= ACCEPT_WINDOW_S ? '' : modeExit(prev, cur, ago);
+        if (why) verdict = `${why}; last clicks: ${clicks.join(' | ') || (clicksFile ? 'none in the autopilot poll' : 'none in ts3native.log')}`;
         if (cur) prev = cur;
       })().catch(() => { /* next round */ }).finally(() => { busy = false; });
     }
@@ -1941,6 +2016,19 @@ process.on('exit', () => { if (pinStatePending()) restorePins(); clearJob(); });
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, () => process.exit(130));
 mkdirSync(BEFORE, { recursive: true });
 for (const f of ['ts3native.asi', 'ts3native.ini', 'Default.ini', 'Sims3Performance.ini', 'dxvk.conf']) if (existsSync(join(BIN, f))) copyFileSync(join(BIN, f), join(BEFORE, f));
+// vanilla: vanilla.ts moves the pair out and back (manifest + sha read-back); the pair is never copied into Bin here
+let vanillaHere = false;
+if (VANILLA && !values['dry-run']) {
+  const vs = vanillaSpec();
+  if (!existsSync(join(vs.stash, 'manifest.json'))) {
+    if (!vs.agent) { console.error('vanilla mode: set TS3_AGENT_PACKAGE to the ts3agent build to install (with dialog_expect accept)'); process.exit(2); }
+    await closeGame(); // files must not be open when they move
+    vanillaInstall(vs); vanillaHere = true;
+    log(`vanilla: installed (ts3native pair, its outputs, ts3fixes and scriptCache moved to ${vs.stash}; agent ${vs.agent})`);
+  } else log(`vanilla: stash manifest found (${vs.stash}): installed before this run, read back only and left in place at the end`);
+  const vp = vanillaProblems(vs);
+  if (vp.length) { console.error(`vanilla mode: state check failed before any job: ${vp.join('; ')}`); process.exit(2); }
+}
 if (existsSync(S3SS_TOML)) copyFileSync(S3SS_TOML, join(BEFORE, 'S3SS.toml'));
 const repoIni = readFileSync(REPO_INI, 'utf8');
 const memLine = (m: any) => (m ? `${m.commitMB}/${m.privateMB}/${m.largestFreeMB}` : '?');
@@ -1968,6 +2056,7 @@ const buildLine = (b: BuildRec | null) => !b ? '' : `build: asi ${b.asiSha.slice
   + `ts3fixes tuning ${b.fixesTuning?.slice(0, 12) ?? '?'} ${b.fixesDb.join('/') || 'not in DB'} (expected ${b.fixesExpected})`;
 // after start-up (agent answering): ts3native.log was rewritten by this start and names the expected version
 function logVersionGate() {
+  if (VANILLA) return; // no ts3native.log in vanilla: N/A
   const b = lastBuild!;
   const why = !existsSync(LOG) ? 'Bin/ts3native.log missing after start-up (asi not loaded?)'
     : statSync(LOG).mtimeMs < b.launchedAt - 5000 ? 'Bin/ts3native.log not rewritten by this start (asi not loaded?)' : logVersionCheck(readFileSync(LOG, 'latin1'), b.version);
@@ -1976,14 +2065,20 @@ function logVersionGate() {
   log(`build check ok: ${buildLine(b)}`);
 }
 const startProbe = (j: Job) => {
+  if (VANILLA) lastBuild = null; // no asi or ts3fixes to check: N/A in the row
+  else {
   const bc = buildCheck(j, readFileSync(join(BIN, 'ts3native.asi')));
   lastBuild = bc.rec;
   if (bc.fails.length) throw new Error(`build check: ${bc.fails.join('; ')}; refused before the game started`);
+  }
   const pf =createWriteStream(join(OUT, `${queueName}-${date}-${j.id}-probe.log`), { flags: 'a' });
   const pr = probe = spawn('python', [join(ROOT, 'tools', 'probe', 'ts3probe.py'), 'serve', '--launch', '--port', values.port!, ...(j.gameArgs?.length ? ['--', ...j.gameArgs] : [])], { cwd: ROOT });
   pr.stdout?.pipe(pf); pr.stderr?.pipe(pf); launched = true;
-  modeGuard = unrequestedModeGuard();
+  const clicksFile = VANILLA ? join(OUT, `${queueName}-${date}-${j.id}.clicks.log`) : '';
+  if (clicksFile) process.env.TS3_CLICKS_LOG = clicksFile; // children (vanilla-steps.ts accept) read the accept lines from it
+  modeGuard = unrequestedModeGuard(0, clicksFile);
   jobGuard = () => pr.exitCode !== null || pr.signalCode !== null ? `probe server exited (${pr.exitCode ?? pr.signalCode})` : !gameRunning() ? `${GAME_EXE} process gone`
+    : VANILLA ? vanillaProblems(vanillaSpec()).map(x => `vanilla state changed: ${x}`).join('; ') // a ts3native file or ts3fixes back in Bin/Mods
     : existsSync(LOG) ? hookFailLine(readFileSync(LOG, 'latin1')) : ''; // a hook refused mid-run (lazy route worker hook) voids the run
 };
 // a fresh load of the job's game start (asi, ini, configs and fixes already in place): one Sess per load
@@ -2016,7 +2111,7 @@ async function reloadGame(j: Job, logFile: string, deadline: number, why: string
 }
 // close the running game (pins back first)
 async function endGame(j: Job) {
-  jobGuard = null; modeGuard = null;
+  jobGuard = null; modeGuard = null; clicksOn = false;
   stopPin(); stopPin = () => {};
   const pin = pinConfig(j.pin);
   if (pin?.others.length || pinStatePending()) log(`${j.id}: pin: apps back: ${restorePins(pin)}`);
@@ -2108,7 +2203,7 @@ for (const [n, j] of jobs.entries()) {
   else { stopPin = () => {}; probe = undefined; applied = { install: [], uninstall: [] }; launched = false; defaultIniOrig = s3ppIniOrig = s3ssTomlOrig = dxvkConfOrig = null; stashed = false; ccInstalled = false; lotsInstalled = false; lastBuild = null; }
   let jobLogOff = 0;
   try {
-    if (!existsSync(asiPath(j))) throw new Error(`asi missing: ${j.asi} (refused before touching the game)`);
+    if (!VANILLA && !existsSync(asiPath(j))) throw new Error(`asi missing: ${j.asi} (refused before touching the game)`);
     if (j.ccSet && !ccSetReady(j.ccSet)) throw new Error(`ccSet missing or empty: ${[j.ccSet].flat().join(' + ')} (make it with tools/cc-gen.ts; refused before touching the game)`);
     if (j.ccLots && !(existsSync(join(ROOT, j.ccLots)) && lotFiles(join(ROOT, j.ccLots)).length)) throw new Error(`ccLots missing or empty: ${j.ccLots} (make it with tools/cc-lot-gen.ts; refused before touching the game)`);
     if (!reused) { // ---- game start and load (indent kept: the pre-docs/170 body)
@@ -2147,11 +2242,17 @@ for (const [n, j] of jobs.entries()) {
     }
     const r0 = await node([H('cycle.ts'), '--restart'], logFile, noGameDeadline(deadline));
     if (r0.code !== 0) throw new Error(`cycle.ts --restart exit ${r0.code}`);
+    if (VANILLA) { // read back before the game starts; a miss FAILs the job here (H-fault #4)
+      const vp = vanillaProblems(vanillaSpec());
+      row.vanilla = { readBack: vp.length ? vp : 'OK', na: VANILLA_NA };
+      if (vp.length) throw new Error(`vanilla read-back: ${vp.join('; ')}; refused before the game started`);
+    } else {
     installFixesPackage(j);
     copyFileSync(asiPath(j), join(BIN, 'ts3native.asi'));
     writeFileSync(join(BIN, 'ts3native.ini'), mergeIni(repoIni, jobIni(j)));
     // ts3native appends Bin/autshadow.jsonl across loads ([AutShadow] live-drop, dry-diff, dry-sim-mis): fresh per job
     try { writeFileSync(join(BIN, 'autshadow.jsonl'), ''); } catch (e) { log(`${j.id}: truncate autshadow.jsonl: ${e}`); }
+    }
     if (callSitesOffNote(j)) log(`${j.id}: ${callSitesOffNote(j)}`);
     if (j.defaultIni) { defaultIniOrig = readFileSync(DEFAULT_INI, 'utf8'); writeFileSync(DEFAULT_INI, mergeIni(defaultIniOrig, j.defaultIni)); }
     if (j.s3ppIni) {
@@ -2200,7 +2301,7 @@ for (const [n, j] of jobs.entries()) {
       if (r.code !== 0) throw new Error(`cycle.ts --save exit ${r.code}${r.timedOut ? ' (timeout)' : ''}`);
     }
     logVersionGate();
-    loaded(j);
+    loaded(j); clicksOn = true;
     } else stopLoad = startMachineLoad(machineFile, 30, pin?.cpus ?? gameCpus()); // ---- end of game start and load
     sess!.reuse = reuseOf(j); // this job's limits decide whether the next one may take the game over
     if ((sess!.reuse || itemsOf(j)) && !sess!.base) sess!.base = await snapshot(ioAgent); // switch values and world right after the load
@@ -2210,12 +2311,12 @@ for (const [n, j] of jobs.entries()) {
       row.rngDraws = [];
       for (let i = 0; i < j.run.menuMemory.draws; i++) row.rngDraws.push((await agent('reflect_call', { path: 'Sims3.SimIFace.RandomGen.NextDouble' }))?.result ?? null);
     }
-    const jobIniText = iniUsed = readFileSync(join(BIN, 'ts3native.ini'), 'utf8');
-    row.featuresOn = iniFeaturesOn(jobIniText); log(`${j.id}: ts3native.ini features on: ${row.featuresOn.join(', ') || 'none'}`);
+    const jobIniText = iniUsed = VANILLA ? '' : readFileSync(join(BIN, 'ts3native.ini'), 'utf8');
+    row.featuresOn = iniFeaturesOn(jobIniText); log(`${j.id}: ts3native.ini features on: ${row.featuresOn.join(', ') || 'none'}${VANILLA ? ' (vanilla: no ts3native)' : ''}`);
     // self check before any arm runs (fail fast): no ts3native hook FAIL line, route worker hook not refused. The hook installs at the
     // first worker plan, which comes only after profile-world's paused setup and profiler attach, so 'wait' is normal here: the run
     // guard (hookFailLine every GUARD_MS) and the post-run asyncIdle check catch a later refusal
-    const why0 = hookFailLine(existsSync(LOG) ? readFileSync(LOG, 'latin1') : '') || routeHookState(jobIniText, await get('native'));
+    const why0 = VANILLA ? '' : hookFailLine(existsSync(LOG) ? readFileSync(LOG, 'latin1') : '') || routeHookState(jobIniText, await get('native'));
     if (why0 && why0 !== 'wait') throw new Error(why0);
     row.memory.before = await get('memory');
     const resetMax = !!j.ini?.['Verify.Enabled'];
@@ -2223,7 +2324,7 @@ for (const [n, j] of jobs.entries()) {
     const gate = counterGate(c0, j.minCounters);
     if (gate) throw new Error(`${gate}; refused, nothing run`);
     const fixRead = async () => ({ p: (await agent('patches'))?.result, t: (await agent('time'))?.result }); // ts3fixes rows of ACTIVITY
-    const fx0 = j.run.profile || j.run.soak ? await fixRead() : null;
+    const fx0 = !VANILLA && (j.run.profile || j.run.soak) ? await fixRead() : null;
     const items = itemsOf(j), args = j.run.profile && !items ? profileArgs(j, j.run.profile, profileTag(j), sessionFlags(j)) : runArgs(j);
     let afterRun: { mem: any; native: any } | null = null;
     // early machine-load verdict (PLAN.md 2026-10-24): a timing run on a noisy machine stops ~2.5 min in instead of finishing void;
@@ -2371,7 +2472,7 @@ for (const [n, j] of jobs.entries()) {
     row.memory.after = afterRun?.mem ?? await get('memory');
     const c1 = afterRun?.native ?? await get('native');
     if (j.nativeRequire) row.nativeDelta = flatDelta(c0, c1);
-    const idle = j.run.menuMemory ? '' : asyncIdle(jobIniText, c0, c1); // the hook can still fail after the check: plans prove it ran
+    const idle = j.run.menuMemory || VANILLA ? '' : asyncIdle(jobIniText, c0, c1); // the hook can still fail after the check: plans prove it ran
     if (idle) { row.verdict.push(`FAIL: ${idle}`); row.selfCheckFail = idle; }
     // forced repro loops exercise one path: a default-on feature the job's own ini does not name may idle there (2026-10-25:
     // DeferFootprint voided the boat and Overwatch verify jobs), so it is a note; natural and bundle runs keep the void
@@ -2417,6 +2518,7 @@ for (const [n, j] of jobs.entries()) {
   row.crashed = launched && !closedByUs && !gameRunning() || row.verdict.some((v: string) => /game died/.test(v));
   if (row.crashed) { row.crash = triage(t0); log(`${j.id}: game crashed\n${row.crash}`); await logUntrackedGame(s => log(`${j.id}: ${s}`)); } // EA only: names game processes this run never saw (docs/236 #20)
   try { row.hangCapture = hangCaptureLine(readFileSync(logFile).subarray(logOff).toString()); } catch { /* no job log */ }
+  if (VANILLA) row.verdict.push(`N/A (vanilla): ${VANILLA_NA.join(', ')}`); // skipped, never PASS
   row.pass = row.exitCode === 0 && !row.crashed && !row.error && !row.timedOut && !row.selfCheckFail && !row.verdict.some(isFail); // any FAIL line counts, exit 0 or not (docs/236 #15)
   // docs/170 §2: the next job may take this game over (reuse on for both, same game start); else it closes now, as always
   const next = jobs[n + 1];
@@ -2527,6 +2629,11 @@ for (const [n, j] of jobs.entries()) {
 
 // a game kept for a job that does not run now (STOP after the keep decision, AI pause, --only end): close it and undo its start
 if (sess) { const last = jobs.find(x => keyOf(x) === sess!.key)!; await endGame(last); const errs = await restoreStart(last.id, join(OUT, `${queueName}-${date}-${last.id}.log`)); if (errs.length) { log(`session end: ${errs.join('; ')}`); exitCode = 1; } }
+// vanilla: vanilla.ts restore (sha read-back, stash kept on any loss) when this run installed it; else the pair is put back from bin-before
+if (VANILLA) {
+  if (vanillaHere) try { log(`vanilla: restored ${vanillaRestore(vanillaSpec())} files (sha read back)`); } catch (e) { log(`RESTORE FAILED: vanilla: ${String((e as Error).message ?? e)}`); exitCode = 1; }
+  else if (!values['dry-run']) log('vanilla: state left installed (stash from before this run; node tools/harness/vanilla.ts restore)');
+} else
 // put back the asi and ini found at the start as a pair (game is closed after every job)
 {
   const asiOk = !existsSync(join(BEFORE, 'ts3native.asi')) || await copyRetry(() => copyFileSync(join(BEFORE, 'ts3native.asi'), join(BIN, 'ts3native.asi')), 'restore Bin/ts3native.asi', () => closeGame(), log);
