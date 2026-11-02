@@ -319,3 +319,15 @@ The caller (search `0x620560` -> `0x6215D0`) has the same shape; its differences
 EA one, `0x201847A4` (Steam stays `0x5A2C1E2B`); the SKIP line now prints the measured hash. `[WaterJps]` added to the
 minimal EA ini's `ALLOW` list (it is `Enabled=1` in the Steam ini). Next smoke must show
 `OK   water jps: call 0x0062186B -> WaterJumpHook, mode 1 verify 0, callback 0x0066F0B0 inlined`.
+
+### FootprintIndex on 1.69 [verified, static]
+
+Verdict: **relocation only.** `LotLevel_SaveFootprints` `0x6663C0..0x666740` -> `0x6677E0..0x667B60`, same length 0x380:
+0 bad rows; the differing bytes are 4 data pointers (profiler name `Routing/PathPlanner/FootprintMapEntrySav...` and floats,
+same bytes on both) and 26 calls out to 9 callees, each with the same instruction shape on both builds (incl. the save-index
+call `0x62B1E0` -> `0x62C5A0`). The map layout the stub relies on ([L+0x20]+0x24, node +8/+0x10) is in those identical
+instructions. Patched sites: `0x666488` -> `0x6678A8` holds `8B 53 20 8B 4A 24` (ts3bytes row ok); `0x82C940` -> `0x82B610`
+is `E8` to `0x63DC80` (= mapped `0x63C690`, same shape), `0xAAC320` -> `0xAAAF20` is `E8` to `0xC6C7E0` (= mapped
+`0xC6D460`, same shape), same surrounding instructions. Change: under `TS3A_TABLE` the expected hash is `0xCA5029BC` (Steam
+`0xF2CDC1C1`); the SKIP line prints the measured hash. Already in `ALLOW_ON`. Next smoke must show
+`OK   footprint index: 0x006678A8, 0x0082B610, 0x00AAAF20 (Mode=1 Verify=0)` and, after a save, the per-save `footprint:` line.
