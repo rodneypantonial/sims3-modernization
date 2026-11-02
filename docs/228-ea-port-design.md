@@ -83,7 +83,7 @@ see ciphertext. Largest new machinery; its one advantage (future EA patches with
 | 3 | build.yml job `native-ea169`: one `cl ... /DTS3A_TABLE` line (no selftest), EA ini from the Steam ini via awk allowlist, assert allowlist vs unresolved list, artifact `ts3native-ea169` | .github/workflows/build.yml | sonnet | 40 min | 0 | PR artifact has asi + ini; a deliberately wrong allowlist entry fails the job |
 | 4 | `--apply` on the branch, identity proof vs main artifact (`.text`/`.rdata` sha256, .map diff) | native/ts3native/*.cpp (79 files), docs/68 §7.1 note | sonnet | 30 min | 0 | both hashes equal; second scan 0 `wrap` rows |
 | 5 | resolve the 9 ts3native.cpp rows + any zero row in the smoke pool in Ghidra (main laptop), `docs/data/ea169-overrides.csv` | docs/data/ea169-overrides.csv, tools/addr-codemod.ts (read overrides) | reasoning | 2 h | 0 | port-run: those rows leave the unresolved list with evidence text |
-| 6 | first smoke (§6) | ts3native-ea169.ini on the EA laptop | reasoning | 1 h | 1 (+1 rerun) | log: host line, no `SKIP all`, every on-feature logs its install line, no `FAIL`, reach the main menu and a lot |
+| 6 | first smoke (§6) **done 2026-11-02, partial: asi PASS, lot FAIL (Mods, see end)** | ts3native-ea169.ini on the EA laptop | reasoning | 1 h | 1 (+1 rerun) | log: host line, no `SKIP all`, every on-feature logs its install line, no `FAIL`, reach the main menu and a lot |
 | 7 | widen: features with only `ok` expectations and no zero rows, one per run | allowlist in build.yml | sonnet | 30 min each | 1 each | same as 6 plus the feature's own first log line |
 | 8 | managed lane (§3 last bullet) | tools/setup/build-fixes.ts (REF_DIR arg), docs/227 | reasoning | 3 h | 1 | `.managed.csv` reviewed; game starts with ts3fixes-ea169 and no popup |
 | 9 | post-release: `--apply` on main, PR, docs/68 §7.1 "applied" | as task 4 | sonnet | 30 min | 0 | identity proof repeated on main |
@@ -102,3 +102,28 @@ features can go on. - steerro/watchpt struct layouts: rewrite, not port (docs/22
 - Not checked by the design: the ini-section-to-source-file map the task 3 allowlist assert needs (by hand), and whether
   selftest.exe compiles under `/DTS3A_TABLE` (task 3 skips it). Risk: a feature left ON whose data read hits a zero table
   row crashes at load; the ini allowlist + CI assert is the only guard.
+
+## First smoke 2026-11-02 (task 6)
+Run 1 12:27 PHT: CI artifact `ts3native-ea169.asi` (run 41387870205, 1,135,104 B, sha256 `bfef6925...cf040f`) as `Bin\ts3native.asi` with the
+EA ini (Decompress and OptsInit `Enabled=1`, 64 sections `Enabled=0`), launched through `ts3probe.py serve --launch`, Bin pair backed
+up as `.pre-ea169`. Log head [verified]: `ts3native 0.36.152`, `host Sims3Launcher.exe base 0x00400000 pe 6707155C size 0xEB5000`,
+`host build: EA app 1.69.47`, no `SKIP all`. Installed: `OK   decompress: call 0x004EC1A5 -> RefpackHook, mode 1 verify 0 (0x004EB4F0
+starts 83 EC 10 8B 4C = game code at load time)`, `OK   detour RoutePlanOptions_ctor (I-94-322 hub refs) at 0x00654240`, `OK   OptsInit:
+search options hub references +4 / +0x34 start at 0 (I-94-322)`. No `FAIL`, no `bytes differ`: `.text` is decrypted when the asi loads
+(§7 open point closed; the one `SKIP detour Route_GetOption at 0x0074DF80: prologue differs` is the unconditional NOYIELD detour in
+ts3native.cpp, nothing written). `GC patches disabled (Enabled=0)` (not `SKIP GC`: the ini gate runs first). Decompress worked through
+the menu and the save load: `calls 21135 fails 0 mismatches 0 in 54 MB out 131 MB time 162 ms` (Verify=0, so output bytes unchecked).
+- Not in the §6 ON list but installed: `OK   arena tail pad: 6 sites` and `OK   initobj size: transform call 0xE63427` ([ArenaGuard]
+  `TailPad=1` / `InitobjFix=1` are independent of `Enabled`, the awk allowlist keeps them). TailPad also read the zero row 0x011EE508
+  (`arenatail.cpp:233`, `// unresolved`), seen as `exception C0000005 at 0x5D40CC02` inside the asi on the main thread, caught by its own
+  `__except` [inferred from the log order and the unresolved list]. Task 7 rerun: set both to 0 or resolve the row first.
+- Run stable: no. `load_save Baseline-SV-Spring` ended in `A serious error has occurred while loading 'Baseline-SV-Spring'` after 10 s (no
+  new `ScriptError*.xml`, no crash, game alive at the menu). Rerun 12:43 with the `.pre-ea169` pair (`SKIP all`, c035abe5a3a6) and the
+  same Mods and save: identical failure at 9 s. So the load failure is not the ea169 asi. Difference to the clean docs/226 run 4 (12:09):
+  `Mods\Packages\NRaas_ErrorTrap.package` (970,244 B, 12:10, the restamped P169 of docs/229) and rebuilt ts3agent/ts3fixes packages;
+  `scriptCache.package` is 260 B after the rerun [observed; cause not isolated, owner: docs/229 Mods work].
+- Verdict: host check PASS, decryption timing PASS, Decompress + OptsInit installed PASS, lot reached FAIL (environment). CPU/WS: only
+  at the menu (300 MB WS at attach), no soak. Both runs' logs: `probe-out/ea-smoke6-1102*.log`, `probe-out/ea-smoke6-1102.ts3native.log`.
+- Task 7 candidates (files with 0 unresolved rows and 0 problems.csv rows, own ini gate): `[WaterJps]` (waterjps.cpp + wastar.cpp, §6
+  names it), `[SlotEnabledRO]` (slotro.cpp), `[CellMemoProbe]` (cellmemo.cpp, probe only). replandedupe/plandeadline/movedwait are clean
+  too but need `[RouteAsync]` (unseen.cpp 5 rows, routing sites offset-changed).
