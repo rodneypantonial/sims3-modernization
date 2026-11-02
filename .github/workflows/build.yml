@@ -46,8 +46,8 @@ jobs:
       - name: EA ini (allowlist) and unresolved-row assert
         shell: bash
         env:
-          # sections left on for EA (docs/228 §6 first smoke); everything else: Enabled=0, or every non-zero switch =0 in a
-          # section without an Enabled key ([Compat], [GoalGen], [GoalValidRO], [MonoFast], [ResourceCache], [EaCrashFixes])
+          # sections left on for EA (docs/228 §6 first smoke); everything else: every integer-valued key =0
+          # (Enabled and independent switches such as [ArenaGuard] TailPad/InitobjFix)
           ALLOW: Decompress OptsInit
         # tools/ini-sections.json (section -> .cpp files naming it as L"<Section>") was built with:
         #   node -e 'const fs=require("fs"),p=require("path"),d="native/ts3native";const secs=[...fs.readFileSync(d+"/ts3native.ini","utf8").matchAll(/^\[(\w+)\]/gm)].map(m=>m[1]);const cpp=fs.readdirSync(d).filter(f=>f.endsWith(".cpp")&&!/test/.test(f)).sort();console.log(JSON.stringify(Object.fromEntries(secs.map(s=>[s,cpp.filter(f=>fs.readFileSync(p.join(d,f),"utf8").includes("L\""+s+"\""))]))))'
@@ -62,19 +62,19 @@ jobs:
             const hit = map[s].filter((f) => zero.has(f));
             if (hit.length) throw new Error("[" + s + "] reads " + hit.join(", ") + ", which has unresolved (0) rows in ts3addr-ea169.h: it cannot be on for EA");
           }
-          const lines = fs.readFileSync("native/ts3native/ts3native.ini", "utf8").split(/\r?\n/), hasEnabled = new Set();
+          // outside the allowlist every integer-valued key becomes 0 (TailPad/InitobjFix run independent of Enabled); paths and names stay
+          const lines = fs.readFileSync("native/ts3native/ts3native.ini", "utf8").split(/\r?\n/), zeroed = {};
           let sec = "";
-          for (const l of lines) { const m = /^\[(\w+)\]/.exec(l); if (m) sec = m[1]; else if (/^Enabled=/.test(l)) hasEnabled.add(sec); }
-          sec = "";
           const out = lines.map((l) => {
             const m = /^\[(\w+)\]/.exec(l);
             if (m) { sec = m[1]; return l; }
-            if (allow.includes(sec)) return l;
-            if (/^Enabled=/.test(l)) return "Enabled=0";
-            if (!hasEnabled.has(sec) && /^\w+=[1-9]\d*$/.test(l)) return l.replace(/=.*/, "=0");
-            return l;
+            const k = /^(\w+)=-?\d+\s*$/.exec(l);
+            if (!k || allow.includes(sec)) return l;
+            if (!/=0\s*$/.test(l)) (zeroed[sec] = zeroed[sec] || []).push(l.trim());
+            return k[1] + "=0";
           });
           fs.writeFileSync("native/ts3native/out-ea169/ts3native-ea169.ini", out.join("\r\n"));
+          for (const s in zeroed) console.log("zeroed [" + s + "]: " + zeroed[s].join(" "));
           console.log("EA ini: on = " + allow.map((s) => "[" + s + "]").join(" ") + "; " + zero.size + " source files have unresolved rows");
           '
       - uses: actions/upload-artifact@v4

@@ -102,3 +102,4 @@ features can go on. - steerro/watchpt struct layouts: rewrite, not port (docs/22
 - Not checked by the design: the ini-section-to-source-file map the task 3 allowlist assert needs (by hand), and whether
   selftest.exe compiles under `/DTS3A_TABLE` (task 3 skips it). Risk: a feature left ON whose data read hits a zero table
   row crashes at load; the ini allowlist + CI assert is the only guard.
+Fix 2026-11-02 (after the first smoke): the generated EA ini zeroed only `Enabled`, so `[ArenaGuard] TailPad=1` and `InitobjFix=1` (independent of `Enabled`) ran on EA and TailPad read an unresolved row (arenatail.cpp:233, caught C0000005). The `native-ea169` step now zeroes every integer-valued key outside the allowlist and prints the zeroed keys per section.
