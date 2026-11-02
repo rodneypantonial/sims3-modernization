@@ -60,6 +60,7 @@ namespace Ts3Agent
             RegisterFreshWorld();
             Dispatcher.Register("quiet_ui", QuietUi);
             Dispatcher.Register("autopilot", Autopilot);
+            Dispatcher.Register("dialog_expect", DialogExpect);
             RegisterGates(); // docs/179: game-mode gates wrap the handlers registered above
             StartAutopilot();
         }

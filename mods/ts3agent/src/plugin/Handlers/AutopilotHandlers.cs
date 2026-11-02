@@ -23,6 +23,10 @@ namespace Ts3Agent
         static int sApSpeedFixes;
         static volatile int sApLastStep = int.MinValue / 2; // TickCount of the task's last step
         static readonly List<object> sApCleared = new List<object>();
+        // dialog_expect {seconds?, title?}: the harness is about to answer a dialog itself (auto_dialog accept:true); until it times out
+        // (seconds 0 clears) the autopilot leaves a matching dialog alone (title = lowercase text fragment, none = any dialog).
+        static int sExpectUntil;
+        static string sExpectTitle, sExpectLogged;
         static string sApBlocked; // last dialog the autopilot would not click (AutoDialog: no safe button); logged once per dialog
 
         static void StartAutopilot()
@@ -73,6 +77,30 @@ namespace Ts3Agent
             return r;
         }
 
+        static object DialogExpect(Args a)
+        {
+            int sec = (int)a.Long("seconds", 30);
+            sExpectTitle = a.Has("title") ? a.Str("title").ToLowerInvariant() : null;
+            sExpectUntil = sec > 0 ? System.Environment.TickCount + Math.Min(sec, 900) * 1000 : 0;
+            sExpectLogged = null;
+            Dictionary<string, object> r = Util.Obj();
+            r["seconds"] = sec; r["title"] = sExpectTitle;
+            return r;
+        }
+
+        // true (and logged once per dialog) while the harness expects to answer this dialog itself
+        static bool ApExpected(Sims3.UI.WindowBase modal)
+        {
+            if (sExpectUntil == 0 || sExpectUntil - System.Environment.TickCount <= 0) return false;
+            List<string> texts = new List<string>();
+            CollectTexts(modal, texts, 0);
+            string all = string.Join(" ", texts.ToArray());
+            if (sExpectTitle != null && all.ToLowerInvariant().IndexOf(sExpectTitle) < 0) return false;
+            string t = texts.Count > 0 ? texts[0] : "";
+            if (t != sExpectLogged) { sExpectLogged = t; ApLog(t, "(left to the harness, dialog_expect)"); }
+            return true;
+        }
+
         static GameSpeed ApTarget(string s)
         {
             switch (s) { case "normal": return GameSpeed.Normal; case "fast": return GameSpeed.Double; default: return GameSpeed.Triple; }
@@ -95,8 +123,10 @@ namespace Ts3Agent
             {
                 sApPoke = false;
                 lastDialog = now;
-                if (Sims3.UI.UIManager.GetModalWindow() != null)
+                Sims3.UI.WindowBase modal = Sims3.UI.UIManager.GetModalWindow();
+                if (modal != null)
                 {
+                    if (ApExpected(modal)) return;
                     Dictionary<string, object> d;
                     try { d = AutoDialog(new Args(new Dictionary<string, object>())) as Dictionary<string, object>; }
                     catch (McpException e)
