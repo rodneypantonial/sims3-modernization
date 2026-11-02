@@ -20,7 +20,7 @@
 // for a miss and for a 0 is the same 0x75592B). Shadow (no job): the game's 0x62FB60, then SrEntry, compared.
 // Counters v119 (+0x4824): ikMode (+0x4828, --ab idlecheckro), ikShadow (+0x482C, --ab idlecheckroshadow).
 
-static const DWORD IK_SITE_GIP = 0x007558D7, IK_GIP = 0x0062FB60, IK_SITE_TEST = 0x00755916, IK_TEST = 0x00625140;
+static const DWORD IK_SITE_GIP = TS3A(0x007558D7), IK_GIP = TS3A(0x0062FB60), IK_SITE_TEST = TS3A(0x00755916), IK_TEST = TS3A(0x00625140);
 typedef u8*(__fastcall* IkGipFn)(u8* p, void* edx, DWORD lo, DWORD hi);  // ret 8
 typedef DWORD(__fastcall* IkTestFn)(u8* p, void* edx, const u8* entry, DWORD room, DWORD b, const void* pt, float r);  // ret 0x14
 typedef int (*IkEntryFn)(const u8* p, DWORD lo, DWORD hi, const u8** entry);

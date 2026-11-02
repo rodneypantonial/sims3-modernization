@@ -49,12 +49,12 @@
 // pass every other case to the game's handler. INT_MIN / -1 goes to the game's OverflowException stub 0xE57AA5 (the one the
 // *.ovf opcodes use; it records this instruction as the frame ip), as .NET throws. INT_MIN % -1 gives 0, the exact result.
 
-static const DWORD CA_ASK_SITES[3] = {0x0084EABD, 0x00849588, 0x00853521};
+static const DWORD CA_ASK_SITES[3] = {TS3A(0x0084EABD), TS3A(0x00849588), TS3A(0x00853521)};
 // mov ecx,[eax+1Ch]; mov edx,[ecx]; push eax; mov eax,[edx+10h]; call eax   (eax = controller)
 static const u8 kCaAsk[11] = {0x8B, 0x48, 0x1C, 0x8B, 0x11, 0x50, 0x8B, 0x42, 0x10, 0xFF, 0xD0};
-static const DWORD CA_CTOR_SITE = 0x0093F90D, CA_CTOR = 0x0093E5C0;  // AnimationComponent ctor (thiscall, owner; ret 4)
-static const DWORD CA_DTOR_SITE = 0x00942E73, CA_DTOR = 0x00941CD0;  // AnimationComponent dtor (thiscall, no args)
-static const DWORD CA_ANIM_VT8 = 0x010433EC;                          // AnimationComponent +8 interface vtable
+static const DWORD CA_CTOR_SITE = TS3A(0x0093F90D), CA_CTOR = TS3A(0x0093E5C0);  // AnimationComponent ctor (thiscall, owner; ret 4)
+static const DWORD CA_DTOR_SITE = TS3A(0x00942E73), CA_DTOR = TS3A(0x00941CD0);  // AnimationComponent dtor (thiscall, no args)
+static const DWORD CA_ANIM_VT8 = TS3A(0x010433EC);                          // AnimationComponent +8 interface vtable
 static DWORD g_ecaRdLo = 0x00F95000, g_ecaRdHi = 0x01146000;            // .rdata (vtables); selftest: its own range
 static DWORD g_ecaTxLo = 0x00401000, g_ecaTxHi = 0x00F95000;            // .text
 
@@ -207,8 +207,8 @@ static bool ApplyConformActor(const wchar_t* ini) {
 }
 
 // ---- ThumbPose ----
-static const DWORD TP_DEFER_SITE = 0x00D5B77A, TP_RELEASE = 0x007460F0;  // call RefPtr_Release (ecx = &RefPtr)
-static const DWORD TP_AFTER_SITE = 0x00D5B874;                           // mov ecx,[esp+0ACh] after the evaluation
+static const DWORD TP_DEFER_SITE = TS3A(0x00D5B77A), TP_RELEASE = TS3A(0x007460F0);  // call RefPtr_Release (ecx = &RefPtr)
+static const DWORD TP_AFTER_SITE = TS3A(0x00D5B874);                           // mov ecx,[esp+0ACh] after the evaluation
 static const u8 kTpAfter[7] = {0x8B, 0x8C, 0x24, 0xAC, 0x00, 0x00, 0x00};
 typedef void(__fastcall* TpReleaseFn)(u8** ref);
 static TpReleaseFn g_tpRelease = (TpReleaseFn)(uintptr_t)TP_RELEASE;
@@ -291,7 +291,7 @@ static bool ApplyThumbPose(const wchar_t* ini) {
 }
 
 // ---- GeomBoneIndex ----
-static const DWORD GB_SLOT = 0x00FE3314, GB_GET = 0x005C6E00, GB_COUNT = 0x005C6DF0;  // vtable 0xFE32C0 +0x54, +0x50
+static const DWORD GB_SLOT = TS3A(0x00FE3314), GB_GET = TS3A(0x005C6E00), GB_COUNT = 0x005C6DF0;  // vtable 0xFE32C0 +0x54, +0x50
 // mov eax,[ecx+58h]; mov ecx,[esp+4]; mov eax,[eax+ecx*4]; ret 4
 static const u8 kGbGet[13] = {0x8B, 0x41, 0x58, 0x8B, 0x4C, 0x24, 0x04, 0x8B, 0x04, 0x88, 0xC2, 0x04, 0x00};
 // mov eax,[ecx+5Ch]; sub eax,[ecx+58h]; sar eax,2; ret
@@ -339,8 +339,8 @@ static bool ApplyGeomBoneIndex(const wchar_t* ini) {
 }
 
 // ---- GeomNoMaterial ----
-static const DWORD GN_SITE = 0x005DDB63, GN_SLOT = 0x00FE3318;                          // check in 0x5DDB30; GEOM vtable +0x58
-static const DWORD GN_SKIP = 0x005DE0E2, GN_CONT = 0x005DDB6D, GN_GET = 0x00580420;     // skip tail, next instruction, getter
+static const DWORD GN_SITE = TS3A(0x005DDB63), GN_SLOT = TS3A(0x00FE3318);                          // check in 0x5DDB30; GEOM vtable +0x58
+static const DWORD GN_SKIP = TS3A(0x005DE0E2), GN_CONT = TS3A(0x005DDB6D), GN_GET = TS3A(0x00580420);     // skip tail, next instruction, getter
 static const u8 kGnSite[10] = {0x8B, 0x03, 0x85, 0xC0, 0x0F, 0x84, 0x75, 0x05, 0x00, 0x00};  // mov eax,[ebx]; test eax,eax; je 0x5DE0E2
 static const u8 kGnGet[4] = {0x8B, 0x41, 0x28, 0xC3};                                     // mov eax,[ecx+28h]; ret
 static DWORD g_gnSkip = GN_SKIP, g_gnCont = GN_CONT, g_gnGet = GN_GET;  // stub targets and the getter (selftest swaps them)
@@ -400,9 +400,9 @@ static bool ApplyGeomNoMaterial(const wchar_t* ini) {
 }
 
 // ---- MintDivGuard ----
-static const DWORD MD_TABLE = 0x00E59880;                    // mint jump table (opcode * 4), in .text
-static const DWORD MD_DIV = 0x00E55B4C, MD_REM = 0x00E55C0F;  // entries 0x127 / 0x143
-static const DWORD MD_OVF = 0x00E57AA5, MD_NEXT = 0x00E544D5;  // OverflowException stub, dispatch head
+static const DWORD MD_TABLE = TS3A(0x00E59880);                    // mint jump table (opcode * 4), in .text
+static const DWORD MD_DIV = TS3A(0x00E55B4C), MD_REM = TS3A(0x00E55C0F);  // entries 0x127 / 0x143
+static const DWORD MD_OVF = TS3A(0x00E57AA5), MD_NEXT = TS3A(0x00E544D5);  // OverflowException stub, dispatch head
 static const u8 kMdHead[6] = {0x83, 0x7E, 0xF8, 0x00, 0x0F, 0x84};  // cmp dword [esi-8],0; je <DivideByZero stub>
 static DWORD g_mdDiv = MD_DIV, g_mdRem = MD_REM, g_mdOvf = MD_OVF, g_mdNext = MD_NEXT;  // stub jump targets (selftest swaps them)
 static volatile LONG g_mdLogged;

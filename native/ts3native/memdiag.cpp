@@ -38,14 +38,14 @@ static bool g_mdGameVerified = false;  // not const: no constant-condition warni
 static volatile LONG g_mdPass, g_mdFail;  // bit per field: this session's self-test result
 
 // game addresses (the host selftest points them at fakes)
-static const u8* const* g_mdEaHeapSlot = (const u8* const*)(uintptr_t)0x011CB864;  // MemoryMan heap (docs/re/structs.md §9)
-static const u8* const* g_mdRcMgrSlot = (const u8* const*)(uintptr_t)0x011C78D8;   // resource manager (structs.md §10)
-static const DWORD* g_mdGc[3] = {(const DWORD*)(uintptr_t)0x012225A0, (const DWORD*)(uintptr_t)0x012225B4,
-                                 (const DWORD*)(uintptr_t)0x011F2F90};  // GC_heapsize, GC_large_free_bytes, GC_gc_no (docs/66 §6.1)
+static const u8* const* g_mdEaHeapSlot = (const u8* const*)(uintptr_t)TS3A(0x011CB864);  // MemoryMan heap (docs/re/structs.md §9)
+static const u8* const* g_mdRcMgrSlot = (const u8* const*)(uintptr_t)TS3A(0x011C78D8);   // resource manager (structs.md §10)
+static const DWORD* g_mdGc[3] = {(const DWORD*)(uintptr_t)TS3A(0x012225A0), (const DWORD*)(uintptr_t)TS3A(0x012225B4),
+                                 (const DWORD*)(uintptr_t)TS3A(0x011F2F90)};  // GC_heapsize, GC_large_free_bytes, GC_gc_no (docs/66 §6.1)
 
 // GeneralAllocator instances whose cores are summed: MemoryMan [0x11CB864] and the script host's [0x11D4BC8] (docs/130
 // I-130-7: a dedicated heap or the same object; the same object is counted once)
-static const u8* const* g_mdEaCoreSlot[2] = {(const u8* const*)(uintptr_t)0x011CB864, (const u8* const*)(uintptr_t)0x011D4BC8};
+static const u8* const* g_mdEaCoreSlot[2] = {(const u8* const*)(uintptr_t)TS3A(0x011CB864), (const u8* const*)(uintptr_t)TS3A(0x011D4BC8)};
 
 struct MdVals { double v[MD_N]; bool have[MD_N]; };
 
@@ -90,14 +90,14 @@ static bool MdGc(DWORD* out) {
 static bool MdRc(DWORD* out) {
     __try {
         const u8* m = *g_mdRcMgrSlot;
-        if (!m || (*(const DWORD*)m != 0xFFE250 && *(const DWORD*)m != 0xFB2DA0)) return false;
+        if (!m || (*(const DWORD*)m != TS3A(0xFFE250) && *(const DWORD*)m != TS3A(0xFB2DA0))) return false;
         const DWORD* b = *(const DWORD* const*)(m + 0xA0);
         const DWORD* e = *(const DWORD* const*)(m + 0xA4);
         bool rc = false;
         out[4] = ~0u;
         for (int i = 0; b + 2 * i < e && i < 16; i++) {
             const u8* c = (const u8*)(uintptr_t)b[2 * i];
-            if (!c || *(const DWORD*)c != 0xFFDD94) continue;
+            if (!c || *(const DWORD*)c != TS3A(0xFFDD94)) continue;
             if (b[2 * i + 1] == 0 && !rc) {
                 out[0] = *(const volatile DWORD*)(c + 0x94), out[1] = *(const volatile DWORD*)(c + 0x98);
                 out[2] = *(const volatile DWORD*)(c + 0x8C), out[3] = *(const volatile DWORD*)(c + 0x28);

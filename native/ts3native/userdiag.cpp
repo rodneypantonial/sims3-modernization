@@ -799,7 +799,7 @@ static void UdSaveEnd(DWORD r) {
 // Save_WritePackage 0xAAC110 (thiscall) calls the native pre-save listeners 0xAABB80 at 0xAAC2F3, World_Save 0xC6D460 at
 // 0xAAC320, the post-save listeners 0xAABBC0 at 0xAAC34A [verified disassembly 1.67.2: each listener loop is thiscall with
 // one stack argument, ret 4, returns al; a false result ends the write with 0xB / 0xD]. Ours only mark the phases.
-static const DWORD UD_PRE_SITE = 0x00AAC2F3, UD_PRE = 0x00AABB80, UD_POST_SITE = 0x00AAC34A, UD_POST = 0x00AABBC0;
+static const DWORD UD_PRE_SITE = TS3A(0x00AAC2F3), UD_PRE = TS3A(0x00AABB80), UD_POST_SITE = TS3A(0x00AAC34A), UD_POST = TS3A(0x00AABBC0);
 typedef DWORD(__fastcall* UdListenFn)(void* self, void* edx, void* arg);  // ret 4
 static UdListenFn g_udPreOrig = (UdListenFn)(uintptr_t)UD_PRE, g_udPostOrig = (UdListenFn)(uintptr_t)UD_POST;
 static DWORD __fastcall UdPreHook(void* self, void*, void* arg) {

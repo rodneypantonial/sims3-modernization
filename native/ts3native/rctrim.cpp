@@ -17,12 +17,12 @@
 // a settle delay; every TrimEveryMin minutes of play. The Overwatch nightly trigger is not built: ts3fixes sends no
 // Overwatch signal to native (docs/198 §4.2).
 // Apex Radiance loaded and [Compat] ApexStandDown=1: no trim, one log line (late Apex load included: checked per trim).
-static const DWORD RT_SVC_SLOT = 0x00FFEB2C, RT_SVC_UPDATE = 0x007377F0;  // ResourceSystem service +0x1C (main thread)
-static const DWORD RT_MGR_VT = 0x00FFE250, RT_CACHE_VT = 0x00FFDD94;
+static const DWORD RT_SVC_SLOT = TS3A(0x00FFEB2C), RT_SVC_UPDATE = TS3A(0x007377F0);  // ResourceSystem service +0x1C (main thread)
+static const DWORD RT_MGR_VT = TS3A(0x00FFE250), RT_CACHE_VT = TS3A(0x00FFDD94);
 typedef void(__thiscall* RtSvcFn)(void* svc, DWORD realDt, DWORD gameDt);
 typedef void(__thiscall* RtShrinkFn)(void* mgr);
 static RtSvcFn g_rtOrig;
-static RtShrinkFn g_rtShrink = (RtShrinkFn)(uintptr_t)0x00733E70;  // selftest: a fake
+static RtShrinkFn g_rtShrink = (RtShrinkFn)(uintptr_t)TS3A(0x00733E70);  // selftest: a fake
 static bool g_rtOn;
 static DWORD g_rtEveryMs;                 // 0 = no periodic trim
 static DWORD g_rtSettleMs = 2000;         // world load -> trim
