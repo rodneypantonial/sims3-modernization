@@ -267,7 +267,7 @@ namespace Ts3Agent
         static readonly string[] kRejectWords = { "cancel", "no", "back", "quit", "exit", "decline", "never", "customize" }; // customize opens a second picker (lifetime wish) the autopilot cannot answer
         // Answers for a dialog no rule knows when nobody asked to accept it, in this order (the long-distance move offer was
         // accepted by the old highest-score default and took the household out of the world: runs 7h, 7j2).
-        static readonly string[] kSafeWords = { "cancel", "not now", "later", "no", "decline", "close", "don't", "dont" };
+        static readonly string[] kSafeWords = { "cancel", "not now", "later", "no", "decline", "close", "don't", "dont", "ignore", "reject", "refuse" };
         static readonly string[] kNames = { "Alex", "Sam", "Jamie", "Robin", "Casey", "Morgan", "Riley", "Quinn", "Avery", "Reese" };
         static int sNameIndex;
 
@@ -300,7 +300,15 @@ namespace Ts3Agent
             new[] { new[] { "placing the following lots", "new lots available" }, new[] { "don't place", "dont place", "no" } },
             new[] { new[] { "save your town before continuing" }, new[] { "just continue", "continue" } },
             new[] { new[] { "name your saved game" }, new[] { "cancel" } },
-            new[] { new[] { "come over", "invite", "would like to visit", "wants to visit", "join them" }, new[] { "decline", "not now", "no", "cancel" } },
+            // Career job offer (H1 2026-11-02, EA 1.69: "...has offered her the Patrol Officer (job level 4) position... Should Justine leave her
+            // current position...?" buttons 'change job' / 'keep job'): both buttons scored 1, no safe word, so the soak stopped. Keep the job.
+            new[] { new[] { "leave her current position", "leave his current position", "keep job" }, new[] { "keep job", "keep", "cancel", "no" } },
+            new[] { new[] { "come over", "invite", "would like to visit", "wants to visit", "join them", "go on a date", "to the prom" }, new[] { "decline", "not now", "no", "cancel" } },
+            // NPC move-in request (Gameplay/Moving:MoveInPrompt, AcceptCancelDialog) and stray-pet adoption (StrayPets:AdoptionConfirmation, yes/no):
+            // either one adds a household member.
+            new[] { new[] { "move in with", "wants to move in", "move into your", "join your household", "adopt" }, new[] { "cancel", "decline", "no" } },
+            // School: field trip and visit-a-friend asks (School.cs, AcceptCancelDialog), boarding school homesick / continue enrollment (yes/no).
+            new[] { new[] { "field trip", "boarding school", "homesick", "visit a friend" }, new[] { "cancel", "decline", "no" } },
             // Long-distance move offers: accepting one leaves LiveMode (1.69 run 7h/7j2 exits, crash at 0x00AD04EC); a player does not accept one in a 10 min test.
             new[] { new[] { "new towns available", "long-distance move", "preparing to move" }, new[] { "not now", "cancel", "later", "decline", "no" } },
             new[] { new[] { "mod scripts found" }, new[] { "accept", "ok", "continue" } },
