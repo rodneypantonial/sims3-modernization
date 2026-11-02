@@ -1901,7 +1901,7 @@ function earlyGateGuard(gs: EarlyGate[]): () => string {
   };
 }
 // child process with output to the console and the job log; killed (whole tree) at the deadline
-function run(cmd: string, args: string[], logFile: string, deadline: number, onLine?: (l: string) => void): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean }> {
+function run(cmd: string, args: string[], logFile: string, deadline: number, onLine?: (l: string) => void, plannedEnd = false): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean }> {
   return new Promise(res => {
     const p = spawn(cmd, args, { cwd: ROOT }), f = createWriteStream(logFile, { flags: 'a' });
     let out = '', timedOut = false, part = '';
@@ -1911,7 +1911,7 @@ function run(cmd: string, args: string[], logFile: string, deadline: number, onL
       if (onLine) { const ls = (part + s).split(/\r?\n/); part = ls.pop()!; ls.forEach(onLine); }
     };
     p.stdout.on('data', on); p.stderr.on('data', on);
-    const t = setTimeout(() => { timedOut = true; on(Buffer.from(`${dumpHungGame('job deadline')}\n`)); killTree(p.pid); }, Math.max(1000, deadline - Date.now()));
+    const t = setTimeout(() => { timedOut = true; if (!plannedEnd) on(Buffer.from(`${dumpHungGame('job deadline')}\n`)); killTree(p.pid); }, Math.max(1000, deadline - Date.now()));
     // fail fast (Rodney 2026-10-16): once the game is launched, every 30 s the game and the probe server must still be up;
     // two misses in a row end the child instead of waiting for the job deadline (default 60 min)
     let misses = 0;
@@ -1937,7 +1937,8 @@ function run(cmd: string, args: string[], logFile: string, deadline: number, onL
 // children that run with the game closed (--restart, install-fixes, cache-clear) have no game or probe for jobGuard to watch (docs/236 #18):
 // they get 15 min, not the job deadline (default 60 min)
 const noGameDeadline = (deadline: number) => Math.min(deadline, Date.now() + 15 * 60000);
-const node = (args: string[], logFile: string, deadline: number, onLine?: (l: string) => void) => run(process.execPath, args, logFile, deadline, onLine);
+// plannedEnd: the deadline is the end of the test (soak/routelock watchdog run for N min): no 2 GB hang dump of a healthy game (Round 6: every soak wrote one)
+const node = (args: string[], logFile: string, deadline: number, onLine?: (l: string) => void, plannedEnd = false) => run(process.execPath, args, logFile, deadline, onLine, plannedEnd);
 
 async function closeGame(probePid?: number) {
   await get('detach', 10000); // detach first: killing a host mid-call can take the game down
@@ -2464,7 +2465,7 @@ for (const [n, j] of jobs.entries()) {
       if (fo) { row.verdict.push(`FAIL: ${fo}`); row.selfCheckFail = fo; }
     } else if (j.run.soak) {
       await agent('autopilot', { enabled: true, speed: j.run.soak.speed ?? 'ultra', dialogs: true });
-      const wd = await node([H('watchdog.ts'), '--every', '1', '--port', values.port!], logFile, Math.min(deadline, Date.now() + j.run.soak.minutes * 60000));
+      const wd = await node([H('watchdog.ts'), '--every', '1', '--port', values.port!], logFile, Math.min(deadline, Date.now() + j.run.soak.minutes * 60000), undefined, true);
       const ranOut = wd.timedOut; // the watchdog only exits on its own with a diagnosis
       row.exitCode = ranOut ? 0 : 1;
       row.verdict = [ranOut ? `PASS: soak ${j.run.soak.minutes} min, watchdog quiet` : `FAIL: watchdog: ${wd.out.trim().split(/\r?\n/).at(-1) ?? `exit ${wd.code}`}`];
@@ -2472,7 +2473,7 @@ for (const [n, j] of jobs.entries()) {
       await agent('autopilot', { enabled: true, speed: j.run.routelock.speed ?? 'ultra', dialogs: true });
       const st = await get('routelock?start=1', 60000);
       if (!st?.hooked) throw new Error(`routelock start failed: ${JSON.stringify(st)?.slice(0, 300)}`); // byte check refused, or no probe
-      const wd = await node([H('watchdog.ts'), '--every', '1', '--port', values.port!], logFile, Math.min(deadline, Date.now() + j.run.routelock.minutes * 60000));
+      const wd = await node([H('watchdog.ts'), '--every', '1', '--port', values.port!], logFile, Math.min(deadline, Date.now() + j.run.routelock.minutes * 60000), undefined, true);
       const rep = await get('routelock?stop=1', 60000); // detach the hooks before anything else
       writeFileSync(join(OUT, `${queueName}-${date}-${j.id}-routelock.json`), JSON.stringify(rep, null, 1));
       row.routelock = routelockSummary(rep);
