@@ -56,9 +56,28 @@ export const gameRunning = () => {
   } catch { return true; } // tasklist failed: no verdict
 };
 
+// After a failed or hung launch: the game and, on EA, the per-launch helpers go. Never the EA app itself (EADesktop.exe: the sign-in and
+// the entitlement the next launch needs). Returns what was running, for the log (docs/236 round 4: launcher-stage hangs).
+export const LEFTOVER_EXES = (launch = LAUNCH, game = GAME_EXE) => [game, ...(launch === 'ea' ? ['EALauncher.exe', 'TSLHelper.exe'] : [])];
+export function killLeftovers(): string[] {
+  const found: string[] = [];
+  for (const n of LEFTOVER_EXES()) {
+    let out = '';
+    try { out = execFileSync('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${n}`]).toString(); } catch { continue; }
+    const pids = csvPids(out);
+    if (!pids.length) continue;
+    found.push(`${n} ${pids.join(',')}`);
+    try { execFileSync('taskkill', ['/F', '/T', '/IM', n], { stdio: 'ignore' }); } catch { /* gone meanwhile */ }
+  }
+  return found;
+}
+
 if (import.meta.main) {
   if (process.argv[2] === '--self-check') {
     const assert = (await import('node:assert')).strict;
+    assert.deepEqual(LEFTOVER_EXES('ea', 'Sims3Launcher.exe'), ['Sims3Launcher.exe', 'EALauncher.exe', 'TSLHelper.exe']);
+    assert.deepEqual(LEFTOVER_EXES('direct', 'TS3W.exe'), ['TS3W.exe']);
+    assert.ok(!LEFTOVER_EXES('ea').some(n => /EADesktop/i.test(n)), 'never the EA app');
     assert.ok(isSteamGame('TS3W.exe') && isSteamGame('ts3w.EXE') && !isSteamGame('TS3.exe') && !isSteamGame('Sims3Launcher.exe'));
     assert.ok(GAME_EXE.length > 0 && GAME_NAME === GAME_EXE.replace(/\.exe$/i, '') && !/\.exe$/i.test(GAME_NAME));
     assert.ok(['direct', 'ea'].includes(LAUNCH), `TS3_LAUNCH "${LAUNCH}": use direct or ea`);

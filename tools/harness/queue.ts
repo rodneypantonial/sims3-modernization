@@ -169,7 +169,7 @@ import { ledgerReport } from './mono-ledger-report.ts';
 import { saveStats } from './save-stats.ts';
 import { matchKnown } from './known-script-errors.ts';
 import { clickLines, dumpHungGame, GUARD_MS, logTail, type ModeSnap, modeExit, modeSnap, noSafeButton } from './game-alive.ts';
-import { BIN, EA_LAUNCHER, EA_URI, GAME_EXE, gameRunning, isSteamGame, LAUNCH, logUntrackedGame, MACHINE, machineTag, seenPids } from './game-exe.ts';
+import { BIN, EA_LAUNCHER, EA_URI, GAME_EXE, gameRunning, isSteamGame, killLeftovers, LAUNCH, logUntrackedGame, MACHINE, machineTag, seenPids } from './game-exe.ts';
 import { checkCfg as checkFailFast, describe as describeFailFast, routingGuard, type FailFast } from './routing-failfast.ts';
 import { checkRequire, flatDelta, parseRequire } from './fixes-require.ts';
 import { parseHitchTasks } from './hitch-tasks.ts';
@@ -1926,6 +1926,7 @@ async function closeGame(probePid?: number) {
   if (gameRunning()) try { execFileSync('taskkill', ['/F', '/IM', GAME_EXE], { stdio: 'ignore' }); } catch { /* gone */ }
   for (let i = 0; i < 60 && gameRunning(); i++) await sleep(1000);
   if (gameRunning()) log(`closeGame: ${GAME_EXE} still running after 60 s`);
+  else { const left = killLeftovers(); if (left.length) log(`closeGame: leftovers killed: ${left.join('; ')}`); } // EA helpers of a hung launch (docs/236 round 4)
 }
 const triage = (since: string) => {
   try { return execFileSync(process.execPath, [H('crash-ledger.ts'), 'triage', '--since', since, ...(seenPids.size ? ['--pids', [...seenPids].join(',')] : [])]).toString().trim().split(/\n\s*\n/).at(-1) ?? ''; }

@@ -10,8 +10,8 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { focusGame, giveFocusBack } from './focus-game.ts';
-import { stallGuard } from './game-alive.ts';
-import { BIN, GAME_EXE } from './game-exe.ts';
+import { launchGuard, stallGuard } from './game-alive.ts';
+import { BIN, GAME_EXE, killLeftovers } from './game-exe.ts';
 import { defaultSpec, problems, vanilla } from './vanilla.ts';
 
 const { values } = parseArgs({ options: { save: { type: 'string' }, restart: { type: 'boolean' }, port: { type: 'string', default: '47891' } } });
@@ -96,7 +96,17 @@ if (values.restart) {
 // load a save, ending in live mode (a save can come back in Edit Town, which pauses the clock)
 if (values.save) {
   // game start: the probe launches TS3W.exe; only "process gone for ~1 min" fails before the agent exists
-  await until('agent answering', 300, async () => (await agent('ping')).ok === true, 1000, stallGuard('game start', { port: Number(values.port), liveOnly: true }));
+  // and a launch stuck before the agent loads (flat committed MB, docs/236 round 4) fails in ~60-90 s: probe detached, the game and the
+  // EA per-launch helpers killed (never the EA app), the reason named
+  const startGuard = stallGuard('game start', { port: Number(values.port), liveOnly: true }), hang = launchGuard(Number(values.port));
+  await until('agent answering', 300, async () => (await agent('ping')).ok === true, 1000, async () => {
+    const why = await startGuard();
+    if (why) return why;
+    const h = await hang();
+    if (!h) return '';
+    await get('detach', 10000).catch(() => {});
+    return `${h}; killed: ${killLeftovers().join('; ') || 'nothing left running'}`;
+  });
   // "Mod Scripts Found" (native, script mods present) opens at the menu up to ~90 s after the agent answers.
   // Accepting it during a load leaves the game stuck on the loading screen, so clear it first and wait for quiet.
   let quietSince = Date.now(), sawWarning = false;

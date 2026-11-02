@@ -169,6 +169,27 @@ export async function sampleGame(port = 47891, extra?: () => unknown): Promise<G
   } catch (e) { return { running, answering: false, error: String((e as any)?.cause?.code ?? e), mark: '' }; }
 }
 
+// Launcher-stage hang (docs/236 round 4, EA 1.69, three launches in a row): the game process up at ~100 MB / 17 threads, the agent never
+// loaded, the DXVK log ending after "Found device". Pure step, one call per GUARD_MS sample while the agent has not answered yet: a miss =
+// committed MB below LAUNCH_HANG_MB and within 2 MB of the last sample; two misses in a row = the verdict.
+export const LAUNCH_HANG_MB = 400;
+export function launchStep(st: { last: number | null; misses: number }, s: { running: boolean; commitMB: number | null }): string {
+  const flat = s.running && s.commitMB != null && s.commitMB < LAUNCH_HANG_MB && st.last != null && Math.abs(s.commitMB - st.last) < 2;
+  st.misses = flat ? st.misses + 1 : 0;
+  st.last = s.commitMB;
+  return st.misses >= 2 ? `hung at launcher stage: ${GAME_EXE} up at ${Math.round(s.commitMB!)} MB committed with no growth for ~${2 * GUARD_MS / 1000} s, agent never answered` : '';
+}
+export function launchGuard(port = 47891) {
+  const st = { last: null as number | null, misses: 0 };
+  let next = Date.now() + GUARD_MS, why = '';
+  return async (): Promise<string> => {
+    if (why || Date.now() < next) return why;
+    next = Date.now() + GUARD_MS;
+    const m = await fetch(`http://127.0.0.1:${port}/memory`, { signal: AbortSignal.timeout(20000) }).then(r => r.json()).catch(() => null);
+    return why = launchStep(st, { running: gameRunning(), commitMB: typeof m?.commitMB === 'number' ? m.commitMB : null });
+  };
+}
+
 // const guard = stallGuard('world load'); then in the wait loop: const why = await guard(); if (why) throw new Error(why);
 // Cheap to call often: it samples at most every GUARD_MS. liveOnly: only "TS3W.exe gone" counts, first sample after
 // GUARD_MS (game start: the probe server may still be starting and the exe handing over). Worst case to fail:
@@ -442,6 +463,13 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
     for (const f of ['cycle.ts', 'save-matrix.ts']) assert.match(src(f), /async function until\([^\n]*guard: [^\n]*= stallGuard\(what/, `${f}: until() needs the stallGuard default`);
     assert.match(src('repro.ts'), /const guard = stallGuard\([^\n]*\n\s*while \(!ok\(last = await ag[^\n]*\n\s*const why = await guard\(\);/, 'repro.ts: the until loop needs a stallGuard');
     assert.deepEqual([...src('cycle.ts').matchAll(/await until\('([^']+)'[^\n]*, null\)/g)].map(m => m[1]), ['game closed'], 'cycle.ts: only the game-closed wait may opt out');
+  }
+  { // docs/236 round 4: launcher-stage hang = flat committed MB under LAUNCH_HANG_MB in two samples in a row after the first
+    const st = { last: null as number | null, misses: 0 }, up = (mb: number | null) => launchStep(st, { running: true, commitMB: mb });
+    assert.equal(up(80), ''); assert.equal(up(80.5), ''); assert.match(up(81), /^hung at launcher stage: .* 81 MB/);
+    const g = { last: null as number | null, misses: 0 }, step = (mb: number | null, running = true) => launchStep(g, { running, commitMB: mb });
+    assert.deepEqual([step(60), step(155), step(400), step(400), step(400)], ['', '', '', '', ''], 'growing or past the threshold is no hang');
+    assert.deepEqual([step(90), step(90), step(null), step(90), step(90, false)], ['', '', '', '', ''], 'no sample or no process resets');
   }
   { // docs/236 round 3: a script that answers a dialog with accept:true first tells the in-game autopilot (dialog_expect), or it can cancel it first
     const src = (f: string) => readFileSync(join(import.meta.dirname, f), 'utf8');

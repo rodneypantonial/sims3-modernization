@@ -115,6 +115,7 @@ class Probe:
         ensure_audio_off(USER_DIR / 'Options.ini')  # every launch, vanilla or not (docs/236 round 4)
         if ea:  # EA app edition: only EALauncher.exe with the offer URI works (a direct start is bounced by the DRM)
             ensure_selected_flags(USER_DIR / 'LoadOption.ini')
+            log_ea_processes()
             cmd = [os.environ.get('TS3_EA_LAUNCHER', r'C:\Program Files\Electronic Arts\EA Desktop\EA Desktop\EALauncher.exe'),
                    os.environ.get('TS3_EA_URI', 'origin2://game/launch/?offerIds=sims3_dd,1002441,70384_CE,70384_Unrevised')]
             if self.args.world or self.args.extra:
@@ -544,6 +545,19 @@ def ensure_audio_off(path):
         raise SystemExit(f'[ts3probe] Options.ini audio read-back failed: {bad}; launch refused')
     print(f"[ts3probe] Options.ini audio off ({'set' if new != old else 'already'}, read back ok); resolution {got['resolution']}, "
           f"lastdevice {got['lastdevice']}", flush=True)
+
+
+def log_ea_processes():
+    """EA launch: which EA app / launcher / game processes run before this launch (docs/236 round 4: the launcher-stage hangs had no
+    process record to compare with the good launches)."""
+    names = ('EADesktop.exe', 'EALauncher.exe', 'EABackgroundService.exe', 'TSLHelper.exe', 'Sims3Launcher.exe', 'TS3.exe')
+    try:
+        out = subprocess.run(['tasklist', '/NH', '/FO', 'CSV'], capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f'[ts3probe] EA processes before launch: tasklist failed ({e})', flush=True)
+        return
+    seen = [line.split('","')[0].strip('"') + ' ' + line.split('","')[1] for line in out.splitlines() if line.split('","')[0].strip('"') in names]
+    print(f"[ts3probe] EA processes before launch: {', '.join(seen) or 'none'}", flush=True)
 
 
 def serve(args):
