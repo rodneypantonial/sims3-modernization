@@ -430,3 +430,33 @@ Restore verified:
 - Mods listing identical (174 files).
 - Saves: 0 differences against the backup (2602 files).
 - No game process left.
+
+### Run 8c: competition-event rule, then the remaining jobs (2026-11-03)
+
+PR #226 76b873c adds a named ts3agent rule. It matches the dialog text "compete or just watch", never the buttons alone, and clicks "watch" as a rule click. It lives in `DialogPick.kEventRules`, and `RuleFor` checks it first. The unknown-dialog policy is unchanged. Self-check cases are in `tools/selftest/dialogpick`; selftest-all: 191 PASS, 0 FAIL; CI is green. Same set-up as 8b; Saves were backed up again first.
+
+| job | result | notes |
+|---|---|---|
+| vh1-soak | **PASS** (12.1 min) | `soak 10 min, watchdog quiet`; ts3fixes active (stuckcheck 220 runs, owspread 60); 0 new script errors. The competition event did not appear in this run, so the new rule was not exercised live. |
+| vh-cycle-a | **CRASH** (4.3 min) | `cycle.ts --save` exit 1. The game crashed at the main menu, before the world load. |
+| vh-cycle-b, vh-travel-matrix, vh-travel-trip, vh-newsave, vh-matrix, vh-repro, hf-statecmd | not run | Stopped at the crash. |
+
+Crash, static triage [verified for the addresses and log lines; cause inferred]:
+- EA xcpt `26-11-03 07.37.18`: `ACCESS_VIOLATION writing address 0x00000000 at 0x5de273d0` = msvcr80.dll+0x173D0.
+- Call stack: msvcr80 0x5DE273D0, 0x5DE27476, then Sims3Launcher.exe 0x00412DEE (+0x12DEE), 0x00412F0C (+0x12F0C), 0x00445F0C (+0x45F0C).
+- Our crash log line: `exception C0000005 at 0x5DE273D0 (msvcr80.dll+0x173D0) (info 00000001 00000000) thread 24776 ... stack code refs: 007FE05C 004E41F5 007FE05C 00412DEE 00800000 00412F0C 00445F0C`. Registers: eax 0, edi 0, edx 0, ecx 3F. This is a CRT copy or fill into a null destination.
+- The xcpt system block says `Free virtual memory: 34 Mb` of 4095 MB.
+- The last ts3native lines before the crash are the start-up `diag:` block and `ts3fixes: play: ui tasks ... ToMainMenuState.OnEnterNotInWorld`. Four handled first-chance AVs at 0x04157CC2 in another module came earlier.
+- None of the crash or caller addresses is in `ts3addr-ea169.h`, and the change ledger and docs have no match.
+- Reading [inferred]: the 32-bit address space was used up at the main menu, so an allocation returned null and the CRT wrote through it. Our build counts as the cause until shown otherwise. The likeliest suspect is `[GC]` (InitialHeapMB=352, GrowthStepMB=32: the larger Mono heap reserve; `OK GC initial heap ... imm 0x2800 -> 0x16000`) together with the 162 packages / 5181 MB of CC on this machine. vh-move and vh1-soak started and loaded the same set-up cleanly, so it is not deterministic.
+- No memory sample: the row's memory is empty because the crash came before the first sample.
+- No bisect and no fix attempt.
+
+Kept: `probe-out/ea-eamod-1103.vh-cycle-a.xcpt.txt`, `.xcpt.mdmp`, and the job's native log `probe-out/queue/ea-mod-matrix-2026-11-02-vh-cycle-a-2336-ts3native.log` (ea-mod-mode worktree).
+
+Restore verified:
+- Bin pair `c035abe5a3a6` / `8aa37522782a`.
+- ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`.
+- Mods listing identical (174 files).
+- Saves: 0 differences against the backup.
+- No game process left.
