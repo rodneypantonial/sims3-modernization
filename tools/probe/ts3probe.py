@@ -13,8 +13,9 @@ the Node binding is a native npm module. Standard library otherwise.
 serve attaches to a running TS3W.exe (or starts it with --launch), loads tools/probe/agent.js
 (and tools/frida/stutter-profile.js with --profile), serves JSON on 127.0.0.1 only, and appends
 every event (native exceptions, script errors, detach/crash) to probe-out/<timestamp>/events.jsonl.
+Env: TS3_EXE process name (default TS3W.exe); TS3_LAUNCH=ea starts EALauncher.exe (TS3_EA_LAUNCHER, TS3_EA_URI), no game args, and sets LoadOption.ini selectedflags from the launcher's LastRunIProducts & LastRunEProducts (TS3_SELECTED_FLAGS overrides; docs/234); the startup-popup answerer runs only then or with TS3_ANSWER_STARTUP_DIALOG=1.
 """
-import argparse, bisect, csv, glob, json, os, subprocess, sys, threading, time, urllib.error, urllib.request
+import argparse, bisect, csv, glob, json, os, re, subprocess, sys, threading, time, urllib.error, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -23,8 +24,29 @@ frida = None  # imported in serve only, so `get` runs without it
 
 ROOT = Path(__file__).resolve().parents[2]
 GAME_BIN = Path(os.environ.get('TS3_BIN', r'C:\Program Files (x86)\Steam\steamapps\common\The Sims 3\Game\Bin'))
+GAME_EXE = os.environ.get('TS3_EXE', 'TS3W.exe')
+# ts3agent commands that may leave live mode or change the household on purpose. /status reports the last one sent
+# (state_cmd, state_cmd_ago_s), so the harness tells a requested mode exit from one a dialog click caused (docs/236).
+# auto_dialog is not one: it answers a dialog nobody asked for.
+STATE_CMD = re.compile(r'^(build_mode|cas_|buy_open|buy_close|save_game|saver_like_save|travel_|load_world|load_save|play_|quit_game|'
+                       r'main_menu|enter_live_mode|make_household|switch_household|picker_|enter_play_flow|fresh_world|uni_move_in|'
+                       r'et_move_lot|houseboat_move|respond_dialog|reflect_call|kill_sim|age_up|make_sim)')
+# Native start-up warning "unofficial game modification that does not match your current version" (docs/231): a Win32
+# dialog (template 104 in the exe: buttons 1001 Quit, 1004 Continue, static 1003) shown before the script VM runs, so the
+# in-game agent cannot answer it. The probe posts the Continue click (no focus, nothing else changes).
+MOD_VERSION_DIALOG = {'quit': 1001, 'continue': 1004, 'text': 1003}
+
+def is_mod_version_dialog(class_name, control_ids):
+    """Only the exe's own warning template: dialog class and all three control ids present."""
+    return class_name == '#32770' and set(MOD_VERSION_DIALOG.values()) <= set(control_ids)
+
 USER_DIR = Path(os.environ.get('TS3_USER', Path.home() / 'Documents' / 'Electronic Arts' / 'The Sims 3'))
 FUNCTIONS_CSV = ROOT / 'game-copy' / 'analysis' / 'functions.csv'
+
+
+def next_misses(misses, present):
+    """Progress check of a long wait (docs/236 #18): a miss counts up, a hit resets; two in a row end the wait."""
+    return 0 if present else misses + 1
 
 
 class Symbols:
@@ -72,6 +94,7 @@ class Probe:
         self.events_file = open(self.out / 'events.jsonl', 'a', encoding='utf-8')
         self.lock = threading.Lock()
         self.agent_lock = threading.Lock()
+        self.state_cmd = None  # (cmd, time.time()) of the last STATE_CMD sent
         # one stack sample in flight: a sampler whose client timed out must not queue more calls in front of agentstatus
         # (the queued backlog read as a dead game, 2026-10-16-sampler-hang.md)
         self.sample_lock = threading.Lock()
@@ -88,24 +111,32 @@ class Probe:
             print(f"[ts3probe] {event.get('kind')}: {event.get('type') or event.get('file') or event.get('reason', '')}", flush=True)
 
     def launch(self):
-        cmd = [str(GAME_BIN / 'TS3W.exe')]
-        if self.args.world:
-            cmd.append(f'-worldFile:{self.args.world}')
-        cmd += self.args.extra or []
+        ea = os.environ.get('TS3_LAUNCH', 'direct') == 'ea'
+        if ea:  # EA app edition: only EALauncher.exe with the offer URI works (a direct start is bounced by the DRM)
+            ensure_selected_flags(USER_DIR / 'LoadOption.ini')
+            cmd = [os.environ.get('TS3_EA_LAUNCHER', r'C:\Program Files\Electronic Arts\EA Desktop\EA Desktop\EALauncher.exe'),
+                   os.environ.get('TS3_EA_URI', 'origin2://game/launch/?offerIds=sims3_dd,1002441,70384_CE,70384_Unrevised')]
+            if self.args.world or self.args.extra:
+                print('[ts3probe] WARN: TS3_LAUNCH=ea cannot pass game arguments; --world and extra arguments are ignored', flush=True)
+        else:
+            cmd = [str(GAME_BIN / GAME_EXE)]
+            if self.args.world:
+                cmd.append(f'-worldFile:{self.args.world}')
+            cmd += self.args.extra or []
         print(f'[ts3probe] launching {cmd}', flush=True)
         env = dict(os.environ, **dict(e.split('=', 1) for e in self.args.env))
         if self.args.env:
             print(f'[ts3probe] game environment: {self.args.env}', flush=True)
-        subprocess.Popen(cmd, cwd=GAME_BIN, env=env)
+        subprocess.Popen(cmd, cwd=None if ea else GAME_BIN, env=env)
         for _ in range(120):  # the exe may hand over to another instance; wait for the process by name
             try:
-                return frida.attach('TS3W.exe')
+                return frida.attach(GAME_EXE)
             except frida.ProcessNotFoundError:
                 time.sleep(0.5)
-        raise SystemExit('TS3W.exe did not start within 60 s')
+        raise SystemExit(f'{GAME_EXE} did not start within 60 s')
 
     def start(self):
-        self.session = self.launch() if self.args.launch else frida.attach('TS3W.exe')
+        self.session = self.launch() if self.args.launch else frida.attach(GAME_EXE)
         self.session.on('detached', self.on_detached)
         self.script = self.session.create_script((ROOT / 'tools' / 'probe' / 'agent.js').read_text(encoding='utf-8'))
         self.script.on('message', self.on_message)
@@ -119,6 +150,10 @@ class Probe:
             prof.load()
             prof.exports_sync.init('late', {'out': str(self.out / 'profile').replace('\\', '/')})
         threading.Thread(target=self.watch_script_errors, daemon=True).start()
+        if os.environ.get('TS3_LAUNCH') == 'ea' or os.environ.get('TS3_ANSWER_STARTUP_DIALOG') == '1':
+            threading.Thread(target=self.answer_startup_dialog, daemon=True).start()
+        else:
+            print('[ts3probe] startup-dialog answerer skipped (TS3_LAUNCH != ea and TS3_ANSWER_STARTUP_DIALOG != 1)', flush=True)
         threading.Thread(target=self.sample_memory, daemon=True).start()
         if sys.platform == 'win32':
             threading.Thread(target=self.keep_window_place, daemon=True).start()
@@ -139,6 +174,47 @@ class Probe:
             info['crash'] = {'summary': crash.summary, 'report': crash.report}
         self.log(info)
         self.alive = False
+
+    def answer_startup_dialog(self):
+        """Clicks Continue on the mod-version warning (MOD_VERSION_DIALOG) for up to 5 min after start, polling once a second."""
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        u.GetDlgItem.restype = wintypes.HWND
+        pid = frida.get_local_device().get_process(GAME_EXE).pid
+        buf = ctypes.create_unicode_buffer(1024)
+        t0 = time.time()
+        check_at, misses = t0 + 30, 0
+        while self.alive and time.time() - t0 < 300:
+            if time.time() >= check_at:  # every 30 s the game process must still be there; two misses stop the answerer with a reason
+                check_at = time.time() + 30
+                try:
+                    present = frida.get_local_device().get_process(GAME_EXE).pid == pid
+                except Exception:
+                    present = False
+                misses = next_misses(misses, present)
+                if misses >= 2:
+                    self.log({'kind': 'startup-dialog', 'reason': f'gave up after {int(time.time() - t0)} s: {GAME_EXE} (pid {pid}) is gone (two checks 30 s apart)'})
+                    return
+            hits = []
+            def cb(h, _):
+                p = wintypes.DWORD()
+                u.GetWindowThreadProcessId(h, ctypes.byref(p))
+                if p.value == pid and u.GetClassNameW(h, buf, 64) and u.IsWindowVisible(h):
+                    ids = [i for i in MOD_VERSION_DIALOG.values() if u.GetDlgItem(h, i)]
+                    if is_mod_version_dialog(buf.value, ids):
+                        hits.append(h)
+                return True
+            u.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(cb), 0)
+            for h in hits:
+                u.GetWindowTextW(u.GetDlgItem(h, MOD_VERSION_DIALOG['text']), buf, 1024)
+                btn = u.GetDlgItem(h, MOD_VERSION_DIALOG['continue'])
+                # WM_COMMAND(BN_CLICKED) to the dialog, as the button itself would send it; PostMessage never blocks the probe
+                ok = bool(u.PostMessageW(h, 0x0111, MOD_VERSION_DIALOG['continue'], btn))
+                self.log({'kind': 'startup-dialog', 'reason': f"Continue {'posted' if ok else 'failed'}: {buf.value[:160]}"})
+                if ok:
+                    return
+            time.sleep(1)
 
     def sample_memory(self):
         """Address-space timeline (memory.csv): shows what fills the 4 GB before an out-of-memory crash."""
@@ -168,7 +244,7 @@ class Probe:
         from ctypes import wintypes
         u = ctypes.windll.user32
         if not hasattr(self, 'pid'):
-            self.pid = frida.get_local_device().get_process('TS3W.exe').pid
+            self.pid = frida.get_local_device().get_process(GAME_EXE).pid
         found = []
         def cb(h, _):
             p = wintypes.DWORD()
@@ -264,7 +340,9 @@ class Probe:
         q = {k: v[0] for k, v in parse_qs(query).items()}
         rpc = self.script.exports_sync
         if path == 'status':
-            return dict(rpc.status(), alive=self.alive, out=str(self.out))
+            sc = self.state_cmd
+            return dict(rpc.status(), alive=self.alive, out=str(self.out), state_cmd=sc and sc[0],
+                        state_cmd_ago_s=sc and round(time.time() - sc[1], 1))
         if path == 'threads':
             ts = rpc.threads(int(q.get('frames', 32)))
             for t in ts:
@@ -355,6 +433,8 @@ class Probe:
             return self.window_show(q['cmd'])
         if path == 'agent':  # in-game ts3agent command, e.g. agent?cmd=list_sims&args={"household":"active"}
             args = json.loads(q['args']) if 'args' in q else None
+            if STATE_CMD.match(q['cmd']):
+                self.state_cmd = (q['cmd'], time.time())
             reply = None
             with self.agent_lock:  # one request in the mailbox at a time
                 seq = rpc.agent_send(q['cmd'], args)
@@ -375,6 +455,56 @@ class Probe:
             with self.lock:
                 return self.script_errors[int(q.get('since', 0)):]
         raise KeyError(path)
+
+
+def launcher_product_flags():
+    """The launcher's own record of the last real run: HKCU\\Software\\Electronic Arts\\Sims 3\\Launcher\\Settings
+    LastRunIProducts (installed) AND LastRunEProducts (entitled), as the 8-digit lower-case hex the ini uses; None when
+    either key is missing (the real launcher never ran)."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Electronic Arts\Sims 3\Launcher\Settings') as k:
+            i, e = winreg.QueryValueEx(k, 'LastRunIProducts')[0], winreg.QueryValueEx(k, 'LastRunEProducts')[0]
+        return f'{(int(i) & int(e)) & 0xFFFFFFFF:08x}'
+    except OSError:
+        return None
+
+
+def set_selected_flags(text, flags):
+    """LoadOption.ini text with `[productoption] selectedflags = <hex>`; None when it already has that value.
+    The real launcher writes this mask at Play and the game mounts only the packs in it (docs/234); the launcher swap
+    (docs/230) skips that write, so an EA launch sets it here. shortcut: appends a new [productoption] section when
+    the key is missing, upgrade if the game rejects a duplicate section header."""
+    import re
+    m = re.search(r'(?im)^(\s*selectedflags\s*=\s*)([0-9a-fA-F]*)', text)
+    if m and m.group(2).lower() == flags.lower():
+        return None
+    if m:
+        return text[:m.start(2)] + flags + text[m.end(2):]
+    return text.rstrip('\r\n') + ('\r\n' if text.strip() else '') + f'[productoption]\r\nselectedflags = {flags}\r\n'
+
+
+def ensure_selected_flags(path, flags=None):
+    """EA launch (docs/230 swap): make LoadOption.ini select the packs the launcher recorded; TS3_SELECTED_FLAGS overrides."""
+    flags = flags or os.environ.get('TS3_SELECTED_FLAGS') or launcher_product_flags()
+    if not flags:
+        print(f'[ts3probe] WARN: no LastRunIProducts/LastRunEProducts in HKCU Launcher\\Settings: {path.name} left alone; '
+              'run the real Sims3Launcher.exe once (Play) so it records the installed packs', flush=True)
+        return
+    try:
+        old = path.read_text(encoding='utf-8') if path.exists() else ''
+        new = set_selected_flags(old, flags)
+        if new is None:
+            print(f'[ts3probe] {path.name} selectedflags already {flags}', flush=True)
+            return
+        bak = path.with_name(path.name + '.bak-before-ea-launch')
+        if old and not bak.exists():
+            bak.write_text(old, encoding='utf-8')
+        path.write_text(new, encoding='utf-8')
+        print(f'[ts3probe] {path.name} selectedflags -> {flags} (launcher LastRunIProducts & LastRunEProducts; the swap skips the '
+              'launcher write, docs/234)', flush=True)
+    except OSError as e:
+        print(f'[ts3probe] WARN: cannot set selectedflags in {path}: {e}', flush=True)
 
 
 def serve(args):
@@ -425,7 +555,7 @@ def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest='cmd', required=True)
     s = sub.add_parser('serve')
-    s.add_argument('--launch', action='store_true', help='start TS3W.exe first')
+    s.add_argument('--launch', action='store_true', help=f'start {GAME_EXE} first')
     s.add_argument('--env', action='append', default=[], metavar='NAME=VALUE', help='environment for the launched game, e.g. GC_INITIAL_HEAP_SIZE=536870912 (docs/13)')
     s.add_argument('--world', help='save to auto-load, e.g. Baseline-SV.sims3 (passed as -worldFile)')
     s.add_argument('--profile', action='store_true', help='also load the stutter profiler')
@@ -433,11 +563,25 @@ def main():
                    help='also log stacks for native exceptions (JS handler; the game raises thousands per second, which can starve the probe)')
     s.add_argument('--port', type=int, default=47891)
     s.add_argument('--memory-interval', type=float, default=10, help='seconds between address-space samples')
-    s.add_argument('extra', nargs='*', help='extra TS3W.exe arguments after --')
+    s.add_argument('extra', nargs='*', help=f'extra {GAME_EXE} arguments after --')
     g = sub.add_parser('get')
     g.add_argument('path')
     g.add_argument('--port', type=int, default=47891)
+    sub.add_parser('self-check', help='asserts the start-up dialog matcher; no game needed')
     args = ap.parse_args()
+    if args.cmd == 'self-check':
+        assert is_mod_version_dialog('#32770', [1001, 1004, 1003]) and is_mod_version_dialog('#32770', [1003, 1004, 1001, 2])
+        assert not is_mod_version_dialog('#32770', [1001, 1004]) and not is_mod_version_dialog('Canvas', [1001, 1004, 1003])
+        ini = '[productoption]\r\nplayedflags = ffffffff\r\n\r\nselectedflags = 00000000\r\n'
+        assert set_selected_flags(ini, '001fefff') == ini.replace('00000000', '001fefff')
+        assert set_selected_flags(ini.replace('00000000', '001FEFFF'), '001fefff') is None
+        assert set_selected_flags('', '001fefff') == '[productoption]\r\nselectedflags = 001fefff\r\n'
+        assert [next_misses(m, p) for m, p in ((0, True), (0, False), (1, False), (1, True))] == [0, 1, 2, 0]
+        assert launcher_product_flags() is None or len(launcher_product_flags()) == 8
+        assert all(STATE_CMD.match(c) for c in ('travel_vacation', 'load_save', 'play_household', 'cas_open', 'main_menu', 'switch_household'))
+        assert not any(STATE_CMD.match(c) for c in ('auto_dialog', 'autopilot', 'time', 'game_state', 'pending_dialogs', 'do_interaction'))
+        print('self-check ok')
+        return
     serve(args) if args.cmd == 'serve' else get(args)
 
 

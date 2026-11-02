@@ -4681,7 +4681,10 @@ static void Run(HMODULE self) {
     GetModuleFileNameW(NULL, exe, MAX_PATH);
     HMODULE base = GetModuleHandleW(NULL);
     const wchar_t* name = wcsrchr(exe, L'\\');
-    Log("host %ls base 0x%p", name ? name + 1 : exe, base);  // file name only: players send this log (docs/188 privacy)
+    // file name only: players send this log (docs/188 privacy); PE timestamp + SizeOfImage name the build (Steam 1.67
+    // = 52DEC247 / 0xE5A000, EA app 1.69.47 TS3.exe = 6707155C / 0xEB5000) so a SKIP line from another edition is identifiable
+    const IMAGE_NT_HEADERS* hostNt = (const IMAGE_NT_HEADERS*)((const u8*)base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
+    Log("host %ls base 0x%p pe %08lX size 0x%lX", name ? name + 1 : exe, base, hostNt->FileHeader.TimeDateStamp, hostNt->OptionalHeader.SizeOfImage);
     if (base != (HMODULE)0x400000 || _wcsicmp(name ? name + 1 : exe, L"TS3W.exe") != 0) {
         Log("SKIP all: host is not TS3W.exe at 0x400000");
     } else {

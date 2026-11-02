@@ -105,6 +105,7 @@ const MTS_EXT = 'Chrome extension script (chrome.* APIs); its parsers run in too
 // Paths kept out of the public repo by .gitattributes export-ignore (maintainer-only tools).
 const INTERNAL = ['tools/mts-helper/'];
 const NO_SELF_CHECK: Record<string, string> = {
+  'tools/probe/ep-gate-probe.js': 'Frida script injected into the game; no self-check possible',
   'tools/ai-usage.ts': 'appends the local Claude usage file to docs/ai-usage.md; no logic to test',
   'tools/autonomy-tier2.ts': ONE_OFF,
   'tools/autonomy-virtual-closure.ts': ONE_OFF,
@@ -123,7 +124,6 @@ const NO_SELF_CHECK: Record<string, string> = {
   'tools/harness/ag.mjs': LIVE,
   'tools/harness/age-save.ts': LIVE,
   'tools/harness/build-agent.ts': 'builder: Windows csc against the game DLLs',
-  'tools/harness/crash-ledger.ts': 'hashes local files and maps local crash reports; no fixtures',
   'tools/harness/cycle.ts': LIVE,
   'tools/harness/focus-game.ts': 'Windows window state of the live game',
   'tools/harness/frame-times.js': FRIDA,

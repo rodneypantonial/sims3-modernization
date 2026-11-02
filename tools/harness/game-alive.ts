@@ -12,24 +12,24 @@
 import { execFile, execFileSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statfsSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { BIN, GAME_EXE, gameRunning, seenPids } from './game-exe.ts';
+
+const STARTED = new Date().toISOString(); // crash pickup: reports since this process started, of the game PIDs it saw
 
 const LIMIT_MS = 60000;
 const stamp = (t = Date.now()) => new Date(t).toISOString().slice(11, 19);
 
 // why the game counts as dead, or '' while alive (pure, covered by --self-check)
 export function deadReason(s: { running: boolean; now: number; lastBeatAt: number; error?: string }): string {
-  if (!s.running) return 'TS3W.exe process gone';
+  if (!s.running) return `${GAME_EXE} process gone`;
   if (s.now - s.lastBeatAt > LIMIT_MS) return `agent not answering for ${Math.round((s.now - s.lastBeatAt) / 1000)} s${s.error ? ` (${s.error})` : ' (heartbeat frozen)'}`;
   return '';
 }
 
-const gameRunning = () => {
-  try { return execFileSync('tasklist', ['/NH', '/FI', 'IMAGENAME eq TS3W.exe']).toString().includes('TS3W.exe'); } catch { return true; } // tasklist failed: no verdict
-};
 
 function lastTriage(): string {
   try {
-    const out = execFileSync(process.execPath, [join(import.meta.dirname, 'crash-ledger.ts'), 'triage']).toString().trim();
+    const out = execFileSync(process.execPath, [join(import.meta.dirname, 'crash-ledger.ts'), 'triage', '--since', STARTED, ...(seenPids.size ? ['--pids', [...seenPids].join(',')] : [])]).toString().trim();
     return out.split(/\n\s*\n/).at(-1) ?? out;
   } catch (e) { return `crash-ledger triage failed: ${String(e).split('\n')[0]}`; }
 }
@@ -53,10 +53,26 @@ export function graceStep(st: GraceState, s: { now: number; phase: string | null
   return { excused: true, why: '' };
 }
 
-function logTail(bytes = 1 << 20): string {
+// unrequested state change (docs/236): live mode left, or the active household changed, with no state-changing ts3agent command
+// (ts3probe.py STATE_CMD) sent in the last windowS seconds (/status state_cmd_ago_s). Pure, covered by --self-check.
+// 7h/7j2: the autopilot accepted a long-distance move offer, the household left the world and the game crashed later.
+export type ModeSnap = { inWorld: boolean; sub: string | null; hh: string | null };
+export const modeSnap = (gs: any): ModeSnap | null => gs?.ok && gs.result ? { inWorld: !!gs.result.in_world, sub: gs.result.sub_state ?? null, hh: gs.result.active_household ?? null } : null;
+export function modeExit(prev: ModeSnap | null, cur: ModeSnap | null, requestedAgoS: number | null | undefined, windowS = 180): string {
+  if (!prev || !cur || (requestedAgoS != null && requestedAgoS <= windowS)) return '';
+  if (prev.inWorld && prev.sub === 'LiveModeState' && (!cur.inWorld || !cur.sub || cur.sub === 'None'))
+    return `unrequested mode exit: LiveModeState -> ${cur.inWorld ? cur.sub ?? 'None' : 'out of the world'}`;
+  if (prev.inWorld && cur.inWorld && prev.hh && cur.hh !== prev.hh) return `unrequested mode exit: household ${prev.hh} -> ${cur.hh ?? 'none'}`;
+  return '';
+}
+// ts3agent autopilot click log lines in ts3native.log (`ap click: <title> -> <button> (<how>)`), and its "no safe button" line
+export const clickLines = (log: string, n = 10) => log.split(/\r?\n/).filter(l => l.includes('ap click: ')).slice(-n);
+export const noSafeButton = (log: string) => log.split(/\r?\n/).filter(l => /ap click: .*no safe button/.test(l)).at(-1) ?? '';
+
+export function logTail(bytes = 1 << 20, from = 0): string {
   try {
-    const f = join(BIN, 'ts3native.log'), size = statSync(f).size, b = Buffer.alloc(Math.min(bytes, size)), fd = openSync(f, 'r');
-    try { readSync(fd, b, 0, b.length, size - b.length); } finally { closeSync(fd); }
+    const f = join(BIN, 'ts3native.log'), size = statSync(f).size, start = Math.max(from > size ? 0 : from, size - bytes), b = Buffer.alloc(size - start), fd = openSync(f, 'r');
+    try { readSync(fd, b, 0, b.length, start); } finally { closeSync(fd); }
     return b.toString('latin1');
   } catch { return ''; }
 }
@@ -66,7 +82,7 @@ async function progressMark(): Promise<string> {
   let log = 0, ws = '';
   try { log = statSync(join(BIN, 'ts3native.log')).size; } catch { /* no plugin */ }
   const m = await fetch('http://127.0.0.1:47891/memory', { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
-  try { ws = execFileSync('tasklist', ['/NH', '/FO', 'CSV', '/FI', 'IMAGENAME eq TS3W.exe']).toString().split('","').at(-1)?.replace(/\D/g, '') ?? ''; } catch { /* no verdict */ }
+  try { ws = execFileSync('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${GAME_EXE}`]).toString().split('","').at(-1)?.replace(/\D/g, '') ?? ''; } catch { /* no verdict */ }
   return [log, typeof m?.commitMB === 'number' ? Math.round(m.commitMB) : '', ws].join('|');
 }
 
@@ -110,12 +126,11 @@ export function watchGame(onDeath?: () => void) {
 // Progress = TS3W.exe running, the probe answering, and any of: agent heartbeat, world-loaded flag, committed memory
 // (whole MB), ts3native.log size, or the caller's own mark (e.g. a save folder's mtime) changed since the last sample.
 export const GUARD_MS = 30000;
-const BIN = process.env.TS3_BIN ?? 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Sims 3\\Game\\Bin';
 export type GameSample = { running: boolean; answering: boolean; error?: string; mark: string };
 
 // one guard step (pure, covered by --self-check): '' while progressing, else why this sample is a miss once misses >= 2
 export function stallStep(st: { last: string | null; misses: number }, s: GameSample, liveOnly = false): string {
-  const why = !s.running ? 'TS3W.exe process gone' : liveOnly ? '' : !s.answering ? `probe not answering (${s.error ?? '?'})`
+  const why = !s.running ? `${GAME_EXE} process gone` : liveOnly ? '' : !s.answering ? `probe not answering (${s.error ?? '?'})`
     : s.mark === st.last ? 'nothing moved (agent heartbeat, world flag, committed MB, ts3native.log)' : '';
   if (s.answering) st.last = s.mark;
   st.misses = why ? st.misses + 1 : 0;
@@ -167,7 +182,7 @@ export function stallGuard(what: string, o: { port?: number; extra?: () => unkno
     const r = stallStep(st, await sampleGame(o.port, o.extra), o.liveOnly);
     if (r) why = `${what}: ${r} for ${Math.round(2 * GUARD_MS / 1000)} s (fail-fast guard)`;
     if (r.startsWith('nothing moved')) why += `; ${await captureHang(hangDir(), { port: o.port }).catch(e => `hang capture failed: ${e}`)}`; // game and probe up: a hang
-    if (r && !r.startsWith('TS3W.exe process gone')) why += `; ${dumpHungGame(`${what}: ${r}`)}`; // hung or probe silent: the caller's failure kills the game
+    if (r && !r.startsWith(`${GAME_EXE} process gone`)) why += `; ${dumpHungGame(`${what}: ${r}`)}`; // hung or probe silent: the caller's failure kills the game
     return why;
   };
 }
@@ -206,7 +221,7 @@ const frameName = (f: string) => f.split(' ').slice(1).join(' ') || f; // "0x123
 function procdump(file: string, ms: number): Promise<string> {
   const mode = process.env.TS3_HANG_DUMP ?? 'mini';
   if (mode === 'off') return Promise.resolve('dump off (TS3_HANG_DUMP=off)');
-  const args = ['-accepteula', ...(mode === 'ma' ? ['-ma'] : mode === 'mp' ? ['-mp'] : []), 'TS3W.exe', file];
+  const args = ['-accepteula', ...(mode === 'ma' ? ['-ma'] : mode === 'mp' ? ['-mp'] : []), GAME_EXE, file];
   return new Promise(res => execFile(process.env.TS3_PROCDUMP ?? 'procdump', args, { timeout: ms, windowsHide: true }, (e: any) => {
     let size = 0; try { size = statSync(file).size; } catch { /* none written */ }
     res(size ? `dump ${mode} ${Math.round(size / 1048576)} MB` : e?.code === 'ENOENT' ? 'dump skipped: procdump not found (Sysinternals; TS3_PROCDUMP=path)'
@@ -280,7 +295,7 @@ const PS32 = 'C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe';
 export function dumpPlan(o: { pid: number | null; freeBytes: number; existing: string[]; procdump: string | null; dir: string; off?: boolean; now?: Date }):
   { skip: string } | { tool: 'procdump' | 'powershell'; file: string } {
   if (o.off) return { skip: 'dump off (TS3_KILL_DUMP=off)' };
-  if (!o.pid) return { skip: 'no TS3W.exe running' };
+  if (!o.pid) return { skip: `no ${GAME_EXE} running` };
   if (o.existing.some(f => f.startsWith(`ts3w-${o.pid}-`) && f.endsWith('.dmp'))) return { skip: `already dumped (PID ${o.pid})` };
   if (o.freeBytes < DUMP_MIN_FREE) return { skip: `disk free ${Math.round(o.freeBytes / 2 ** 30)} GB < 10 GB` };
   const ts = (o.now ?? new Date()).toISOString().replace(/[-:]/g, '').slice(0, 15);
@@ -301,7 +316,7 @@ export function dumpHungGame(reason: string, o: { pid?: number; image?: string; 
   let freeBytes = 0, existing: string[] = [];
   try { const s = statfsSync(dir); freeBytes = s.bavail * s.bsize; existing = readdirSync(dir); } catch { /* no dir: plan skips on 0 free */ }
   const procdump = findProcdump();
-  const plan = dumpPlan({ pid: o.pid ?? gamePid(o.image ?? 'TS3W.exe'), freeBytes, existing, procdump, dir, off: process.env.TS3_KILL_DUMP === 'off' });
+  const plan = dumpPlan({ pid: o.pid ?? gamePid(o.image ?? GAME_EXE), freeBytes, existing, procdump, dir, off: process.env.TS3_KILL_DUMP === 'off' });
   const tag = `${stamp()} kill dump (${reason})`;
   if ('skip' in plan) { console.log(`${tag}: skipped, ${plan.skip}`); return `kill dump skipped: ${plan.skip}`; }
   const pid = Number(/ts3w-(\d+)-/.exec(plan.file)![1]), t0 = Date.now();
@@ -366,7 +381,7 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
   assert.equal(graceStep(gs2, { now: 50000, phase: 'etcc-ph-import', mark: 'a' }).excused, true);
   assert.match(graceStep(gs2, { now: 60000, phase: 'etcc-ph-import', mark: 'a' }).why, /etcc-ph-import: no progress .* for 60 s/, 'two windows without progress fail');
   assert.equal(deadReason({ running: true, now: 70000, lastBeatAt: 20000 }), '');
-  assert.equal(deadReason({ running: false, now: 1, lastBeatAt: 1 }), 'TS3W.exe process gone');
+  assert.equal(deadReason({ running: false, now: 1, lastBeatAt: 1 }), `${GAME_EXE} process gone`);
   assert.match(deadReason({ running: true, now: 90000, lastBeatAt: 20000 }), /not answering for 70 s \(heartbeat frozen\)/);
   assert.match(deadReason({ running: true, now: 90000, lastBeatAt: 0, error: 'ECONNREFUSED' }), /\(ECONNREFUSED\)/);
   // kill dump plan: path, procdump vs PowerShell, one per PID, disk floor, off switch
@@ -376,7 +391,7 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
   assert.match((dumpPlan({ ...dp, existing: ['ts3w-4242-20261026T010000.dmp'] }) as any).skip, /already dumped \(PID 4242\)/);
   assert.equal((dumpPlan({ ...dp, existing: ['ts3w-42420-20261026T010000.dmp'] }) as any).tool, 'powershell', 'other PID with the same prefix');
   assert.match((dumpPlan({ ...dp, freeBytes: 9 * 2 ** 30 }) as any).skip, /disk free 9 GB < 10 GB/);
-  assert.match((dumpPlan({ ...dp, pid: null }) as any).skip, /no TS3W\.exe running/);
+  assert.match((dumpPlan({ ...dp, pid: null }) as any).skip, new RegExp(`no ${GAME_EXE.replace(/\./g, '\\.')} running`));
   assert.match((dumpPlan({ ...dp, off: true }) as any).skip, /dump off/);
   assert.match(dumpHungGame('self-check', { image: 'no-such-image-ts3.exe', dir: join((await import('node:os')).tmpdir(), 'ts3-killdump-check') }), /skipped: no TS3W\.exe running/);
   // hang capture against fake probes (fixtures): healthy, dead (refused), hung (never answers)
@@ -407,5 +422,31 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
     assert.ok(Date.now() - t0 < 1500, 'cap holds against a probe that never answers');
     assert.match(hung, /0 sim stacks.*managed: skipped \(a sim stack sample timed out\); dump skipped: capture cap reached/);
   } finally { rmSync(tmp, { recursive: true, force: true }); }
+  { // unrequested mode exit / household change, requested window, autopilot click log
+    const live = { inWorld: true, sub: 'LiveModeState', hh: 'Goth' };
+    assert.equal(modeExit(live, { ...live, sub: null }, null), 'unrequested mode exit: LiveModeState -> None');
+    assert.equal(modeExit(live, { inWorld: false, sub: null, hh: null }, 900), 'unrequested mode exit: LiveModeState -> out of the world');
+    assert.equal(modeExit(live, { ...live, hh: 'Landgraab' }, undefined), 'unrequested mode exit: household Goth -> Landgraab');
+    assert.equal(modeExit(live, { ...live, sub: null }, 20), '', 'requested 20 s ago');
+    assert.equal(modeExit(live, { ...live, sub: 'BuildModeState' }, null), '', 'build mode is not an exit');
+    assert.equal(modeExit(null, { ...live, sub: null }, null), ''); assert.equal(modeExit(live, null, null), '', 'agent not answering: no verdict');
+    assert.equal(modeExit({ ...live, sub: 'CASState' }, { ...live, sub: null }, null), '', 'only live mode exits count');
+    assert.deepEqual(modeSnap({ ok: true, result: { in_world: true, sub_state: 'LiveModeState', active_household: 'Goth' } }), live);
+    assert.equal(modeSnap({ ok: false, error: 'x' }), null);
+    const lg = Array.from({ length: 12 }, (_, i) => `t ap click: d${i} -> #1 ok (only button)`).join('\r\n') + '\r\nother\r\nt ap click: (not clicked) -> no safe button, nothing clicked: \'Move?\' buttons: #2 \'move\' score 2\r\n';
+    assert.equal(clickLines(lg).length, 10); assert.match(clickLines(lg).at(-1)!, /no safe button/);
+    assert.match(noSafeButton(lg), /no safe button, nothing clicked: 'Move\?'/); assert.equal(noSafeButton('t ap click: a -> #1 cancel (safe default)'), '');
+  }
+  { // docs/236 #18: the cycle, save-matrix and repro waits check progress (stallGuard) unless a wait opts out with null
+    const src = (f: string) => readFileSync(join(import.meta.dirname, f), 'utf8');
+    for (const f of ['cycle.ts', 'save-matrix.ts']) assert.match(src(f), /async function until\([^\n]*guard: [^\n]*= stallGuard\(what/, `${f}: until() needs the stallGuard default`);
+    assert.match(src('repro.ts'), /const guard = stallGuard\([^\n]*\n\s*while \(!ok\(last = await ag[^\n]*\n\s*const why = await guard\(\);/, 'repro.ts: the until loop needs a stallGuard');
+    assert.deepEqual([...src('cycle.ts').matchAll(/await until\('([^']+)'[^\n]*, null\)/g)].map(m => m[1]), ['game closed'], 'cycle.ts: only the game-closed wait may opt out');
+  }
+  { // docs/236 round 3: a script that answers a dialog with accept:true first tells the in-game autopilot (dialog_expect), or it can cancel it first
+    const src = (f: string) => readFileSync(join(import.meta.dirname, f), 'utf8');
+    for (const f of ['cycle.ts', 'save-matrix.ts', 'travel-trip.ts', 'new-save.ts']) assert.match(src(f), /dialog_expect/, `${f}: accept:true needs dialog_expect`);
+    assert.match(src('story-fuzzer.ts'), /dialog_expect/, 'story-fuzzer.ts: the step before an accept:true auto_dialog arms dialog_expect');
+  }
   console.log('self-check ok');
 }

@@ -85,6 +85,7 @@ import { focusGame, giveFocusBack } from './focus-game.ts';
 import { mayBeStuck } from './stuck-rule.ts';
 import { clockStep, watchGame } from './game-alive.ts';
 import { startMachineLoad, summarize } from './machine-load.ts';
+import { BIN, GAME_EXE } from './game-exe.ts';
 
 const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'ab-on-first': { type: 'boolean' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'vres-dry': { type: 'string' }, 'no-samplers': { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-env-guard': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, 'no-frames': { type: 'boolean' }, 'camera-pan': { type: 'boolean' }, 'prof-opts': { type: 'string' }, travel: { type: 'string' }, 'fixes-require': { type: 'string' }, 'frame-lead': { type: 'string' }, 'hitch-tasks': { type: 'string' }, 'since-load': { type: 'string' }, 'frames-shared': { type: 'string' }, 'loop-rule': { type: 'string' }, story: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
@@ -189,7 +190,7 @@ if (fixesNames.length) {
 let stopped = false;
 const untilN = values['until-compares'] ? Number(values['until-compares']) : 0;
 if (values['until-compares'] && !(Number.isInteger(untilN) && untilN > 0)) throw new Error('--until-compares must be a positive integer');
-const shadowFile = join(process.env.TS3_BIN ?? 'C:/Program Files (x86)/Steam/steamapps/common/The Sims 3/Game/Bin', 'ts3native-shadow.jsonl');
+const shadowFile = join(BIN, 'ts3native-shadow.jsonl');
 let shadowOff = 0, shadowCarry = '', compares = 0, target = untilN;
 function countCompares() {
   try {
@@ -264,7 +265,7 @@ const clockGuard = (async () => {
 const boats0 = (await ag('houseboats')).result ?? []; // empty outside Isla Paradiso
 if (values.taskstall) console.log(`${stamp()} taskstall: ${JSON.stringify(await get(`taskstall?start=1&ms=${Number(values.taskstall)}`))}`);
 
-const prof = values.watchstalk || values['no-prof'] ? null : spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', 'stutter-profile.js'),
+const prof = values.watchstalk || values['no-prof'] ? null : spawn('python', ['-m', 'frida_tools.repl', '-n', GAME_EXE, '-l', join(ROOT, 'tools', 'frida', 'stutter-profile.js'),
   '-P', JSON.stringify({ ...profOpts, out: `${pre}-${secs}`.replace(/\\/g, '/'), hitchMs: 50, ...((reproLoop || untilN) && { stopFile: stopFlag.replace(/\\/g, '/') }) }), '-q', '-t', String(secs)], { stdio: ['ignore', 'pipe', 'pipe'] });
 if (prof) {
   const plog = createWriteStream(`${pre}-${secs}.log`); prof.stdout.pipe(plog); prof.stderr.pipe(plog);
@@ -292,7 +293,7 @@ const t0 = Date.now(), at = (s: number) => t0 + s * 1000;
 // main thread's per-frame hot path): the one end-of-profile crash (freeze-pan 2026-10-22, eip outside every module) hit
 // right when that session unloaded.
 const side = (on: boolean | undefined, file: string, name: string, extra = {}, keep = false) => on ? new Promise(r => {
-  const args = ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', file),
+  const args = ['-m', 'frida_tools.repl', '-n', GAME_EXE, '-l', join(ROOT, 'tools', 'frida', file),
     // +5 s: unload apart from the stutter profiler's session (two agents unloading together, docs/99 §12.7 / I-99-62)
     '-P', JSON.stringify({ out: pre.replace(/\\/g, '/'), minutes: mins, ...extra }), '-q', '-t', String(keep ? secs + 86400 : secs + 5)];
   if (keep) {
@@ -331,7 +332,7 @@ if (values['camera-pan']) {
 }
 // sync-plan lines of ts3native.log get an epoch stamp (the log has none): new bytes read every second, so a line's t is at most ~1 s
 // after it was written
-const NLOG = join(process.env.TS3_BIN ?? 'C:/Program Files (x86)/Steam/steamapps/common/The Sims 3/Game/Bin', 'ts3native.log');
+const NLOG = join(BIN, 'ts3native.log');
 writeFileSync(`${pre}-nativelog.jsonl`, '');
 const nlogDone = (async () => {
   let off = (() => { try { return statSync(NLOG).size; } catch { return 0; } })(), carry = '';

@@ -48049,5 +48049,14 @@
       }
     ],
     "cleanup": []
+  },
+  {
+    "id": "ea-long-distance-move",
+    "bug": "Accepting EA's long-distance move dialogs in world (\"There are new towns available... long-distance move\", \"Your Sim family is preparing to move\") exits LiveMode -> None; on 1.69 the game then crashed at 0x00AD04EC (runs 7h, 7j2). Open question: EA's bug or ours (vanilla 1.69 control run needed)",
+    "fix": "ts3agent kDialogRules declines these dialogs; no ts3native fix",
+    "save": "Baseline-SV-Spring",
+    "steps": [],
+    "expect": "harness declines the move dialogs: no LiveMode -> None exit, no crash",
+    "switches": []
   }
 ]

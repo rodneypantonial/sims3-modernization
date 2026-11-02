@@ -32,6 +32,7 @@ import { parseArgs } from 'node:util';
 import { readIndex, refpack } from '../extract-assemblies.ts';
 import { GUARD_MS, stallGuard } from './game-alive.ts';
 import { matchKnown } from './known-script-errors.ts';
+import { BIN } from './game-exe.ts';
 
 const { values } = parseArgs({ options: {
   cases: { type: 'string' }, list: { type: 'boolean' }, 'self-check': { type: 'boolean' }, travel: { type: 'boolean' },
@@ -45,7 +46,6 @@ if (!(Number.isInteger(TRIPS) && TRIPS >= 1 && TRIPS <= 10) || (TRIPS > 1 && val
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const USER_DIR = process.env.TS3_USER ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3');
 const SAVES = join(USER_DIR, 'Saves');
-const BIN = process.env.TS3_BIN ?? 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Sims 3\\Game\\Bin';
 const LOG = join(BIN, 'ts3native.log');
 const OUT = join(ROOT, 'probe-out', 'save-matrix');
 const RES = join(ROOT, 'docs', 'data', 'results');
@@ -281,8 +281,9 @@ async function ag(cmd: string, args?: object): Promise<any> {
   if (args) q.set('args', JSON.stringify(args));
   try { return await get(`agent?${q}`, 20000); } catch (e) { return { ok: false, error: String(e) }; }
 }
-// guard: fail-fast check (game-alive.ts stallGuard or a wait's own), run outside check() so its verdict is not swallowed
-async function until(what: string, limitS: number, check: () => Promise<boolean>, everyMs = 500, guard?: () => Promise<string>): Promise<number> {
+// guard: fail-fast check (game-alive.ts stallGuard or a wait's own), run outside check() so its verdict is not swallowed.
+// Default: progress checked every 30 s, two misses fail, instead of only the case timeout (docs/236 #18).
+async function until(what: string, limitS: number, check: () => Promise<boolean>, everyMs = 500, guard: () => Promise<string> = stallGuard(what, { port: Number(values.port) })): Promise<number> {
   const t0 = Date.now();
   while (!(await check().catch(() => false))) {
     if (Date.now() - t0 > limitS * 1000) throw new Error(`${what}: not reached within ${limitS} s`);
@@ -375,7 +376,9 @@ function nextName(label: string): string {
   assertSafeName(name);
   return name;
 }
-async function dialogs() { const d = await ag('auto_dialog'); if (d.ok && d.result?.open) log(`dialog "${String(d.result.title ?? '').slice(0, 60)}" -> ${d.result.clicked}`); }
+// accept: a dialog this step opened itself (trip confirm, PlayFlow venue prompt); else the agent's safe button (docs/236 #3)
+// accept also tells the in-game autopilot to leave the dialog to this call for 60 s (dialog_expect; ts3agent 03e2bfe, older agents answer ok:false)
+async function dialogs(accept = false) { if (accept) await ag('dialog_expect', { seconds: 60 }); const d = await ag('auto_dialog', accept ? { accept: true } : {}); if (d.ok && d.result?.open) log(`dialog "${String(d.result.title ?? '').slice(0, 60)}" -> ${d.result.clicked}`); }
 async function pause() { await ag('set_speed', { speed: 'pause' }); }
 
 // label: new save Matrix-<world>-<label>-<n>; overwrite: that existing Matrix-* name again. Always by name: a nameless
@@ -625,7 +628,7 @@ async function enterWorldInner(cmd: string, args: object, from: string, who: str
   let moveIn = '', uniGrace = 0;
   const uniMoveIn = async (t: any): Promise<string> => {
     if (moveIn !== 'started' && (await ag('game_state')).result?.sub_state === 'PlayFlowState') {
-      await dialogs(); // the required-venue prompt PlayFlow may open
+      await dialogs(true); // the required-venue prompt PlayFlow may open
       const m = await ag('uni_move_in');
       if (!m.ok) return `uni_move_in: ${m.error}`;
       if (m.result.started || m.result.started_before) {
@@ -650,8 +653,9 @@ async function enterWorldInner(cmd: string, args: object, from: string, who: str
   let leftBy = '';
   // left = the start world unloaded or another world answers; in_travel alone is not enough (2026-10-16 future: in_travel
   // set, Bridgeport never unloaded): the stall rule covers that phase
+  await ag('dialog_expect', { seconds: 60 }); // the trip confirm: the autopilot must not cancel it first
   await until(`left ${from}`, 900, async () => {
-    if (++n % 3 === 0) await dialogs();
+    if (++n % 3 === 0) await dialogs(true); // trip confirm
     if (n % 5 === 0 && (dead = gameTaskError(await asyncLog()))) return true;
     if (n % 60 === 0) await maxNeeds().catch(e => log(String(e))); // keep needs full while the Sim walks to the trip
     await tripStatus();
@@ -671,11 +675,12 @@ async function enterWorldInner(cmd: string, args: object, from: string, who: str
   if (dead) throw new Error(dead);
   log(`left ${from}: ${leftBy}`); // which signal ended the wait (2026-10-16 future run: passed within ~30 s, cause not logged)
   misses = 0;
+  await ag('dialog_expect', { seconds: 60 });
   await until('arrived in live mode', 1200, async () => {
     await tripStatus();
     if (watchTravelSaves(off)) { stallSince = 0; stale('', Date.now()); }
     if ((await get('agentstatus', 5000)).worldLoaded !== true) { misses = 0; stallSince = 0; stale('', Date.now()); return false; }
-    if (++n % 10 === 0) await dialogs();
+    if (++n % 10 === 0) await dialogs(true);
     if (n % 5 === 0 && (dead = gameTaskError(await asyncLog()))) return true;
     const ts = await ag('travel_state');
     if (uni && ts.ok && ts.result.in_travel && sameWorld(ts.result.world, 'University') && (dead = await uniMoveIn(ts.result))) return true;
