@@ -19,9 +19,15 @@
 //         flag != 0 = the start cell is not water (one step out, no scan); cb = route callback object (vtable, start x,y at
 //         +0x10, goal x,y at +0x18) or NULL. Returns the jump point's index or 0xFFFFFFFF.
 
-static const DWORD WJ_JUMP = 0x0061FE10, WJ_CALL = 0x006207FB, WJ_NEAR_CB = 0x0066DC50;
-static const DWORD WJ_CODE_LO = 0x0061F750, WJ_CODE_HI = 0x0061FF93;  // 0x61F750 .. end of 0x61FE10: every function the jump runs
+static const DWORD WJ_JUMP = TS3A(0x0061FE10), WJ_CALL = TS3A(0x006207FB), WJ_NEAR_CB = TS3A(0x0066DC50);
+static const DWORD WJ_CODE_LO = TS3A(0x0061F750), WJ_CODE_HI = TS3A(0x0061FF93);  // 0x61F750 .. end of 0x61FE10: every function the jump runs
+#ifdef TS3A_TABLE
+// EA 1.69.47 (docs/232 "WaterJps on 1.69"): the same code moved. The Steam range also holds a heap helper (0x61F830, 0x60 bytes,
+// not on the jump's path) that EA links elsewhere, so the EA range is 0x60 shorter and hashes differently; 0x66DC50 hashes the same.
+static const DWORD WJ_CODE_FNV = 0x201847A4, WJ_NEAR_FNV = 0x585FD97D;
+#else
 static const DWORD WJ_CODE_FNV = 0x5A2C1E2B, WJ_NEAR_FNV = 0x585FD97D;   // FNV-1a of those bytes and of 0x66DC50 (0x60 bytes), Steam 1.67
+#endif
 
 typedef DWORD(__cdecl* WjJumpFn)(const u8* const* g1, const u8* const* g2, DWORD w, DWORD h, DWORD goal, DWORD cell, DWORD dir, DWORD flag, void* cb);
 typedef u8(__fastcall* WjCbFn)(void* self, void* edx, const DWORD* xy);  // thiscall, ret 4
@@ -182,7 +188,8 @@ static bool ApplyWaterJps(const wchar_t* ini) {
     c.waterJpsVerify = GetPrivateProfileIntW(L"WaterJps", L"Verify", 0, ini) ? 1 : 0;
     // the loop reproduces exactly this code; anything else there (another patch) and we leave it alone
     if (!Readable((void*)(uintptr_t)WJ_CODE_LO, WJ_CODE_HI - WJ_CODE_LO) || WjFnv(WJ_CODE_LO, WJ_CODE_HI) != WJ_CODE_FNV) {
-        Log("SKIP water jps: code at 0x%08X..0x%08X differs from Steam 1.67, nothing written", WJ_CODE_LO, WJ_CODE_HI);
+        Log("SKIP water jps: code at 0x%08X..0x%08X differs from the expected build (fnv 0x%08lX), nothing written", WJ_CODE_LO, WJ_CODE_HI,
+            Readable((void*)(uintptr_t)WJ_CODE_LO, WJ_CODE_HI - WJ_CODE_LO) ? WjFnv(WJ_CODE_LO, WJ_CODE_HI) : 0);
         return false;
     }
     g_wjNearOk = Readable((void*)(uintptr_t)WJ_NEAR_CB, 0x60) && WjFnv(WJ_NEAR_CB, WJ_NEAR_CB + 0x60) == WJ_NEAR_FNV;

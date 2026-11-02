@@ -14,12 +14,12 @@
 // than before: the game still copies and flushes the new save itself before it returns.
 #include <wctype.h>
 
-static const DWORD SAVE_GAME_SITE = 0x00742A95, SAVE_GAME = 0x00AB1030;
-static const DWORD SAVE_INFO_SITE = 0x00AB10F6, SAVE_INFO = 0x00AAE950;
-static const DWORD SAVE_WRITE_SITE = 0x00AB12AF, SAVE_WRITE = 0x00AAC110;
-static const DWORD SAVE_BACKUP_SITE = 0x00AB134E, SAVE_BACKUP = 0x00AB0F80;
-static const DWORD SAVE_COPY_SITE = 0x00AB1363, SAVE_COPY = 0x00AB0E80;
-static const DWORD SAVE_FINAL_SITE = 0x00AB1410, SAVE_FINAL = 0x00AAF5F0;
+static const DWORD SAVE_GAME_SITE = TS3A(0x00742A95), SAVE_GAME = TS3A(0x00AB1030);
+static const DWORD SAVE_INFO_SITE = TS3A(0x00AB10F6), SAVE_INFO = TS3A(0x00AAE950);
+static const DWORD SAVE_WRITE_SITE = TS3A(0x00AB12AF), SAVE_WRITE = TS3A(0x00AAC110);
+static const DWORD SAVE_BACKUP_SITE = TS3A(0x00AB134E), SAVE_BACKUP = TS3A(0x00AB0F80);
+static const DWORD SAVE_COPY_SITE = TS3A(0x00AB1363), SAVE_COPY = TS3A(0x00AB0E80);
+static const DWORD SAVE_FINAL_SITE = TS3A(0x00AB1410), SAVE_FINAL = TS3A(0x00AAF5F0);
 static const size_t kInfoNhdPath = 0x430;  // inline wchar_t[520] path buffer in the save info
 
 // thiscall as __fastcall with a dummy edx: same stack layout and callee cleanup. DWORD returns keep eax whole.
@@ -286,8 +286,8 @@ static bool SaveJobPromote(const wchar_t* name) {
 // power loss before the worker is done can (the .backup was flushed before, at step 8). The next save (and travel) and
 // the load copy (0xAB16ED, FUN_00AB0E80 dir 1) wait for the worker first, so the game never deletes or copies a save
 // folder the worker still has open.
-static const DWORD SAVE_FLUSH = 0x00AAF4B0, SAVE_FLUSH_COPY_SITE = 0x00AAFD8A, SAVE_FLUSH_FINAL_SITE = 0x00AAF737;
-static const DWORD LOAD_COPY_SITE = 0x00AB16ED;
+static const DWORD SAVE_FLUSH = TS3A(0x00AAF4B0), SAVE_FLUSH_COPY_SITE = TS3A(0x00AAFD8A), SAVE_FLUSH_FINAL_SITE = TS3A(0x00AAF737);
+static const DWORD LOAD_COPY_SITE = TS3A(0x00AB16ED);
 typedef void(__cdecl* SaveFlushFn)(const wchar_t* path);
 static SaveFlushFn g_saveFlushOrig = (SaveFlushFn)(uintptr_t)SAVE_FLUSH;
 static SaveCopyFn g_loadCopyOrig = (SaveCopyFn)(uintptr_t)SAVE_COPY;

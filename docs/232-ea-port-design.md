@@ -1,0 +1,368 @@
+# 232. EA app 1.69.47 port of ts3native: design (2026-11-02 PHT)
+
+Question: ship EA app 1.69.47 support with the least new machinery and no risk to the Steam build. Inputs: docs/230
+(coverage of the first EA image), docs/68 §7-§7.5 (tools), docs/231 (mod-version popup), `out/port/ts3-ea169-file-fec39efa/`
+(EA-derived, never committed). [verified] = read in the CSVs/sources this session, [inferred] = reading of them.
+
+## 1. What the map says [verified]
+- `map.csv` 1,123 rows: exact 573, masked 268, ref 248, near 17, ambiguous 9, offset-changed 5, missing 3. `problems.csv`
+  284 rows, 186 `ai=yes`: by section .text 19, .rdata 50, .data 117; spread over 42 source files, worst routesnap.cpp 40,
+  replay.cpp 14, crashfx.cpp 9, memdiag.cpp 9, locowin.cpp 8, memexp.cpp 8. 44 of the 186 are `ported (by-value)` IC tables
+  (`kSnIcDef[0..38]`, `kHxIc[0..6]`): patch-bytes-check already holds their 1.69 address, `gen` just has no rule for them.
+  `ghidra-names.csv` places 0 of the 186 (code names only). Patch bytes: 244 ok, 120 ported, 5 mismatch (4 addresses,
+  eafix/watchpt/crashfx/gcroots), 4 unmapped. Vtables: 27 named by our sources, 17 unshifted (vt_Portal 0xFED048 ->
+  0x1038590, 3 votes), 10 shifted or resized (0xFEB848 221 -> 73 slots). `map.offsets.csv` 9 groups, 5 sites (steerro, watchpt,
+  rtoro, memexp).
+- Not in any source file with `ai=yes`: decompress.cpp, optsinit.cpp, waterjps*.cpp, alloc.cpp, cellmemo.cpp, movedwait.cpp
+  (sigmap: 24 features fully mapped, docs/230). These are the first-smoke pool.
+- `Matches` = `Readable(addr, n) && memcmp` (ts3native.cpp:47); `InstallDetour`/`PatchImm32` go through it. Plain data reads
+  (`*(DWORD*)0x0116...`) have no check. Host gate today: name `TS3W.exe` + base 0x400000, else `SKIP all` (ts3native.cpp:4688). <!-- docs-code: ok -->
+
+## 2. Options
+**A. Codemod + compile-time table, second asi (`ts3native-ea169.asi`).** `addr-codemod --apply` wraps 1,393 literals as
+`TS3A(0x...)`; default `TS3A(x)` = `(x)` (preprocessor: Steam object code cannot change). `/DTS3A_TABLE` build takes the pairs
+from a generated header; constexpr lookup, so static initializers (130 `static const DWORD ... = 0x00...` lines [verified
+grep]) stay constants, and 12 case labels (apex.cpp) + 5 inline asm (mintcall.cpp) stay literal `manual` rows [verified
+docs/68 §7.1]. Unresolved rows: `gen` writes `0` (new flag `--zero-unresolved`), so a code patch at 0 fails `Readable` and
+logs SKIP; a data read at 0 would crash, so every file with a zero row is OFF in the EA ini and CI asserts it. Players
+install the asi for their edition; the host check selects by PE timestamp + SizeOfImage (6707155C / 0xEB5000 vs 52DEC247 /
+0xE5A000). New code: ~40 lines gen, ~10 lines host check, ~15 lines build.yml. [inferred: counts from the §7.1 scan]
+**B. One asi, runtime table.** `TS3A` as a runtime lookup breaks every constant context: the 130 static-initializer lines
+(several hundred literals), 12 case labels, 5 inline asm, template/constexpr uses, array initializers (`kSnIcDef` 39 dwords,
+`kHxIc` 7), and the 5 generated `vcallsites*.h` headers (5,917 rows, probe-only). Each becomes lazy init or an accessor: a
+non-mechanical refactor of ~74 files that changes Steam code paths and adds a lookup to hot reads. Most machinery, and it
+removes the Steam byte-identity guarantee. Rejected. [inferred]
+**C. Apex-style runtime signature scan (`sigmap-ea169.json`).** 740 of 875 code sites unique, but sigmap has no data
+addresses at all (code sites only, tools/sigmap.ts header) and no ref-following; the 248 `ref` + 167 unmapped data rows
+would need exe-addr-map's ref logic rewritten in C++ inside the asi, plus signature storage and ambiguity handling at run
+time with no offline review. Also [inferred] the EA `.text` is decrypted after the DRM wrapper runs; a scan in DllMain may
+see ciphertext. Largest new machinery; its one advantage (future EA patches without a rebuild) is not asked for. Rejected.
+**Recommendation: A.** It reuses port-run/gen/patch-bytes-check as built, the table is addresses only (committable like
+`docs/data/sigmap-ea169.json`), and Steam stays provably byte-identical.
+
+## 3. Handling the problem classes under A
+- 2026-11-02 `--xrefs` pass (docs/68 §7): 109 of the 140 data/`.rdata` rows resolved by Steam xref windows (kind `xref`, inferred); 140 -> 38 zero rows, `AI needed` 186 -> 82. The leftovers are code rows and data nobody references directly.
+- 186 `ai=yes`: 44 by-value IC rows -> `gen` takes patch-bytes `ported (by-value)` as table rows (port-run already has them).
+  142 left -> `0` in the table + their 42 files OFF on EA. Resolve only the ones a wanted feature needs, in Ghidra on the main
+  laptop (`probe-out/ts3-ea169-file.exe` + `ghidra-names.csv`), recorded in `docs/data/ea169-overrides.csv`
+  (steam,ea,label,evidence; addresses only) that `gen` reads. The 6 ts3native.cpp rows (0x676340.., 0x74CFC0, 0xE4E168) and
+  3 `ts3native.cpp` data rows come first: they sit outside any feature switch. [inferred: check at task 5]
+- 5 mismatches, 9 ambiguous, 3 missing, 17 near: `near` passes `--allow-inferred` and is protected by `Matches`; the others
+  stay 0 -> their files (eafix, watchpt, crashfx, gcroots, routephases, allocsites, steerro, p4clone, avoidro, memexp, rtoro)
+  OFF until hand-verified.
+- 120 `ported` byte expectations: expected bytes embed Steam rel32/pointers, so `Matches` SKIPs on EA (safe, feature inert).
+  Done on branch ea169-bytes: `native/ts3native/ts3bytes-ea169.h`, written by `patch-bytes-check.ts --table` / `port-run.ts` (244 ok + 120 ported = 364 rows: EA address, length, the game's own bytes), used by `Matches`/`InstallDetour` under `TS3A_TABLE` (docs/68 7.3). The 5 mismatches and 4 unmapped get no row and still SKIP.
+- 407 slot-shifted vtables, 5 offset-changed sites: slot numbers and struct displacements are not addresses, the codemod does
+  not touch them. steerro, watchpt, rtoro, memexp, lotfd (vt_Portal) OFF on EA; re-derive by hand later (docs/230 reading).
+- Gating rule: EA ini = Steam ini with every section `Enabled=0` except an allowlist in build.yml (same awk style as the
+  release check); CI fails if an allowlisted section's module file appears in the header's `// unresolved` list. `ALLOW_ON` (build.yml, since e09801d) lists sections that get the same assert, keep their shipped values and also get `Enabled=1` forced (for sections the Steam ini ships off); `[FootprintIndex]` is the first.
+- Steam identity proof: the `--apply` commit is a separate PR; CI artifact of its parent (main) vs the PR artifact: sha256 of
+  the `.text`/`.rdata` sections (parsePe from tools/exe-addr-map.ts, `node -e`) and `ts3native.map` minus the timestamp line
+  must be equal. Build.cmd already writes the .map.
+- Table review/regeneration: `node tools/port-run.ts --exe probe-out/ts3-ea169-file.exe --allow-inferred` writes
+  `native/ts3native/ts3addr-ea169.h` (sorted pairs + `// unresolved: 0x... file:line` comments, no EA bytes); review = git diff.
+  Rerun after any merge that adds literals.
+- Managed lane (separate, after native smoke): extract the 1.69 assemblies on the EA laptop (`tools/extract-assemblies.ts`,
+  into a gitignored dir), `port-report` managed stage -> `.managed.csv` (ts3fixes methods changed), rebuild ts3fixes with
+  `REF_DIR` pointed at 1.69 -> `ts3fixes-ea169.package`. Version-1 S3SA header, so no mod-version popup from ours (docs/231);
+  the popup itself comes from 1.67 core mods and is answered by the harness guard in docs/231 §2.
+
+## 4. Branch and merge plan around v0.2.5 (PHT)
+- Mon 11-02 .. Thu 11-05: branch `ea169-port` from main. Only tooling + ts3addr.h + host check + build.yml there; no
+  `--apply` (79 files rewritten would conflict with every main commit until the release). Freeze Tue 11-03, ship Thu 11-05 from main.
+- Fri 11-06: merge main into the branch, run `--apply` as one commit (idempotent; a second scan must show 0 `wrap` rows),
+  identity proof (task 4), PR to main. After that every merge from main is `--apply` again, never a conflict resolution.
+- First EA smoke can run before 11-06 from a branch CI artifact (PR builds run `native-ea169`), with `--apply` done on the
+  branch only and dropped before the merge.
+
+## 5. Tasks (effort per CLAUDE.md: minutes/hours wall-clock; game runs on the EA laptop, correctness only)
+| # | task | files | agent | time | EA runs | verify |
+|---|---|---|---|---|---|---|
+| 1 | `gen --zero-unresolved`, by-value rows, committed output `native/ts3native/ts3addr-ea169.h` with `TS3A_HOST_PE/SIZE` defines and `// unresolved` list; ts3addr.h includes it | tools/addr-codemod.ts, tools/port-run.ts, native/ts3native/ts3addr.h | sonnet | 45 min | 0 | port-run prints gen 1,031 addresses, 142 zero rows; `node tools/selftest-all.ts --ci` green |
+| 2 | host check: under `TS3A_TABLE` accept any host name whose PE timestamp+SizeOfImage match the table; Steam build unchanged | native/ts3native/ts3native.cpp | sonnet | 20 min | 0 | EA log `host Sims3Launcher.exe ... pe 6707155C size 0xEB5000`, no `SKIP all` |
+| 3 | build.yml job `native-ea169`: one `cl ... /DTS3A_TABLE` line (no selftest), EA ini from the Steam ini via awk allowlist, assert allowlist vs unresolved list, artifact `ts3native-ea169` | .github/workflows/build.yml | sonnet | 40 min | 0 | PR artifact has asi + ini; a deliberately wrong allowlist entry fails the job |
+| 4 | **done 2026-11-02**: `--apply` on the branch (80 files, 1,414 literals), identity proof vs the pre-codemod branch build (run 41387248277): `.text`/`.data` equal, `.rdata` differs only in the debug-dir timestamp (2 bytes); no .map in the Steam artifact | native/ts3native/*.cpp (79 files), docs/68 §7.1 note | sonnet | 30 min | 0 | both hashes equal; second scan 0 `wrap` rows |
+| 5 | **done 2026-11-02: 30 of 31 rows + 8 bytes-bad sites via `docs/data/ea169-overrides.csv` (port-run `--overrides`)**; resolve the 9 ts3native.cpp rows + any zero row in the smoke pool in Ghidra (main laptop), `docs/data/ea169-overrides.csv` | docs/data/ea169-overrides.csv, tools/addr-codemod.ts (read overrides) | reasoning | 2 h | 0 | port-run: those rows leave the unresolved list with evidence text |
+| 6 | first smoke (§6) **done 2026-11-02: PASS on the second run (ini fix 80b215b, Verify=1; lot reached, 5 min soak, see end)** | ts3native-ea169.ini on the EA laptop | reasoning | 1 h | 1 (+1 rerun) | log: host line, no `SKIP all`, every on-feature logs its install line, no `FAIL`, reach the main menu and a lot |
+| 7 | widen: features with only `ok` expectations and no zero rows, one per run | allowlist in build.yml | sonnet | 30 min each | 1 each | same as 6 plus the feature's own first log line. **Run 7c done 2026-11-02 (build e09801d, `[FootprintIndex]` forced on): `SKIP footprint index: 0x006677E0..0x00667B60 differs from Steam 1.67`, FNV range guard, nothing written; game stable with all packs mounted. Next standalone candidate: `[LotSinCos]` (not built).** **Run 7a done 2026-11-02 (build 30603bd, `[WaterJps]`): `SKIP water jps`, code hash differs on 1.69.47; game stable, see "Task 7 runs" below.** 7b not run: every other candidate section is `Enabled=0` in the Steam ini (the allowlist keeps the value, so nothing installs) and `[SlotEnabledRO]` / `[CellMemoProbe]` also SKIP by dependency (`[RouteGate] Enforce=1` + async, `[RouteJobPhases]`), both off on EA |
+| 7d | rc smoke: `ts3native-ea169-rc.ini` (section "EA release-candidate ini" below) as `ts3native.ini` on the EA laptop, one load of `Baseline-SV-Spring.sims3`, a save, quit | tools/ea-ini.ts | sonnet | 30 min | 1 (done 2026-11-02, see "Run 7d") | game stable with all packs mounted; log has no `FAIL`/exception from a kept section; every kept section with Enabled=1 logs its install or a SKIP line; a crash names its section, which goes to `ALWAYS_OFF` |
+| 7e | rc smoke of the routing sections (RouteAsync, RouteGate, Discourage, LotRemoveGuard, UnseenFallback) with the regenerated rc ini of 2207dbd, load `Baseline-SV-Spring.sims3`, 10 min at normal speed, quit | tools/ea-ini.ts | sonnet | 30 min | 1 (done 2026-11-02, **FAIL**, see "Run 7e") | init OK for the 5 sections, nonzero routing counters, no crash, no new `ScriptError*.xml`, clean quit |
+| 7e2 | rerun of 7e with the callee fix df3f2e5 (rtsites.cpp takes the displacement from the trampoline copy), same procedure, 10 min at normal speed | rtsites.cpp | sonnet | 30 min | 1 (done 2026-11-02, **PASS**, see "Run 7e2") | as 7e |
+| 7f | first live run of the range-guard ports WaterJps, FootprintIndex, LotSinCos (rc ini copy with `[FootprintIndex]`/`[LotSinCos]` Enabled=1 Verify=1, `[WaterJps]` Verify=1), 10 min at normal speed, one save, quit | rtsites.cpp range hashes | sonnet | 30 min | 1 (2026-11-02, **FAIL: startup crash**, see "Run 7f"; rerun = 7f2) | three expected OK init lines, no SKIP for them, Verify 0 mismatches, `footprint:` line after the save, routing counters active, no crash |
+| 7f2 | rerun of 7f: same asi (76d2558) and the exact 7f ini plus `[MemDiag]` Light=1 + AllocSites=1 (virtual hooks only), 2 s memory sampler, external VM-region guard (kill above 2600 MB private), world load, 5 min, quit without saving | none | sonnet | 30 min | 1 (done 2026-11-02, **no growth repeated**, see "Run 7f2") | private memory stays under 2600 MB, three OK init lines, world loads, no crash |
+| 7g | 7f ini again, no MemDiag, real routing (autopilot speed normal), one save via `save_game`, 10 min in the world, 2 s sampler + 2600 MB guard | none | sonnet | 30 min | 1 (done 2026-11-02, **PASS**; the coordinator's stop arrived after the run had ended, see "Run 7g") | three OK init lines, routing counters nonzero, `footprint:` line with verify ok, peak private under 2600 MB, no crash |
+| 7h | 7g on head 7f6f7f8 (CI run 41415700157, asi `05c1f1ecbf2c`), same ini bytes (`e00614eb615a`) | none | sonnet | 30 min | 1 (2026-11-02, **FAIL: crash in the world after about 1.5 min**, see "Run 7h"; no fix tried) | as 7g |
+| 7i | identical rerun of 7h (asi `05c1f1ecbf2c`, ini `e00614eb615a`, no change) | none | sonnet | 30 min | 1 (2026-11-02, **PASS**, see "Run 7i") | as 7h |
+| 8 | managed lane (§3 last bullet) | tools/setup/build-fixes.ts (REF_DIR arg), docs/231 | reasoning | 3 h | 1 | `.managed.csv` reviewed; game starts with ts3fixes-ea169 and no popup |
+| 9 | post-release: `--apply` on main, PR, docs/68 §7.1 "applied" | as task 4 | sonnet | 30 min | 0 | identity proof repeated on main |
+
+## 6. First smoke on the EA laptop
+ON: `[Decompress]`, `[OptsInit]` only (both sigmap fully mapped, shipped on Steam, every site byte-checked, their files have no
+`ai=yes` row [verified]). Add `[WaterJps]` on the rerun if its files show no zero row. OFF: everything else, in particular
+`[GC]`/gcroots (mismatch kMxNotifySite), `[UnseenFallback]` (unseen.cpp 5 rows), `[RouteAsync]`/`[RouteGate]`/`[Discourage]`
+(routing modules with offset-changed and ambiguous sites), `[SaveWrite]` (savecompress.cpp 2 rows), `[LotRemoveGuard]`
+(lotfd vt_Portal), `[UserDiag]`, `[CrashReport]`, `[MemDiag]`, `[Verify]`, steerro, watchpt, mintcall, apex. If every patch
+logs `bytes differ`, suspect `.text` still encrypted at DllMain [inferred]: then defer installs to the first hooked frame.
+
+## 7. Open
+- Decryption timing at asi load (first smoke answers it). - 120 `ported` byte expectations need per-build bytes before most
+features can go on. - steerro/watchpt struct layouts: rewrite, not port (docs/230).
+- Not checked by the design: the ini-section-to-source-file map the task 3 allowlist assert needs (by hand), and whether
+  selftest.exe compiles under `/DTS3A_TABLE` (task 3 skips it). Risk: a feature left ON whose data read hits a zero table
+  row crashes at load; the ini allowlist + CI assert is the only guard.
+- WaterJps (run 7a): the guard hashes `0x61F750..0x61FF93` (table: `0x00620880..0x00621063`) against one Steam 1.67 FNV constant and logs no measured
+  value, so the log cannot say whether only the hash or the code differs. Fix: a per-build expected hash column in the port table (same for `[FootprintIndex]`,
+  whose guard has the same shape), plus a way to set `Enabled=1` in the EA ini for sections that are off on Steam; `[FootprintIndex]` confirmed it in run 7c (same SKIP shape, no measured value). ALLOW_ON (e09801d) now forces `Enabled=1` on EA for listed sections; the remaining standalone candidate without a range hash is `[LotSinCos]` (lotsincos.cpp: one mapped address `0xAB8540`, 6-byte prologue check, `Verify=1` bit-compares against the game's code, no routing dependency, no unresolved or problems.csv row).
+Fix 2026-11-02 (after the first smoke): the generated EA ini zeroed only `Enabled`, so `[ArenaGuard] TailPad=1` and `InitobjFix=1` (independent of `Enabled`) ran on EA and TailPad read an unresolved row (arenatail.cpp:233, caught C0000005). The `native-ea169` step now zeroes every integer-valued key outside the allowlist and prints the zeroed keys per section.
+
+## First smoke 2026-11-02 (task 6)
+Run 1 12:27 PHT: CI artifact `ts3native-ea169.asi` (run 41387870205, 1,135,104 B, sha256 `bfef6925...cf040f`) as `Bin\ts3native.asi` with the
+EA ini (Decompress and OptsInit `Enabled=1`, 64 sections `Enabled=0`), launched through `ts3probe.py serve --launch`, Bin pair backed
+up as `.pre-ea169`. Log head [verified]: `ts3native 0.36.152`, `host Sims3Launcher.exe base 0x00400000 pe 6707155C size 0xEB5000`,
+`host build: EA app 1.69.47`, no `SKIP all`. Installed: `OK   decompress: call 0x004EC1A5 -> RefpackHook, mode 1 verify 0 (0x004EB4F0
+starts 83 EC 10 8B 4C = game code at load time)`, `OK   detour RoutePlanOptions_ctor (I-94-322 hub refs) at 0x00654240`, `OK   OptsInit:
+search options hub references +4 / +0x34 start at 0 (I-94-322)`. No `FAIL`, no `bytes differ`: `.text` is decrypted when the asi loads
+(§7 open point closed; the one `SKIP detour Route_GetOption at 0x0074DF80: prologue differs` is the unconditional NOYIELD detour in
+ts3native.cpp, nothing written). `GC patches disabled (Enabled=0)` (not `SKIP GC`: the ini gate runs first). Decompress worked through
+the menu and the save load: `calls 21135 fails 0 mismatches 0 in 54 MB out 131 MB time 162 ms` (Verify=0, so output bytes unchecked).
+- Not in the §6 ON list but installed: `OK   arena tail pad: 6 sites` and `OK   initobj size: transform call 0xE63427` ([ArenaGuard]
+  `TailPad=1` / `InitobjFix=1` are independent of `Enabled`, the awk allowlist keeps them). TailPad also read the zero row 0x011EE508
+  (`arenatail.cpp:233`, `// unresolved`), seen as `exception C0000005 at 0x5D40CC02` inside the asi on the main thread, caught by its own
+  `__except` [inferred from the log order and the unresolved list]. Task 7 rerun: set both to 0 or resolve the row first.
+- Run stable: no. `load_save Baseline-SV-Spring` ended in `A serious error has occurred while loading 'Baseline-SV-Spring'` after 10 s (no
+  new `ScriptError*.xml`, no crash, game alive at the menu). Rerun 12:43 with the `.pre-ea169` pair (`SKIP all`, c035abe5a3a6) and the
+  same Mods and save: identical failure at 9 s. So the load failure is not the ea169 asi. Cause (isolated 13:04, docs/233): the smoke
+  driver passed `file: "Baseline-SV-Spring"` without `.sims3`; cycle.ts passes `Baseline-SV-Spring.sims3` and the same save then loads
+  in ~12 s. Not the cause: ts3agent/ts3fixes (sha256 `e9b98bf37d90`/`b067efaa9047`, identical to the 12:09 change set `344a2752d415`),
+  the 260 B `scriptCache.package` (the game writes it at every start). The restamped ErrorTrap P169 is a separate failure: it crashes
+  the load (`0xc0000005`), so it is disabled (docs/233). Task 7 reruns must load `Baseline-SV-Spring.sims3`.
+- Verdict: host check PASS, decryption timing PASS, Decompress + OptsInit installed PASS, lot reached FAIL (environment). CPU/WS: only
+  at the menu (300 MB WS at attach), no soak. Both runs' logs: `probe-out/ea-smoke6-1102*.log`, `probe-out/ea-smoke6-1102.ts3native.log`.
+- Task 7 candidates (files with 0 unresolved rows and 0 problems.csv rows, own ini gate): `[WaterJps]` (waterjps.cpp + wastar.cpp, §6
+  names it), `[SlotEnabledRO]` (slotro.cpp), `[CellMemoProbe]` (cellmemo.cpp, probe only). replandedupe/plandeadline/movedwait are clean
+  too but need `[RouteAsync]` (unseen.cpp 5 rows, routing sites offset-changed).
+
+### Second run 2026-11-02 (ini fix 80b215b, Verify=1)
+13:22 PHT, CI artifact of 80b215b (asi sha256 `ff4f6ef2...f87366`, ini `730b6afa...944f0` with `[ArenaGuard]` `TailPad=0` / `InitobjFix=0`),
+installed as the Bin pair with the 12:43 pair backed up as `.pre-ea169b` (`c035abe5a3a6` / `8aa37522782a`, restored after the run, sha-checked);
+`[Decompress] Verify=1` set in the installed ini for this run only. Driver: `ts3probe.py serve --launch` + `cycle.ts --save Baseline-SV-Spring.sims3`
+(agent after 14 s, "Mod Scripts Found" accepted, world loaded 14 s, `LiveModeState`, households 32, Keaton). **Verdict: PASS** [verified]:
+- Log: `host Sims3Launcher.exe base 0x00400000 pe 6707155C size 0xEB5000`, `host build: EA app 1.69.47`, no `SKIP all`, no `FAIL`, no `bytes differ`.
+  `OK   decompress: call 0x004EC1A5 -> RefpackHook, mode 1 verify 1`; `OK   detour RoutePlanOptions_ctor (I-94-322 hub refs) at 0x00654240`;
+  `OK   OptsInit: search options hub references +4 / +0x34 start at 0 (I-94-322)`. ArenaGuard off as intended: `arena guard disabled (Enabled=0)`,
+  `arena tail pad disabled (TailPad=0)`, `initobj size fix disabled (InitobjFix=0)`; no exception inside the asi (run 1's `0x5D40CC02` is gone).
+- Decompress with verification over menu, load, 5 min live, one in-world reload and a clean quit (`quit_game`, process exit writes the
+  end line): `decompress: mode 1 verify 1 calls 45625 fails 0 mismatches 0 in 215 MB out 619 MB time 450 ms max 14502 us`: the RefpackFast
+  output equals the game decoder's on 1.69.47 too.
+- Soak 13:24-13:29 (every 30 s): WS 1580 -> 1541 MB flat (1542 at the end), commit 1415 MB flat, game CPU 3.4-3.7 % of 16 logical CPUs
+  (about half a core), 67 threads; no new `ScriptError*.xml` (only the 12:11 one from before the run). Logs: `probe-out/ea-smoke6b-1102.log`,
+  `probe-out/ea-smoke6b-1102.drive.log`, `probe-out/ea-smoke6b-1102.ts3native.log`, events `probe-out/20261102-132245`.
+- Not ours, logged by the asi's first-chance exception logger: 3x `exception C0000005 at 0x04697CC2` on thread 27868 (page-aligned read faults at
+  `0x42841000`, `0x38DB1000`, `0x41485000`, eip in a JIT/heap region, outside the asi module 0x5D400000-0x5DB74000, ebp 0, same esp each time),
+  during the lot load; the game did not notice. Steam logs show no such lines [inferred: Mono/GC first-chance faults on 1.69; check against a
+  `SKIP all` run before reading anything into it].
+- Also in this run: the ts3agent `LoadSave` fix (bare name gets `.sims3`, package `3eb7bb6fc994`) checked live: `load_save {"file":"Baseline-SV-Spring","reload":true}`
+  answered `{"loading":"Baseline-SV-Spring.sims3"}` and reached `LiveModeState` again in ~40 s. No EA app relaunch followed the clean quit (150 s watch).
+
+## Task 7 runs 2026-11-02
+Run 7a 13:56 PHT: CI artifact of 30603bd (run 41396273029; asi sha256 `bc71151ee14d`, ini `208ffe1715a1`, on: `[Decompress]` `[OptsInit]` `[WaterJps]`),
+Bin pair backed up as `.pre-7a` (`c035abe5a3a6` / `8aa37522782a`, restored after the run, sha-checked), `Bin	s3native.log` deleted first. Driver as 6b:
+`ts3probe.py serve --launch` + `cycle.ts --save Baseline-SV-Spring.sims3` (agent after 24 s, "Mod Scripts Found" accepted, world loaded 16 s, `LiveModeState`,
+households 32, Keaton), 5 min soak, `quit_game`, 150 s relaunch watch. Install lines [verified]:
+- `SKIP water jps: code at 0x00620880..0x00621063 differs from Steam 1.67, nothing written` (the guard prints no measured hash; §7)
+- `OK   decompress: call 0x004EC1A5 -> RefpackHook, mode 1 verify 0 (0x004EB4F0 starts 83 EC 10 8B 4C = game code at load time)`
+- `OK   detour RoutePlanOptions_ctor (I-94-322 hub refs) at 0x00654240`, `OK   OptsInit: search options hub references +4 / +0x34 start at 0 (I-94-322)`
+- host line unchanged (`pe 6707155C size 0xEB5000`, `EA app 1.69.47`), no `SKIP all`, no `FAIL`, no `bytes differ`, no exception line inside the asi
+  (6b's 3x `C0000005 at 0x04697CC2` first-chance faults did not recur: so they are not reproducible per load either).
+- Decompress: `calls 45668 fails 0 mismatches 0 in 222 MB out 646 MB time 583 ms max 25284 us` (Verify=0 this run).
+- Soak 13:58-14:03 (10 samples, 30 s): game CPU 3 % of 16 logical CPUs every sample, WS 1577 -> 1569 MB, commit 1451 -> 1452 MB, 67 threads;
+  no new `ScriptError*.xml` (1 before, 1 after). Clean quit: process gone 5 s after `quit_game`, no EA relaunch in 150 s.
+- Verdict: WaterJps SKIP (safe, nothing written), the 6b feature set still PASS. Logs: `probe-out/ea-7a-1102.ts3native.log`, `.soak.log`, `.drive.log`, `.log`.
+Run 7b: not run (see §5 row 7 and §7). Candidates with clean files (no unresolved and no problems.csv rows): GoalGen, CellMemoProbe, Compaction, FootprintIndex,
+HeightCache, TerrainGrave, PlacementRO, GoalValidRO, MovedWaits, SlotEnabledRO, Gate0RO, ProbeP10, LotSinCos, ProbeSnap, HitchAttr, UnseenFallback, UnseenGhost,
+WorldImage, CrashReport, P6Waits; all `Enabled=0` on Steam, most need a routing feature that is off on EA. Best standalone next: `[FootprintIndex]` (FNV range
+guard + 3 byte-checked sites), once the EA ini can turn it on.
+Run 7c 15:04 PHT: CI artifact of e09801d (run 41398218278; asi sha256 `f4d01234cea7...780ff`, ini `8df4066c764c...9e80`, on: `[Decompress]` `[OptsInit]`
+`[FootprintIndex]` via ALLOW_ON, `Enabled=1` read back in the installed ini), Bin pair backed up as `.pre-7c` (`c035abe5a3a6` / `8aa37522782a`, restored after the run,
+sha-checked), `Bin	s3native.log` deleted first. Driver as 7a (`ts3probe.py serve --launch --port 47891` + `cycle.ts --save Baseline-SV-Spring.sims3`); the probe
+logged `LoadOption.ini selectedflags already 001fefff`, so every installed pack mounted: agent after 15 s, "Mod Scripts Found" accepted, world loaded 39 s (16 s in 7a),
+`LiveModeState`, households 37 (32 in 7a), Keaton. Install lines [verified]:
+- `SKIP footprint index: 0x006677E0..0x00667B60 differs from Steam 1.67, nothing written` (the FNV range guard over the ported LotLevel_SaveFootprints body; the
+  three byte-checked sites were never reached, the guard prints no measured hash, same shape as WaterJps in §7)
+- `OK   decompress: call 0x004EC1A5 -> RefpackHook, mode 1 verify 0 (0x004EB4F0 starts 83 EC 10 8B 4C = game code at load time)`
+- `OK   detour RoutePlanOptions_ctor (I-94-322 hub refs) at 0x00654240`, `OK   OptsInit: search options hub references +4 / +0x34 start at 0 (I-94-322)`
+- host line unchanged (`pe 6707155C size 0xEB5000`, `EA app 1.69.47`), no `SKIP all`, no `FAIL`, no `bytes differ`, no exception line inside the asi (module
+  `0x5D320000-0x5DA96000`); `arena guard disabled (Enabled=0)`, `arena tail pad disabled (TailPad=0)`, `initobj size fix disabled (InitobjFix=0)`, `water jps off (Enabled=0)`.
+- Decompress at exit: `calls 67063 fails 0 mismatches 0 in 380 MB out 1229 MB time 1139 ms max 19292 us` (Verify=0; about twice 7a's volume, all packs).
+- Soak 15:06-15:11 (10 samples, 30 s): game CPU 3-4 % of 16 logical CPUs, WS 1810-1842 MB (7a: 1569-1578 with fewer packs), commit 1709-1741 MB, 142 threads
+  (7a: 67); no new `ScriptError*.xml` (1 before, 1 after). Clean quit: process gone 5 s after `quit_game`, no EA relaunch in 150 s.
+- Not checked: the window title ("The Sims™ 3 Into the Future" expected with all packs); the probe does not log it and the game had exited before anyone looked.
+- Verdict: FootprintIndex SKIP (safe, nothing written), the 6b feature set still PASS with all packs mounted. Logs: `probe-out/ea-7c-1102.ts3native.log`, `.soak.log`,
+  `.drive.log`, `.log`, events `probe-out/20261102-150447`. Next standalone candidate (§7): `[LotSinCos]`, not built yet.
+
+Run 7d (rc smoke) 15:24 PHT: CI artifact of 9839785, asi sha256 `633cbc7e9c96`, `ts3native-ea169-rc.ini` (`ff9c42a4be72`) installed as the Bin pair (`.pre-7d` backup of
+`c035abe5a3a6` / `8aa37522782a`, restored and sha-checked), `ts3native.log` deleted first. Driver as 7c (`ts3probe.py serve --launch` + `cycle.ts --save Baseline-SV-Spring.sims3`,
+TS3_LAUNCH=ea). `LoadOption.ini selectedflags already 001fefff` (all packs mounted); agent after 25 s, "Mod Scripts Found" accepted, world loaded 22 s, `LiveModeState`, households 37,
+Keaton. Enabled=1 in the rc ini: `[GC]` `[SaveWrite]` `[Decompress]` `[WaterJps]` `[UserDiag]` `[OptsInit]`. Log lines [verified]:
+- `OK   GC initial heap` + 3 `GC growth step`, `OK   save write: 6 call sites`, `OK   user diag save phases: 2 call sites`, `OK   decompress: call 0x004EC1A5 -> RefpackHook, mode 1 verify 0`,
+  `OK   detour RoutePlanOptions_ctor ... at 0x00654240`, `OK   OptsInit: search options hub references +4 / +0x34 start at 0 (I-94-322)`.
+- Expected SKIP: `SKIP water jps: code at 0x00620880..0x00621063 differs from Steam 1.67, nothing written`.
+- Two further SKIPs, not from a section turned on in the rc ini, both safe (nothing written):
+  `SKIP door memo x: DoorMemoX=0 needs the route snapshot's World_FireEvent hook and IC slots (snReady 0x0)` and
+  `SKIP mintcall: EA code at 0x00E5498E (173 bytes) is not the stock Steam 1.67 bytes (another hook in the call path)` (`[MonoFast]` is default-on in the Steam ini).
+- No `FAIL`, no `bytes differ`, no `SKIP all`, no asi exception line, no crash file; decompress at exit `calls 66523 fails 0 mismatches 0`.
+- Soak 15:29-15:31 (5 samples, 28 s apart, taken after about 4 min in the world): WS 2065-2073 MB, 144 threads, game CPU flat; no new `ScriptError*.xml`. `quit_game`: process gone
+  within 5 s, no EA relaunch in 60 s; exit line `1 world loads`. No save made (the row's save step was not run, as in 7c).
+- Verdict: PASS for the criteria, with the `mintcall` SKIP to decide on (§7: keep as a guard SKIP or zero `[MonoFast]` in the rc ini). **Decision 2026-11-02: keep `[MonoFast]` as is in the rc ini; its guard SKIP writes nothing, so no zeroing is needed.** Logs: `probe-out/ea-7d-1102.*`.
+
+Run 7e (rc smoke of the routing sections) 15:38 PHT: **FAIL, crash during the world load.** CI run 41407209440 (head 2207dbd): asi `0e2ce2aec305`, `ts3native-ea169-rc.ini` `3618cda81a58`, installed as the Bin pair (`.pre-7e` backup of `c035abe5a3a6` / `8aa37522782a`, restored and sha-checked), `ts3native.log` deleted first, `TS3_LAUNCH=ea TS3_EXE=Sims3Launcher.exe TS3_MACHINE=ea-laptop`, driver as 7d. Agent answered after 17 s, "Mod Scripts Found" accepted, `Handlers.LoadSave` started; 15:39:12 the game died. [verified]
+- Fault: `PRIV_INSTRUCTION` (C0000096) at `Sims3Launcher.exe` 0x00769111 (section 0001:0x00368111), thread 22728, edx = 0x00EC0FE0 (the `IC_GameUtils_TransitionToLoadWorldImpl` route-gate detour site), caller 0x00E5495B (inside the `mintcall` region that logged SKIP), then 0x00E5A4DE, 0x00D7F42D. Not analysed further (no fix tried). Dump and report: `probe-out/xcpt <pc2> 26-11-02 15.39.12.mdmp` / `.txt`.
+- Init lines before the crash: RouteAsync `OK detour Route_PlanLocked at 0x0082B3B0`, `OK detour IC_Route_Plan at 0x00766120`, `OK kind deadlines: ready 1 ... mode 1`, `OK route deadline: PlanDeadlineMs 300 ... ready 0x7`; RouteGate `OK route gate sites: 25 of 25 docs/60 2.2/2.5 sites, ready 0x1FFFFFF`, `OK route gate closures on (Enforce=1)`; Discourage `OK discourage deferral (Mode=1 DestroyApply=1 DeadSweep=1)`, `OK footprint deferral (design U, docs/89)`; LotRemoveGuard `OK detour LotRouting_RemoveObjectFootprints (lot-0 guard) at 0x00636CF0` (no separate "LotRemoveGuard" summary line); UnseenFallback `OK unseen fallback: deadline 300 ms, ready 0xF ... mode 1`. No routing counters were logged (the crash came before any route ran), so counter evidence is missing.
+- SKIP lines (verbatim): `SKIP water jps: code at 0x00620880..0x00621063 differs from Steam 1.67, nothing written` and `SKIP mintcall: EA code at 0x00E5498E (173 bytes) is not the stock Steam 1.67 bytes (another hook in the call path)`. The 7d `door memo x` SKIP did not appear.
+- No soak (game gone at the load), no new `ScriptError*.xml`. Next: find which of the 5 sections puts 0x00769111 in the path (bisect by zeroing sections in the rc ini, or disassemble the ts3addr-ea169.h rows for 0x00766120 / 0x00EC0FE0); until then the five routing sections stay off in the EA ini. Logs: `probe-out/ea-7e-1102.*`.
+
+Run 7e2 (rerun of 7e) 16:00 PHT: **PASS.** Cause of 7e: `rtsites.cpp` rebuilt the callee of a `call rel32` site from the Steam bytes baked into `kRtSites[i].pro`; site 18 (`0xEC0FE0`, `E8 4B 92 8A FF`, callee `0x76A230` on EA) became `0x769110`, mid-instruction, hence `PRIV_INSTRUCTION` at `0x769111`. Fix df3f2e5: the displacement now comes from `tr`, the trampoline's copy of the live site bytes (Steam unchanged: same bytes there). No other fixup decodes a rel from a baked array (`decompress.cpp` and `loadprof.cpp` build expected bytes and compare them with the live image first). CI run 41408362293 (native, native-ea169, node green): asi `8266a76191fc`, rc ini `3618cda81a58`, Bin pair backed up as `.pre-7e2` (`c035abe5a3a6` / `8aa37522782a`, restored, sha-checked). Driver as 7e (TS3_LAUNCH=ea TS3_EXE=Sims3Launcher.exe TS3_MACHINE=ea-laptop, `ts3probe.py serve --launch`, `cycle.ts --save Baseline-SV-Spring.sims3`, autopilot speed normal, window never focused). `selectedflags already 001fefff`; agent after 22 s, world loaded 25 s, `LiveModeState`, households 37, Keaton. Soak 10 min, sampled every 30 s on `Sims3Launcher.exe`: WS 2090 -> 2136 MB (peak 2139), threads 144-146, cpu 127 -> 626 s. No crash, no new `ScriptError*.xml`, `quit_game` exited cleanly. Init OK for all 5 sections (RouteGate `25 of 25` + closures on; RouteAsync detours + `route deadline ... ready 0x7`; Discourage deferral; LotRemoveGuard `OK detour LotRouting_RemoveObjectFootprints`; UnseenFallback `ready 0xF`). Final counters [verified]: `route async: mode 1 started 1077 refused 37 collected 1076 dropped 0`, `route plans: off 0 (fails 0) on 1485 (fails 15) hostCalls 13413`, `footprint defer: mode 1 calls 1516 inJob 3 deferred 3 applied 2 collapsed 1`, `unseen fallback: ... marks 994 (refused 0), sync 32 cut 0`. SKIP lines as 7e: `SKIP water jps: ...`, `SKIP mintcall: EA code at 0x00E5498E (173 bytes) ...`. New vs 7d: three handled first-chance `exception C0000005 at 0x04297CC2` (thread 40988, menu phase; not analysed). watchdog.ts printed the stale 13:07 xcpt, not this run. Logs: `probe-out/ea-7e2-1102.*`.
+
+Run 7f (range-guard ports, first live run) 16:21 PHT: **FAIL, the game crashed during startup, before the agent answered; no soak, no save.** CI run 41411835802 (head 76d2558): asi `651adf4c01d3`, rc ini `3618cda81a58`; the installed ini is a copy of it (`e00614eb615a`) with `[FootprintIndex]` Enabled=1 Verify=1, `[LotSinCos]` Enabled=1 Verify=1, `[WaterJps]` Verify=1 (the repo ini is unchanged). Bin pair backed up as `.pre-7f` (`c035abe5a3a6` / `8aa37522782a`, restored, sha-checked); Saves backed up to `game-copy/saves-pre-7f` (robocopy, finished 16:21:00, no save written). Driver as 7e2. [verified] Init lines, all three OK: `OK   water jps: call 0x0062186B -> WaterJumpHook, mode 1 verify 1, callback 0x0066F0B0 inlined`; `OK   footprint index: 0x006678A8, 0x0082B610, 0x00AAAF20 (Mode=1 Verify=1)`; `OK   lot sin/cos cache: 0x00AB71B0 (Mode=1 Verify=1, 256 angles)` (with `OK   detour lot world-to-local (sin/cos cache) at 0x00AB71B0`). SKIP lines: only `SKIP mintcall: EA code at 0x00E5498E (173 bytes) is not the stock Steam 1.67 bytes (another hook in the call path)`; none for the three. Crash: `ACCESS_VIOLATION writing address 0x00000000` at `MSVCR80.dll` 0x5DE273D0 (the log's `exception C0000005 at 0x5DE273D0`), caller 0x5DE27476, then `Sims3Launcher.exe` 0x004DF17F, 0x00D70E17, 0x0076E23E; thread 29076, ecx 0x8FB, edi 0. The dump header says `Free virtual memory: 36 Mb` of 4095 Mb, so this looks like address-space exhaustion during the mod scan (diag: 162 packages, 5181 MB, Saves 17822 MB), not one of the three features [inferred, not analysed; 7e2 loaded the same Mods]. The probe logged `process-terminated` at 16:21:32; `cycle.ts` failed after 60 s with `game start: Sims3Launcher.exe process gone for 60 s`. No fix tried, no retry. Logs: `probe-out/ea-7f-1102.*`, `probe-out/xcpt <pc2> 26-11-02 16.21.24.txt` (the `.mdmp` is 0 bytes).
+
+Run 7f2 (rerun of 7f, instrumented) 16:31 PHT: **the address-space growth did not repeat; the world loaded, no crash.** Same asi `651adf4c01d3` (76d2558) and the exact 7f ini (`e00614eb615a`) with only these `[MemDiag]` keys changed (installed ini `a497181570f0`): `Light=1`, `AllocSites=1`, `AllocSitesSample=64`, `AllocSitesTop=12`, `AllocSitesVirtual=1`; `AllocSitesHeap=0` on purpose (allocsites.cpp hooks the EA heap entries at raw Steam addresses 0x004E69D0/0x004E6A20/0x004E6A70/0x004E5920 and accepts a leading `E9`, so on 1.69 it could hook the wrong code; with the hooks left off the ntdll hooks still see every heap arena). memdiag.cpp and allocsites.cpp have no rows in `ts3addr-ea169.h` / `ts3bytes-ea169.h` (one `unresolved` text match is the header comment, `0 zero`); `MemDiag` is in `ALWAYS_OFF` in tools/ea-ini.ts only by policy ("memexp.cpp struct layouts"), not because of a table row. It works on EA: `mem diag light`, 7 `OK   alloc sites Nt* detour` lines (ntdll), `alloc sites on ... EA heap hooks 0/4, ntdll hooks 7`, `diag: mem` and `allocsites:` lines at the world load and every 5 min. Bin pair backed up as `.pre-7f2`, restored and sha-checked (`c035abe5a3a6` / `8aa37522782a`). Driver as 7e2 (TS3_LAUNCH=ea TS3_EXE=Sims3Launcher.exe TS3_MACHINE=ea-laptop, `ts3probe.py serve --launch --memory-interval 2`, `cycle.ts --save Baseline-SV-Spring.sims3`), plus a scratch guard that read private bytes every 0.5 s, wrote a VirtualQueryEx region summary every +500 MB and was set to capture and kill above 2600 MB (never triggered). Window never focused, no save made (Saves untouched, `saves-pre-7f` not needed). [verified] Private memory: 504 MB at 16:31:35, 1122 MB at :38, 1642 MB at :40 (the same startup ramp, 5 s), then flat at 1700-2030 MB; peak **2032 MB** at 16:33:23 (7f: 3287 MB at about 22 s, 7e2 plateau 1818 MB). Agent after 8 s, "Mod Scripts Found" accepted, world loaded 28 s, `LiveModeState`, households 37, Keaton; 5 min in the world (16:33-16:38), then `quit_game`, process gone within 15 s, no EA relaunch seen. Init lines, all OK as in 7f: `OK   water jps: call 0x0062186B -> WaterJumpHook, mode 1 verify 1, callback 0x0066F0B0 inlined`; `OK   footprint index: 0x006678A8, 0x0082B610, 0x00AAAF20 (Mode=1 Verify=1)`; `OK   lot sin/cos cache: 0x00AB71B0 (Mode=1 Verify=1, 256 angles)` (+ `OK   detour lot world-to-local (sin/cos cache) at 0x00AB71B0`). Not covered: no `footprint:` line (no save), routing counters all 0 (`route async: ... started 0`; the sims were not made to route, autopilot speed was not set), the three features print no Verify counters at exit, so "0 mismatches" is only that the log has no mismatch or `FAIL` line. Baseline owners at the world load (`allocsites: #1 load`, virtual 1740 MB in 474 blocks, mapped 130 MB): 425 MB virtual with no recorded caller (`at=-`, 222 blocks: reserved before the hooks), 371 MB at 0x00D70916 (Boehm `GC_win32_get_mem`, the GC heap, 76 blocks), five 80/80/64/48/32 MB blocks at the EA allocator 0x004E50E7, d3d9.dll (DXVK) 82 MB of file views; `diag: mem #1` priv 1966 MB, `#2` (5 min) 2009 MB, free 1406 MB, largest free 1304 MB. Verdict: no owner named, because there was no extra memory to attribute. The 7f spike (+1.5 GB in about 14 s, in the Mods scan before the agent answered) is either nondeterministic (a race between the launcher's own startup and the mod scan) or depends on something this run changed (MemDiag Light and the ntdll hooks load before the scan, the sampler runs at 2 s); one clean run cannot separate these. Open: if 7f recurs, the guard in the scratchpad (private > 2600 MB, region summary, kill) is the capture; MemDiag samples only at load, save, exit and every 5 min, so it cannot see a startup ramp. Logs: `probe-out/ea-7f2-1102.*` (`.vm.txt` region summaries, `.vm.txt.csv` 0.5 s private series, `.ts3native.log`, `.drive.log`), samples `probe-out/20261102-163118/memory.csv`.
+
+## EA release-candidate ini (2026-11-02)
+
+`ts3native-ea169-rc.ini` (artifact `native-ea169`, written by `tools/ea-ini.ts`; the minimal `ts3native-ea169.ini` stays as before). Start = the shipped Steam ini; a section is zeroed (every integer key 0) when (a) a source file of it (tools/ini-sections.json, plus cpp files including a flagged .h) has an `// unresolved` row in ts3addr-ea169.h or a `// bytes-bad` row (mismatch/unmapped; written by port-run into ts3bytes-ea169.h), (b) it is on the always-off list (EaDiag, Verify, MemDiag, SteerRO, FpRebuildLock, Watchpoint, RouteToObjRO: struct layouts, §3), or (c) a dependency is zeroed (`DEPENDS` in the script: the RouteGate/RouteAsync pair, RouteJobPhases, SaveWrite, UserDiag, MonoThread, RouteSnap). [GC] ignores memexp.cpp (only its `SqrtHeapLimit`, shipped 0). Table regenerated with `--overrides docs/data/ea169-overrides.csv` (task 5: 34 hand-verified rows, each with two independent matches, in the CSV evidence column): 1 unresolved row left (allocsites.cpp 0x4E3D00, a range bound), 0 bytes-bad sites; sections whose only evidence is "files clean" are not proven to work on 1.69, only free of known address/bytes gaps (WaterJps still logs SKIP by its hash guard).
+
+| section | shipped Enabled | rc state | reason |
+|---|---|---|---|
+| [GC] | 1 | kept | files clean |
+| [Compat] | - | kept | files clean |
+| [ThreadStack] | 0 | kept | files clean |
+| [Watchpoint] | 0 | zeroed | always off: watchpt.cpp struct layouts |
+| [CrashForensics] | 0 | kept | files clean |
+| [RouteCache] | 0 | kept | files clean |
+| [RouteWorker] | 0 | kept | files clean |
+| [RouteAsync] | 1 | kept | files clean |
+| [RouteBudget] | 0 | kept | files clean |
+| [RouteJobPhases] | 0 | kept | files clean |
+| [GoalGen] | - | kept | files clean |
+| [CellMemoProbe] | 0 | kept | files clean |
+| [RouteEarlyOut] | 0 | kept | files clean |
+| [SaveWrite] | 1 | kept | files clean |
+| [Decompress] | 1 | kept | files clean |
+| [Alloc] | 0 | kept | files clean |
+| [WaterJps] | 1 | kept | files clean |
+| [SaveFlush] | 0 | kept | files clean |
+| [UserDiag] | 1 | kept | files clean |
+| [MemDiag] | 0 | zeroed | always off: memexp.cpp struct layouts |
+| [Compaction] | 0 | kept | files clean |
+| [SaveCompress] | 0 | kept | files clean |
+| [FootprintIndex] | 0 | kept | files clean |
+| [HeightCache] | 0 | kept | files clean |
+| [TerrainGrave] | 0 | kept | files clean |
+| [GcThreadCheck] | 0 | kept | files clean |
+| [GcRootCheck] | 0 | kept | files clean |
+| [ArenaGuard] | 0 | kept | files clean |
+| [IcLockCheck] | 0 | kept | files clean |
+| [RouteGate] | 1 | kept | files clean |
+| [Discourage] | 1 | kept | files clean |
+| [LotRemoveGuard] | 1 | kept | files clean |
+| [SteerRO] | 0 | zeroed | always off: steerro.cpp struct layouts |
+| [FpRebuildLock] | 0 | zeroed | always off: steerro.cpp struct layouts |
+| [LotFrontDoorRO] | 0 | kept | files clean |
+| [ObstructedRO] | 0 | kept | files clean |
+| [AvoidRO] | 0 | kept | files clean |
+| [RouteToObjRO] | 0 | zeroed | always off: rtoro.cpp struct layouts |
+| [PlacementRO] | 0 | kept | files clean |
+| [GoalValidRO] | - | kept | files clean |
+| [IdleCheckRO] | 0 | kept | files clean |
+| [MovedWaits] | 0 | kept | files clean |
+| [SlotEnabledRO] | 0 | kept | files clean |
+| [Gate0RO] | 0 | kept | files clean |
+| [ProbeP1b] | 0 | kept | files clean |
+| [LocoWindow] | 0 | kept | files clean |
+| [ProbeP10] | 0 | kept | files clean |
+| [MonoThread] | 0 | kept | files clean |
+| [LotStream] | 0 | kept | files clean |
+| [Verify] | 0 | zeroed | always off: bit-compares against Steam code |
+| [JobQueue] | 0 | kept | files clean |
+| [D3DMultithreaded] | 0 | kept | files clean |
+| [LotSinCos] | 0 | kept | files clean |
+| [IdCache] | 0 | kept | files clean |
+| [ProbeSnap] | 0 | kept | files clean |
+| [ProbeValues] | 0 | kept | files clean |
+| [LoadProf] | 0 | kept | files clean |
+| [RouteSnap] | 0 | kept | files clean |
+| [OptsInit] | 1 | kept | files clean |
+| [HitchAttr] | 0 | kept | files clean |
+| [UnseenProbe] | 0 | kept | files clean |
+| [UnseenThrottle] | 0 | kept | files clean |
+| [UnseenFallback] | 1 | kept | files clean |
+| [UnseenGhost] | 0 | kept | files clean |
+| [PlanRepeat] | 0 | kept | files clean |
+| [MonoFast] | - | kept | files clean |
+| [AutShadow] | 0 | kept | files clean |
+| [WorldImage] | 0 | kept | files clean |
+| [CrashReport] | 0 | kept | files clean |
+| [P6Waits] | 0 | kept | files clean |
+| [ResourceCache] | - | kept | files clean |
+| [EaCrashFixes] | - | kept | files clean |
+| [EaDiag] | - | zeroed | always off: EA-only diagnostics, log only, minimal ini only |
+
+## Range-guard ports (2026-11-02, static only)
+
+Method for each guarded range: decode the Steam 1.67 range and its table-mapped 1.69.47 range (`probe-out/ts3-ea169-file.exe`)
+with iced-x86, function by function, jump tables compared as data. Every instruction must have the same opcode and length;
+a byte difference is accepted only where it is a branch/call target that maps through the range, an absolute data pointer
+whose target holds the same bytes (strings, float constants), or a call out of the range whose callee has the same
+instruction shape on both builds. No game run.
+
+### WaterJps on 1.69 [verified, static]
+
+Verdict: **relocation only.** The Steam range `0x61F750..0x61FF93` holds the jump's seven functions plus one heap sift-up
+helper at `0x61F830` (0x60 bytes) that is not on the jump's path (nothing in the range calls it); EA links that helper
+elsewhere, so the mapped EA range `0x620880..0x621063` is 0x60 shorter and holds only the seven. Those seven are the same
+code: 0 bad rows; the only differing bytes are the two `jmp [eax*4+table]` operands and their 8-entry jump tables, which
+map entry for entry. The near-callback `0x66DC50` -> `0x66F0B0` (0x60 bytes) is byte-identical (FNV `0x585FD97D` on both).
+The caller (search `0x620560` -> `0x6215D0`) has the same shape; its differences are data pointers (profiler names, floats
+1.0/2.0, same bytes) and calls out. The patched site `0x6207FB` -> `0x62186B` is `E8` to `0x620EE0` (= mapped `0x61FE10`);
+`PatchCalls` checks that at run time and writes only the rel32. Change: under `TS3A_TABLE` the expected range hash is the
+EA one, `0x201847A4` (Steam stays `0x5A2C1E2B`); the SKIP line now prints the measured hash. `[WaterJps]` added to the
+minimal EA ini's `ALLOW` list (it is `Enabled=1` in the Steam ini). Next smoke must show
+`OK   water jps: call 0x0062186B -> WaterJumpHook, mode 1 verify 0, callback 0x0066F0B0 inlined`.
+
+### FootprintIndex on 1.69 [verified, static]
+
+Verdict: **relocation only.** `LotLevel_SaveFootprints` `0x6663C0..0x666740` -> `0x6677E0..0x667B60`, same length 0x380:
+0 bad rows; the differing bytes are 4 data pointers (profiler name `Routing/PathPlanner/FootprintMapEntrySav...` and floats,
+same bytes on both) and 26 calls out to 9 callees, each with the same instruction shape on both builds (incl. the save-index
+call `0x62B1E0` -> `0x62C5A0`). The map layout the stub relies on ([L+0x20]+0x24, node +8/+0x10) is in those identical
+instructions. Patched sites: `0x666488` -> `0x6678A8` holds `8B 53 20 8B 4A 24` (ts3bytes row ok); `0x82C940` -> `0x82B610`
+is `E8` to `0x63DC80` (= mapped `0x63C690`, same shape), `0xAAC320` -> `0xAAAF20` is `E8` to `0xC6C7E0` (= mapped
+`0xC6D460`, same shape), same surrounding instructions. Change: under `TS3A_TABLE` the expected hash is `0xCA5029BC` (Steam
+`0xF2CDC1C1`); the SKIP line prints the measured hash. Already in `ALLOW_ON`. Next smoke must show
+`OK   footprint index: 0x006678A8, 0x0082B610, 0x00AAAF20 (Mode=1 Verify=0)` and, after a save, the per-save `footprint:` line.
+
+### LotSinCos on 1.69 [verified, static]
+
+Verdict: **relocation only.** `Lot_WorldToLocal2D` `0xAB8540` -> `0xAB71B0`, whole body to `ret 10h` (0x11C bytes): one
+differing instruction, the `movss xmm2,[-0.0 constant]` operand (`0xF988F0` -> `0xFE29F0`, both `00 00 00 80`). The fields our
+replacement reads (lot `+0x190`, `+0x198`, `+0x1A0`), the x87 fsin/fcos order and the packed SSE operand order are the same
+bytes, so the bit-exact claim carries over. No range hash in this feature; the 6-byte prologue `55 8B EC 83 E4 F0` is a
+ts3bytes `ok` row. No code change; `[LotSinCos]` added to `ALLOW_ON` (minimal EA ini, `Enabled=1` forced). Next smoke must
+show `OK   lot sin/cos cache: 0x00AB71B0 (Mode=1 Verify=0, 256 angles)`; a run with `Verify=1` would confirm bit-exactness live
+(`lotsincos MISMATCH` lines = stop).
+
+### AllocSites heap hooks on 1.69 [verified, static]
+
+The four heap entries were already `TS3A` (since 4f097f5; the Run 7f2 note "raw Steam addresses" is stale): 0x4E69D0 /
+0x4E6A20 / 0x4E6A70 / 0x4E5920 -> 0x4E6C30 / 0x4E6C80 / 0x4E6CD0 / 0x4E5B80, all four with the same 10-byte prologue on
+1.69. The raw literal was the `.text` range (0x401000..0xF95000, -> ..0xFDF000), and the guard took any leading `E9`. Now
+an entry must match the prologue (`Matches`) or be [Alloc]'s jmp into this module. Other raw literals the scanner had
+marked `unsure` (page-aligned or a size-like name) are wrapped with overrides in `docs/data/ea169-overrides.csv`.
+`AllocSitesHeap=1` is static-safe on EA; not yet run.
+
+Run 7g (7f ini, routing, save) 16:41 PHT: **PASS** [verified]. The "stop 7g" message arrived at 16:53, after the run had already finished (20 samples, ended at 16:53:53), so this is the full result, not a partial one. Asi `651adf4c01d3` (76d2558), ini `e00614eb615a` (the 7f ini, `[MemDiag]` off), Bin pair backed up as `.pre-7g`, restored and sha-checked (`c035abe5a3a6` / `8aa37522782a`). Driver as 7e2 plus `autopilot {enabled:true,speed:"normal"}`; the first `set_speed` was refused (a dialog was open), the later one answered `Normal`. `ts3probe.py serve --launch --memory-interval 2` and the scratch VM guard (private > 2600 MB: region summary, kill; never triggered). World loaded 16:43:12, 10.7 min in the world, one `save_game {"name":"ea7g-scratch"}` at 16:48:22 (autopilot off, speed pause; finished in under 30 s, `save_in_progress` false, 39 households), then autopilot and speed normal again. Private memory (guard series): 1620 MB at 16:41:58, 2010 MB at the world load, then 1979-2048 MB flat; peak **2054 MB** at 16:48:36 (about 14 s after the save); the 7f growth (3287 MB) did not repeat, as in 7f2. No crash, ScriptError xml 1 before and after, clean `quit_game` (process gone in 5 s). Init lines as 7f2: `OK   water jps: call 0x0062186B -> WaterJumpHook, mode 1 verify 1, callback 0x0066F0B0 inlined`; `OK   footprint index: 0x006678A8, 0x0082B610, 0x00AAAF20 (Mode=1 Verify=1)`; `OK   lot sin/cos cache: 0x00AB71B0 (Mode=1 Verify=1, 256 angles)`. Counters at exit, verbatim: `route async: mode 1 started 698 refused 26 collected 697 dropped 0 job 11639 ms max 142076 us pump 3597 ms (324 waits)`; `route plans: off 0 (fails 0) on 1010 (fails 6) hostCalls 10016`; `footprint defer: mode 1 calls 1042 inJob 3 deferred 3 applied 2 collapsed 1 dup 0 ageMax 31 ms applyInJob 0`; `unseen fallback: mode 1 deadline 300 ms, cut at 220 ms sync / 220 ms job (...); marks 662 (refused 0), sync 22 cut 0 (...), jobs 584 cut 0, cut answers 0, longest 142 ms, >= setting 0`. Save line (FootprintIndex save path): `footprint: levels 299 entries 102379 matched 102375 calls 92 ms 586 verify ok (mode 1 fallbacks 0 worldSave ms 10488)`: verify ok, but 4 of 102379 entries are not "matched" (not analysed; no mismatch word in the log). Verify results for the other two: WaterJps and LotSinCos print no Verify counters (init lines only), so "0 mismatches" for them is only the absence of a mismatch or `FAIL` line. SKIP lines: only `SKIP mintcall: EA code at 0x00E5498E (173 bytes) is not the stock Steam 1.67 bytes (another hook in the call path)`. Saves restored: `ea7g-scratch.sims3` deleted, a robocopy `/MIR /L` against `game-copy/saves-pre-7f` lists 0 differences. Logs: `probe-out/ea-7g-1102.*` (`.vm.txt.csv` 0.5 s private series, `.ts3native.log`, `.soak.log`).
+
+Run 7h (head 7f6f7f8) 16:55 PHT: **FAIL, the game crashed in the world about 1.5 min after the load; stopped, no fix tried.** CI run 41415700157 (green) artifact in `game-copy/ci-ea169-7f6f7f8/`: asi `05c1f1ecbf2c` (sha256 `05c1f1ecbf2c1fa1fcd1f9d2a488e989c336a722a2f1a32ae930f799a2f0eafe`); the artifact's `ts3native-ea169-rc.ini` is byte-identical to the 76d2558 one (`3618cda81a58`), so the 7f edits (`[FootprintIndex]`/`[LotSinCos]` Enabled=1 Verify=1, `[WaterJps]` Verify=1) give the same ini as 7f, sha `e00614eb615a`, `[MemDiag]` off. Procedure as 7g (2 s sampler, 2600 MB guard, autopilot normal). World loaded 16:56:31; private 2049 / 2023 / 2051 MB at +30/+60/+90 s (peak 2057 MB, no growth); the process was gone at the 16:58:33 sample (so between 16:58:03 and 16:58:33), before the save step (planned at +5 min). Log tail [verified]: `exception C0000005 at 0x00AD04EC (info 00000000 00000024) thread 44324 eip 00AD04EC esp 4035EBD4; stack code refs: 00AB7CAC 00AB7E1F 5D48C468 5D32443E 00C67CB5 00C69FEB 0095C8BC 0095DF7B`, eax 0, ecx 0: a read at 0x24 through a null pointer. The asi wrote its exit-style counters afterwards (`route async: mode 1 started 79 ... collected 78`, `route plans: off 0 (fails 0) on 212 (fails 5)`); no new `xcpt` txt or mdmp appeared in `probe-out` (newest is the 7f one). The two lowest stack refs 0x00AB7CAC / 0x00AB7E1F lie 0xAFC / 0xC6F above the LotSinCos detour site 0x00AB71B0 (`lot world-to-local`) [inferred from addresses only, nothing analysed: neighbouring code could just as well be a caller]; 7g with the 76d2558 asi and the same ini did not crash in 10.7 min, so the cause is either the 7f6f7f8 changes (15 wrapped raw addresses, allocsites guard) or a rare race; one crash and one pass cannot separate them. Init lines compared with 7g: **none changed** (diff of all `OK`/`SKIP`/`FAIL`/`disabled` lines is empty): the new mappings ([Alloc], unseen, rtoro, monothread, gcroots) belong to sections that are `Enabled=0` in the rc ini, so they log nothing; nothing in this run tests them. No `footprint:` line, no save (crash first), Verify counters not reached, SKIP lines: only the `mintcall` one as in 7g. Bin pair restored from `.pre-7h` (`c035abe5a3a6` / `8aa37522782a`, sha-checked), Saves untouched (0 robocopy differences, no save made). Logs: `probe-out/ea-7h-1102.*` (`.ts3native.log`, `.vm.txt.csv`, `.soak.log`).
+/^Run 7i (identical/i
+Run 7h trigger analysis (read-only, after the fact) [verified from logs unless marked]: the harness sent nothing between the world load (16:56:31) and the crash (xcpt `16.58.13`): `drive.log` ends at 16:56:31, `soak.log` only holds the 30 s samples, no `ScriptError*.xml` (count 1 before and after; newest is 12:11), no dialog or travel line in `ts3native.log`, and the autopilot reply (cleared the "new towns" dialog) is the same as in 7g. The `mode LiveMode -> None, family Keaton -> none at +97 s` line (16:58:08) is the game leaving the world on its own, before the exception: the 2 s memory series drops at 16:58:06 (mapped files 164 -> 118 MB, free +48 MB) and then repeats the same values until the crash at 16:58:13 (the game stopped answering for about 7 s). The access violation (`[lot+0x290]` null, read at 0x24) is therefore a lookup on a lot that the world teardown had already cleared [inferred]. What made the game leave LiveMode is not in any log; the unseen lines before it are plain (`unseen fallback ... marks 96, sync 5 cut 0, jobs 67 cut 0, longest 64 ms`), and 7g at the same point stayed in LiveMode until the harness quit at +647 s. Correction to the 7h paragraph: an `xcpt <pc2> 26-11-02 16.58.13.txt/.mdmp` was written (the earlier "no new xcpt" was wrong).
+Run 7i (identical rerun of 7h) 17:05 PHT: **PASS**, no crash, no unrequested mode exit [verified]. Same asi `05c1f1ecbf2c` and ini `e00614eb615a` (no build or config change), Bin pair backed up as `.pre-7i`, driver `run7h.sh` with tag 7i (2 s sampler, 2600 MB guard, 7e2 routing, autopilot normal, window never focused). World loaded 17:06:43, 10.7 min in the world, one harness `save_game {"name":"ea7i-scratch"}` at 17:11:51 (done by 17:12:17, 39 households), then clean `quit_game` (process gone in 5 s). The only `mode` lines: `None -> LiveMode at +2 s` and `LiveMode -> None at +645 s` (the quit); nothing at +97 s, so the 7h exit did not repeat (one crash, one pass on the same build and ini: a rare race, not a deterministic fault of 7f6f7f8; cause not found). Unseen fallback at exit: `marks 588 (refused 0), sync 11 cut 0, jobs 501 cut 0, cut answers 0, longest 129 ms, >= setting 0` (the classification with 0x959710 now sees seen and unseen Sims). Routing counters at the last dump: `route async: mode 1 started 656 refused 12 collected 655 dropped 0`, `route plans: off 0 (fails 0) on 972 (fails 8) hostCalls 8364`, `footprint defer: mode 1 calls 1028 inJob 1 deferred 1 applied 1 collapsed 0`. Save line: `footprint: levels 299 entries 102413 matched 102410 calls 92 ms 645 verify ok (mode 1 fallbacks 0 worldSave ms 10274)` (3 of 102413 not matched, as 7g's 4 of 102379). Peak private **2092 MB** (guard series; 7h 2057, 7g 2054; never near the 2600 MB guard). ScriptError xml 1 before and after. Bin pair restored (`c035abe5a3a6` / `8aa37522782a`, sha-checked), `ea7i-scratch.sims3` deleted, robocopy `/MIR /L` against `game-copy/saves-pre-7f`: 0 differences. Logs: `probe-out/ea-7i-1102.*`.

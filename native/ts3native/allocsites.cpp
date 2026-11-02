@@ -32,10 +32,10 @@ static DWORD g_asN = 64;
 static int g_asTop = 12;
 static const DWORD kAsBig = 64 * 1024;
 // code ranges (the host selftest points them at its own image)
-static DWORD g_asTextLo = 0x00401000, g_asTextHi = 0x00F95000, g_asExeBase = 0x00400000;
-static DWORD g_asWrapLo = 0x004E3D00, g_asWrapHi = 0x004E9000;  // EA allocator wrappers, cores and debug layer
+static DWORD g_asTextLo = TS3A(0x00401000), g_asTextHi = TS3A(0x00F95000), g_asExeBase = 0x00400000;
+static DWORD g_asWrapLo = TS3A(0x004E3D00), g_asWrapHi = TS3A(0x004E9000);  // EA allocator wrappers, cores and debug layer
 static DWORD g_asSelfLo, g_asSelfHi;  // our own image: our hooks' frames are never a site (docs/201 §12.1)
-static DWORD g_asHeapAt[4] = {0x004E69D0, 0x004E6A20, 0x004E6A70, 0x004E5920};  // Malloc, Memalign, Realloc, Free
+static DWORD g_asHeapAt[4] = {TS3A(0x004E69D0), TS3A(0x004E6A20), TS3A(0x004E6A70), TS3A(0x004E5920)};  // Malloc, Memalign, Realloc, Free
 static DWORD g_asSys[3][2];  // ntdll, kernelbase, kernel32: [base, end)
 
 enum { AS_HEAP, AS_VIRT, AS_MAP, AS_KINDS };
@@ -511,7 +511,7 @@ static void* AsDetour(const char* name, DWORD at, const u8* pro, int len, void* 
         const u8* dst = t + 5 + *(const LONG*)(t + 1);
         tr[0] = 0xE9, *(LONG*)(tr + 1) = (LONG)(dst - (tr + 5));
         how = "chained";
-    } else if (pro ? !memcmp(t, pro, len) : t[0] == 0xB8) {
+    } else if (pro ? !memcmp(t, ExpectedAt(t, pro, len), len) : t[0] == 0xB8) {
         if (!pro) len = 5;
         memcpy(tr, t, len);
         tr[len] = 0xE9, *(LONG*)(tr + len + 1) = (LONG)((t + len) - (tr + len + 5));
@@ -579,9 +579,11 @@ static bool AsIsDriverRegion(DWORD base) {
 
 // all four EA entries or none (a Free we do not see would leave live bytes behind)
 static int AsInstallHeap() {
-    for (DWORD a : g_asHeapAt) {
+    for (int i = 0; i < 4; i++) {  // the prologue (ExpectedAt: the game's own bytes on EA) or [Alloc]'s jmp into this module
+        const DWORD a = g_asHeapAt[i];
         const u8* t = (const u8*)(uintptr_t)a;
-        if (!Readable(t, 10) || (t[0] != 0xE9 && memcmp(t, kEaLockedPrologue, sizeof(kEaLockedPrologue)))) {
+        const DWORD jmpTo = Readable(t, 5) && t[0] == 0xE9 ? a + 5 + *(const LONG*)(t + 1) : 0;
+        if (!(jmpTo && jmpTo >= g_asSelfLo && jmpTo < g_asSelfHi) && !Matches((const void*)(uintptr_t)g_asHeapAt[i], kEaLockedPrologue, sizeof(kEaLockedPrologue))) {
             Log("SKIP alloc sites EA heap: entry 0x%08lX not as expected, no heap hooks", a);
             return 0;
         }
