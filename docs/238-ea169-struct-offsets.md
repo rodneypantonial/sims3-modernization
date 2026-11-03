@@ -51,7 +51,7 @@ The script host object outside that range (`MonoScriptHost`, `[0x011D4BBC]`) is 
   in this table: patch-bytes-check / `ts3bytes-ea169.h` already compare those bytes with the 1.69 image (docs/232 §3).
 - Not done: offsets reached only through vtable slots (docs/232: 407 slot-shifted vtables, a separate class) and the
   meaning of each `same-global` value for its struct; the field column is the source comment of the first user line.
-- Follow-up for ea-ini.ts (not changed here): the `ALWAYS_OFF` reason "struct layouts" for SteerRO, FpRebuildLock,
+- Follow-up for ea-ini.ts (done in §5): the `ALWAYS_OFF` reason "struct layouts" for SteerRO, FpRebuildLock,
   Watchpoint, RouteToObjRO and MemDiag is not borne out by this check; turning them on is a separate decision that also
   needs their address rows and a smoke run.
 
@@ -238,3 +238,197 @@ One row per value. Users: first line per file (all rows in the tool's `--csv`). 
 | 0x3130 |  | crashfx.cpp:384 | 0071D4EA 0071D501 | 0071E16A 0071E181 | same |
 | 0x38EC |  | crashfx.cpp:567 | 0071D450 007213B6 | 0071E0D0 007220D6 | same |
 | 0x3980 |  | crashfx.cpp:567 | 0071D536 0071D536 | 0071E1B6 0071E1B6 | same |
+
+## 5. Addresses of the five sections kept off on EA (2026-11-03 PHT) [verified]
+Question: can SteerRO, FpRebuildLock, Watchpoint, RouteToObjRO and MemDiag be allowed on EA 1.69.47? Inputs as §1 plus
+`node tools/port-run.ts --exe probe-out/ts3-ea169.bin --allow-inferred --zero-unresolved --table native/ts3native/ts3addr-ea169.h
+--host-name "EA app 1.69.47" --overrides docs/data/ea169-overrides.csv` (out/port map.csv kinds), `patch-bytes-check`,
+`hook-sites --check`, `reg-liveness.py --edition both` (main's copy, run against this branch's sources and table).
+Files: SteerRO and FpRebuildLock steerro.cpp; Watchpoint watchpt.cpp + arenatail.cpp; RouteToObjRO rtoro.cpp; MemDiag
+memdiag.cpp + memexp.cpp + allocsites.cpp (tools/ini-sections.json). 163 distinct `TS3A()` addresses.
+- **Verdict: 161 verified, 2 fixed, 0 unresolvable. All five are allowed on EA.** Both fixes were wrong table rows:
+  - `0x00FEB970` (footprint class vtable, `g_caClasses[1]` C-A class and replay.cpp `kRpClsGame`) was `0x01036DA8`, a
+    1-vote xref that is the `0xFEB848` vtable (2 of 24 slots differ). Now `0x01036ED0`: the only .rdata match of its mapped
+    slots, all 24 slot functions have equal first 12 bytes, same `+0x4B560` shift as its siblings.
+  - `0x006262E0` (child footprint interface +4, compared in `SrSlotsOk`) was masked `0x006276B0`, the thunk that jumps to
+    the image of `0x806F00`. Now `0x006276D0`: the child interface `0x10374BC` holds it at +4, and its jump target
+    `0x627680` has the bytes of Steam `0x6262B0`. With the old row every ExtensionFootprint object would have failed the
+    slot check (a fallback, not a crash). replay.cpp ([RouteSnap]) reads the same `0xFEB970` row and gets the fix too.
+  - Both are rows in docs/data/ea169-overrides.csv; the regenerated ts3addr-ea169.h changes only these two pairs.
+- Vtable-slot compares: every slot of the 9 parent footprint vtables, the child `0xFEBF90`, and their 10 interface tables
+  that holds a `TS3A()` value of steerro.cpp / rtoro.cpp was compared with the 1.69 slot: 441 equal after the fix, 0 differ.
+- Hook and patch sites: steerro 24 (22 ok, 2 ported), rtoro 3, watchpt 2, arenatail 7, memexp 2; with the overrides all
+  are ok/ported in ts3bytes-ea169.h (0 bytes-bad). `hook-sites --check` passes. reg-liveness: 0 risky (hook, register,
+  caller) triples for these files on either edition (the 18 risky ones are [LotSinCos]/[Verify] at 0xAB8540).
+- No compile-time `#if` or runtime edition check gated these sections; the gate was only `ALWAYS_OFF` in tools/ea-ini.ts.
+  They left it; the rc ini now keeps their shipped values (every `Enabled=0`), except `[MemDiag] Light`, which
+  `RC_ZERO_KEYS` keeps 0 on EA (Light=1 acts with Enabled=0; it was off on EA before). A test run turns them on with a
+  queue `ini` overlay, as the Steam queues do.
+- Limits: `xref` data rows are taken from code votes plus the block delta of their neighbours (no per-row disassembly);
+  no game run here.
+
+| Steam | 1.69 | port-run kind | feature(s) | first use | verdict |
+|---|---|---|---|---|---|
+| 0x00401000 | 0x00401000 | override | MemDiag | allocsites.cpp:35 | verified: ea169-overrides.csv row |
+| 0x004E16F0 | 0x004E18E0 | ref | RouteToObjRO | rtoro.cpp:32 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x004E17B0 | 0x004E19A0 | ref | RouteToObjRO | rtoro.cpp:32 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x004E3D00 | 0x004E3F70 | override | MemDiag | allocsites.cpp:36 | verified: ea169-overrides.csv row |
+| 0x004E3F70 | 0x004E41C0 | ref | SteerRO, FpRebuildLock | steerro.cpp:59 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x004E5920 | 0x004E5B80 | exact | MemDiag | allocsites.cpp:38 | verified: exact |
+| 0x004E69D0 | 0x004E6C30 | ref | MemDiag | allocsites.cpp:38 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x004E6A20 | 0x004E6C80 | near | MemDiag | allocsites.cpp:38 | verified: near, bytes equal, same delta as the neighbour row |
+| 0x004E6A70 | 0x004E6CD0 | exact | MemDiag | allocsites.cpp:38 | verified: exact |
+| 0x004E9000 | 0x004E91E0 | override | MemDiag | allocsites.cpp:36 | verified: ea169-overrides.csv row |
+| 0x00572400 | 0x00571D30 | exact | SteerRO, FpRebuildLock | steerro.cpp:56 | verified: exact |
+| 0x006119F0 | 0x00612A00 | override | SteerRO, FpRebuildLock | steerro.cpp:377 | verified: ea169-overrides.csv row |
+| 0x00619EF0 | 0x006F8D30 | ref | SteerRO, FpRebuildLock, RouteToObjRO | steerro.cpp:384 rtoro.cpp:230 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x0061ED10 | 0x0061FE30 | masked | SteerRO, FpRebuildLock | steerro.cpp:259 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x0061ED80 | 0x0061FEA0 | near | SteerRO, FpRebuildLock | steerro.cpp:258 | verified: near, bytes equal, same delta as the neighbour row |
+| 0x00620CC0 | 0x00621CF0 | exact | SteerRO, FpRebuildLock | steerro.cpp:382 | verified: exact |
+| 0x00620D60 | 0x00F964D0 | override | SteerRO, FpRebuildLock | steerro.cpp:381 steerro.cpp:383 | verified: ea169-overrides.csv row |
+| 0x00620D80 | 0x00621DA0 | exact | Watchpoint | watchpt.cpp:222 | verified: exact |
+| 0x00620DD0 | 0x00621DF0 | exact | SteerRO, FpRebuildLock | steerro.cpp:381 | verified: exact |
+| 0x00620E50 | 0x00621E30 | override | SteerRO, FpRebuildLock | steerro.cpp:385 | verified: ea169-overrides.csv row |
+| 0x00620E60 | 0x00621E20 | override | SteerRO, FpRebuildLock | steerro.cpp:385 | verified: ea169-overrides.csv row |
+| 0x00624450 | 0x00625970 | exact | SteerRO, FpRebuildLock, RouteToObjRO | steerro.cpp:382 rtoro.cpp:446 | verified: exact |
+| 0x00624ED0 | 0x00626330 | override | SteerRO, FpRebuildLock | steerro.cpp:385 | verified: ea169-overrides.csv row |
+| 0x00626210 | 0x006275F0 | exact | SteerRO, FpRebuildLock | steerro.cpp:401 | verified: exact |
+| 0x00626220 | 0x00627600 | ref | SteerRO, FpRebuildLock | steerro.cpp:401 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x00626270 | 0x008595C0 | override | Watchpoint | watchpt.cpp:222 | verified: ea169-overrides.csv row |
+| 0x0062627B | 0x008595CB | override | Watchpoint | watchpt.cpp:78 | verified: ea169-overrides.csv row |
+| 0x006262D0 | 0x006276A0 | exact | SteerRO, FpRebuildLock | steerro.cpp:402 | verified: exact |
+| 0x006262E0 | 0x006276D0 | override | SteerRO, FpRebuildLock | steerro.cpp:402 | **fixed** (was 0x006276B0, a thunk to the image of 0x806F00): the child interface 0x10374BC holds 0x6276D0 at +4; jmp target bytes equal |
+| 0x00626300 | 0x006276F0 | override | SteerRO, FpRebuildLock | steerro.cpp:403 | verified: ea169-overrides.csv row |
+| 0x00627E00 | 0x006291B0 | exact | SteerRO, FpRebuildLock | steerro.cpp:51 | verified: exact |
+| 0x0062E420 | 0x0062FA10 | masked | SteerRO, FpRebuildLock | steerro.cpp:262 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x0062E680 | 0x0062FC70 | exact | SteerRO, FpRebuildLock | steerro.cpp:157 | verified: exact |
+| 0x0062F8A0 | 0x00630E90 | exact | SteerRO, FpRebuildLock | steerro.cpp:156 | verified: exact |
+| 0x00663B20 | 0x00664BF0 | exact | SteerRO, FpRebuildLock | steerro.cpp:54 | verified: exact |
+| 0x00663E20 | 0x00664EF0 | exact | SteerRO, FpRebuildLock | steerro.cpp:53 | verified: exact |
+| 0x006653A0 | 0x00666490 | exact | SteerRO, FpRebuildLock | steerro.cpp:256 | verified: exact |
+| 0x00665C50 | 0x00666F20 | ref | SteerRO, FpRebuildLock | steerro.cpp:154 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x00666010 | 0x006672E0 | exact | SteerRO, FpRebuildLock | steerro.cpp:257 | verified: exact |
+| 0x00666750 | 0x00667B70 | exact | SteerRO, FpRebuildLock | steerro.cpp:155 | verified: exact |
+| 0x0070AE20 | 0x007262C0 | override | SteerRO, FpRebuildLock, RouteToObjRO | steerro.cpp:382 rtoro.cpp:446 | verified: ea169-overrides.csv row |
+| 0x0076F0A0 | 0x0076FFF0 | exact | RouteToObjRO | rtoro.cpp:58 | verified: exact |
+| 0x007EAEA0 | 0x006FA570 | override | SteerRO, FpRebuildLock | steerro.cpp:384 | verified: ea169-overrides.csv row |
+| 0x008066C0 | 0x00805960 | exact | SteerRO, FpRebuildLock | steerro.cpp:377 | verified: exact |
+| 0x00806770 | 0x00805A10 | exact | SteerRO, FpRebuildLock | steerro.cpp:165 | verified: exact |
+| 0x00806BF0 | 0x00805E90 | exact | SteerRO, FpRebuildLock | steerro.cpp:401 | verified: exact |
+| 0x00806F00 | 0x008061A0 | ref | SteerRO, FpRebuildLock | steerro.cpp:399 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x00806FC0 | 0x00806250 | exact | RouteToObjRO | rtoro.cpp:292 | verified: exact |
+| 0x00806FD0 | 0x00806260 | exact | RouteToObjRO | rtoro.cpp:229 | verified: exact |
+| 0x00806FE0 | 0x00806270 | exact | SteerRO, FpRebuildLock | steerro.cpp:382 | verified: exact |
+| 0x00807090 | 0x00806340 | masked | SteerRO, FpRebuildLock | steerro.cpp:377 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00807110 | 0x008063C0 | exact | SteerRO, FpRebuildLock | steerro.cpp:260 | verified: exact |
+| 0x0080750D | 0x008067BD | exact | Watchpoint | watchpt.cpp:77 | verified: exact |
+| 0x00807557 | 0x00806807 | exact | Watchpoint | watchpt.cpp:78 | verified: exact |
+| 0x008077A0 | 0x00806A50 | exact | SteerRO, FpRebuildLock | steerro.cpp:261 | verified: exact |
+| 0x00807B70 | 0x00806E20 | exact | SteerRO, FpRebuildLock | steerro.cpp:377 | verified: exact |
+| 0x0080C300 | 0x0080B5B0 | exact | SteerRO, FpRebuildLock | steerro.cpp:377 | verified: exact |
+| 0x0080CB40 | 0x0080BDF0 | exact | SteerRO, FpRebuildLock | steerro.cpp:164 | verified: exact |
+| 0x0080E0B0 | 0x0080D360 | exact | SteerRO, FpRebuildLock | steerro.cpp:162 | verified: exact |
+| 0x0080E540 | 0x0080D850 | exact | RouteToObjRO | rtoro.cpp:464 | verified: exact |
+| 0x0080E5B0 | 0x0080D8C0 | ref | SteerRO, FpRebuildLock | steerro.cpp:158 steerro.cpp:202 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x0080E610 | 0x0080D920 | exact | SteerRO, FpRebuildLock, RouteToObjRO | steerro.cpp:159 rtoro.cpp:229 | verified: exact |
+| 0x0080E690 | 0x0080D9A0 | exact | SteerRO, FpRebuildLock | steerro.cpp:384 | verified: exact |
+| 0x0080E910 | 0x0080DC20 | exact | RouteToObjRO | rtoro.cpp:464 | verified: exact |
+| 0x0080E980 | 0x0080DC90 | exact | SteerRO, FpRebuildLock | steerro.cpp:160 | verified: exact |
+| 0x0080EC30 | 0x0080DF40 | exact | SteerRO, FpRebuildLock | steerro.cpp:161 | verified: exact |
+| 0x0080F080 | 0x0080E3A0 | masked | RouteToObjRO | rtoro.cpp:292 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x0080F6A0 | 0x0080E800 | exact | SteerRO, FpRebuildLock | steerro.cpp:163 | verified: exact |
+| 0x0080F840 | 0x0080E9A0 | masked | SteerRO, FpRebuildLock | steerro.cpp:377 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x0081C810 | 0x0081B9C0 | exact | RouteToObjRO | rtoro.cpp:61 | verified: exact |
+| 0x0081C880 | 0x0081BA30 | exact | SteerRO, FpRebuildLock | steerro.cpp:421 | verified: exact |
+| 0x0081C970 | 0x0081BB20 | exact | SteerRO, FpRebuildLock | steerro.cpp:420 | verified: exact |
+| 0x0081CBE0 | 0x0081BD90 | masked | RouteToObjRO | rtoro.cpp:62 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x0081D3C0 | 0x0081C390 | masked | RouteToObjRO | rtoro.cpp:60 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x008292D0 | 0x00828090 | ref | SteerRO, FpRebuildLock | steerro.cpp:48 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x0082EDB0 | 0x0082DA20 | ref | SteerRO, FpRebuildLock | steerro.cpp:57 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x00830340 | 0x0082EFB0 | ref | RouteToObjRO | rtoro.cpp:32 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x00831568 | 0x008301D8 | masked | RouteToObjRO | rtoro.cpp:31 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x0083156D | 0x008301DD | masked | RouteToObjRO | rtoro.cpp:673 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00831633 | 0x008302A3 | exact | RouteToObjRO | rtoro.cpp:31 | verified: exact |
+| 0x008316FF | 0x0083036F | masked | RouteToObjRO | rtoro.cpp:31 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x0083F5F0 | 0x004DEBD0 | exact | SteerRO, FpRebuildLock, RouteToObjRO | steerro.cpp:384 rtoro.cpp:230 | verified: exact |
+| 0x0085AAA0 | 0x00845310 | exact | SteerRO, FpRebuildLock | steerro.cpp:55 | verified: exact |
+| 0x0085AE60 | 0x00859B10 | exact | SteerRO, FpRebuildLock | steerro.cpp:49 | verified: exact |
+| 0x0085FD10 | 0x0085E9C0 | masked | SteerRO, FpRebuildLock | steerro.cpp:29 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00935770 | 0x00935BE0 | exact | RouteToObjRO | rtoro.cpp:53 | verified: exact |
+| 0x00946E90 | 0x009474B0 | exact | RouteToObjRO | rtoro.cpp:64 | verified: exact |
+| 0x00947620 | 0x00947C40 | ref | SteerRO, FpRebuildLock | steerro.cpp:266 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x009479D0 | 0x00948030 | exact | SteerRO, FpRebuildLock | steerro.cpp:265 | verified: exact |
+| 0x00947FA0 | 0x00948600 | exact | SteerRO, FpRebuildLock | steerro.cpp:263 | verified: exact |
+| 0x00948050 | 0x009486B0 | ref | SteerRO, FpRebuildLock | steerro.cpp:264 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x00951420 | 0x00951B50 | exact | RouteToObjRO | rtoro.cpp:54 | verified: exact |
+| 0x00959000 | 0x00959710 | override | RouteToObjRO | rtoro.cpp:55 | verified: ea169-overrides.csv row |
+| 0x00959060 | 0x00959770 | near | RouteToObjRO | rtoro.cpp:56 | verified: near, bytes equal, same delta as the neighbour row |
+| 0x009C1B00 | 0x004B3D60 | override | SteerRO, FpRebuildLock | steerro.cpp:381 | verified: ea169-overrides.csv row |
+| 0x00AAC090 | 0x00C9FDC0 | override | SteerRO, FpRebuildLock | steerro.cpp:58 | verified: ea169-overrides.csv row |
+| 0x00B02360 | 0x00B009C0 | exact | RouteToObjRO | rtoro.cpp:57 | verified: exact |
+| 0x00B69840 | 0x00B680D0 | exact | RouteToObjRO | rtoro.cpp:63 | verified: exact |
+| 0x00BFB320 | 0x00A8B240 | override | SteerRO, FpRebuildLock | steerro.cpp:402 | verified: ea169-overrides.csv row |
+| 0x00C0FD60 | 0x00EC0CD0 | override | MemDiag | memexp.cpp:548 | verified: ea169-overrides.csv row |
+| 0x00C68990 | 0x00C67D10 | exact | SteerRO, FpRebuildLock | steerro.cpp:50 | verified: exact |
+| 0x00C88FD0 | 0x00C88790 | exact | SteerRO, FpRebuildLock | steerro.cpp:52 | verified: exact |
+| 0x00C8EC50 | 0x00C8E4A0 | exact | RouteToObjRO | rtoro.cpp:59 | verified: exact |
+| 0x00D718CC | 0x00D7190C | masked | Watchpoint | arenatail.cpp:34 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00D71900 | 0x00D71940 | ref | Watchpoint | arenatail.cpp:103 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x00D71946 | 0x00D71986 | masked | Watchpoint | arenatail.cpp:35 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00D719EA | 0x00D71A2A | masked | Watchpoint | arenatail.cpp:39 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00D71A4E | 0x00D71A8E | exact | Watchpoint | arenatail.cpp:41 | verified: exact |
+| 0x00D71AEA | 0x00D71B2A | exact | Watchpoint | arenatail.cpp:42 | verified: exact |
+| 0x00D71B88 | 0x00D71BC8 | masked | Watchpoint | arenatail.cpp:43 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00D71C00 | 0x00D71C40 | exact | Watchpoint | arenatail.cpp:103 | verified: exact |
+| 0x00D7E62A | 0x00D7E9EA | override | MemDiag | memexp.cpp:512 | verified: ea169-overrides.csv row |
+| 0x00D819AA | 0x00D81D6A | offset-changed | MemDiag | memexp.cpp:554 | verified: call 0xE4A050->0xE4A0A0 and [GC_gc_no] both map (address immediates, no field) |
+| 0x00E49C80 | 0x00E49CD0 | ref | MemDiag | memexp.cpp:41 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x00E4A050 | 0x00E4A0A0 | ref | MemDiag | memexp.cpp:554 memexp.cpp:555 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x00E4A120 | 0x00E4A170 | masked | MemDiag | memexp.cpp:557 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00E51000 | 0x00E51050 | override | Watchpoint | arenatail.cpp:128 | verified: ea169-overrides.csv row |
+| 0x00E54453 | 0x00E544A3 | masked | Watchpoint | arenatail.cpp:103 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00E563B2 | 0x00E56402 | exact | Watchpoint | arenatail.cpp:217 arenatail.cpp:222 | verified: exact |
+| 0x00E563BF | 0x00E5640F | exact | Watchpoint | arenatail.cpp:93 | verified: exact |
+| 0x00E563D3 | 0x00E56423 | masked | Watchpoint | arenatail.cpp:103 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00E563D5 | 0x00E56425 | masked | Watchpoint | arenatail.cpp:93 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00E5A600 | 0x00E5A650 | exact | Watchpoint | arenatail.cpp:128 | verified: exact |
+| 0x00E63427 | 0x00E63477 | masked | Watchpoint | arenatail.cpp:241 | verified: masked, first 24 bytes equal up to relocated operands |
+| 0x00E6F5A0 | 0x00E6F600 | ref | Watchpoint | arenatail.cpp:66 arenatail.cpp:241 | verified: ref, first 24 bytes equal up to relocated operands |
+| 0x00E9C3A0 | 0x00E9C400 | exact | Watchpoint | arenatail.cpp:66 | verified: exact |
+| 0x00F20360 | 0x0079BF70 | override | RouteToObjRO | rtoro.cpp:292 | verified: ea169-overrides.csv row |
+| 0x00F95000 | 0x00FDF000 | override | MemDiag | allocsites.cpp:35 | verified: ea169-overrides.csv row |
+| 0x00F9A5AC | 0x00FE46FC | xref | RouteToObjRO | rtoro.cpp:71 | verified: xref; same value (0.5f) |
+| 0x00FB2DA0 | 0x00FFCF18 | xref | MemDiag | memdiag.cpp:93 | verified: xref; vtable slot functions equal |
+| 0x00FEB848 | 0x01036DA8 | xref | SteerRO, FpRebuildLock | steerro.cpp:176 | verified: xref; vtable slot functions equal |
+| 0x00FEB970 | 0x01036ED0 | override | SteerRO, FpRebuildLock | steerro.cpp:176 | **fixed** (was 0x01036DA8 = the 0xFEB848 vtable, 1-vote xref): only .rdata hit for the mapped slots, 24/24 slot functions equal |
+| 0x00FEBD10 | 0x01037270 | xref | SteerRO, FpRebuildLock | steerro.cpp:176 | verified: xref; vtable slot functions equal |
+| 0x00FEBE38 | 0x01037398 | xref | SteerRO, FpRebuildLock | steerro.cpp:176 | verified: xref; vtable slot functions equal |
+| 0x00FEBF90 | 0x010374E0 | xref | Watchpoint | watchpt.cpp:147 | verified: xref; vtable slot functions equal |
+| 0x00FEC6DC | 0x01037C28 | xref | RouteToObjRO | rtoro.cpp:68 | verified: xref; same value (0.123f) |
+| 0x00FECE14 | 0x0103835C | xref | RouteToObjRO | rtoro.cpp:70 | verified: xref; same value (0.9f) |
+| 0x00FEDE48 | 0x01039390 | xref | SteerRO, FpRebuildLock | steerro.cpp:62 | verified: xref; same value (mask table) |
+| 0x00FFDD94 | 0x010492F4 | xref | MemDiag | memdiag.cpp:100 | verified: xref; vtable slot functions equal |
+| 0x00FFE250 | 0x010497C8 | xref | MemDiag | memdiag.cpp:93 | verified: xref; vtable slot functions equal |
+| 0x01021CF0 | 0x0106CD48 | xref | RouteToObjRO | rtoro.cpp:38 | verified: xref; same value (deadline dwords) |
+| 0x01026E1C | 0x01071E84 | xref | SteerRO, FpRebuildLock | steerro.cpp:63 | verified: xref; same value (tag (string data)) |
+| 0x0106E8A8 | 0x00FF76E8 | xref | RouteToObjRO | rtoro.cpp:69 | verified: xref; same value (0.25f) |
+| 0x0107A538 | 0x010B2D5C | xref | SteerRO, FpRebuildLock | steerro.cpp:61 | verified: xref; same value (1.0f) |
+| 0x011C78D8 | 0x01221958 | xref | MemDiag | memdiag.cpp:42 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011CB864 | 0x012258E4 | xref | MemDiag | memdiag.cpp:41 memdiag.cpp:48 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011D4BC8 | 0x0122EC78 | xref | MemDiag | memdiag.cpp:48 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011E9114 | 0x012431B4 | xref | RouteToObjRO | rtoro.cpp:66 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011E9158 | 0x012431F8 | xref | RouteToObjRO | rtoro.cpp:65 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011ECBC4 | 0x01246C54 | xref | SteerRO, FpRebuildLock | steerro.cpp:60 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011ED034 | 0x012470C4 | xref | RouteToObjRO | rtoro.cpp:67 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011EE508 | 0x01248598 | xref | Watchpoint | arenatail.cpp:233 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011F2F90 | 0x0124D020 | xref | MemDiag | memdiag.cpp:44 memexp.cpp:34 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011F2F9C | 0x0124D02C | xref | MemDiag | memexp.cpp:36 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011F3054 | 0x0124D0E4 | xref | MemDiag | memexp.cpp:33 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011F30A8 | 0x0124D138 | xref | MemDiag | memexp.cpp:37 | verified: xref (code votes), same block delta as its neighbours |
+| 0x011F30D8 | 0x0124D168 | xref | MemDiag | memexp.cpp:34 | verified: xref (code votes), same block delta as its neighbours |
+| 0x012225A0 | 0x0127C920 | xref | MemDiag | memdiag.cpp:43 memexp.cpp:35 | verified: xref (code votes), same block delta as its neighbours |
+| 0x012225B4 | 0x0127C934 | xref | MemDiag | memdiag.cpp:43 | verified: xref (code votes), same block delta as its neighbours |
+| 0x012225C0 | 0x0127C940 | xref | MemDiag | memexp.cpp:36 | verified: xref (code votes), same block delta as its neighbours |
+| 0x012225C4 | 0x0127C944 | xref | MemDiag | memexp.cpp:35 | verified: xref (code votes), same block delta as its neighbours |
+| 0x01233318 | 0x0128D698 | xref | MemDiag | memexp.cpp:33 | verified: xref (code votes), same block delta as its neighbours |
+| 0x01234360 | 0x0128E6E0 | xref | MemDiag | memexp.cpp:546 | verified: xref (code votes), same block delta as its neighbours |
