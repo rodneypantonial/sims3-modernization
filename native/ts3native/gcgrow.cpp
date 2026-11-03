@@ -177,8 +177,9 @@ static DWORD __cdecl GwXml(DWORD lo, DWORD hi, DWORD group, DWORD type) {
     const LONG kb = (LONG)(len >> 9);
     if (kb > k.gwXmlMaxKB) k.gwXmlMaxKB = kb;
     if (k.gwMode && kb >= 1024 && InterlockedIncrement(&g_gwXmlLines) <= 200)
-        Log("gcgrow xml: type 0x%08lX group 0x%08lX instance 0x%08lX%08lX -> %lu chars (%ld KB) string 0x%08lX; thread %lu", type, group,
-            hi, lo, len, kb, r, tid);
+        Log("gcgrow xml: type 0x%08lX group 0x%08lX instance 0x%08lX%08lX -> %lu chars (%ld KB) string 0x%08lX; thread %lu; bl spacing %lu KB, heap %lu KB, "
+            "gc_no %lu, expand streak %ld", type, group, hi, lo, len, kb, r, tid, GwRead(g_gwb.blSpacing) >> 10, GwRead(g_mx.heapSize) >> 10,
+            GwRead(g_mx.gcNo), k.gcExpandStreak);
     return r;
 }
 
