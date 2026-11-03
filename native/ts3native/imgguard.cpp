@@ -19,10 +19,10 @@
 // local), so a huge size is the stream's bytes, not a stale struct. The log line also has the raw format request and the
 // first 3 code addresses on the stack above the wrapper's frame (caller chain; heuristic, may include stale values).
 
-static const DWORD IG_SITE = TS3A(0x00446037), IG_SIZE = TS3A(0x00446019), IG_RESIZE = TS3A(0x00405410);
-static const DWORD IG_FAIL = TS3A(0x004460D7), IG_WRAP_RET = TS3A(0x0044614D), IG_DECODE = TS3A(0x00445FB0);
-static const DWORD IG_TEXT_LO = TS3A(0x00401000), IG_TEXT_HI = TS3A(0x00F95000);  // .text, for the caller chain
-static const DWORD IG_RES_RET[3] = {TS3A(0x007E2530), TS3A(0x007E7A3D), TS3A(0x007F2F0F)};  // return addresses into the 3 resource loaders
+static const DWORD IG_SITE = 0x00446037, IG_SIZE = 0x00446019, IG_RESIZE = 0x00405410;
+static const DWORD IG_FAIL = 0x004460D7, IG_WRAP_RET = 0x0044614D, IG_DECODE = 0x00445FB0;
+static const DWORD IG_TEXT_LO = 0x00401000, IG_TEXT_HI = 0x00F95000;  // .text, for the caller chain
+static const DWORD IG_RES_RET[3] = {0x007E2530, 0x007E7A3D, 0x007F2F0F};  // return addresses into the 3 resource loaders
 // mov eax,[esi+18h]; mov ebx,[esp+10h]; cdq; and edx,7; add eax,edx; sar eax,3; imul eax,[esi+14h]; imul eax,[esi+10h];
 // add ebx,0Ch; push eax; mov ecx,ebx (then the call at IG_SITE)
 static const u8 kIgSize[30] = {0x8B, 0x46, 0x18, 0x8B, 0x5C, 0x24, 0x10, 0x99, 0x83, 0xE2, 0x07, 0x03, 0xC2, 0xC1, 0xF8,
