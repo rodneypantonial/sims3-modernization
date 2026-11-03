@@ -510,3 +510,20 @@ vh-repro crash, static triage [code verified; cause inferred]: the game ended 4 
 No low-address-space sample, no dump, no out-of-memory crash in any 8d job; lowest largest-free block per job 1432-1548 MB after the CC park (vh-cycle-a with full CC: 1287 / 1423 MB). Not rerun on the parked set-up: vh-move, vh1-soak, vh-cycle-a/b (passed before the park).
 
 Restore verified (08:34): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862` (built with the 174-file set; the harness clears it on the next run), Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, Mods listing identical to the new 86-file baseline, Saves 0 differences against the backup (EaMod-SV-fresh removed), no game process.
+
+### Run 8e (2026-11-03): detour publish-order fix, vh-repro rerun
+
+Fix for the 8d vh-repro start-up crash: `InstallDetour` and `AsDetour` take the caller's trampoline slot and store it (full barrier) before one atomic 5-byte jmp write (`Write5`, shared); a copied leading `call rel32` is re-targeted inside `InstallDetour` before the jmp goes live (rtsites.cpp did it after). All InstallDetour sites (about 90) and the 11 AsDetour sites pass their slot; routesnap lot-0 guard and the unseen replan split now pass the global instead of a local. Hand-rolled patches (PatchCalls, savewrite, eafix, monothread, autshadow, values, loadprof, ...) audited: they already store first. selftest `TestDetourPublish` (200 installs under a spinning caller) passes in CI. Steam: PR #233 (5ebc17e + 6c55e49, CI green). Port: b762bd9 + c84a872, CI run 41554751599 green (native, native-ea169, node); asi `ac66bc0efc8f`, rc ini unchanged.
+
+Rerun with the 8d set-up (driver as 8d, CC parked, 86 Mods files, `[MemDiag]` Light=1 AllocSites=1 Virtual=1 Heap=0, Saves backed up to `game-copy/saves-pre-eamod8e`), machine quiet (no stray python/node, CPU idle):
+
+| job | verdict |
+|---|---|
+| vh-repro | **CRASH** 4.8 min, during `Handlers.LoadSave`; stopped |
+| hf-statecmd | not run (stopped at the crash) |
+
+- The 8d start-up crash is gone [verified]: all seven `OK   alloc sites Nt* detour` lines, then the game ran ~53 s to the save load; no null-call line.
+- New crash [verified]: `exception C0000096 at 0x00769111`, thread 32296, edx 0x00EC0FE0, caller 0x00E5495B (EA report `xcpt ALRPANTONIAL1 26-11-03 08.46.57.txt`, `PRIV_INSTRUCTION`). Same signature as Run 7e.
+- Cause [code verified]: the port's `DetourCore` re-targets the copied `call rel32` from `prologue + 1`, the baked Steam bytes; on 1.69 `Matches` compares through `ExpectedAt`, so the live rel32 differs. Route gate site 18 (`0xEC0FE0`, callee `0x76A230` on EA) gets callee `0x769110`, mid-instruction. This is the 7e bug that df3f2e5 fixed in rtsites.cpp (displacement from `tr`), brought back when the fixup moved into the shared helper. Fix (not made, no second attempt): take the displacement from the trampoline copy, `*(const LONG*)(tramp + 1)`, in `DetourCore` on both branches (Steam unchanged: same bytes).
+
+Restore verified (08:51): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical (86 files, `6d65db6779b1`), Saves 0 differences against the backup, no game process. Logs: `probe-out/ea-eamod-1103e.*`.
