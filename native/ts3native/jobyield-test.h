@@ -9,7 +9,7 @@ static void TestJobYield() {
                       offsetof(Ts3nCounters, swLines) == 0x4624 && sizeof(Ts3nCounters) == 5841 * 4,
                   "counters v109 layout after v108 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
-    assert(k.version == 161);
+    assert(k.version == 162);
     memset((void*)&k.jyMode, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, jyMode));
     u8 out[0x48];
     FakeTask(kRoot, 7);

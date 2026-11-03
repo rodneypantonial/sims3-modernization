@@ -145,7 +145,7 @@ static void TestEaCrashFixes() {
                       sizeof(Ts3nCounters) == 5841 * 4,
                   "counters v141 layout after v140 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
-    assert(k.version == 161);
+    assert(k.version == 162);
 
     // ---- ConformActor ----
     const DWORD rd0 = g_ecaRdLo, rd1 = g_ecaRdHi, tx0 = g_ecaTxLo, tx1 = g_ecaTxHi;
