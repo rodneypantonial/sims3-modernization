@@ -2385,15 +2385,15 @@ struct Ts3nCounters {
     LONG igMaxMB;                      // +0x5AF8, largest size seen at or above LogMB, MB (0x7FFFFFFF after a wrap)
     LONG igSpare[2];                   // +0x5AFC
     // v161 (docs/232 Run 8l, gcgrow.cpp): [GcGrowLog] Boehm heap expansions through GC_collect_or_expand, log only
-    LONG ggMode;                       // +0x5B04, runtime switch (--ab gcgrowlog): 1 = gcgrow: lines, 0 = count only
-    LONG ggReady;                      // +0x5B08, both calls of GC_expand_hp_inner go to GgThunk
-    LONG ggExpands;                    // +0x5B0C, expansions asked
-    LONG ggFails;                      // +0x5B10, of those, GC_expand_hp_inner returned 0
-    LONG ggKB;                         // +0x5B14, heap growth through them, KB
-    LONG ggMaxAskKB;                   // +0x5B18, largest single ask, KB
-    LONG ggUnseenKB;                   // +0x5B1C, heap growth between two of ours (not through these calls), KB
-    LONG ggLines;                      // +0x5B20, gcgrow: lines written (500 at most)
-    LONG ggSpare[2];                   // +0x5B24
+    LONG gwMode;                       // +0x5B04, runtime switch (--ab gcgrowlog): 1 = gcgrow: lines, 0 = count only
+    LONG gwReady;                      // +0x5B08, both calls of GC_expand_hp_inner go to GwThunk
+    LONG gwExpands;                    // +0x5B0C, expansions asked
+    LONG gwFails;                      // +0x5B10, of those, GC_expand_hp_inner returned 0
+    LONG gwKB;                         // +0x5B14, heap growth through them, KB
+    LONG gwMaxAskKB;                   // +0x5B18, largest single ask, KB
+    LONG gwUnseenKB;                   // +0x5B1C, heap growth between two of ours (not through these calls), KB
+    LONG gwLines;                      // +0x5B20, gcgrow: lines written (500 at most)
+    LONG gwSpare[2];                   // +0x5B24
 };
 extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {161,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -4681,7 +4681,7 @@ static_assert(offsetof(Ts3nCounters, waOn) == 0x5570 && offsetof(Ts3nCounters, w
               offsetof(Ts3nCounters, pfSkip) == 0x5584, "v146 layout (docs/registry.md)");
 static_assert(offsetof(Ts3nCounters, igReady) == 0x5AE4 && offsetof(Ts3nCounters, igMaxMB) == 0x5AF8 && offsetof(Ts3nCounters, igSpare) == 0x5AFC &&
               sizeof(Ts3nCounters) == 5835 * 4, "v160 layout (docs/registry.md)");
-static_assert(offsetof(Ts3nCounters, ggMode) == 0x5B04 && offsetof(Ts3nCounters, ggLines) == 0x5B20 && offsetof(Ts3nCounters, ggSpare) == 0x5B24,
+static_assert(offsetof(Ts3nCounters, gwMode) == 0x5B04 && offsetof(Ts3nCounters, gwLines) == 0x5B20 && offsetof(Ts3nCounters, gwSpare) == 0x5B24,
               "v161 layout (docs/registry.md)");
 #include "autshadow.cpp"
 #include "gcroots.cpp"  // docs/67 §22.4: Crash S task-rooting line + [GcRootCheck] (after autshadow.cpp: autledger's g_lgCtx; memexp.cpp: g_mx)
