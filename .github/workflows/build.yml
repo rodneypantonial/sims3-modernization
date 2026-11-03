@@ -26,6 +26,11 @@ jobs:
           path: |
             native/ts3native/out/ts3native.asi
             native/ts3native/out/ts3native.ini
+      - uses: actions/upload-artifact@v4  # for machines without MSVC (the EA laptop) to rerun the self-tests
+        with:
+          name: selftest
+          path: native/ts3native/out/selftest.exe
+          retention-days: 7
 
   node:
     runs-on: ubuntu-latest
