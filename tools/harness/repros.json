@@ -49971,5 +49971,266 @@
         "note": "on: no exception, an owner component owned by the Sim; rewardgiver_added +1"
       }
     ]
+  },
+  {
+    "id": "ea-water-swim",
+    "bug": "none (feature trigger): docs/232 Run 8h, [WaterJps] Verify showed 0 calls in Sunset Valley (no water routes)",
+    "fix": "[WaterJps] (waterjps.cpp): the boats/swimming route search jump 0x61FE10",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-11-03): never run. Player-realistic: the active Sim gets Go Here into the sea (a swim route) and back home, twice, at ultra; the sea point is 10 m out, found as in rare-ip-water. No spawned Sims, no cheats.",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "ocean"
+        },
+        "waitS": 60,
+        "note": "swim route into the sea"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "ocean"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; waterJpsCallsK > 0, waterJpsMismatches 0, waterJpsFallbacks small"
+  },
+  {
+    "id": "ea-terrain-sculpt",
+    "bug": "none (feature trigger): docs/232 Run 8h, [TerrainGrave] parked 0 (heightRebuilds 64 -> 64: no terrain cell rebuild 0xC2A840 after the load)",
+    "fix": "[TerrainGrave] (docs/60 §2.2 #2): the cell rebuild's shape release is parked until no ray is in flight",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-11-03): never run. Player-realistic build-mode flow on the home lot: terrain sculpt brush (ToolMessageID 15) drags and a level-rect (13) drag, then build exit and a Go Here across the edited ground (sim-thread height rays). Tool steps are optional (a refusal on a blocked tile is harmless); which of them rebuilds a cell is inferred, read heightRebuilds and vfSwaps.",
+    "steps": [
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 15,
+        "note": "build mode on the home lot"
+      },
+      {
+        "cmd": "build_level",
+        "args": {
+          "level": 0,
+          "aim": [
+            3,
+            3
+          ]
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "tool_select",
+        "args": {
+          "tool": 15,
+          "product": "first"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "terrain sculpt brush"
+      },
+      {
+        "cmd": "tool_drag",
+        "args": {
+          "tiles": true,
+          "points": [
+            [
+              1,
+              1
+            ],
+            [
+              4,
+              1
+            ],
+            [
+              4,
+              3
+            ]
+          ]
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "raise along a path"
+      },
+      {
+        "cmd": "tool_drag",
+        "args": {
+          "tiles": true,
+          "points": [
+            [
+              2,
+              2
+            ],
+            [
+              5,
+              2
+            ]
+          ]
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "tool_select",
+        "args": {
+          "tool": 13,
+          "product": "first"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "level rect"
+      },
+      {
+        "cmd": "tool_drag",
+        "args": {
+          "tiles": true,
+          "points": [
+            [
+              1,
+              1
+            ],
+            [
+              4,
+              3
+            ]
+          ]
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 40,
+        "note": "a plan over the edited cells"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        }
+      }
+    ],
+    "expect": "no crash; heightRebuilds or vfSwaps rise after the drags; vfRtGraveParked > 0 with vfRtGraveFreed following; vfRtGraveRaces 0"
+  },
+  {
+    "id": "ea-rto-slot-sit",
+    "bug": "none (feature trigger): docs/232 Run 8i, [RouteToObjRO] rtoSlot 0 in 2 x 10 min (the slot path of RoutingWorld_RouteToObjectCheck 0x831530 never ran)",
+    "fix": "[RouteToObjRO] (rtoro.cpp, docs/140 §12) slot targets, with [SlotEnabledRO]",
+    "save": "Baseline-SV-Spring",
+    "note": "UNVERIFIED (static only, 2026-11-03): never run. STRESS (spawned Sims, scripted interactions): 10 spawned Sims get Sit on the first seat of the far community lot that offers it (crowd_do), twice, while their walks keep route jobs running, so IsSlotUnobstructed reaches 0x831530 with a slot target during jobs. Which seats carry slot 0x31229A4C is inferred.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_do",
+        "args": {
+          "lot": "far",
+          "object": "Bench|Chair|Seat|Sofa|Loveseat",
+          "interaction": "Sit"
+        },
+        "waitS": 90
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "crowd_do",
+        "args": {
+          "lot": "far",
+          "object": "Bench|Chair|Seat|Sofa|Loveseat",
+          "interaction": "Sit"
+        },
+        "waitS": 90
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      }
+    ],
+    "expect": "no crash; rtoSlot > 0; rtoShadowMismatch, rtoShadowQueryMismatch, rtoSimWriteInRo 0"
   }
 ]
