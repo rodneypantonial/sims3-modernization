@@ -57,7 +57,8 @@ jobs:
           # like ALLOW, but Enabled=1 is forced (the Steam ini ships it 0 until verified in game). [FootprintIndex]: standalone,
           # footprint.cpp has no unresolved row, its byte-check site is ok; an FNV mismatch on 1.69 only logs SKIP
           # [LotSinCos]: standalone, 0xAB8540 -> 0xAB71B0 same code (docs/232 "LotSinCos on 1.69"), prologue row ok
-          ALLOW_ON: FootprintIndex LotSinCos
+          # [ImageGuard]: imgguard.cpp, decode 0x445FB0 -> 0x445E80 same code (docs/232 Run 8d); EA test runs log big images
+          ALLOW_ON: FootprintIndex LotSinCos ImageGuard
         # tools/ea-ini.ts writes out-ea169/ts3native-ea169.ini (minimal: ALLOW / ALLOW_ON only) and ts3native-ea169-rc.ini (release candidate:
         # shipped values for every section whose files have no unresolved / bytes-bad row and no zeroed dependency; docs/232 rc table). It fails when an
         # ALLOW section reads a file with such a row ([EaDiag] is EA-only: its file is not in the tables). tools/ini-sections.json (section -> .cpp files
