@@ -26,6 +26,11 @@ jobs:
           path: |
             native/ts3native/out/ts3native.asi
             native/ts3native/out/ts3native.ini
+      - uses: actions/upload-artifact@v4  # for machines without MSVC (the EA laptop) to rerun the self-tests
+        with:
+          name: selftest
+          path: native/ts3native/out/selftest.exe
+          retention-days: 7
 
   # EA app 1.69.47 build (docs/228): the same sources with /DTS3A_TABLE take their addresses from the committed
   # native/ts3native/ts3addr-ea169.h. No selftest.exe (not compile-checked under the table). The EA ini is the Steam ini with

@@ -84,7 +84,6 @@ instead of sleeps, fixed interleavings) and then go back to plain `assert`.
 
 | Test (file) | Checks skipped on CI |
 | --- | --- |
-| AllocSites (`allocsites-test.h`) | first hook entry while another thread holds the PEB / process heap lock (3 s wait; failed 3 CI runs 2026-10-26/27) |
 | P5b (`p5b-test.h`) | destroys and time lent, steering / gate reads inside lent bodies, mean waits drop per mode, most lent waits granted, admitted wait per job drops |
 | P5c (`p5c-test.h`) | HoldKeyed gates admitted inside jobs, sim calls got the lock inside job bodies, FreeLock share and mean waits (failed locally twice), HoldKeyed=2 site 10 admitted |
 | TailUnlock (`tailunlock-test.h`) | steering granted in a lent body, retake < 1 s |
