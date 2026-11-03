@@ -115,20 +115,25 @@ static bool PatchImm32(const char* name, const Site* sites, int count, DWORD val
     return true;
 }
 
-// One 8-byte locked write when the 5 bytes sit in one aligned qword (a thread never runs half a jmp), else memcpy.
+// One 8-byte locked write (a thread never runs half a jmp): the aligned qword around the 5 bytes, or, when they cross an
+// 8-byte boundary (offset 4-7), the 8 bytes at `t` itself: a locked cmpxchg8b is atomic at any alignment (a split lock,
+// slow but one-off); refusing instead would drop a detour that only moved by a few bytes on another exe build.
 static bool Write5(u8* t, const u8* five) {
+    const uintptr_t off = (uintptr_t)t & 7;
+    u8* const q = off <= 3 ? t - off : t;
     DWORD old;
-    if (!VirtualProtect(t, 5, PAGE_EXECUTE_READWRITE, &old)) return false;
-    const uintptr_t q = (uintptr_t)t & ~(uintptr_t)7;
-    if ((uintptr_t)t - q <= 3) {
-        for (;;) {
-            const LONG64 cur = *(volatile LONG64*)q;
-            LONG64 nw = cur;
-            memcpy((u8*)&nw + ((uintptr_t)t - q), five, 5);
-            if (InterlockedCompareExchange64((volatile LONG64*)q, nw, cur) == cur) break;
-        }
-    } else memcpy(t, five, 5);
-    VirtualProtect(t, 5, old, &old);
+    if (!VirtualProtect(q, 8, PAGE_EXECUTE_READWRITE, &old)) return false;
+    if (q == t) {
+        static volatile LONG warned;
+        if (!InterlockedExchange(&warned, 1)) Log("WARN detour write at 0x%08X crosses an 8-byte boundary: unaligned locked write", (DWORD)(uintptr_t)t);
+    }
+    for (;;) {
+        const LONG64 cur = *(volatile LONG64*)q;
+        LONG64 nw = cur;
+        memcpy((u8*)&nw + (t - q), five, 5);
+        if (InterlockedCompareExchange64((volatile LONG64*)q, nw, cur) == cur) break;
+    }
+    VirtualProtect(q, 8, old, &old);
     FlushInstructionCache(GetCurrentProcess(), t, 5);
     return true;
 }
@@ -145,7 +150,7 @@ static void* DetourCore(const char* name, DWORD target, const u8* prologue, size
     }
     u8* tramp = (u8*)VirtualAlloc(NULL, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!tramp) return NULL;
-    memcpy(tramp, ExpectedAt(t, prologue, len), len);
+    memcpy(tramp, t, len);  // the live bytes (Matches checked them against the expected ones)
     tramp[len] = 0xE9;
     *(LONG*)(tramp + len + 1) = (LONG)((t + len) - (tramp + len + 5));
     if (tramp[0] == 0xE8) {  // rel32 from the copy of the live bytes, never the caller's literal (EA: docs/232 Run 7e / 8e)
@@ -156,12 +161,11 @@ static void* DetourCore(const char* name, DWORD target, const u8* prologue, size
     void* const prev = slot ? *slot : NULL;
     if (slot) *slot = tramp;
     MemoryBarrier();
-    u8 jmp[16];
-    memset(jmp, 0x90, sizeof(jmp));
-    jmp[0] = 0xE9;
+    u8 jmp[5] = {0xE9};
     *(LONG*)(jmp + 1) = (LONG)((u8*)hook - (t + 5));
-    // the jmp first (atomic), then the nop tail that no new entry can reach
-    if (!Write5(t, jmp) || (len > 5 && !Write(t + 5, jmp + 5, len - 5))) {
+    // only the 5-byte jmp: bytes 5..len stay as they were (never reached through the jmp; a thread or branch already at an
+    // instruction there runs it intact, where a non-atomic nop tail would hand it half-written bytes)
+    if (!Write5(t, jmp)) {  // fails before writing anything (VirtualProtect), so undoing is safe
         if (slot) *slot = prev;
         VirtualFree(tramp, 0, MEM_RELEASE);
         return NULL;

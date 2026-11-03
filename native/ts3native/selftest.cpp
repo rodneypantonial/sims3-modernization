@@ -13373,8 +13373,8 @@ static DWORD WINAPI DtSpin(void* fn) {
     return 0;
 }
 // docs/232 Run 8e: a detour over `call rel32` re-targets the trampoline's copy at the callee of the LIVE bytes. With
-// TS3N_TEST_EXPECTED (EA port) the caller's literal points at another callee, as Steam bytes do on 1.69; taking the
-// rel32 from the literal returns 9 instead of 7 (the 0x769111 PRIV_INSTRUCTION crash).
+// TS3N_TEST_EXPECTED (both editions) the caller's literal points at another callee, as Steam bytes do on EA 1.69; taking
+// the rel32 from the literal returns 9 instead of 7 (the 0x769111 PRIV_INSTRUCTION crash).
 static int __cdecl DcHook() { return 1; }
 static void TestDetourCallRel() {
     u8* b = (u8*)VirtualAlloc(NULL, 128, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
