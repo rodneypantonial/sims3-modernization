@@ -193,6 +193,8 @@ static const Site kBlPunt[] = {{TS3A(0x00E49540), {0xFF, 0x15, 0xC0, 0x49, 0x19,
 typedef void(__cdecl* GwWarnFn)(const char* fmt, DWORD arg);
 static void* const* g_gwWarnProc = (void* const*)(uintptr_t)TS3A(0x011949C0);  // GC_current_warn_proc (Mono sets it after GC_init)
 static LONG g_gwWarnEvery = 5;  // GC_large_alloc_warn_interval before we set it to 1
+static DWORD g_gcCapBytes, g_gcT0;  // cap in bytes (0 = off), GetTickCount at init
+static bool g_gcStrict;             // the 8 MB clamp is back (a world is loaded and playing)
 
 static void __cdecl GcBlackOk(const char* fmt, DWORD bytes) {
     Ts3nCounters& k = ts3native_counters;
@@ -210,6 +212,7 @@ static bool ApplyGcBlackCap(const wchar_t* ini) {
     const DWORD cap = (DWORD)Clamp(kb, 12, 8192);
     if (!PatchImm32("GC black-list spacing cap", kBlCap, 2, cap << 10)) return false;
     ts3native_counters.gcCapKB = (LONG)cap;
+    g_gcCapBytes = cap << 10, g_gcT0 = GetTickCount();  // lenient until the first world has loaded (GcCapWindow)
     u8 call[6] = {0xE8, 0, 0, 0, 0, 0x90};
     *(LONG*)(call + 1) = (LONG)((uintptr_t)GcBlackOk - (kBlPunt[0].addr + 5));
     DWORD* ival = (DWORD*)(uintptr_t)g_gwb.warnIval;
@@ -222,6 +225,34 @@ static bool ApplyGcBlackCap(const wchar_t* ini) {
     if (!Write((void*)(uintptr_t)kBlPunt[0].addr, call, 6)) Log("FAIL gc black-list ok count: VirtualProtect at 0x%08X", kBlPunt[0].addr);
     else Log("OK   gc black-list ok count: 0x%08X call [warn proc] -> GcBlackOk (warning forwarded every %ld)", kBlPunt[0].addr, g_gwWarnEvery);
     return true;
+}
+
+// Window (docs/232 Run 8q): lenient (the cap) from init, at the menu and on every load screen; strict (EA's 8 MB clamp)
+// while a world is loaded and playing. Sim thread, from the ts3fixes "world:" (load finished) and "world quit" lines
+// (userdiag.cpp). Both immediates are byte-checked against the value we expect there first (PatchImm32: both or none).
+// Without ts3fixes no line arrives and the cap stays lenient for the whole session (the PR #238 behaviour).
+static void GcCapWindow(bool strict, const char* ev) {
+    if (!g_gcCapBytes || strict == g_gcStrict) return;
+    const DWORD from = strict ? g_gcCapBytes : 0x800000u, to = strict ? 0x800000u : g_gcCapBytes;
+    const char* name = strict ? "GC black-list clamp strict" : "GC black-list clamp lenient";
+    // not PatchImm32: on the EA build Matches compares with the table's original bytes (imm 0x800000), never with `from`
+    for (const Site& s : kBlCap) {
+        u8 want[10];
+        memcpy(want, ExpectedAt((const void*)(uintptr_t)s.addr, s.expect, s.len), s.len);
+        memcpy(want + s.immOff, &from, 4);
+        if (!Readable((const void*)(uintptr_t)s.addr, s.len) || memcmp((const void*)(uintptr_t)s.addr, want, s.len) != 0) {
+            Log("SKIP %s at %s: bytes at 0x%08lX differ, nothing written", name, ev, s.addr);
+            return;
+        }
+    }
+    for (const Site& s : kBlCap)
+        if (!Write((u8*)(uintptr_t)s.addr + s.immOff, &to, 4)) { Log("FAIL %s: VirtualProtect at 0x%08lX failed (err %lu)", name, s.addr, GetLastError()); return; }
+    g_gcStrict = strict;
+    Ts3nCounters& k = ts3native_counters;
+    (strict ? k.gcStrictN : k.gcLenientN)++;
+    k.gcSwitchSec = (LONG)((GetTickCount() - g_gcT0) / 1000);
+    Log("gc blcap: %s at %s (switch %ld, %ld s after init; spacing now %lu KB, follows at the next promote)",
+        strict ? "restored 8 MB clamp" : "cap lenient again", ev, k.gcStrictN + k.gcLenientN, k.gcSwitchSec, GwRead(g_gwb.blSpacing) >> 10);
 }
 
 static bool ApplyGcGrowLog(const wchar_t* ini) {

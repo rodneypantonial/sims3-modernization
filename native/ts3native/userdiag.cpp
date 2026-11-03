@@ -20,6 +20,7 @@ static void MdSaveStart(bool travelSave);       // memdiag.cpp ([MemDiag], docs/
 static void ApplyMemDiag(const wchar_t* ini);  // memdiag.cpp
 static void CpSaveEnd(DWORD r);      // compaction.cpp ([Compaction], docs/204)
 static void CpWorldLoad();
+static void GcCapWindow(bool strict, const char* ev);  // gcgrow.cpp (included after this file)
 static void CpAfterSample(DWORD bigMB);
 static u8 CpOp(DWORD lo);
 
@@ -640,6 +641,9 @@ static void UdWorldLoad() {  // sim thread, from the ts3fixes "world:" line
     UdMemAsk("diag: memory at world load #%ld", n, MdWorldEvent(g_udTxt));
     if (n == 1) UdModulesLines();
     CpWorldLoad();
+    char ev[32];
+    sprintf_s(ev, "world load #%ld", n);
+    GcCapWindow(true, ev);  // gcgrow.cpp: [GC] BlackListCapKB strict while the world plays
 }
 
 // ts3fixes text channel (UserDiag.cs): Route.GetOption2 with optHi = 0x87000000 | op << 16, 4 ASCII bytes in optLo.
@@ -678,6 +682,7 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
             }
             if (g_udTxtLines++ < 400) Log("ts3fixes: %s", g_udTxt);  // cap: a looping sender cannot fill the disk
             if (!strncmp(g_udTxt, "world:", 6)) UdWorldLoad();
+            else if (!strcmp(g_udTxt, "world quit")) GcCapWindow(false, "world quit");  // gcgrow.cpp: lenient on the load screen
             else if (!strncmp(g_udTxt, "mem: ", 5)) MdMark(g_udTxt + 5);  // [MemDiag] event mark (ts3agent mem_mark)
             g_udTxtN = 0;
             return 1;

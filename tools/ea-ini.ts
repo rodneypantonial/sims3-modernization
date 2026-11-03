@@ -25,7 +25,7 @@ export const ALWAYS_OFF: Record<string, string> = {
 export const RC_ZERO_KEYS: Record<string, string[]> = { MemDiag: ["Light"] };
 const rcZeroKey = (sec: string, key: string) => (RC_ZERO_KEYS[sec] ?? []).includes(key);
 // EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
-// ts3native.ini keeps its own value (self-check). BlackListCapKB: docs/232 Run 8n/8o (refusal streak fix), Run 8p (no leak).
+// ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
 export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024" };
 // a file that only serves one key group of a section (GC: memexp.cpp reads SqrtHeapLimit, shipped 0) does not count for that section
 export const IGNORE_FILE: Record<string, string[]> = { GC: ["memexp.cpp"] };
@@ -103,7 +103,7 @@ function selfCheck() {
     ok(render(["[MemDiag]", "Enabled=0", "Light=1", "[B]", "Light=1"], () => false, () => false, rcZeroKey) === "[MemDiag]\r\nEnabled=0\r\nLight=0\r\n[B]\r\nLight=1", "render rc key");
     ok(!["SteerRO", "FpRebuildLock", "Watchpoint", "RouteToObjRO", "MemDiag"].some((s) => ALWAYS_OFF[s]), "docs/238 sections allowed");
     ok(render(["[GC]", "Enabled=1", "BlackListCapKB=0", "[Z]", "BlackListCapKB=0"], () => false, () => false, undefined, EA_SET) === "[GC]\r\nEnabled=1\r\nBlackListCapKB=1024\r\n[Z]\r\nBlackListCapKB=0", "render set");
-    ok(/^BlackListCapKB=0\s*$/m.test(readFileSync(join(SRC, "ts3native.ini"), "utf8")), "Steam ts3native.ini must keep BlackListCapKB=0 (EA_SET is EA only)");
+    ok(/^BlackListCapKB=1024\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini must carry BlackListCapKB=1024");
     console.log("ea-ini self-check: ok");
 }
 

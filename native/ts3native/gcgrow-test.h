@@ -40,7 +40,7 @@ static DWORD __cdecl GwFakeXml(DWORD lo, DWORD hi, DWORD group, DWORD type) {
 
 static void TestGcGrowLog() {
     static_assert(offsetof(Ts3nCounters, gcBlackOk) == 0x5B30 && offsetof(Ts3nCounters, gwMode) == 0x5B04 && offsetof(Ts3nCounters, gwUnseenKB) == 0x5B1C &&
-                      offsetof(Ts3nCounters, gwXmlMaxKB) == 0x5B28 && sizeof(Ts3nCounters) == 5841 * 4,
+                      offsetof(Ts3nCounters, gwXmlMaxKB) == 0x5B28 && sizeof(Ts3nCounters) == 5843 * 4,
                   "counters v161 layout (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     const MxAddrs saved = g_mx;
@@ -53,7 +53,7 @@ static void TestGcGrowLog() {
     g_gwLargeFree = &largeFree;
     g_gwExpand = GwFakeExpand;
     g_gwFakeHeap = 352u << 20, g_gwLastHeap = 0, g_gwRingN = 0, g_gwCrossed = false;
-    memset(&k.gwMode, 0, sizeof(LONG) * 16);
+    memset(&k.gwMode, 0, sizeof(LONG) * 18);
     k.gwMode = 1;
     assert(GwListIdx(969) == 60 && GwListIdx(32) == 32 && GwListIdx(33) == 32 && GwListIdx(255) == 59);
     char why[700];
@@ -97,9 +97,18 @@ static void TestGcGrowLog() {
     for (int i = 0; i < 7; i++) GcBlackOk("Repeated allocation", 969u << 12);
     assert(k.gcBlackOk == 7 && k.gcBlackOkMaxKB == 3876 && g_gwWarned == 1);
     g_gwWarnProc = savedWarn, g_gwWarnEvery = 5;
+    // window: off without a cap; with a cap but other bytes at the sites (no game exe here) nothing switches
+    GcCapWindow(true, "test");
+    assert(!g_gcStrict && k.gcStrictN == 0);
+    g_gcCapBytes = 1u << 20;
+    GcCapWindow(true, "test");
+    assert(!g_gcStrict && k.gcStrictN == 0 && k.gcLenientN == 0 && k.gcSwitchSec == 0);
+    GcCapWindow(false, "test");  // already lenient: no-op
+    assert(!g_gcStrict && k.gcLenientN == 0);
+    g_gcCapBytes = 0;
     g_mx = saved, g_gwb = savedB, g_gwLargeFree = GW_LARGE_FREE, g_gwExpand = (GwExpandFn)(uintptr_t)GW_EXPAND, g_gwLastHeap = 0;
     g_gwXmlOrig = NULL, g_gwRingN = 0, g_gwCrossed = false, g_gwXmlLines = 0, g_gwStreakGc = 0xFFFFFFFF;
-    memset(&k.gwMode, 0, sizeof(LONG) * 16);
+    memset(&k.gwMode, 0, sizeof(LONG) * 18);
     printf("GcGrowLog: thunk passes blocks and needed (esi kept), heap growth, failures, unseen growth, 50-line limit, >= 64 MB lines, "
            "the last 20 at 600 MB once, refusal text (large bytes left, finalizer bytes), xml key and size (+4), gwMode 0 counts only, expand streak per gc_no, black-list punt count: ok\n");
 }
