@@ -13336,6 +13336,33 @@ static DWORD WINAPI DtSpin(void* fn) {
     }
     return 0;
 }
+// docs/232 Run 8e: a detour over `call rel32` re-targets the trampoline's copy at the callee of the LIVE bytes. With
+// TS3N_TEST_EXPECTED (EA port) the caller's literal points at another callee, as Steam bytes do on 1.69; taking the
+// rel32 from the literal returns 9 instead of 7 (the 0x769111 PRIV_INSTRUCTION crash).
+static int __cdecl DcHook() { return 1; }
+static void TestDetourCallRel() {
+    u8* b = (u8*)VirtualAlloc(NULL, 128, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    const u8 ret7[] = {0xB8, 0x07, 0x00, 0x00, 0x00, 0xC3}, ret9[] = {0xB8, 0x09, 0x00, 0x00, 0x00, 0xC3};
+    memcpy(b + 64, ret7, 6), memcpy(b + 96, ret9, 6);
+    u8 live[6] = {0xE8, 0, 0, 0, 0, 0xC3}, lit[6] = {0xE8, 0, 0, 0, 0, 0xC3};
+    *(LONG*)(live + 1) = 64 - 5;  // call b+64 (ret 7)
+    *(LONG*)(lit + 1) = 64 - 5;
+    memcpy(b, live, 6);
+#ifdef TS3N_TEST_EXPECTED
+    *(LONG*)(lit + 1) = 96 - 5;  // the literal's call goes to b+96 (ret 9)
+    g_testExpAt = (DWORD)(uintptr_t)b, g_testExpBytes = live;
+#endif
+    void* tr = NULL;
+    assert(InstallDetour("call rel32 site", (DWORD)(uintptr_t)b, lit, 5, (void*)DcHook, &tr) == tr && tr);
+#ifdef TS3N_TEST_EXPECTED
+    g_testExpBytes = NULL;
+#endif
+    const int r = ((int(__cdecl*)())tr)();
+    printf("detour call rel32: trampoline reaches the live callee (%d, want 7)\n", r);
+    assert(r == 7);
+    assert(((int(__cdecl*)())(void*)b)() == 1);
+}
+
 static void TestDetourPublish() {
     u8* fn = (u8*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     const u8 code[] = {0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3};  // mov eax,42 ; ret
@@ -13582,6 +13609,7 @@ int main() {
     assert(((int(__cdecl*)())fn)() == 7);
     assert(((int(__cdecl*)())tramp)() == 42);
     TestDetourPublish();
+    TestDetourCallRel();
     TestRouteCache();
     TestRouteWorker();
     TestRouteBudget();

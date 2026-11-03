@@ -121,7 +121,10 @@ static void* DetourCore(const char* name, DWORD target, const u8* prologue, size
     memcpy(tramp, prologue, len);
     tramp[len] = 0xE9;
     *(LONG*)(tramp + len + 1) = (LONG)((t + len) - (tramp + len + 5));
-    if (prologue[0] == 0xE8) *(LONG*)(tramp + 1) = (LONG)((t + 5 + *(const LONG*)(prologue + 1)) - (tramp + 5));
+    if (tramp[0] == 0xE8) {  // rel32 from the copy of the live bytes, never the caller's literal (EA: docs/232 Run 7e / 8e)
+        const LONG rel = *(const LONG*)(tramp + 1);
+        *(LONG*)(tramp + 1) = (LONG)((t + 5 + rel) - (tramp + 5));
+    }
     FlushInstructionCache(GetCurrentProcess(), tramp, len + 5);
     void* const prev = slot ? *slot : NULL;
     if (slot) *slot = tramp;
