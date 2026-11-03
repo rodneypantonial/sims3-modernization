@@ -538,3 +538,19 @@ Static only, no game run. Ledger docs/51 §425.
 - Hook: `[ImageGuard]` (imgguard.cpp, counters v160 at `0x5AE4`, the same offset as main: v147-v159 are `igMainPad` here). Call-site retarget of `0x446037` (`E8` target, the 30 size bytes and the 11 failure-path bytes checked first; no trampoline, the target is a constant). Pass: `pushfd/pushad`, check, restore everything, tail jump to the resize. >= LogMB (64): an `IMAGEGUARD` line (raw w, h, bpp, format request, codec, bytes and the game's 32-bit size, key when the caller has one, stream and resource vtables, caller plus 3 stack code refs) and `igBig`. > MaxMB (512) or a negative/wrapping size: `IMAGEGUARD REJECT` and the failure path. First 64 lines. Table rows in docs/data/ea169-overrides.csv (9 rows); port-run's own map agrees on `0x446037 -> 0x445F07` (masked) and the resize (ref).
 - Ini: `[ImageGuard] Enabled=0 LogMB=64 MaxMB=512` in ts3native.ini; the EA minimal ini forces Enabled=1 (build.yml `ALLOW_ON`); the EA rc ini follows the shipped value (0) until a run proves it. Proposal for the Steam rc ini (Steam session's call): Enabled=1 with the defaults; it only acts above 512 MB, which no shipped or CC image reaches.
 - Repro: `tools/harness/repros.json` `imgguard-oversized-png` + `node tools/imgguard-repro.ts` (a package with a PNG whose header claims 30000 x 30000); not run.
+
+### Run 8f (2026-11-03): call rel32 fix, vh-repro and hf-statecmd rerun
+
+Fix for the 8e crash: `DetourCore` takes the displacement of a copied leading `call rel32` from the trampoline's copy of the live bytes (`*(const LONG*)(tramp + 1)`), as df3f2e5 did in rtsites.cpp. selftest `TestDetourCallRel`: a detour over `call rel32` must reach the live callee; on the port a test row (`TS3N_TEST_EXPECTED`, a one-row `ExpectedAt`) makes the literal point at another callee, as Steam bytes do on 1.69 (the 8e code returns 9, the fix 7). Port 18df64a (it also carried the ImageGuard session's uncommitted ts3native.cpp / selftest.cpp edits, completed by 3292c74 + 0771db2); CI run 41556473868 at 0771db2 green (native incl. `detour call rel32: ... (7, want 7)`, native-ea169, node); asi `9b4afdad3751`; rc ini differs from 8e only by `[ImageGuard]` Enabled=0. Steam: PR #233 3a9d384, CI green.
+
+Same set-up as 8e (driver, CC parked, 86 Mods files, `[MemDiag]` AllocSites, Saves backed up to `game-copy/saves-pre-eamod8f`), machine quiet:
+
+| job | verdict |
+|---|---|
+| vh-repro | **PASS** 6.3 min (store-cas-browse) |
+| hf-statecmd | **FAIL** 2.2 min: `state-cmd: buy_close: previous CAS/Buy action is still being timed; wait and retry` |
+
+- Both jobs [verified]: 7 `OK   alloc sites Nt* detour` lines, `OK   route gate sites: 25 of 25`, no null call, no PRIV_INSTRUCTION, no crash. hf-statecmd logged two first-chance AVs at 0x04877CC2 (no module name, handled; game kept running).
+- hf-statecmd cause [code verified, harness]: `vanilla-steps.ts state-cmd` counts `buy_open` as reached once `cas_state` has `buy_catalog` (50 s here), then sends `buy_close` at once; ts3agent `CasHandlers.cs` still measures the open (`sUiMeasuring`, until the list settles) and refuses. The step must also wait for the timing to settle (or retry on that answer). Not a mod or native fault; not fixed here.
+
+Restore verified (09:10): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical (86 files, `6d65db6779b1`), Saves 0 differences, no game process. Logs: `probe-out/ea-eamod-1103f.*`.
