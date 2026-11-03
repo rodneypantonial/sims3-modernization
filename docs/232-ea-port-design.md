@@ -669,3 +669,25 @@ Logging `[GcGrowLog]` (branch `ea169-gcgrow-log`, draft PR #238; 2f0f429, 9996c1
 Rerun: not run. Saves backed up to `game-copy/saves-pre-eamod8l` (11:39), job = 8k scan ini + `GcGrowLog.Enabled=1` (`ea-8l-scan.json`, asi `c0eed2686392`). The session preflight refused cycle 1 at 11:39:33: `console session state: session 2 Disconnected, console held by another user` (the laptop console is another user's session), so the game cannot run unattended now. Nothing was installed (queue.ts never started); Bin pair, packages, Options/LoadOption, Mods listing and Saves unchanged (state read back below). To resume once our session holds the console: `QUEUE=<scratch>/ea-8l-scan.json JOB=gw-scan bash eamod8l.sh run 3`, stop at the first launch whose memory.csv shows gcHeapMB > 600; the `gcgrow:` lines then name the asking thread, size and script frames.
 
 Restore verified (11:40): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical to 8k (86 files), Saves 0 differences, no game process. Logs: `probe-out/ea-eamod-1103l.*`.
+
+#### Run 8l resumed (12:54-13:02, console back in our session)
+
+Same job and asi `c0eed2686392`; Saves backup from 11:39 (unchanged since, restore mirrored it back). Preflight `session 2 Active, console held by our session`, no game process, machine load 2.3-2.8% other CPU.
+
+| launch | verdict | gcgrow lines | max gcHeapMB |
+|---|---|---|---|
+| 1 | PASS 2.6 min | 3 | 450 |
+| 2 | PASS 2.3 min | 0 | 353 |
+| 3 | PASS 2.3 min | 0 | 354 |
+
+No runaway in 3 launches (crash runs: 3 of 3 in 8g/8k, 0 of 8 in 8j, 0 of 3 here), so the stop rule never fired.
+
+Launch 1 still shows the mechanism in small, in the same start-up window (right after `diag: header done`, ~20-30 s after launch, the window where the crash runs grew) [verified log]:
+- `gcgrow: #1..#3 site 1 (step) ask 8192 blocks (32 MB) needed 969 blocks -> ok; heap 360920 -> 393688 -> 426456 -> 459224 KB; gc_no 52 (no collection between the three), allocated since the last GC 0 KB, large free 331148 -> 363916 -> 396684 KB; thread 38888 (not main)`.
+- Native chain: return 0x00E4A261 (GC_collect_or_expand step call) < 0x00E4BB36 in `GC_alloc_large` 0xE4BAE0 < 0x00E4BD98 in `GC_generic_malloc` 0xE4BD30 < 0x00E4BE71 in `GC_malloc_atomic` 0xE4BE10 (Steam 0xE4BA90 / 0xE4BCE0 / 0xE4BDC0, table rows) [verified]: a pointer-free large object of 969 blocks (~3.8 MB), i.e. a managed string.
+- Script frames: `ScriptCore.Simulator.Simulator_LoadXmlAsString` (icall) < `Simulator_LoadXmlAsString` < `ScriptCore.Simulator.LoadXmlString` < `ScriptCore.Simulator.ReadXml` < `Sims3.SimIFace.Simulator.ReadXml` (x2) < `Sims3.Gameplay.Utilities.XmlDbData.ReadData` (x2); outer frames past 8 not logged [verified].
+- The request did not fit although 331 MB of large blocks were free, and the first two fresh 32 MB sections did not take it either (large free rose by exactly 32 MB each time); the third did. A ~3.8 MB atomic block refused by 331 MB of free space and by two empty sections is the same pattern as the crash runs' ~60 unused expansions [inferred: same request, there never fitting until the address space ran out; why it is refused (black-listed blocks or free-list fragmentation in EA's allocator) is open].
+
+Who: EA's tuning loader `XmlDbData.ReadData` -> `Simulator.ReadXml` -> the `LoadXmlAsString` icall allocating the whole XML resource as one string, on a non-main thread at start-up [verified for launch 1; for the crash runs inferred by timing]. Ours on that path: no frame of ts3agent (ping handler) or ts3fixes (`ToMainMenuState`) among the 8 script frames, and no native hook of ours between the icall and `GC_expand_hp_inner` except the logging thunk itself [verified for the frames logged]; which mod or EA module calls `XmlDbData.ReadData` (outer frames) is not known [open]. Next: raise the script frame count to 16 and log the `GC_malloc_atomic` byte size and the XML resource key at the icall; rerun until a runaway is caught.
+
+Restore verified (13:02): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical (86 files), Saves 0 differences, no game process. Logs: `probe-out/ea-eamod-1103l.*` (c1-c3 native log and memory.csv).
