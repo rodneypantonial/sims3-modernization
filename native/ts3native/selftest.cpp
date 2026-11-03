@@ -2620,7 +2620,7 @@ static void TestTerrainGrave() {
     const SwapFn Swap = (SwapFn)(void*)swap;
     const RelFn Release = (RelFn)(void*)rel;
     g_tgSwapRet = (DWORD)(uintptr_t)(swap + 9);
-    g_tgTramp = InstallDetour("graveyard release", (DWORD)(uintptr_t)rel, kTgPrologue, sizeof(kTgPrologue), (void*)TgStub);
+    g_tgTramp = InstallDetour("graveyard release", (DWORD)(uintptr_t)rel, kTgPrologue, sizeof(kTgPrologue), (void*)TgStub, &g_tgTramp);
     assert(g_tgTramp);
     static TgShape shapes[70];
     for (TgShape& s : shapes) { s.vtbl = g_tgFakeVtbl; s.count = 1; }
@@ -2767,8 +2767,8 @@ static void TestRouteGate() {
     outer[5] = 0xE8;
     *(LONG*)(outer + 6) = (LONG)(inner - (outer + 10));
     outer[10] = 0xC2; outer[11] = 0x04; outer[12] = 0x00;
-    g_rgTramp[0] = InstallDetour("gate outer", (DWORD)(uintptr_t)outer, kOuter, 5, (void*)RgStub0);
-    g_rgTramp[1] = InstallDetour("gate inner", (DWORD)(uintptr_t)inner, kInner, 5, (void*)RgStub1);
+    g_rgTramp[0] = InstallDetour("gate outer", (DWORD)(uintptr_t)outer, kOuter, 5, (void*)RgStub0, &g_rgTramp[0]);
+    g_rgTramp[1] = InstallDetour("gate inner", (DWORD)(uintptr_t)inner, kInner, 5, (void*)RgStub1, &g_rgTramp[1]);
     assert(g_rgTramp[0] && g_rgTramp[1]);
     typedef int(__stdcall* OuterFn)(int);
     typedef int(__cdecl* InnerFn)();
@@ -13323,6 +13323,46 @@ static float* __fastcall StChildBox(u8* fp, void*, float* out, DWORD lvl, float)
     u8* par = *(u8**)(fp + 0xC);
     return ((RpBoundsFn)(uintptr_t)RpD(RpP(par) + 0x2C))(par, NULL, out, lvl, *(float*)(fp + 0x10));
 }
+// docs/232 Run 8e: the trampoline slot is published before the jmp goes live. A thread calls the target nonstop while
+// the detour is installed and removed; its hook calls through the slot, so a late store calls address 0 (crash = FAIL).
+static void* volatile g_dtSlot;
+static volatile LONG g_dtCalls, g_dtStop;
+static int __cdecl DtHook() { return ((int(__cdecl*)())g_dtSlot)() + 1; }
+static DWORD WINAPI DtSpin(void* fn) {
+    while (!g_dtStop) {
+        const int r = ((int(__cdecl*)())fn)();
+        assert(r == 42 || r == 43);
+        InterlockedIncrement(&g_dtCalls);
+    }
+    return 0;
+}
+static void TestDetourPublish() {
+    u8* fn = (u8*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    const u8 code[] = {0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3};  // mov eax,42 ; ret
+    memcpy(fn, code, sizeof(code));
+    const HANDLE saved = g_log;
+    g_log = INVALID_HANDLE_VALUE;  // 200 OK lines
+    HANDLE th = CreateThread(NULL, 0, DtSpin, fn, 0, NULL);
+    int n = 0;
+    for (; n < 200; n++) {
+        while (g_dtCalls < 2) SwitchToThread();
+        assert(InstallDetour("publish order", (DWORD)(uintptr_t)fn, code, 5, (void*)DtHook, &g_dtSlot) == g_dtSlot && g_dtSlot);
+        assert(Write5(fn, code));  // original bytes back, atomically
+        g_dtCalls = 0;
+        while (g_dtCalls < 2) SwitchToThread();  // the spinner finished a call that began after the restore
+        VirtualFree(g_dtSlot, 0, MEM_RELEASE);
+        g_dtSlot = NULL;
+        g_dtCalls = 0;
+    }
+    g_log = saved;
+    g_dtStop = 1;
+    WaitForSingleObject(th, INFINITE);
+    CloseHandle(th);
+    VirtualFree(fn, 0, MEM_RELEASE);
+    printf("detour publish order: %d installs under a spinning caller, slot set before the jmp
+", n);
+}
+
 static void TestRemPatch() {
     static DWORD parVt[0x48 / 4], kidVt[0x48 / 4];
     parVt[0] = kidVt[0] = (DWORD)(uintptr_t)RfLevels1;
@@ -13538,10 +13578,11 @@ int main() {
     const u8 code[] = {0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3};
     memcpy(fn, code, sizeof(code));
     assert(!InstallDetour("bad", (DWORD)(uintptr_t)fn, (const u8*)"\xB8\x2B\x00\x00\x00", 5, (void*)Hook));
-    void* tramp = InstallDetour("ok", (DWORD)(uintptr_t)fn, code, 5, (void*)Hook);
+    void* tramp = InstallDetour("ok", (DWORD)(uintptr_t)fn, code, 5, (void*)Hook, &tramp);
     assert(tramp);
     assert(((int(__cdecl*)())fn)() == 7);
     assert(((int(__cdecl*)())tramp)() == 42);
+    TestDetourPublish();
     TestRouteCache();
     TestRouteWorker();
     TestRouteBudget();
