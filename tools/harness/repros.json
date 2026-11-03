@@ -51855,5 +51855,20 @@
       "minutes": 1
     },
     "expect": "save: result 0 each; no .sims3.bad in Saves"
+  },
+  {
+    "id": "imgguard-oversized-png",
+    "bug": "EA 1.69 run 8c: an image decode at the main menu asked for a ~1.9 GB raster buffer ((bpp / 8) * w * h from the image header, 32-bit, unchecked); the allocation failed and msvcr80+0x173D0 wrote through null (docs/232 Run 8c/8d)",
+    "fix": "ts3native [ImageGuard] (imgguard.cpp, counters v160): sizes >= LogMB logged, > MaxMB or a 32-bit wrap make the decode return its own failure",
+    "save": "menu",
+    "note": "UNVERIFIED (static + selftest only, 2026-11-03): never run. Set-up by hand, scratch Mods copy only (back up Mods and Saves first, restore after): node tools/imgguard-repro.ts --out <Mods>/ImageGuardRepro.package --key <type:group:instance of an image the game decodes before the main menu> (default 30000 x 30000 RGBA = 3.6 GB, wraps: REJECT overflow; --w 16000 --h 16000 = 1 GB: REJECT over MaxMB; --w 6000 --h 6000 = 144 MB: logged only). The default instance is a placeholder: take the key from an IMAGEGUARD line of a normal run with LogMB=1 (every decode >= 1 MB logs its key and caller), or a main-menu IMAG resource via s3pe. Ini: [ImageGuard] Enabled=1 LogMB=64 MaxMB=512. Run with the guard off first only on a machine where a crash is acceptable (expected: the 8c crash or a failed image); with it on: pass.",
+    "expect": "ts3native.log has 'OK   image guard' and one 'IMAGEGUARD REJECT' line naming that key (codec 4 PNG, caller one of the loaders); the game reaches the main menu with that image missing, no crash; counters igRejected or igOverflow = 1",
+    "steps": [],
+    "watch": {
+      "kind": "log",
+      "file": "ts3native.log",
+      "match": "IMAGEGUARD REJECT"
+    },
+    "switches": []
   }
 ]
