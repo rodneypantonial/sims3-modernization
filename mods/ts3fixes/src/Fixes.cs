@@ -276,6 +276,7 @@ namespace Ts3Fixes
         // [2048] deadrefsweep phase 12 (DeadRefs.cs, issue #166 build 41, docs/522): ObjectDisposed handlers of relationships nobody holds, removed.
         // [2049] deadrefsweep phase 13 (DeadRefs.cs, issue #166, docs/523): celebrity waiting-to-react entries that were gone, removed.
         // [2050] rewardgiver (RewardGiver.cs, docs/525): owner components SetRewardGiver added in place of EA's NullReferenceException.
+        // [758-759] asyncjigsync (AsyncJigSync.cs, RouteBackoff.cs AsyncEligible, docs/240): own plans kept sync while the Sim's interaction holds an unplaced SocialJig / of those with the jig only in the linked interaction.
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
@@ -361,7 +362,7 @@ namespace Ts3Fixes
                 case "unseenprobe": return false; // probe switch: test runs only
                 case "wakeprobe": return false; // probe switch: test runs only (WakePark.cs, docs/211)
                 case "unseencost": return false; // probe switch: test runs only (UnseenCost.cs, docs/227)
-                case "unseenposcache": return false; // new perf cache (UnseenTable.cs, docs/227 §7): off until verified
+                case "unseenposcache": return true; // perf cache (UnseenTable.cs, docs/227 §7): on since v0.2.5 with [UnseenTable]
                 case "unseentablecopy": return false; // A/B baseline (UnseenTable.cs, docs/227 §9): on = the per-tick copy of every row
                 case "wakepark": return Instantiator.kWakePark;
                 case "wakepoll": return Instantiator.kWakePoll;
@@ -426,6 +427,7 @@ namespace Ts3Fixes
                 case "bookcarry": return Instantiator.kBookCarry;
                 case "ageupabort": return Instantiator.kAgeUpAbort;
                 case "rewardgiver": return Instantiator.kRewardGiver;
+                case "asyncjigsync": return Instantiator.kAsyncJigSync;
                 case "deadrefsweep": return Instantiator.kDeadRefSweep;
                 case "savecleanupaggressive": return Instantiator.kSaveCleanupAggressive;
                 case "vacexport": return Instantiator.kVacExport;
