@@ -638,3 +638,161 @@ Asi `90c9f67dc981` (705be99) with its rc ini plus the 8j job ini (`[MemDiag]` Li
 - Consequence: `[ImageGuard]` stays a valid guard against oversized image headers (proven here), but it does not fix the 8c / 8g main-menu crash. Default-on in the EA rc ini is held for Rodney's call; agent.js reads v159/v160 since ea-mod-mode `4c6d3b6`.
 
 Restore verified (11:09): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical (86 files, `6d65db6779b1`, no cc-synth, no ImageGuardRepro), Saves 0 differences, no game process. Logs: `probe-out/ea-eamod-1103k-scan.*`, `probe-out/ea-eamod-1103k-a.*` (native log, memory.csv, xcpt); queue files `sims-3-ea-mod-mode/probe-out/queue/ea-8k-*`.
+
+### Run 8l (2026-11-03): GC heap growth at the main menu, static triage and `[GcGrowLog]`; rerun blocked
+
+Goal: name who grows the Boehm heap from 352 MB to ~2.3 GB at the main menu (Run 8k scan and A, 8g hf-statecmd try 1). Our build crashed, so ours until proven otherwise; no bisect of the mod config.
+
+8j (8 PASS) vs 8k (2 CRASH), from the logs [verified]:
+
+| item | 8j | 8k scan / A |
+|---|---|---|
+| asi, rc ini | `90c9f67dc981` (705be99), ini dump identical | same; only `[ImageGuard]` LogMB=1 MaxMB=2047 (scan) / 64, 512 (A) |
+| ts3fixes / ts3agent / nointro | rebuilt by cycle.ts every launch (hash differs per cycle by design), nointro `2d4394daca11` | same |
+| Mods | 86 files, 74 packages (listing hash `b24e033aa5b3` of `mods-before.txt`) | same listing; A adds the crafted package (75) and a cache-clear step |
+| save, launch, harness steps | Baseline-SV-Spring, EA app `origin2://` launch, cycle.ts restart/save, watchdog | same steps; crash before the menu dialog and load_save |
+| agent first answer | 22-34 s after launch | 22 s (scan), 22 s (A) |
+| machine load | other CPU 2.1-4.0% (one 10.9%) | 4.2% / 3.5% |
+| free disk | 127 GB | 109 GB (one more 17.8 GB Saves backup); not a cause candidate (no paging limit near) [inferred] |
+
+Decisive pattern: in all three crashing launches the GC heap is 352 MB at the first sample after the agent first answered and 2.3 GB at the next (8g try 1: answer 09:18:01, 352 MB at :02, 2,323 MB at :12; scan: 10:59:40, :42, :52; A: 11:04:39, 352 MB at :31, 2,284 MB at :41), before the "Mod Scripts Found" dialog, auto_dialog handling or load_save. In 8j the heap stays 352-354 MB through the same window in every cycle [verified from memory.csv and the queue logs]. No configuration difference explains 3 of 3 vs 0 of 8; the trigger looks timing-dependent [inferred].
+
+Static GC findings:
+- `[GC]` on 1.69: initial heap 0x2800 -> 0x16000 at 0xE4E1B8 and the three growth-step immediates 0x800 -> 0x2000 at 0xE4A228 / 0xE4A24F / 0xE4A256, all `OK` lines (bytes checked) [verified log]. No hook of ours on collect/expand was active: SqrtHeapLimit=0, TypeGrowth=0, GcThreadCheck, GcRootCheck, MonoThread off (`mem experiments off` etc.) [verified log]. Our only live memory hooks at the menu were `[MemDiag] AllocSites` ntdll detours (also on in 8j).
+- 1.69 `GC_collect_or_expand` 0xE4A170 decoded from `probe-out/ts3-ea169.bin` [verified bytes]: in incremental mode it expands only when `GC_words_allocd` [0x127C944] is 0 (right after a forced collection), by heap/5 + needed when that is <= GrowthStep, else max(needed + slop, GrowthStep) = 32 MB; `GC_expand_hp_inner` 0xE49CD0 has only 3 callers (0xE4A25C, 0xE4A269, GC_init 0xE4E3BE). The globals the probe reads (heap 0x127C920, large free 0x127C934, gc_no 0x124D020) give sane values in every sample [verified].
+- So 1.96 GB in <= 10 s is ~60 expansions of <= 64 MB each (allocations64 lists no block >= 64 MB besides the 352 MB initial section and igc32.dll) with `GC_large_free_bytes` 2,147 / 2,208 MB afterwards: the space was added and not used. That fits one allocation that keeps failing after each forced GC + expansion until VirtualAlloc fails (largest free block 0.7-2.8 MB at the end), not many live allocations [inferred]. Candidates: a large-object request whose new blocks are black-listed, or a needed-blocks value the step never satisfies [inferred, open].
+- Collections during the growth: not observable from these runs (memory.csv has no gcCount column; `diag: mem` lines start only in play) [verified: none logged].
+- Managed code at that moment: ts3agent's server answers its first `ping`, then `auto_dialog`; ts3fixes logs `ToMainMenuState.OnEnterNotInWorld` (scan) or nothing yet (A); EA `MainMenu.Init` / `PopulateWorldFileList` not reached in either crash (8j logs them next) [verified log]. Who allocates is not known.
+
+Logging `[GcGrowLog]` (branch `ea169-gcgrow-log`, draft PR #238; 2f0f429, 9996c16, 4fde5c8; CI 41573191015 green incl. native-ea169; asi `c0eed2686392`): both calls of `GC_expand_hp_inner` in `GC_collect_or_expand` (Steam 0xE4A20C / 0xE4A219, 1.69 0xE4A25C / 0xE4A269) go to `GwThunk`; one `gcgrow:` line per expansion (blocks asked, needed blocks from esi, ok/FAILED, heap before/after, gc_no, bytes allocated since the last GC, large free, thread, return address + 3 stack code refs, script frames), first 50 then >= 64 MB, 500 max; growth outside these calls counts as `gwUnseenKB`. Off by default (`Enabled=0`), runtime switch `gwMode` (v161 0x5B04, `--ab gcgrowlog`). Checks: addr-codemod, port-run, patch-bytes-check, hook-sites --check, ea-ini, native-switches, reg-liveness both editions at both sites (0 risky), selftest-all 180 PASS.
+
+Rerun: not run. Saves backed up to `game-copy/saves-pre-eamod8l` (11:39), job = 8k scan ini + `GcGrowLog.Enabled=1` (`ea-8l-scan.json`, asi `c0eed2686392`). The session preflight refused cycle 1 at 11:39:33: `console session state: session 2 Disconnected, console held by another user` (the laptop console is another user's session), so the game cannot run unattended now. Nothing was installed (queue.ts never started); Bin pair, packages, Options/LoadOption, Mods listing and Saves unchanged (state read back below). To resume once our session holds the console: `QUEUE=<scratch>/ea-8l-scan.json JOB=gw-scan bash eamod8l.sh run 3`, stop at the first launch whose memory.csv shows gcHeapMB > 600; the `gcgrow:` lines then name the asking thread, size and script frames.
+
+Restore verified (11:40): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical to 8k (86 files), Saves 0 differences, no game process. Logs: `probe-out/ea-eamod-1103l.*`.
+
+#### Run 8l resumed (12:54-13:02, console back in our session)
+
+Same job and asi `c0eed2686392`; Saves backup from 11:39 (unchanged since, restore mirrored it back). Preflight `session 2 Active, console held by our session`, no game process, machine load 2.3-2.8% other CPU.
+
+| launch | verdict | gcgrow lines | max gcHeapMB |
+|---|---|---|---|
+| 1 | PASS 2.6 min | 3 | 450 |
+| 2 | PASS 2.3 min | 0 | 353 |
+| 3 | PASS 2.3 min | 0 | 354 |
+
+No runaway in 3 launches (crash runs: 3 of 3 in 8g/8k, 0 of 8 in 8j, 0 of 3 here), so the stop rule never fired.
+
+Launch 1 still shows the mechanism in small, in the same start-up window (right after `diag: header done`, ~20-30 s after launch, the window where the crash runs grew) [verified log]:
+- `gcgrow: #1..#3 site 1 (step) ask 8192 blocks (32 MB) needed 969 blocks -> ok; heap 360920 -> 393688 -> 426456 -> 459224 KB; gc_no 52 (no collection between the three), allocated since the last GC 0 KB, large free 331148 -> 363916 -> 396684 KB; thread 38888 (not main)`.
+- Native chain: return 0x00E4A261 (GC_collect_or_expand step call) < 0x00E4BB36 in `GC_alloc_large` 0xE4BAE0 < 0x00E4BD98 in `GC_generic_malloc` 0xE4BD30 < 0x00E4BE71 in `GC_malloc_atomic` 0xE4BE10 (Steam 0xE4BA90 / 0xE4BCE0 / 0xE4BDC0, table rows) [verified]: a pointer-free large object of 969 blocks (~3.8 MB), i.e. a managed string.
+- Script frames: `ScriptCore.Simulator.Simulator_LoadXmlAsString` (icall) < `Simulator_LoadXmlAsString` < `ScriptCore.Simulator.LoadXmlString` < `ScriptCore.Simulator.ReadXml` < `Sims3.SimIFace.Simulator.ReadXml` (x2) < `Sims3.Gameplay.Utilities.XmlDbData.ReadData` (x2); outer frames past 8 not logged [verified].
+- The request did not fit although 331 MB of large blocks were free, and the first two fresh 32 MB sections did not take it either (large free rose by exactly 32 MB each time); the third did. A ~3.8 MB atomic block refused by 331 MB of free space and by two empty sections is the same pattern as the crash runs' ~60 unused expansions [inferred: same request, there never fitting until the address space ran out; why it is refused (black-listed blocks or free-list fragmentation in EA's allocator) is open].
+
+Who: EA's tuning loader `XmlDbData.ReadData` -> `Simulator.ReadXml` -> the `LoadXmlAsString` icall allocating the whole XML resource as one string, on a non-main thread at start-up [verified for launch 1; for the crash runs inferred by timing]. Ours on that path: no frame of ts3agent (ping handler) or ts3fixes (`ToMainMenuState`) among the 8 script frames, and no native hook of ours between the icall and `GC_expand_hp_inner` except the logging thunk itself [verified for the frames logged]; which mod or EA module calls `XmlDbData.ReadData` (outer frames) is not known [open]. Next: raise the script frame count to 16 and log the `GC_malloc_atomic` byte size and the XML resource key at the icall; rerun until a runaway is caught.
+
+Restore verified (13:02): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical (86 files), Saves 0 differences, no game process. Logs: `probe-out/ea-eamod-1103l.*` (c1-c3 native log and memory.csv).
+
+### Run 8m (2026-11-03): `[GcGrowLog]` round 3 (7c38ddb), static checks of the refusal path, rerun
+
+Logging added (7c38ddb, CI 41582513401 green incl. native-ea169, selftest `GcGrowLog ... ok`): a `gcgrow why:` line per expansion with the `GC_allochblk_nth` refusal inputs read just before it, 16 script frames, a 9-byte detour of `IC_Simulator_LoadXmlAsString` (Steam 0x76D290, EA 0x76E1E0, prologue checked) that records the resource key per thread and the string size (`gcgrow xml:` for 1 MB or more), and the 20 expansions up to the heap crossing 600 MB always written. EA 1.69 addresses of the gate globals checked in the disassembly of `GC_allochblk_nth` 0xE49370 and `GC_promote_black_lists` [verified].
+
+Static (Steam 1.67 disassembly; the same code at +0x50 on 1.69) [verified unless marked]:
+- Thread 38888 is the game's simulator thread: the route-gate lines of the same launch print `(main 46456, sim 38888, worker 22160)`, sim = the game's own sim-thread id global, worker 22160 = our route worker. EA creates it; ours does not create, rename or wrap it: `[ThreadStack]` (exe IAT CreateThread / _beginthreadex) logged nothing (off), `[MonoThread]` off, and no ts3native code calls SetThreadDescription. So the tuning XML at start-up is read on the sim thread (script host), not on a loader thread of ours.
+- `GC_requested_heapsize` 0x12225A8 has one code reference in the exe, the read in `GC_allochblk_nth`; nothing writes it (EA dropped `GC_expand_hp` / the `GC_init` add), so it stays 0 and "used >= requested" is always true. `InitialHeapMB` does not change it: `GC_init` 0xE4E160 only passes ebp (our patched 0x2800 -> 352 MB in blocks at 0xE4E168) to `GC_expand_hp_inner`.
+- `GC_use_entire_heap` 0x11F2D98: one reference (the read in `GC_allochblk_nth`), no writer, 0. `GC_dont_gc` 0x11F30A8: set only by the `GC_DONT_GC` env var in `GC_init`.
+- `GC_all_interior_pointers` 0x11949B4: .data initial 1, written only from the `GC_ALL_INTERIOR_POINTERS` env var in `GC_init`; ours never writes it (monothread.cpp only reads it, and is off).
+- `GC_black_list_spacing` 0x119482C: .data initial 0x40000 (256 KB); `GC_promote_black_lists` (0xE4A800 region) sets it after each collection to 4 KB x heap / stack-blacklisted blocks, clamped to 12 KB..8 MB (0x800000 at 0xE4A85D, not one of the `[GC]` patch sites). `GC_collect_or_expand` reads it for the slop (2 x spacing / 4 KB blocks, capped at needed) on the non-ignore-off-page path.
+- The four `[GC]` patches (initial heap 0xE4E168, growth step 0xE4A1D8 / 0xE4A1FF / 0xE4A206, BudgetCeiling .data 0x1192324 unchanged at 0) touch none of the blacklist code, spacing clamps or the `GC_allochblk_nth` gate. Indirect effect [inferred, the new log line measures it]: the spacing scales with heap size, so a 352 MB heap makes it larger (toward the 8 MB cap) than the stock 40 MB heap; a ~3.8 MB atomic request below the spacing is then refused on black-listed blocks instead of being taken with a warning (the punt applies only above the spacing).
+
+Rerun (13:15-13:22, asi from 7c38ddb, same 8k scan job with `GcGrowLog.Enabled=1`, `run 10` stopping at the first heap over 600 MB). Preflight: console held by our session, no game process, other CPU 2.1% mean.
+
+| launch | verdict | gcgrow lines | max gcHeapMB |
+|---|---|---|---|
+| 1 | PASS 2.3 min | 0 | 354 |
+| 2 | CRASH 3.6 min (AV writing 0x0 in msvcr80.dll+0x173D0, thread 27656) | 58 + 8 at the crossing | 2259 |
+
+Launch 2 is the runaway [verified log, `probe-out/ea-eamod-1103m.c2.ts3native.log`]:
+- 57 expansions, all `site 1 (step) ask 8192 blocks (32 MB) needed 969 blocks (~3.8 MB) -> ok`, heap 360664 KB -> ~2.2 GB, `gc_no 51` the whole time (no collection), allocated since the last GC 0 KB, large free rising by exactly 32 MB per expansion (295 MB -> 1.9 GB free), all on thread 27656, all with the same XML key: type 0x0333406C (XML tuning) group 0 instance 0x14C166293CD50B89.
+- Script frames (16): `Simulator_LoadXmlAsString` < `LoadXmlString` < `ReadXml` < `Simulator.ReadXml` (x2) < `XmlDbData.ReadData` (x2) < `Sims3.Gameplay.Autonomy.MetaAutonomyManager.LoadMetaAutonomy` < `InitializerType.Invoke` < `Action.DoInit` < `Initializers.Initialize` < `StartupState.RunInitializers` < `StartupState.Startup` < `StateMachineStatus.StartupCurState` < `SetState`. EA start-up initializer code only; no ts3agent / ts3fixes frame and no native hook of ours on the path except the log thunk and the LoadXmlAsString detour (both log only) [verified].
+- `gcgrow why:` identical on all 50 written lines: gate off (`should_collect 0`: adj 20 vs min 3551604 words; `GC_requested_heapsize` 0), enough large left yes (87792 + growing list bytes vs max 96116 KB), finalizer freed 0, `GC_black_list_spacing` 4868 KB with the 3876 KB request below it, large-alloc warn counter 0 (never punted).
+
+Cause [refusal reason inferred by elimination; inputs verified]: in `GC_allochblk_nth` the only refusal left for a free block big enough is the black-list check (the gate is off and the finalizer rule does not fire). Because the request (3.8 MB) is below the spacing (4.8 MB), a black-listed page inside the candidate range makes the allocator skip it, and every fresh 32 MB section is skipped too. `GC_collect_or_expand` then expands again instead of collecting (`should_collect` 0: nothing allocated since the last GC), so the black lists are never promoted or cleared, and the loop runs until the 32-bit address space is gone. Why every new section has a black-listed page every <3.8 MB is open; candidates [inferred, not checked]: the hashed black-list bitmap (page-address hash, fixed size) is dense after a collection with `GC_all_interior_pointers` 1 and a large heap, so almost any new page hashes onto a set bit; or false pointers in the roots covering the new address range. Our only influence found is indirect: `InitialHeapMB=352` makes the spacing (heap-scaled, 12 KB..8 MB) larger than with 40 MB, putting a 3.8 MB request under it [inferred; launch 1 of 8l also hit 3 expansions for the same 969-block request].
+
+Logging bug found: the `gcgrow xml:` size is wrong. It reads +8 of the returned string, which holds the first two UTF-16 characters `<?` (0x003F003C = 4128828), not the length, so every line shows "4128828 chars"; the real string is ~2 M characters (969 blocks). The key is right. Not fixed in this round.
+
+Restore verified (13:22): state identical to the pre-state (Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes, ts3agent, ts3-nointro, scriptCache, Options.ini, LoadOption.ini), Mods listing identical (86 files), Saves mirrored back (2602 files, 0 differences), no game process. Logs: `probe-out/ea-eamod-1103m.*`.
+
+### Run 8n (2026-11-03): static check of the black-list refusal, `[GC] BlackListCapKB` fix, 8 launches
+
+Static (1.69 image `probe-out/ts3-ea169.bin`, Steam `game-copy/bin/TS3W.exe`; the GC code is byte-identical at +0x50 on 1.69, data at +0x55EE0) [verified unless marked]:
+- `GC_allochblk_nth` (Steam 0xE49320 / EA 0xE49370): for a free block big enough, kinds other than UNCOLLECTABLE and PTRFREE <= 8 KB walk `GC_is_black_listed` (0xE4A560 / 0xE4A5B0) over the span. If no clean sub-span of the needed size is left, the block is taken anyway ("punt", the warn call at 0xE49540 / 0xE49590) only when `needed > GC_black_list_spacing && block - needed > spacing` (0xE4950F / 0xE4955F); else it is skipped.
+- `GC_is_black_listed`: the page hash is `(addr >> 12) & 0xFFFF`, 65,536 bits (0x2000-byte bitmaps), so the hash wraps every 256 MB. With `GC_all_interior_pointers` = 1 only the two stack black lists (old + incomplete) are checked, page by page. A new 32 MB section is checked against the same bits as the old heap pages that share its hash.
+- `GC_black_list_spacing` (0x119482C / 0x11EA70C) is written only by `GC_promote_black_lists` (0xE4A7C0 / 0xE4A810): `heap bytes / (stack-black-listed heap blocks x 4 KB) x 4 KB`, i.e. heap / N, clamped to 12 KB..8 MB (`cmp eax,0x800000` 0xE4A856, `mov [spacing],0x800000` 0xE4A85D). It scales linearly with the heap for a given N. Promote has one caller, 0xE4A025 in the collection 0xE4A000, so only a collection refreshes the lists and the spacing. `GC_expand_hp_inner` (0xE49C80 / 0xE49CD0) adds the section and sets `GC_collect_at_heapsize` without touching them.
+- `GC_collect_or_expand` (0xE4A120 / 0xE4A170): incremental (`GC_incremental` 0x124D02C on 1.69, set only by `GC_enable_incremental`): it collects (call 0xD70800 on 1.69) only when `!GC_dont_gc && GC_words_allocd > 0`. Non-incremental: it collects when `(GC_dont_expand && words_allocd > 0) || GC_should_collect()`, with an EA extra gate on `GC_gc_no` vs the last forced collection + 500. Otherwise it expands by `max(heap / (4 KB x divisor) + needed (+ slop of 2 x spacing, at most needed), GrowthStep)`. With nothing allocated since the last GC (Run 8m: 0 KB, `should_collect` 0) both modes expand. `GC_alloc_large` (0xE4BA90 / 0xE4BAE0) then retries `GC_allochblk` in a loop while collect_or_expand returns 1. Which of the two modes runs was not logged [open]; both give the same expand-only loop.
+- Steam: same code and the same `[GC]` patches (InitialHeapMB=352 shipped), so the same latent loop [inferred]. S3SS patches no Boehm allocation or black-list code (its GC patches are in `MonoScriptHost::Simulate` 0xD819AA / 0xD81A1D / 0xD81A37 and `GC_stop_world` 0xE511F5, docs/03 §1.1). Why Steam has not shown it is open. The trigger is N (stack-black-listed pages after the last collection before the XML load), which varies per launch (8n: spacing 268 KB to over 1 MB at the same request). Address layout (S3SS mimalloc / stack fix, different DLL set) changes N [inferred, not measured on Steam].
+
+Fix `[GC] BlackListCapKB` (gcgrow.cpp, 60d6668 + 55c696a, counters v162; shipped 0 = unchanged, EA rc ini 1024 via `tools/ea-ini.ts` `EA_RC_SET`). It lowers the 8 MB clamp to the cap (both immediates, bytes checked), so any request above the cap takes a black-listed block through Boehm's own punt instead of skipping it. The cap does not depend on K and adds no detour in the allocator. Counters: the punt's warn call goes to `GcBlackOk` (gcBlackOk / gcBlackOkMaxKB; interval set to 1, warning forwarded every 5th as before), and `gcExpandStreak` / `gcExpandStreakMax` count expansions with the same `GC_gc_no` in `GwThunk` (installed when the cap or `[GcGrowLog]` is on; "gc expand streak" line per new maximum >= 2). Why not the alternatives: (a) a forced collection promotes the lists, but the same false pointers (the sim thread is blocked in the same allocation) re-black-list the same hash bits, and the spacing grows with the heap, so it may not end the loop and costs a full GC; (b) is the same punt with a counter and needs a detour in the middle of `GC_allochblk_nth`; (d) a smaller initial heap lowers the spacing only until the heap grows back in play, and gives up the measured forced-GC gain. Also fixed: the `gcgrow xml:` size reads EA's MonoString length at +4 (8m read the first two chars). Checks: tool self-checks, port-run (4 new rows, 0 unresolved), hook-sites --check, ea-ini, reg-liveness (0xE4A20C / 0xE4A219 0 risky; 0xE49540 is an indirect call, checked by hand: eax/ecx/edx are written before any read after it), selftest-all 180 PASS. CI 41585365279 green including native-ea169 (asi `3ff42bd9049a`).
+
+Live (13:44-14:03, 8k scan job + `GcGrowLog.Enabled=1` + `GC.BlackListCapKB=1024`, `ea-8n-scan.json`; console held by our session, other CPU 2.0-2.8%):
+
+| launch | verdict | spacing when the 3.8 MB XML string came | expansions (max streak) | punts logged (first 20) | max gcHeapMB |
+|---|---|---|---|---|---|
+| 1 | PASS 2.2 min | 284 KB | 0 | 5 | 353 |
+| 2 | PASS 2.3 min | 280 KB | 0 | 5 | 353 |
+| 3 | PASS 2.3 min | **1024 KB (at the cap)** | 1 (1) | 20 | 386 |
+| 4 | PASS 2.3 min | 284 KB | 0 | 15 | 353 |
+| 5 | PASS 2.3 min | **1024 KB (at the cap)** | 0 | 9 | 353 |
+| 6 | PASS 2.3 min | **1024 KB (at the cap)** | 0 | 4 | 353 |
+| 7 | PASS 2.3 min | 268 KB | 0 | 11 | 354 |
+| 8 | PASS 2.3 min | 324 KB | 0 | 6 | 353 |
+
+Every launch logs `OK GC black-list spacing cap` at 0xE4A8A6 / 0xE4A8AD and the punt count hook at 0xE49590. The 3876 KB string of key 0x0333406C:0:0x14C166293CD50B89 is taken by a punt in all 8 launches (`gc black-list ok #n: 3876 KB`). In 3 of the 8 the spacing sat at the cap, so without it the request would have stayed below the spacing whenever the uncapped value exceeded 3.8 MB (8m: 4868 KB). No expand streak of 2 or more, no runaway, no crash. The one expansion (launch 3) was the ordinary "large bytes left" gate for a 1.3 MB Opportunities XML, streak 1. Verdict: PASS on the mechanism (8 of 8); a runaway rate of 4 in 24 needs more launches to show a rate change, so the claim rests on the mechanism. Restore verified (14:03): state identical to the pre-state, Mods listing identical (86 files), Saves 0 differences. Logs: `probe-out/ea-eamod-1103n.*`.
+
+### Run 8o (2026-11-03): vanilla native config + `[GcGrowLog]` only, is the refusal loop an EA bug?
+
+Setup: asi from 5b2c561 (`a94a70ce4056`: 55c696a plus spacing, heap, gc_no and streak on the `gcgrow xml:` line; log only). Base ini = the minimal EA ini with `ALLOW_ON=GcGrowLog` (`tools/ea-ini.ts`: every integer key 0, only `[GcGrowLog] Enabled=1`), placed as the rc ini in `game-copy/ci-ea169-55c696a-vanlog`; job `ea-8o-scan.json` (8k scan flow, `releaseDefaults`, no other ini keys). Init lines, every launch [verified]: `GC patches disabled (Enabled=0)` (EA default 40 MB heap, first expansion from 40,988 KB, 8 MB steps), `gc black-list cap off`, gc grow log thunks + LoadXmlAsString detour. Deviations: two non-GC stubs still install, `Route_GetOption` (installed unconditionally to answer ts3fixes' NOYIELD query) and the hostcalls door stub 0x650AB3 (the `[RouteSnap] DoorMemoX=0` key being present counts as "stub in"); neither is on an allocation path. ts3fixes stayed installed: queue.ts mod mode always installs it (cycle.ts --restart), and vanilla mode refuses an asi. ts3agent as in the vanilla matrix.
+
+| launch | verdict | spacing when the 3.8 MB XML string came (heap) | expansions | max expand streak | max gcHeapMB |
+|---|---|---|---|---|---|
+| 1 | PASS 2.3 min | 40 KB (65,628 KB) | 10 | 1 | 124 |
+| 2 | PASS 2.3 min | 52 KB (65,628 KB) | 9 | 1 | 116 |
+| 3 | PASS 2.3 min | 60 KB (65,628 KB) | 10 | 1 | 124 |
+| 4 | PASS 2.3 min | 56 KB (82,392 KB) | 9 | **4** (1028 KB request) | 116 |
+| 5 | PASS 2.3 min | 48 KB (65,752 KB) | 10 | 1 | 124 |
+| 6 | PASS 2.3 min | 80 KB (65,628 KB) | 9 | 1 | 116 |
+| 7 | PASS 2.3 min | 48 KB (65,628 KB) | 9 | 1 | 116 |
+| 8 | PASS 2.3 min | 24 KB (65,628 KB) | 9 | 1 | 116 |
+
+- The 3.8 MB LoadMetaAutonomy string never streaked in vanilla: the spacing at that moment was 24-80 KB, far below 3.8 MB, so a black-listed span is punted at once [verified, 8 of 8]. With `InitialHeapMB=352` it was 268 KB to over 1 MB (8n, capped) and 4,868 KB in the 8m runaway: our big initial heap is what puts this request under the spacing (heap / N with a similar N) [verified for the values; the per-launch N is not logged].
+- But the refusal loop itself is EA/Boehm behaviour: launch 4 expanded 4 times (8 MB each, gc_no 59 throughout, allocated since the last GC 0 KB) for one 257-block (1028 KB) pointer-free request from `Ts3Agent.Mailbox.Open` (`Instantiator..cctor`, our harness package), with the gate off, enough large bytes left from the 2nd try, finalizer rule not firing, and spacing 1080 KB just above the request: the same black-list refusal as 8m [inferred by the same elimination; inputs verified]. It ended after 4 because the small heap's new sections reached a clean slice of the 256 MB hash ring.
+- Verdict: latent EA bug (an expand-only loop for a refused large request below the spacing), present at the stock heap for requests near the spacing; our 352 MB heap raises the spacing about 9x and turns a rare short streak into a 3.8 MB request that can run away (4 of 24). The cap covers both cases above it (1028 KB > 1024 KB; 8n: 0 streaks). Requests at or below the cap can still streak where the spacing exceeds them [inferred]. Turning the cap on for players is Rodney's call.
+
+Restore verified (14:22): state identical to the pre-state (Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes, ts3agent, ts3-nointro, scriptCache, Options.ini, LoadOption.ini), Mods listing identical (86 files), Saves 0 differences (2602 files), no game process, 92 GB free. Logs: `probe-out/ea-eamod-1103o.*`.
+
+### Run 8p (2026-11-03): memory stress, `[GC] BlackListCapKB=1024` vs 0, does the cap leak?
+
+Question: does letting requests above 1 MB take black-listed blocks make the heap, commit or address space grow faster over repeated load cycles? Same Bin pair as Run 8n (`ci-ea169-5b2c561`), release defaults with the EA rc ini zeroing, `[GcGrowLog] Enabled=1` in both arms, only `BlackListCapKB` differs. Save Baseline-SV-Spring, one launch per arm, 6 cycles per launch. A scratch driver (not committed) ran each cycle: 1 min of autopilot play at normal speed, a CAS/Buy visit (CAS hair/everyday/tops/basics, Buy Comfort/Surfaces/Decor), a save to a scratch file, EA's in-game Load of that file (ReloadWorld, which reads every tuning XML again), live mode, a 20 s settle, then one row from probe `/memory` plus counters v162. CC stays parked; `[MemDiag]` is off on EA, so the rows come from `/memory`, not `mem_mark`.
+
+Flow history (no data from the dropped flows is used in the verdict): (1) 2 min of ultra-speed autopilot play per cycle: the cap arm ran 2 clean cycles, then autopilot stopped on a story dialog with no safe button (harness guard, not the mod), and there was no off arm. (2) Visit with no play, twice in the off arm (paused, then normal speed): CAS entry right after a fresh load stayed on "Entering Create a Household..." and the save then refused (harness stall). (3) The flow above, locked; both arms ran it in full.
+
+| cycle | cap 1024: GC heap / private / commit / largest free (MB) | gcBlackOk | GC count | cap 0: GC heap / private / commit / largest free (MB) | GC count |
+|---|---|---|---|---|---|
+| 0 (load) | 352.5 / 1943.6 / 2198.2 / 1574.5 | 13 | 55 | 353.0 / 1987.9 / 2226.8 / 1530.9 | 54 |
+| 1 | 356 / 1957.3 / 2241.6 / 1556.1 | 30 | 79 | 356 / 1970.9 / 2245.3 / 1530.9 | 79 |
+| 2 | 360 / 2001.9 / 2277.3 / 1495.4 | 73 | 96 | 360 / 2004.1 / 2254.0 / 1499.0 | 96 |
+| 3 | 360 / 2019.6 / 2268.9 / 1463.3 | 116 | 105 | 368 / 2044.9 / 2290.6 / 1422.6 | 105 |
+| 4 | 368 / 2071.9 / 2332.5 / 1411.2 | 216 | 112 | 368 / 2077.5 / 2313.0 / 1406.6 | 113 |
+| 5 | 400 / 2107.4 / 2353.6 / 1379.2 | 351 | 120 | 400 / 2128.2 / 2370.6 / 1334.5 | 120 |
+| 6 | 432 / 2173.1 / 2424.1 / 1299.1 | 504 | 127 | 432 / 2194.8 / 2430.3 / 1270.5 | 128 |
+| per cycle (1-6) | +13.3 / +38.3 / +37.7 / -45.9 | | | +13.2 / +34.5 / +33.9 / -43.4 | |
+
+Both arms: 0 visit failures, reload 39-43 s, 2 heap expansions of 32 MB (cycles 5 and 6), expand streak max 1, no crash. Pass rule: per-cycle growth within about 5 % or 10 MB (whichever is larger) of the cap-0 arm.
+
+- GC heap per cycle is the same in both arms (+13.3 vs +13.2 MB), and the heap steps happen in the same cycles [verified, one launch per arm].
+- Private bytes +3.8 MB per cycle and commit +3.8 MB per cycle more with the cap, largest free block 2.5 MB per cycle more lost: all under the 10 MB bar. In absolute terms the cap arm ended lower on private (2173 vs 2195 MB) and higher on largest free (1299 vs 1271 MB). One launch per arm, so a 4 MB-per-cycle difference is inside launch-to-launch noise [inferred].
+- gcBlackOk grows with each reload (13 to 504): every reload reads the big tuning XMLs again and each such request now takes a black-listed block at once instead of being refused. No streak and no extra expansion came with it [verified].
+- The growth itself (about 35-38 MB private and 45 MB largest free per reload) is in both arms. It is EA's own reload growth, not the cap's [verified for "both arms"; its cause is not studied here].
+
+Verdict: PASS, no leak from the cap. `BlackListCapKB=1024` is now the EA shipped default: `tools/ea-ini.ts` `EA_SET` puts it in both EA inis (the rc ini shows 1024; the minimal ini zeroes `[GC]` anyway), and the ea-ini self-check fails if the Steam `ts3native.ini` stops saying `BlackListCapKB=0`.
+
+Restore verified (15:55): state identical to the pre-state, Mods listing identical, and a robocopy /L of Saves against the backup shows 0 differences (509 dirs, 2602 files). 92 GB free on C:.

@@ -24,6 +24,9 @@ export const ALWAYS_OFF: Record<string, string> = {
 // Enabled=0; it stays off on EA, as before docs/238, until a test run turns it on)
 export const RC_ZERO_KEYS: Record<string, string[]> = { MemDiag: ["Light"] };
 const rcZeroKey = (sec: string, key: string) => (RC_ZERO_KEYS[sec] ?? []).includes(key);
+// EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
+// ts3native.ini keeps its own value (self-check). BlackListCapKB: docs/232 Run 8n/8o (refusal streak fix), Run 8p (no leak).
+export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024" };
 // a file that only serves one key group of a section (GC: memexp.cpp reads SqrtHeapLimit, shipped 0) does not count for that section
 export const IGNORE_FILE: Record<string, string[]> = { GC: ["memexp.cpp"] };
 const RG = ["RouteGate", "RouteAsync"];
@@ -64,14 +67,15 @@ export function rcPlan(sections: string[], enabled: Record<string, string>, map:
 }
 
 // integer keys of the listed sections become 0 (TailPad/InitobjFix run independent of Enabled); paths and names stay
-function render(lines: string[], zero: (sec: string) => boolean, force: (sec: string) => boolean, zeroKey: (sec: string, key: string) => boolean = () => false): string {
+function render(lines: string[], zero: (sec: string) => boolean, force: (sec: string) => boolean, zeroKey: (sec: string, key: string) => boolean = () => false, set: Record<string, string> = {}): string {
     let sec = "";
     return lines.map((l) => {
         const m = /^\[(\w+)\]/.exec(l);
         if (m) { sec = m[1]; return l; }
         if (force(sec) && /^Enabled=/.test(l)) return "Enabled=1";
         const k = /^(\w+)=-?\d+\s*$/.exec(l);
-        return k && (zero(sec) || zeroKey(sec, k[1])) ? k[1] + "=0" : l;
+        if (k && (zero(sec) || zeroKey(sec, k[1]))) return k[1] + "=0";
+        return k && set[sec + "." + k[1]] !== undefined ? k[1] + "=" + set[sec + "." + k[1]] : l;
     }).join("\r\n");
 }
 
@@ -98,6 +102,8 @@ function selfCheck() {
     ok(render(["[A]", "Enabled=1", "Path=x", "[B]", "Enabled=0"], (s) => s === "A", (s) => s === "B") === "[A]\r\nEnabled=0\r\nPath=x\r\n[B]\r\nEnabled=1", "render");
     ok(render(["[MemDiag]", "Enabled=0", "Light=1", "[B]", "Light=1"], () => false, () => false, rcZeroKey) === "[MemDiag]\r\nEnabled=0\r\nLight=0\r\n[B]\r\nLight=1", "render rc key");
     ok(!["SteerRO", "FpRebuildLock", "Watchpoint", "RouteToObjRO", "MemDiag"].some((s) => ALWAYS_OFF[s]), "docs/238 sections allowed");
+    ok(render(["[GC]", "Enabled=1", "BlackListCapKB=0", "[Z]", "BlackListCapKB=0"], () => false, () => false, undefined, EA_SET) === "[GC]\r\nEnabled=1\r\nBlackListCapKB=1024\r\n[Z]\r\nBlackListCapKB=0", "render set");
+    ok(/^BlackListCapKB=0\s*$/m.test(readFileSync(join(SRC, "ts3native.ini"), "utf8")), "Steam ts3native.ini must keep BlackListCapKB=0 (EA_SET is EA only)");
     console.log("ea-ini self-check: ok");
 }
 
@@ -114,10 +120,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         }
         const out = v.out ?? join(SRC, "out-ea169");
         mkdirSync(out, { recursive: true });
-        writeFileSync(join(out, "ts3native-ea169.ini"), render(ini, (s) => !allow.includes(s), (s) => on.includes(s)));
+        writeFileSync(join(out, "ts3native-ea169.ini"), render(ini, (s) => !allow.includes(s), (s) => on.includes(s), undefined, EA_SET));
         console.log(`minimal ini: on = ${allow.map((s) => "[" + s + "]").join(" ")}; ${bad.size} source files have unresolved or bytes-bad rows`);
         const plan = rcPlan(sections, enabled, map, bad), zeroed = new Set(plan.filter((r) => r.state === "zeroed").map((r) => r.section));
-        writeFileSync(join(out, "ts3native-ea169-rc.ini"), render(ini, (s) => zeroed.has(s), () => false, rcZeroKey));
+        writeFileSync(join(out, "ts3native-ea169-rc.ini"), render(ini, (s) => zeroed.has(s), () => false, rcZeroKey, EA_SET));
         for (const r of plan) console.log(`rc [${r.section}] shipped Enabled=${r.shipped}: ${r.state}${r.state === "zeroed" ? " (" + r.reason + ")" : ""}`);
         console.log(`rc ini: ${plan.length - zeroed.size} sections kept as shipped (Enabled=1: ${plan.filter((r) => r.state === "kept" && r.shipped === "1").map((r) => r.section).join(" ")}), ${zeroed.size} zeroed`);
         if (v.md) writeFileSync(v.md, "| section | shipped Enabled | rc state | reason |\n|---|---|---|---|\n" + plan.map((r) => `| [${r.section}] | ${r.shipped} | ${r.state} | ${r.reason} |`).join("\n") + "\n");

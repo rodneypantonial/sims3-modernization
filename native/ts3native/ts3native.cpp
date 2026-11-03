@@ -86,7 +86,7 @@ static bool Write(void* addr, const void* bytes, size_t n) {
 
 struct Site {
     DWORD addr;      // VA of the instruction
-    u8 expect[8];    // original instruction bytes
+    u8 expect[10];   // original instruction bytes
     size_t len;
     size_t immOff;   // offset of the 32-bit immediate inside the instruction
 };
@@ -346,7 +346,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 5825 int32 (v160 [ImageGuard] at 0x5AE4 after main's v147-v159 slots (zero in this build), version field 160; v146 [EaCrashFixes] WorldAStarRefs + PortalFlagRefs after v145, version field 146; v145 [UnseenGhost] after v144; v144 [EaCrashFixes] MintDivGuard after v143, version field 144; v143 [MonoFast] CallPath after v142, version field 143; v142 [RouteAsync] WorkerWait after v141; v141 [EaCrashFixes] after v140, version field 141; v140 [UnseenFallback] FinishWalk holds after v139, version field 140; v139 [UnseenFallback] C1-C4 site fallbacks after v138, version field 139; v138 [UnseenFallback] after v137, version field 138; v137 [MemDiag] TypeGrowth + [GC] SqrtHeapLimit after v136 [ResourceCache] trim, version field 137; v135 PlanDeadlineMs sync-path exemptions after v134, version field 135; v134 [RouteAsync] KindDeadlines after v133; v133 [RouteSnap] LotUseReadout after v132; v132 [RouteSnap] PoolChunkMB / EpochHeap after v131; v129 [RouteSnap] StaleLotFp after reserved v126-v128, version field 129; v125 [RouteSnap] StaleLot after reserved v123 / v124, version field 125; v119 [IdleCheckRO] after v118, version field 119; v118 [GoalValidRO] slots kept, other branch; v117 CrashForensics ObjResLog after v116, version field 117; v116 CrashForensics EffectLog after v115, version field 116; v115 CrashForensics DrawGuards / OurEvents after v114, version field 115; v114 CrashForensics after v113, version field 114; v113 DeferPrivateFp after v112, version field 113; v112 P6 take kinds + Mode=2 cut sharing + per-job phase split after v111, version field 112; v111 watchpoint constructor-pair count + follow + replay audit rebase hold after v110, version field 111; v110 [Watchpoint] lot arm + child z / parent +0x30 writer probes after v109, version field 110; v109 job yield + sim job waits by site after v108, version field 109; v108 gate site 16 after v107; v107 PlanDrain after v106; v106 P5 steps 2-4 after v105 (layout of merge eaef8a1b; zeros without it); v105 RecsUnlocked after v104, version field 105; v104 refcount guard after v103; v103 job deadline + own waits + goal-step split after v102; v102 goal split + GoalGen D1 + H2 IC window after v101, version field 102; v101 foreign kinds after v100; v100 placement RO after v99; v99 plan deadline + fail memo after v98; v98 lock holders after v97; v97 sync plan phases after v96; v96 host-call split + DoorMemo after v93; v93 route-to-object RO appended after v95 at the 2026-10-22 0325 merge, version field stays 95; v95 F-G held-out count after v94, v94 design U phase 2 after v92, v92 route allocator sites after v91, v91 [Gate0RO] after v90, v90 replan dedupe after v88, all at the 2026-10-22 integration merge; version field 95; v88 cell memo probe appended after v89; v89 tail unlock; v87 route job phases; v86; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, v84 foreign job split, v85 H2 counters, v86 acting early-out, no v52, v58 or v82 fields in this build).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 5841 int32 (v162 [GC] BlackListCapKB at 0x5B2C after v161, version field 162; v161 [GcGrowLog] at 0x5B04 after v160, version field 161; v160 [ImageGuard] at 0x5AE4 after main's v147-v159 slots (zero in this build), version field 160; v146 [EaCrashFixes] WorldAStarRefs + PortalFlagRefs after v145, version field 146; v145 [UnseenGhost] after v144; v144 [EaCrashFixes] MintDivGuard after v143, version field 144; v143 [MonoFast] CallPath after v142, version field 143; v142 [RouteAsync] WorkerWait after v141; v141 [EaCrashFixes] after v140, version field 141; v140 [UnseenFallback] FinishWalk holds after v139, version field 140; v139 [UnseenFallback] C1-C4 site fallbacks after v138, version field 139; v138 [UnseenFallback] after v137, version field 138; v137 [MemDiag] TypeGrowth + [GC] SqrtHeapLimit after v136 [ResourceCache] trim, version field 137; v135 PlanDeadlineMs sync-path exemptions after v134, version field 135; v134 [RouteAsync] KindDeadlines after v133; v133 [RouteSnap] LotUseReadout after v132; v132 [RouteSnap] PoolChunkMB / EpochHeap after v131; v129 [RouteSnap] StaleLotFp after reserved v126-v128, version field 129; v125 [RouteSnap] StaleLot after reserved v123 / v124, version field 125; v119 [IdleCheckRO] after v118, version field 119; v118 [GoalValidRO] slots kept, other branch; v117 CrashForensics ObjResLog after v116, version field 117; v116 CrashForensics EffectLog after v115, version field 116; v115 CrashForensics DrawGuards / OurEvents after v114, version field 115; v114 CrashForensics after v113, version field 114; v113 DeferPrivateFp after v112, version field 113; v112 P6 take kinds + Mode=2 cut sharing + per-job phase split after v111, version field 112; v111 watchpoint constructor-pair count + follow + replay audit rebase hold after v110, version field 111; v110 [Watchpoint] lot arm + child z / parent +0x30 writer probes after v109, version field 110; v109 job yield + sim job waits by site after v108, version field 109; v108 gate site 16 after v107; v107 PlanDrain after v106; v106 P5 steps 2-4 after v105 (layout of merge eaef8a1b; zeros without it); v105 RecsUnlocked after v104, version field 105; v104 refcount guard after v103; v103 job deadline + own waits + goal-step split after v102; v102 goal split + GoalGen D1 + H2 IC window after v101, version field 102; v101 foreign kinds after v100; v100 placement RO after v99; v99 plan deadline + fail memo after v98; v98 lock holders after v97; v97 sync plan phases after v96; v96 host-call split + DoorMemo after v93; v93 route-to-object RO appended after v95 at the 2026-10-22 0325 merge, version field stays 95; v95 F-G held-out count after v94, v94 design U phase 2 after v92, v92 route allocator sites after v91, v91 [Gate0RO] after v90, v90 replan dedupe after v88, all at the 2026-10-22 integration merge; version field 95; v88 cell memo probe appended after v89; v89 tail unlock; v87 route job phases; v86; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, v84 foreign job split, v85 H2 counters, v86 acting early-out, no v52, v58 or v82 fields in this build).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -2384,8 +2384,26 @@ struct Ts3nCounters {
     LONG igOverflow;                   // +0x5AF4, negative inputs or a 32-bit wrap of (bpp / 8) * h * w: the decode returned failure
     LONG igMaxMB;                      // +0x5AF8, largest size seen at or above LogMB, MB (0x7FFFFFFF after a wrap)
     LONG igSpare[2];                   // +0x5AFC
+    // v161 (docs/232 Run 8l, gcgrow.cpp): [GcGrowLog] Boehm heap expansions through GC_collect_or_expand, log only
+    LONG gwMode;                       // +0x5B04, runtime switch (--ab gcgrowlog): 1 = gcgrow: lines, 0 = count only
+    LONG gwReady;                      // +0x5B08, both calls of GC_expand_hp_inner go to GwThunk (bit 0), xml detour (bit 1)
+    LONG gwExpands;                    // +0x5B0C, expansions asked
+    LONG gwFails;                      // +0x5B10, of those, GC_expand_hp_inner returned 0
+    LONG gwKB;                         // +0x5B14, heap growth through them, KB
+    LONG gwMaxAskKB;                   // +0x5B18, largest single ask, KB
+    LONG gwUnseenKB;                   // +0x5B1C, heap growth between two of ours (not through these calls), KB
+    LONG gwLines;                      // +0x5B20, gcgrow: lines written (500 at most)
+    LONG gwXmlCalls;                   // +0x5B24, Simulator_LoadXmlAsString calls (detour, gwReady bit 1)
+    LONG gwXmlMaxKB;                   // +0x5B28, largest string it returned, KB
+    // v162 (docs/232 Run 8n, gcgrow.cpp): [GC] BlackListCapKB, Boehm black-list spacing cap and its counters
+    LONG gcCapKB;                      // +0x5B2C, spacing cap in force, KB (0 = off)
+    LONG gcBlackOk;                    // +0x5B30, large blocks taken despite black-listed pages (GC_allochblk_nth punt)
+    LONG gcBlackOkMaxKB;               // +0x5B34, largest of those, KB
+    LONG gcExpandStreak;               // +0x5B38, heap expansions since the last collection (same GC_gc_no)
+    LONG gcExpandStreakMax;            // +0x5B3C, longest such streak
+    LONG gcSpare;                      // +0x5B40
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {160,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {162,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -4666,11 +4684,15 @@ static void UdInfoDir(const unsigned char* info);  // the save folder from the s
 #include "mintcall.cpp"  // docs/139 §8 [MonoFast] CallPath (before autshadow.cpp: Satb chains over its callvirt entry)
 static_assert(offsetof(Ts3nCounters, mcSwitch) == 0x54E0 && offsetof(Ts3nCounters, mcSpare) == 0x5514, "v143 layout (docs/registry.md)");
 static_assert(offsetof(Ts3nCounters, mdOn) == 0x5520 && offsetof(Ts3nCounters, mdSpare) == 0x552C, "v144 layout (docs/registry.md)");
-static_assert(offsetof(Ts3nCounters, ghReady) == 0x5530 && offsetof(Ts3nCounters, ghSpare) == 0x5560 && sizeof(Ts3nCounters) == 0x5B04, "v145 layout (docs/registry.md)");
+static_assert(offsetof(Ts3nCounters, ghReady) == 0x5530 && offsetof(Ts3nCounters, ghSpare) == 0x5560 && sizeof(Ts3nCounters) == 0x5B44, "v145 layout (docs/registry.md)");
 static_assert(offsetof(Ts3nCounters, waOn) == 0x5570 && offsetof(Ts3nCounters, waSkip) == 0x5574 && offsetof(Ts3nCounters, pfOn) == 0x5580 &&
               offsetof(Ts3nCounters, pfSkip) == 0x5584, "v146 layout (docs/registry.md)");
 static_assert(offsetof(Ts3nCounters, igReady) == 0x5AE4 && offsetof(Ts3nCounters, igMaxMB) == 0x5AF8 && offsetof(Ts3nCounters, igSpare) == 0x5AFC &&
-              sizeof(Ts3nCounters) == 5825 * 4, "v160 layout (docs/registry.md)");
+              sizeof(Ts3nCounters) == 5841 * 4, "v160 layout (docs/registry.md)");
+static_assert(offsetof(Ts3nCounters, gwMode) == 0x5B04 && offsetof(Ts3nCounters, gwLines) == 0x5B20 && offsetof(Ts3nCounters, gwXmlCalls) == 0x5B24 && offsetof(Ts3nCounters, gwXmlMaxKB) == 0x5B28,
+              "v161 layout (docs/registry.md)");
+static_assert(offsetof(Ts3nCounters, gcCapKB) == 0x5B2C && offsetof(Ts3nCounters, gcExpandStreakMax) == 0x5B3C && sizeof(Ts3nCounters) == 5841 * 4,
+              "v162 layout (docs/registry.md)");
 #include "autshadow.cpp"
 #include "gcroots.cpp"  // docs/67 §22.4: Crash S task-rooting line + [GcRootCheck] (after autshadow.cpp: autledger's g_lgCtx; memexp.cpp: g_mx)
 #include "snap.cpp"
@@ -4728,6 +4750,7 @@ static bool CostStubsWanted(bool routeBudget, int asyncMode) {
 #include "eafix.cpp"       // docs/67 §26.4 / §27.5 / §28: [EaCrashFixes] ConformActor, ThumbPose, GeomBoneIndex (needs footprint.cpp's FpCallOk / FpRedirect)
 #include "wastar.cpp"      // docs/67 §30: [EaCrashFixes] WorldAStarRefs
 #include "imgguard.cpp"    // docs/232 Run 8d: [ImageGuard] (after savewrite.cpp: PatchCalls)
+#include "gcgrow.cpp"      // docs/232 Run 8l: [GcGrowLog] (after memexp.cpp: g_mx; savewrite.cpp: PatchCalls)
 #include "eadiag.cpp"      // docs/234: [EaDiag] ProductGate log-only hooks, EA app 1.69.47 build only (empty on Steam)
 
 // [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
@@ -4859,6 +4882,7 @@ static void Run(HMODULE self) {
         keepLog = ApplyWorldAStarRefs(ini) || keepLog;  // docs/67 §30: off by default
         keepLog = ApplyPortalFlagRefs(ini) || keepLog;  // docs/67 §30.5: off by default
         keepLog = ApplyImageGuard(ini) || keepLog;  // docs/232 Run 8d: off by default
+        keepLog = ApplyGcGrowLog(ini) || keepLog;  // docs/232 Run 8l: log only, off by default
         keepLog = ApplyProbeValues(ini) || keepLog;  // after every behaviour section: it counts inside their stubs or skips
         keepLog = ApplyRouteSnap(ini) || keepLog;  // after [ProbeValues]: counts inside its, [SteerRO]'s and [RouteGate]'s stubs
         InstallLotRemoveGuard(ini);                 // after [RouteSnap]: its stub at 0x635700 runs the same guard
