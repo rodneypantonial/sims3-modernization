@@ -460,3 +460,53 @@ Restore verified:
 - Mods listing identical (174 files).
 - Saves: 0 differences against the backup.
 - No game process left.
+
+### Run 8d (2026-11-03): triage of the 8c crash, dump fix, memory logging, reruns, CC parked
+
+Static triage of the 8c vh-cycle-a crash (no bisect, no GC-off run):
+- Start-up lines identical in vh-move, vh1-soak and the crashed vh-cycle-a [verified]: `GC InitialHeapMB=352 GrowthStepMB=32`, `OK GC initial heap: 0x00E4E1B8 imm 0x2800 -> 0x16000`, `diag: large address aware: yes`.
+- Crashed run's probe samples (`probe-out/20261103-073613/memory.csv`, ea-mod-mode worktree) [verified]: 07:36:49 at the main menu private 1745 MB, free 1912 MB, largest free 1877 MB (same as the passing runs); 07:36:59 private 3627 MB, commit 3792 MB, free 30.9 MB, largest free 0.9 MB: **+1.88 GB in 10 s at the menu**; crash at 07:37:18. No passing run has such a jump.
+- Round 8 vanilla vh-cycle-a has memory rows only after the load (free 1774 MB, largest 1729 MB), no menu sample [verified].
+- [GC] on 1.69 [verified]: patch sites carry the same immediates as Steam (default 0x2800 = 40 MB; 0x00E4E1B8 vs Steam 0x00E4E168; growth sites 0x00E4A228/24F/256), `ts3bytes-ea169.h` "ok" for all; the reserve is 352 MB as on Steam. The 8c note naming [GC] as likeliest suspect is withdrawn: it reserves no more than on Steam.
+- The 1.69 exe is LAA-flagged (characteristics 0x123) [verified].
+- The failing allocation (decrypted image `probe-out/ts3-ea169.bin`) [verified code; size inferred]: Sims3Launcher.exe+0x12DEE (0x412DE8) is `call [0xFDF704]` (MSVCR80 memcpy) after the EASTL allocator 0x4E41E0 (`allocator.h` string 0xFE2A80) returned null; 0x412CC0 is an `eastl::vector<uint8_t>` grow/insert (new capacity = max(2*cap, size+n)) called from resize 0x412EE0; its caller 0x445E80 is an image decode that reads the image info from a decoder vtable and resizes the buffer to `((bpp+7)/8) * [esi+14] * [esi+10]` (bytes per pixel x width x height). So a ~1.9 GB raster buffer was requested at the menu: a huge or corrupt image header [inferred]; the 1.88 GB jump is that buffer or its first doubling. Image source unknown; Decompress (RefpackHook 0x004EC1A5, verify 0) feeds package reads and is one candidate [inferred, not checked]. Run 7f (11-02 16:21) had the same signature (msvcr80 0x5DE273D0, 36 MB free, 0-byte mdmp, at start-up).
+- DXVK was active in every EA mod-mode job, the crashed one included [verified]: `diag: Bin add-ons: d3d9.dll 7672 KB v10.0.17763.1 (DXVK)` in all job logs; `Bin/Sims3Launcher_d3d9.log` (rewritten per launch): DXVK v3.1.1 x86, Intel(R) Graphics driver 101.8826.0, heap 0 17.96 GiB DEVICE_LOCAL, every memory type HOST_VISIBLE (UMA). The crashed run's DXVK log ends `err: D3D9: InitTexture: map failed`: a victim of the exhaustion [inferred]. The docs/236:375 device-creation hang did not lead to DXVK being removed; the laptop does not run plain D3D9.
+- DXVK and 32-bit address space (docs/08, verified from source): managed textures in MemoryFilePool 16 MiB file-mapping chunks, mapped views capped by `d3d9.textureMemory` (default 100 MiB); Vulkan mapped chunks 16 MiB (64 MiB for host-visible VRAM); one larger resource gets a dedicated allocation; no maxChunkSize option. On this UMA iGPU every device-local type is host-visible, so DXVK may map buffers it keeps there [inferred]. Laptop `dxvk.conf`: customVendorId 10de, customDeviceId 1080, customDeviceDesc "Geforce GTX 580", maxFrameRate 60, `dxvk.hud=fps,memory`, samplerAnisotropy 16; `d3d9.textureMemory` not set.
+
+Harness (PR #226, 0b57700, CI green):
+- 0-byte dump [inferred]: the game ended itself (probe `process-terminated` 07:37:28) before the harness acted, and EA's in-process handler cannot write a minidump with ~34 MB of free address space. The probe now takes an out-of-process mini dump (`game-alive.ts --dump <pid> --mini`) on the first sample whose largest free block is under 200 MB, and writes `regions.jsonl` every 60 s and at that sample (free, largest free, reserve-only, biggest reserve-only blocks, allocations >= 64 MB).
+- `memory.csv` split: `driverImgMB` (d3d9/dxgi/vulkan-1/ig*/nv*/amd* images), `anonMappedMB` (pagefile-backed sections: DXVK MemoryFilePool views, driver mappings; owner inferred), `ccPkgMB`/`gamePkgMB` (mapped `.package` files), `otherMappedMB`, `imageOtherMB`, `privateOtherMB` (private minus GC heap). GC counters use 0x127C920/0x127C934/0x124D020 when the exe has the EA PE stamp.
+- ea-mod-matrix jobs add `[MemDiag]` Light=1, AllocSites=1 (Virtual=1, Heap=0: the EA heap hooks are at Steam addresses); each job keeps its DXVK log (`row.dxvkLog`).
+
+Memory split, EA laptop vs Steam (Steam: `diag: mem #1 load` of the 11-01/11-02 Steam release-ini logs; EA: both vh-cycle-a reruns). **Open finding:**
+
+| bucket (MB) | EA menu (probe +10 s) | EA at load (diag: mem #1) | Steam at load | EA minus Steam |
+|---|---|---|---|---|
+| committed | 1886-1893 | 2294 / 2448 | 2005-2051 | **+245 to +400** |
+| private (walk) | 1723-1731 | 1782 / 1945 | 1485-1498 | **+290 to +455** |
+| images (modules) | 354 (driver DLLs 204) | 354 | 391 | -37 |
+| mapped | 84 (anon 71) | 183 / 173 (anon ~150-165) | 153-187 | ~0 |
+| free / largest free | 1927-1935 / 1892-1899 | 1548 / 1507, 1383 / 1341 | 1723-1804 / 1597-1693 | largest -150 to -350 |
+
+Per owner inside private at load (EA / Steam): unattributed `rest` 702-707 / 307-309 (+395); mimalloc `miRes` 0 / 192 (S3SS is not installed on the EA laptop, so the CRT heap stays in `rest`; Bin add-ons verified, attribution inferred); thread stacks `stkRes` 184-185 / 98-99 (+86; S3SS stack trim absent, inferred); GC heap 385 and 544 / 352 (+33 to +192; run 2 grew before the load); resource cache `rc` 222 / 170-284; EA heaps `eaCom`/`eaRes` 646-650 / 617-652 (~0). Net: **private is the larger bucket, +290 to +455 MB**: ~+200 CRT heap and unattributed private without S3SS, +86 stacks, +33 to +192 GC growth. Driver DLL images are 204 of the 354 MB images (Steam's per-DLL split is not logged: open). Whether the Intel driver's vkMapMemory views count as private (in `rest`) or mapped is not determined. None of our reservations differs in size on the EA build ([GC] 352 MB, same immediates; EA heap reserve 660 vs 631-664; ThreadStack, Alloc, RouteSnap pool, FootprintIndex, SaveCompress, Compaction off on both); the differences come from S3SS (mimalloc, stack trim) being absent on EA.
+
+CC parked (Rodney 11-03: the EA laptop is GPU-limited and checks mod correctness and compatibility on 1.69 only). Details in docs/233 "CC parked". 88 files / 5145.4 MB moved (never deleted) to `Documents\Electronic Arts\The Sims 3\Mods-CC-parked`; 86 files / 53.8 MB kept, incl. a 15-item CC sample. Moved between jobs: the driver loop was stopped after vh-cycle-b ended, game closed.
+
+Environment slip: 8 leftover `python -` processes from 11-02 agent heredocs (11-18 h CPU each) held ~58% of the CPU during every EA job since 11-02 13:46; killed 11-03 08:20. vh-travel-trip run 1 failed under that load (`trip dropped: no travel interaction in the household queue for ~1 min`, no cancel, exception or crash line in its logs); rerun once on the quiet machine.
+
+| job | set-up | verdict |
+|---|---|---|
+| vh-cycle-a | full CC + logging | PASS 4.2 min, PASS 4.2 min (2 reruns) |
+| vh-cycle-b | full CC + logging | PASS 4.2 min |
+| vh-travel-matrix | CC parked | PASS 6.8 min (1/1 case) |
+| vh-travel-trip | CC parked | FAIL 3.1 min under 58% stray load; rerun PASS 4.8 min |
+| vh-newsave | CC parked | PASS 1.4 min (EaMod-SV-fresh created) |
+| vh-matrix | CC parked | PASS 3.2 min (5/5 cases) |
+| vh-repro | CC parked | **CRASH** 3.8 min, at start-up (4 s after launch); stopped |
+| hf-statecmd | - | not run (stopped at the crash) |
+
+vh-repro crash, static triage [code verified; cause inferred]: the game ended 4 s after the probe attached (00:29:45 to 00:29:49 UTC, `detached: process-terminated`), before D3D init (no new DXVK log) and with no xcpt file. ts3native.log: right after the seven `OK   alloc sites Nt* detour` lines, `exception C0000005 at 0x00000000 ... thread 24284 eip 00000000 ...; stack code refs: 5D33F358` (0x5D33F358 is in d3d9.dll, DXVK, 0x5D320000-0x5DA98000). This is a call through a null pointer, and `allocsites.cpp` has that window: `AsDetour()` writes the `jmp` into ntdll (`AsWrite5`) and only then returns the trampoline, which the caller stores in `g_asNt*` (`g_asNtFree = AsDetour(...)` and the rest in `AsInstallVirtual`). Another thread (here a DXVK thread) that calls NtAllocateVirtualMemory / NtMapViewOfSection / ... in between enters `AsNt*Hook`, which calls `g_asNt*` = NULL: eip 0. The same window exists for the EA heap hooks. So the crash comes from the 8d logging (`[MemDiag] AllocSites`, a test-run tool), not from the shipped ini [inferred, one occurrence]. On EA the asi loads while DXVK threads already run, which makes the window reachable [inferred]; whether Steam can hit it is not checked. Suggested fix, not made (no second fix attempt): store the trampoline in the function pointer before the jmp goes live (AsDetour takes the slot and writes it first), then rerun vh-repro and hf-statecmd. No mini dump: the process never reached a low-address-space sample.
+
+No low-address-space sample, no dump, no out-of-memory crash in any 8d job; lowest largest-free block per job 1432-1548 MB after the CC park (vh-cycle-a with full CC: 1287 / 1423 MB). Not rerun on the parked set-up: vh-move, vh1-soak, vh-cycle-a/b (passed before the park).
+
+Restore verified (08:34): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862` (built with the 174-file set; the harness clears it on the next run), Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, Mods listing identical to the new 86-file baseline, Saves 0 differences against the backup (EaMod-SV-fresh removed), no game process.
