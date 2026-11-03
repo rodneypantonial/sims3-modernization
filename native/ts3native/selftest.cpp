@@ -13359,8 +13359,7 @@ static void TestDetourPublish() {
     WaitForSingleObject(th, INFINITE);
     CloseHandle(th);
     VirtualFree(fn, 0, MEM_RELEASE);
-    printf("detour publish order: %d installs under a spinning caller, slot set before the jmp
-", n);
+    printf("detour publish order: %d installs under a spinning caller, slot set before the jmp\n", n);
 }
 
 static void TestRemPatch() {
