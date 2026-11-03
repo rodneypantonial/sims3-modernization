@@ -796,3 +796,70 @@ Both arms: 0 visit failures, reload 39-43 s, 2 heap expansions of 32 MB (cycles 
 Verdict: PASS, no leak from the cap. `BlackListCapKB=1024` is now the EA shipped default: `tools/ea-ini.ts` `EA_SET` puts it in both EA inis (the rc ini shows 1024; the minimal ini zeroes `[GC]` anyway), and the ea-ini self-check fails if the Steam `ts3native.ini` stops saying `BlackListCapKB=0`.
 
 Restore verified (15:55): state identical to the pre-state, Mods listing identical, and a robocopy /L of Saves against the backup shows 0 differences (509 dirs, 2602 files). 92 GB free on C:.
+
+### Run 9 (2026-11-04): final EA build
+
+Build: ea169-port `703cd87`, CI run [41710238414](https://github.com/rodneypantonial/sims3-modernization/actions/runs/41710238414) green (native, native-ea169, node). It merges #236 (ea169-structs), #238 (ea169-gcgrow-log) and ea169-port-handover, and ports main's `[GC] BlackListCapKB` window mode (Run 8q) with counters v163 at the port's offsets (gcStrictN 0x5B40, gcLenientN 0x5B44, gcSwitchSec 0x5B48). The window switch on 1.69 checks the live immediates itself: `PatchImm32` compares with the EA table's original bytes (imm 0x800000), so main's call would never switch on this build. `ts3native.ini` ships `BlackListCapKB=1024` as on main. The `diag: edition` line now reads `EA app 1.69.47 ... - supported` on the table host. The host check still logs `SKIP all: host is not EA app 1.69.47 (...)` and installs nothing on any other exe.
+- `ts3native-ea169.asi` sha256 `3d0b01a408ce446a0d9a13251ddef0d73bf8e094f863552a0c47fab05fbf2882`
+- `ts3native-ea169-rc.ini` sha256 `8796209ba001137dcd36464d6394c08d6596492a5cf71da1b896a1b72a19342f`
+- rc ini features on: GC (InitialHeapMB 352, BlackListCapKB 1024), RouteAsync, SaveWrite, Decompress, WaterJps, UserDiag, RouteGate, Discourage, LotRemoveGuard, OptsInit, UnseenFallback. Every off-by-default feature is off, and `[MemDiag] Light` is 0.
+- Harness: `ea-mod-mode` `4e1cd4e` (#226 with main merged, CI green). agent.js reads the EA counter layout (v160 ImageGuard, v161-v163) when the host is 1.69.
+- Set-up: CC parked (86 Mods files), Saves backed up once to `game-copy/saves-pre-run9`, console held by our session before every job, no stray python/node. Other CPU load was 1.0-2.0 % mean in every job. Each job ran through `queue.ts --only` in the background, and the game window was never focused.
+- Scope (Rodney 11-04): only features that ship on. The batched off-feature verify, the feature-trigger queue and the FootprintIndex save matrix were dropped.
+
+**A. Start-up check** (scratch job `ea-9a.json`: the shipped rc ini plus `[GcGrowLog] Enabled=1` (log only), start-up, menu, load Baseline-SV-Spring, 1 min soak, quit): **8 of 8 runs passed**.
+
+| launch | verdict | gcgrow lines (max streak) | max gcHeapMB | 3.8 MB LoadMetaAutonomy string | window switch |
+|---|---|---|---|---|---|
+| 1 | PASS 2.4 min | 0 | 353 | punt, spacing 1024 KB (cap) | strict at world load #1, 64 s after init |
+| 2 | PASS 2.2 min | 1 (1) | 386 | punt, spacing 1024 KB (cap) | strict at 59 s |
+| 3 | PASS 2.2 min | 0 | 353 | punt, spacing 304 KB | strict at 58 s |
+| 4 | PASS 2.2 min | 1 (1) | 386 | punt, spacing 1024 KB (cap) | strict at 59 s |
+| 5 | PASS 2.2 min | 0 | 353 | (first punt 556 KB, spacing 308 KB) | strict at 59 s |
+| 6 | PASS 2.2 min | 0 | 353 | punt, spacing 1024 KB (cap) | strict at 56 s |
+| 7 | PASS 2.2 min | 0 | 353 | punt, spacing 1024 KB (cap) | strict at 59 s |
+| 8 | PASS 2.2 min | 0 | 353 | punt, spacing 296 KB | strict at 58 s |
+
+No runaway (no `gc expand streak` line, so no streak of 2 or more), heap at most 386 MB, no crash. Launch 2 logged one first-chance AV at 0x04467CC2, which is the benign EA RWX blob at +0x67CC2 (Run 8g). In 5 of 8 launches the spacing sat at the cap when the XML string came, the case that ran away in 8m. A quit to desktop logs no `world quit` line, so these launches show only the strict switch. Suite B shows the lenient switch.
+
+**B. EA mod matrix** (`ea-mod-matrix.json` jobs in scratch `ea-9b.json`, with the `[MemDiag]` logging overlay removed so the rc ini runs exactly as shipped; hf-kill is not in this matrix): **10 of 10 runs passed**.
+
+| job | verdict | notes |
+|---|---|---|
+| vh-move | PASS 11.8 min | clicks yes / accept / yes / don't save (save declined); window: strict at load, lenient at `world quit`, strict at the new world |
+| vh1-soak | PASS 11.2 min | 10 min soak, ts3fixes active (stuckcheckasync 236 runs, owspread 60); 0 new script errors |
+| vh-cycle-a | PASS 3.2 min | |
+| vh-cycle-b | PASS 3.2 min | |
+| vh-travel-matrix | PASS 4.5 min | 1 of 1 case; window strict 3 / lenient 2 (one per world quit) |
+| vh-travel-trip | PASS 4.6 min | window strict 3 / lenient 2 |
+| vh-newsave | PASS 1.6 min | |
+| vh-matrix | PASS 3.1 min | 5 of 5 cases (control, identical, overwrite, back-to-back, unpaused) |
+| vh-repro | PASS 6.2 min | store-cas-browse |
+| hf-statecmd | PASS 3.7 min | |
+
+All 10 native logs: 0 `FAIL` lines, 0 exceptions besides the benign +0x67CC2 blob, and no `gc expand streak` line. Max gcHeapMB was 353-385.
+
+**F. Vanilla matrix** (`TS3_VANILLA=1`, `vanilla-matrix.json`, ts3agent from the ea-mod-mode build): **10 of 10 flows passed. hf-kill FAILed as designed. One vanilla travel try failed and then passed on a rerun.**
+
+| job | verdict |
+|---|---|
+| vh-move | PASS 11.8 min |
+| vh1-soak | PASS 11.2 min |
+| vh-cycle-a / vh-cycle-b | PASS 3.2 / 3.2 min |
+| vh-travel-matrix | try 1 **FAIL** 4.6 min, rerun PASS 4.7 min |
+| vh-travel-trip | PASS 5.0 min |
+| vh-newsave | PASS 1.3 min |
+| vh-matrix | PASS 3.2 min (5 of 5 cases) |
+| vh-repro | PASS 6.2 min |
+| hf-statecmd | PASS 3.7 min |
+| hf-kill | FAIL 5.9 min, by design (the probe server is killed; fail-fast guard) |
+
+Triage of vh-travel-matrix try 1 (vanilla, nothing of ours installed) [verified log; cause inferred]: `travel_home` (LeaveUniversity) queued Justine's "Travel Home" at 22:00:57. The University "Living in Dorms" arrival dialog was accepted at 22:01:09, and by 22:01:58 her queue showed Idle, so the case failed with `trip dropped: no travel interaction ... for ~1 min`. The rerun passed, and the mod arm passed the same case. Reading: the harness can queue the trip home before the arrival dialogs have settled, which is a timing gap. No harness change was made (the rerun passed, and the cap of 3 fixes was not needed). Candidate fix: wait for the arrival dialogs before `travel_home`.
+
+Crashes: none in A, B or F (hf-kill's designed kill aside).
+
+VirusTotal: not uploaded. Three Chrome browsers are connected and none is selected for the session, so Rodney has to pick one; no API key was used.
+
+Verdict: **PASS.** The final EA build `703cd87` passes every shipped-on check: A 8 of 8, B 10 of 10, F baseline 10 of 10 with hf-kill as designed.
+
+Restore verified (06:33): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical (86 files), Saves 0 differences (509 dirs, 2602 files), no game process. Logs: `probe-out/ea-run9-*` (driver log, native log and memory.csv per job), queue files `sims-3-ea-mod-mode/probe-out/queue/ea-9a-*`, `ea-9b-*`, `vanilla-matrix-2026-11-03-*`.
