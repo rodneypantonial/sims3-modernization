@@ -20,8 +20,9 @@ export const ALWAYS_OFF: Record<string, string> = {
     EaDiag: "EA-only diagnostics, log only, minimal ini only", Verify: "bit-compares against Steam code", MemDiag: "memexp.cpp struct layouts",
     SteerRO: "steerro.cpp struct layouts", FpRebuildLock: "steerro.cpp struct layouts", Watchpoint: "watchpt.cpp struct layouts", RouteToObjRO: "rtoro.cpp struct layouts",
 };
-// rc ini values that differ from the shipped ones on EA only (test settings; turning them on for players is a separate call)
-export const EA_RC_SET: Record<string, string> = { "GC.BlackListCapKB": "1024" };  // docs/232 Run 8n
+// EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
+// ts3native.ini keeps its own value (self-check). BlackListCapKB: docs/232 Run 8n/8o (refusal streak fix), Run 8p (no leak).
+export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024" };
 // a file that only serves one key group of a section (GC: memexp.cpp reads SqrtHeapLimit, shipped 0) does not count for that section
 export const IGNORE_FILE: Record<string, string[]> = { GC: ["memexp.cpp"] };
 const RG = ["RouteGate", "RouteAsync"];
@@ -95,7 +96,8 @@ function selfCheck() {
     const st = Object.fromEntries(r.map((x) => [x.section, x.state]));
     ok(st.A === "zeroed" && st.B === "kept" && st.Verify === "zeroed" && st.E === "zeroed" && st.RouteGate === "zeroed" && st.AvoidRO === "zeroed" && st.GC === "kept", "plan " + JSON.stringify(st));
     ok(render(["[A]", "Enabled=1", "Path=x", "[B]", "Enabled=0"], (s) => s === "A", (s) => s === "B") === "[A]\r\nEnabled=0\r\nPath=x\r\n[B]\r\nEnabled=1", "render");
-    ok(render(["[GC]", "Enabled=1", "BlackListCapKB=0", "[Z]", "BlackListCapKB=0"], () => false, () => false, EA_RC_SET) === "[GC]\r\nEnabled=1\r\nBlackListCapKB=1024\r\n[Z]\r\nBlackListCapKB=0", "render set");
+    ok(render(["[GC]", "Enabled=1", "BlackListCapKB=0", "[Z]", "BlackListCapKB=0"], () => false, () => false, EA_SET) === "[GC]\r\nEnabled=1\r\nBlackListCapKB=1024\r\n[Z]\r\nBlackListCapKB=0", "render set");
+    ok(/^BlackListCapKB=0\s*$/m.test(readFileSync(join(SRC, "ts3native.ini"), "utf8")), "Steam ts3native.ini must keep BlackListCapKB=0 (EA_SET is EA only)");
     console.log("ea-ini self-check: ok");
 }
 
@@ -112,10 +114,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         }
         const out = v.out ?? join(SRC, "out-ea169");
         mkdirSync(out, { recursive: true });
-        writeFileSync(join(out, "ts3native-ea169.ini"), render(ini, (s) => !allow.includes(s), (s) => on.includes(s)));
+        writeFileSync(join(out, "ts3native-ea169.ini"), render(ini, (s) => !allow.includes(s), (s) => on.includes(s), EA_SET));
         console.log(`minimal ini: on = ${allow.map((s) => "[" + s + "]").join(" ")}; ${bad.size} source files have unresolved or bytes-bad rows`);
         const plan = rcPlan(sections, enabled, map, bad), zeroed = new Set(plan.filter((r) => r.state === "zeroed").map((r) => r.section));
-        writeFileSync(join(out, "ts3native-ea169-rc.ini"), render(ini, (s) => zeroed.has(s), () => false, EA_RC_SET));
+        writeFileSync(join(out, "ts3native-ea169-rc.ini"), render(ini, (s) => zeroed.has(s), () => false, EA_SET));
         for (const r of plan) console.log(`rc [${r.section}] shipped Enabled=${r.shipped}: ${r.state}${r.state === "zeroed" ? " (" + r.reason + ")" : ""}`);
         console.log(`rc ini: ${plan.length - zeroed.size} sections kept as shipped (Enabled=1: ${plan.filter((r) => r.state === "kept" && r.shipped === "1").map((r) => r.section).join(" ")}), ${zeroed.size} zeroed`);
         if (v.md) writeFileSync(v.md, "| section | shipped Enabled | rc state | reason |\n|---|---|---|---|\n" + plan.map((r) => `| [${r.section}] | ${r.shipped} | ${r.state} | ${r.reason} |`).join("\n") + "\n");
