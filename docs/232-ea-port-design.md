@@ -638,3 +638,34 @@ Asi `90c9f67dc981` (705be99) with its rc ini plus the 8j job ini (`[MemDiag]` Li
 - Consequence: `[ImageGuard]` stays a valid guard against oversized image headers (proven here), but it does not fix the 8c / 8g main-menu crash. Default-on in the EA rc ini is held for Rodney's call; agent.js reads v159/v160 since ea-mod-mode `4c6d3b6`.
 
 Restore verified (11:09): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical (86 files, `6d65db6779b1`, no cc-synth, no ImageGuardRepro), Saves 0 differences, no game process. Logs: `probe-out/ea-eamod-1103k-scan.*`, `probe-out/ea-eamod-1103k-a.*` (native log, memory.csv, xcpt); queue files `sims-3-ea-mod-mode/probe-out/queue/ea-8k-*`.
+
+### Run 8l (2026-11-03): GC heap growth at the main menu, static triage and `[GcGrowLog]`; rerun blocked
+
+Goal: name who grows the Boehm heap from 352 MB to ~2.3 GB at the main menu (Run 8k scan and A, 8g hf-statecmd try 1). Our build crashed, so ours until proven otherwise; no bisect of the mod config.
+
+8j (8 PASS) vs 8k (2 CRASH), from the logs [verified]:
+
+| item | 8j | 8k scan / A |
+|---|---|---|
+| asi, rc ini | `90c9f67dc981` (705be99), ini dump identical | same; only `[ImageGuard]` LogMB=1 MaxMB=2047 (scan) / 64, 512 (A) |
+| ts3fixes / ts3agent / nointro | rebuilt by cycle.ts every launch (hash differs per cycle by design), nointro `2d4394daca11` | same |
+| Mods | 86 files, 74 packages (listing hash `b24e033aa5b3` of `mods-before.txt`) | same listing; A adds the crafted package (75) and a cache-clear step |
+| save, launch, harness steps | Baseline-SV-Spring, EA app `origin2://` launch, cycle.ts restart/save, watchdog | same steps; crash before the menu dialog and load_save |
+| agent first answer | 22-34 s after launch | 22 s (scan), 22 s (A) |
+| machine load | other CPU 2.1-4.0% (one 10.9%) | 4.2% / 3.5% |
+| free disk | 127 GB | 109 GB (one more 17.8 GB Saves backup); not a cause candidate (no paging limit near) [inferred] |
+
+Decisive pattern: in all three crashing launches the GC heap is 352 MB at the first sample after the agent first answered and 2.3 GB at the next (8g try 1: answer 09:18:01, 352 MB at :02, 2,323 MB at :12; scan: 10:59:40, :42, :52; A: 11:04:39, 352 MB at :31, 2,284 MB at :41), before the "Mod Scripts Found" dialog, auto_dialog handling or load_save. In 8j the heap stays 352-354 MB through the same window in every cycle [verified from memory.csv and the queue logs]. No configuration difference explains 3 of 3 vs 0 of 8; the trigger looks timing-dependent [inferred].
+
+Static GC findings:
+- `[GC]` on 1.69: initial heap 0x2800 -> 0x16000 at 0xE4E1B8 and the three growth-step immediates 0x800 -> 0x2000 at 0xE4A228 / 0xE4A24F / 0xE4A256, all `OK` lines (bytes checked) [verified log]. No hook of ours on collect/expand was active: SqrtHeapLimit=0, TypeGrowth=0, GcThreadCheck, GcRootCheck, MonoThread off (`mem experiments off` etc.) [verified log]. Our only live memory hooks at the menu were `[MemDiag] AllocSites` ntdll detours (also on in 8j).
+- 1.69 `GC_collect_or_expand` 0xE4A170 decoded from `probe-out/ts3-ea169.bin` [verified bytes]: in incremental mode it expands only when `GC_words_allocd` [0x127C944] is 0 (right after a forced collection), by heap/5 + needed when that is <= GrowthStep, else max(needed + slop, GrowthStep) = 32 MB; `GC_expand_hp_inner` 0xE49CD0 has only 3 callers (0xE4A25C, 0xE4A269, GC_init 0xE4E3BE). The globals the probe reads (heap 0x127C920, large free 0x127C934, gc_no 0x124D020) give sane values in every sample [verified].
+- So 1.96 GB in <= 10 s is ~60 expansions of <= 64 MB each (allocations64 lists no block >= 64 MB besides the 352 MB initial section and igc32.dll) with `GC_large_free_bytes` 2,147 / 2,208 MB afterwards: the space was added and not used. That fits one allocation that keeps failing after each forced GC + expansion until VirtualAlloc fails (largest free block 0.7-2.8 MB at the end), not many live allocations [inferred]. Candidates: a large-object request whose new blocks are black-listed, or a needed-blocks value the step never satisfies [inferred, open].
+- Collections during the growth: not observable from these runs (memory.csv has no gcCount column; `diag: mem` lines start only in play) [verified: none logged].
+- Managed code at that moment: ts3agent's server answers its first `ping`, then `auto_dialog`; ts3fixes logs `ToMainMenuState.OnEnterNotInWorld` (scan) or nothing yet (A); EA `MainMenu.Init` / `PopulateWorldFileList` not reached in either crash (8j logs them next) [verified log]. Who allocates is not known.
+
+Logging `[GcGrowLog]` (branch `ea169-gcgrow-log`, draft PR #238; 2f0f429, 9996c16, 4fde5c8; CI 41573191015 green incl. native-ea169; asi `c0eed2686392`): both calls of `GC_expand_hp_inner` in `GC_collect_or_expand` (Steam 0xE4A20C / 0xE4A219, 1.69 0xE4A25C / 0xE4A269) go to `GwThunk`; one `gcgrow:` line per expansion (blocks asked, needed blocks from esi, ok/FAILED, heap before/after, gc_no, bytes allocated since the last GC, large free, thread, return address + 3 stack code refs, script frames), first 50 then >= 64 MB, 500 max; growth outside these calls counts as `gwUnseenKB`. Off by default (`Enabled=0`), runtime switch `gwMode` (v161 0x5B04, `--ab gcgrowlog`). Checks: addr-codemod, port-run, patch-bytes-check, hook-sites --check, ea-ini, native-switches, reg-liveness both editions at both sites (0 risky), selftest-all 180 PASS.
+
+Rerun: not run. Saves backed up to `game-copy/saves-pre-eamod8l` (11:39), job = 8k scan ini + `GcGrowLog.Enabled=1` (`ea-8l-scan.json`, asi `c0eed2686392`). The session preflight refused cycle 1 at 11:39:33: `console session state: session 2 Disconnected, console held by another user` (the laptop console is another user's session), so the game cannot run unattended now. Nothing was installed (queue.ts never started); Bin pair, packages, Options/LoadOption, Mods listing and Saves unchanged (state read back below). To resume once our session holds the console: `QUEUE=<scratch>/ea-8l-scan.json JOB=gw-scan bash eamod8l.sh run 3`, stop at the first launch whose memory.csv shows gcHeapMB > 600; the `gcgrow:` lines then name the asking thread, size and script frames.
+
+Restore verified (11:40): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical to 8k (86 files), Saves 0 differences, no game process. Logs: `probe-out/ea-eamod-1103l.*`.
