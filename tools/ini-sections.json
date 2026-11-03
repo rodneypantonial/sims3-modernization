@@ -73,5 +73,6 @@
  "ResourceCache": ["rctrim.cpp"],
  "EaCrashFixes": ["eafix.cpp","wastar.cpp"],
  "EaDiag": ["eadiag.cpp"],
- "ImageGuard": ["imgguard.cpp"]
+ "ImageGuard": ["imgguard.cpp"],
+ "GcGrowLog": ["gcgrow.cpp"]
 }
