@@ -48,7 +48,7 @@ export function parseLog(text: string): Session[] {
     if (/^OK  /.test(l)) s.patchOk++;
     else if (/^(SKIP|FAIL) .*(bytes differ|not as expected)/.test(l)) s.patchDiffer.push(l);
     else if ((m = l.match(/^diag: ts3native \S+ \(built ([^)]*)\)/))) s.built = m[1];
-    else if ((m = l.match(/^diag: edition (Steam|not Steam), TS3W\.exe file version (\S+), install class (.+?)(?: - UNSUPPORTED.*)?$/))) [s.edition, s.fileVersion, s.installClass] = [m[1], m[2], m[3]];
+    else if ((m = l.match(/^diag: edition (Steam|not Steam|EA app [\d.]+|unknown), (?:TS3W\.exe|game exe) file version (\S+), install class (.+?)(?: - (?:UNSUPPORTED.*|supported))?$/))) [s.edition, s.fileVersion, s.installClass] = [m[1], m[2], m[3]];
     else if ((m = l.match(/^diag: exe TS3W\.exe \d+ bytes, sha256 ([0-9a-f]+)/))) s.exeSha = m[1];
     else if ((m = l.match(/^diag: (cpu|ram|os|gpu|display)\b:? ?(.*)$/))) s.system.push(`${m[1]} ${m[2].replace(/\s+,/g, ',').trim()}`);
     else if ((m = l.match(/^diag: large address aware: (.*)$/))) s.laa = m[1];

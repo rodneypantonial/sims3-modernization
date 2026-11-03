@@ -4801,8 +4801,7 @@ static void Run(HMODULE self) {
 #ifdef TS3A_TABLE
     // docs/228: the table names the build (PE timestamp + SizeOfImage), any file name: the EA game may run as Sims3Launcher.exe
     if (base != (HMODULE)0x400000 || hostNt->FileHeader.TimeDateStamp != (DWORD)TS3A_HOST_PE || hostNt->OptionalHeader.SizeOfImage != (DWORD)TS3A_HOST_SIZE) {
-        Log("FAIL wrong game edition: this ts3native build is for the " TS3A_HOST_NAME "; use the Steam build (host pe %08lX size 0x%lX), nothing installed",
-            hostNt->FileHeader.TimeDateStamp, hostNt->OptionalHeader.SizeOfImage);
+        Log("SKIP all: host is not " TS3A_HOST_NAME " (pe %08lX size 0x%lX)", hostNt->FileHeader.TimeDateStamp, hostNt->OptionalHeader.SizeOfImage);
     } else {
         Log("host build: " TS3A_HOST_NAME);
 #else
