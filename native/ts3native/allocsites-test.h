@@ -492,12 +492,12 @@ static void TestAllocSites() {
     {
         u8* e = g_astCode + 256;
         e[0] = 0xE9, *(LONG*)(e + 1) = (LONG)((u8*)(void*)AstRet7 - (e + 5));
-        g_astChainOrig = (AstIntFn)AsDetour("selftest chain", AstFn(e), kEaLockedPrologue, (int)sizeof(kEaLockedPrologue), (void*)AstChainHook);
+        g_astChainOrig = (AstIntFn)AsDetour("selftest chain", AstFn(e), kEaLockedPrologue, (int)sizeof(kEaLockedPrologue), (void*)AstChainHook, &g_astChainOrig);
         assert(g_astChainOrig && ((AstIntFn)(void*)e)() == 8 && g_astChainOrig() == 7);
         // bytes that are neither the prologue nor a jmp: refused, nothing written
         u8* f = g_astCode + 288;
         memset(f, 0x90, 16);
-        assert(!AsDetour("selftest other bytes", AstFn(f), kEaLockedPrologue, (int)sizeof(kEaLockedPrologue), (void*)AstChainHook) && f[0] == 0x90);
+        assert(!AsDetour("selftest other bytes", AstFn(f), kEaLockedPrologue, (int)sizeof(kEaLockedPrologue), (void*)AstChainHook, &g_astChainOrig) && f[0] == 0x90 && g_astChainOrig);  // refused: slot kept
     }
 
     // cost with the hooks in: 1 in 64 sampled (the default) and every block sampled (worst case)

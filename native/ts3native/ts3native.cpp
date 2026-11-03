@@ -108,10 +108,29 @@ static bool PatchImm32(const char* name, const Site* sites, int count, DWORD val
     return true;
 }
 
-// Phase 2 helper (unused so far): 5-byte jmp detour at `target`. `prologue` is the verified original
-// code, `len` >= 5 and ending on an instruction boundary, with no relative operands (it is copied
-// verbatim into the trampoline). Returns the trampoline that runs the original function, or NULL.
-void* InstallDetour(const char* name, DWORD target, const u8* prologue, size_t len, void* hook) {
+// One 8-byte locked write when the 5 bytes sit in one aligned qword (a thread never runs half a jmp), else memcpy.
+static bool Write5(u8* t, const u8* five) {
+    DWORD old;
+    if (!VirtualProtect(t, 5, PAGE_EXECUTE_READWRITE, &old)) return false;
+    const uintptr_t q = (uintptr_t)t & ~(uintptr_t)7;
+    if ((uintptr_t)t - q <= 3) {
+        for (;;) {
+            const LONG64 cur = *(volatile LONG64*)q;
+            LONG64 nw = cur;
+            memcpy((u8*)&nw + ((uintptr_t)t - q), five, 5);
+            if (InterlockedCompareExchange64((volatile LONG64*)q, nw, cur) == cur) break;
+        }
+    } else memcpy(t, five, 5);
+    VirtualProtect(t, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), t, 5);
+    return true;
+}
+
+// 5-byte jmp detour at `target`. `prologue` is the verified original code, `len` >= 5 and ending on an instruction
+// boundary, with no relative operands (it is copied verbatim into the trampoline). Returns the trampoline that runs the
+// original function, or NULL. A leading call rel32 is re-targeted in the trampoline at the original callee. `slot` (the caller's trampoline pointer, read by the hook) is stored before the jmp goes
+// live: a thread entering the hook between the jmp write and the caller's own store called address 0 (docs/232 Run 8e).
+static void* DetourCore(const char* name, DWORD target, const u8* prologue, size_t len, void* hook, void* volatile* slot) {
     u8* t = (u8*)(uintptr_t)target;
     if (len < 5 || len > 16 || !Matches(t, prologue, len)) {
         Log("SKIP detour %s at 0x%08X: prologue differs", name, target);
@@ -122,13 +141,31 @@ void* InstallDetour(const char* name, DWORD target, const u8* prologue, size_t l
     memcpy(tramp, ExpectedAt(t, prologue, len), len);
     tramp[len] = 0xE9;
     *(LONG*)(tramp + len + 1) = (LONG)((t + len) - (tramp + len + 5));
+    if (prologue[0] == 0xE8) *(LONG*)(tramp + 1) = (LONG)((t + 5 + *(const LONG*)(prologue + 1)) - (tramp + 5));
+    FlushInstructionCache(GetCurrentProcess(), tramp, len + 5);
+    void* const prev = slot ? *slot : NULL;
+    if (slot) *slot = tramp;
+    MemoryBarrier();
     u8 jmp[16];
     memset(jmp, 0x90, sizeof(jmp));
     jmp[0] = 0xE9;
     *(LONG*)(jmp + 1) = (LONG)((u8*)hook - (t + 5));
-    if (!Write(t, jmp, len)) { VirtualFree(tramp, 0, MEM_RELEASE); return NULL; }
+    // the jmp first (atomic), then the nop tail that no new entry can reach
+    if (!Write5(t, jmp) || (len > 5 && !Write(t + 5, jmp + 5, len - 5))) {
+        if (slot) *slot = prev;
+        VirtualFree(tramp, 0, MEM_RELEASE);
+        return NULL;
+    }
     Log("OK   detour %s at 0x%08X", name, target);
     return tramp;
+}
+// Every hook that calls through its trampoline passes `&slot`; the 5-argument form is for hooks that never do.
+template <class F> static void* InstallDetour(const char* name, DWORD target, const u8* prologue, size_t len, void* hook, F* slot) {
+    static_assert(sizeof(F) == sizeof(void*), "slot holds a code pointer");
+    return DetourCore(name, target, prologue, len, hook, (void* volatile*)slot);
+}
+static void* InstallDetour(const char* name, DWORD target, const u8* prologue, size_t len, void* hook) {
+    return DetourCore(name, target, prologue, len, hook, NULL);
 }
 
 static DWORD g_mainTid;  // thread that loaded us (Run)
@@ -4494,9 +4531,9 @@ static int ReadRouteAsync(const wchar_t* ini) {
 // a missing one leaves asyncReady 0, and START is then never answered yes.
 static bool InstallAsync(int mode) {
     if (!g_hostCallOrig) { Log("FAIL route async: host call detour missing, async plans stay off"); return false; }
-    g_lockOrig = (LockAcquireFn)InstallDetour("Lock_Acquire", LOCK_ACQUIRE, kLockAcquirePrologue, sizeof(kLockAcquirePrologue), (void*)LockAcquireHook);
-    g_icPlanOrig = g_lockOrig ? (IcPlanFn)InstallDetour("IC_Route_Plan", IC_ROUTE_PLAN, kIcPlanPrologue, sizeof(kIcPlanPrologue), (void*)IcPlanHook) : NULL;
-    g_getOptOrig = g_icPlanOrig ? (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook) : NULL;
+    g_lockOrig = (LockAcquireFn)InstallDetour("Lock_Acquire", LOCK_ACQUIRE, kLockAcquirePrologue, sizeof(kLockAcquirePrologue), (void*)LockAcquireHook, &g_lockOrig);
+    g_icPlanOrig = g_lockOrig ? (IcPlanFn)InstallDetour("IC_Route_Plan", IC_ROUTE_PLAN, kIcPlanPrologue, sizeof(kIcPlanPrologue), (void*)IcPlanHook, &g_icPlanOrig) : NULL;
+    g_getOptOrig = g_icPlanOrig ? (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook, &g_getOptOrig) : NULL;
     if (!g_getOptOrig) { Log("FAIL route async: detours incomplete, async plans stay off"); return false; }
     ts3native_counters.asyncMode = mode;
     ts3native_counters.asyncReady = 1;
@@ -4546,11 +4583,11 @@ static bool ApplyRouteBudget(const wchar_t* ini) {
 // Returns true when installed (the log must then stay open for the periodic counters and the watchdog).
 static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
     if (!cache && !worker && !budget && !gate) return false;
-    g_planOrig = (PlanLockedFn)InstallDetour("Route_PlanLocked", ROUTE_PLAN_LOCKED, kPlanLockedPrologue, sizeof(kPlanLockedPrologue), (void*)PlanLockedHook);
+    g_planOrig = (PlanLockedFn)InstallDetour("Route_PlanLocked", ROUTE_PLAN_LOCKED, kPlanLockedPrologue, sizeof(kPlanLockedPrologue), (void*)PlanLockedHook, &g_planOrig);
     if (!g_planOrig) { ts3native_counters.windowMs = 0; return false; }
     ts3native_counters.budgetReady = budget && PatchCostSites(kCostSites, kCostFns);
     // the worker's host delegate calls must run on the caller/owner thread; without that detour the worker stays unused
-    if (worker) g_hostCallOrig = (HostCallFn)InstallDetour("host call", HOST_CALL, kHostCallPrologue, sizeof(kHostCallPrologue), (void*)HostCallHook);
+    if (worker) g_hostCallOrig = (HostCallFn)InstallDetour("host call", HOST_CALL, kHostCallPrologue, sizeof(kHostCallPrologue), (void*)HostCallHook, &g_hostCallOrig);
     if (worker && !g_hostCallOrig) Log("FAIL route worker: host call detour missing, plans stay on the calling thread");
     ts3native_counters.workerReady = worker && g_hostCallOrig;
     ts3native_counters.enabled = 1;
@@ -4766,7 +4803,7 @@ static void Run(HMODULE self) {
         ApplyRcTrim(ini);  // docs/198 §4: EXPERIMENT, off ([ResourceCache] TrimAfterCleanup)
         // the NOYIELD query guards ts3fixes' other yields too, so it is answered with async off (START then says no)
         if (!g_getOptOrig)
-            g_getOptOrig = (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook);
+            g_getOptOrig = (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook, &g_getOptOrig);
         keepLog = ApplyDecompress(ini) || keepLog;
         keepLog = ApplyAlloc(ini) || keepLog;
         keepLog = ApplyWaterJps(ini) || keepLog;
