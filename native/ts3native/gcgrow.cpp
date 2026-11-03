@@ -22,6 +22,16 @@
 // - "gcgrow script:" 16 script frames; the XML key of the thread's running Simulator_LoadXmlAsString 0x76D290 (detour,
 //   "gcgrow xml:" for each result >= 1 MB, 200 lines at most).
 // - the last 20 expansions stay formatted and are written when the heap first crosses 600 MB, logged before or not.
+// Run 8m: EA's LoadMetaAutonomy XML string (969 blocks, ~3.8 MB) is refused on black-listed pages because it is below
+// GC_black_list_spacing (heap / stack-black-listed blocks, clamped 12 KB..8 MB in GC_promote_black_lists 0xE4A7C0; ~4.8 MB with
+// our 352 MB heap), and GC_collect_or_expand expands instead of collecting (nothing allocated since the last GC), so the black
+// lists never refresh: 57 x 32 MB until the address space ran out. [GC] BlackListCapKB (counters v162 gc*, default 0 = off)
+// lowers the 8 MB clamp (0xE4A856 / 0xE4A85D), so a request above the cap takes a free block despite black-listed pages
+// (Boehm's own punt in GC_allochblk_nth at 0xE4950F, as with the stock 40 MB heap). Counters for it and for the expand streak:
+// - the punt's warn call 0xE49540 (`call [GC_current_warn_proc]`) goes to GcBlackOk, which counts every punt
+//   (GC_large_alloc_warn_interval set to 1) and forwards every old-interval-th call, as before;
+// - gcExpandStreak: expansions with no collection in between (same GC_gc_no); the two expand calls go to GwThunk
+//   whenever the cap is on, count only (gwMode 0) unless [GcGrowLog] Enabled=1.
 
 typedef int(__cdecl* GwExpandFn)(DWORD blocks);
 typedef DWORD(__cdecl* GwFn0)();
@@ -55,6 +65,7 @@ struct GwLines { char head[512], why[768], script[1300]; };
 static GwLines g_gwRing[20];  // the last 20 expansions, formatted
 static int g_gwRingN;
 static bool g_gwCrossed;
+static DWORD g_gwStreakGc = 0xFFFFFFFF;  // GC_gc_no of the current expand streak
 
 static DWORD GwRead(const DWORD* p) {
     __try { return *p; } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
@@ -98,6 +109,9 @@ static int __cdecl GwExpand(DWORD blocks, DWORD needed, const DWORD* sp) {
     if (g_gwLastHeap && before > g_gwLastHeap) k.gwUnseenKB += (LONG)((before - g_gwLastHeap) >> 10);
     g_gwLastHeap = after;
     const LONG n = ++k.gwExpands;  // under the GC allocation lock
+    if (gcNo != g_gwStreakGc) k.gcExpandStreak = 0, g_gwStreakGc = gcNo;
+    if (++k.gcExpandStreak > k.gcExpandStreakMax && (k.gcExpandStreakMax = k.gcExpandStreak) >= 2)
+        Log("gc expand streak %ld: %lu blocks needed, no collection since gc_no %lu", k.gcExpandStreak, needed, gcNo);
     if (!r) k.gwFails++;
     k.gwKB += (LONG)((after - before) >> 10);
     const LONG askKB = (LONG)(blocks << 2);
@@ -159,7 +173,7 @@ static DWORD __cdecl GwXml(DWORD lo, DWORD hi, DWORD group, DWORD type) {
     if (g_gwXmlTid == tid) g_gwXmlTid = 0;
     Ts3nCounters& k = ts3native_counters;
     InterlockedIncrement(&k.gwXmlCalls);
-    const DWORD len = r ? GwRead((const DWORD*)(uintptr_t)(r + 8)) : 0;  // MonoString +8 = length in UTF-16 chars
+    const DWORD len = r ? GwRead((const DWORD*)(uintptr_t)(r + 4)) : 0;  // EA's MonoString {vtable, length +4, chars +8} (autshadow.cpp)
     const LONG kb = (LONG)(len >> 9);
     if (kb > k.gwXmlMaxKB) k.gwXmlMaxKB = kb;
     if (k.gwMode && kb >= 1024 && InterlockedIncrement(&g_gwXmlLines) <= 200)
@@ -168,15 +182,58 @@ static DWORD __cdecl GwXml(DWORD lo, DWORD hi, DWORD group, DWORD type) {
     return r;
 }
 
+// [GC] BlackListCapKB: GC_promote_black_lists clamps the spacing to 8 MB (cmp eax,0x800000 ; jbe ; mov [spacing],0x800000)
+static const Site kBlCap[] = {
+    {TS3A(0x00E4A856), {0x3D, 0x00, 0x00, 0x80, 0x00, 0x76, 0x0A}, 7, 1},
+    {TS3A(0x00E4A85D), {0xC7, 0x05, 0x2C, 0x48, 0x19, 0x01, 0x00, 0x00, 0x80, 0x00}, 10, 6},
+};
+// GC_allochblk_nth punt: push eax (bytes) ; push fmt ; call [GC_current_warn_proc] ; add esp,8 (eax/ecx/edx dead after)
+static const Site kBlPunt[] = {{TS3A(0x00E49540), {0xFF, 0x15, 0xC0, 0x49, 0x19, 0x01}, 6, 0}};
+typedef void(__cdecl* GwWarnFn)(const char* fmt, DWORD arg);
+static void* const* g_gwWarnProc = (void* const*)(uintptr_t)TS3A(0x011949C0);  // GC_current_warn_proc (Mono sets it after GC_init)
+static LONG g_gwWarnEvery = 5;  // GC_large_alloc_warn_interval before we set it to 1
+
+static void __cdecl GcBlackOk(const char* fmt, DWORD bytes) {
+    Ts3nCounters& k = ts3native_counters;
+    const LONG n = ++k.gcBlackOk, kb = (LONG)(bytes >> 10);  // under the GC allocation lock
+    if (kb > k.gcBlackOkMaxKB) k.gcBlackOkMaxKB = kb;
+    if (n <= 20) Log("gc black-list ok #%ld: %ld KB taken despite black-listed pages (spacing %lu KB); thread %lu", n, kb,
+                     GwRead(g_gwb.blSpacing) >> 10, GetCurrentThreadId());
+    if (n % g_gwWarnEvery == 0)
+        if (GwWarnFn f = (GwWarnFn)*g_gwWarnProc) f(fmt, bytes);
+}
+
+static bool ApplyGcBlackCap(const wchar_t* ini) {
+    const int kb = GetPrivateProfileIntW(L"GC", L"BlackListCapKB", 0, ini);
+    if (!kb || !GetPrivateProfileIntW(L"GC", L"Enabled", 1, ini)) { Log("gc black-list cap off (BlackListCapKB=0)"); return false; }
+    const DWORD cap = (DWORD)Clamp(kb, 12, 8192);
+    if (!PatchImm32("GC black-list spacing cap", kBlCap, 2, cap << 10)) return false;
+    ts3native_counters.gcCapKB = (LONG)cap;
+    u8 call[6] = {0xE8, 0, 0, 0, 0, 0x90};
+    *(LONG*)(call + 1) = (LONG)((uintptr_t)GcBlackOk - (kBlPunt[0].addr + 5));
+    DWORD* ival = (DWORD*)(uintptr_t)g_gwb.warnIval;
+    if (!Matches((const void*)(uintptr_t)kBlPunt[0].addr, kBlPunt[0].expect, 6) || !Readable(ival, 4)) {
+        Log("SKIP gc black-list ok count: bytes at 0x%08X differ; the cap stays", kBlPunt[0].addr);
+        return true;
+    }
+    g_gwWarnEvery = *ival >= 1 && *ival < 0x10000 ? (LONG)*ival : 5;
+    *ival = 1;  // every punt reaches GcBlackOk (.data, writable)
+    if (!Write((void*)(uintptr_t)kBlPunt[0].addr, call, 6)) Log("FAIL gc black-list ok count: VirtualProtect at 0x%08X", kBlPunt[0].addr);
+    else Log("OK   gc black-list ok count: 0x%08X call [warn proc] -> GcBlackOk (warning forwarded every %ld)", kBlPunt[0].addr, g_gwWarnEvery);
+    return true;
+}
+
 static bool ApplyGcGrowLog(const wchar_t* ini) {
-    if (!GetPrivateProfileIntW(L"GcGrowLog", L"Enabled", 0, ini)) { Log("gc grow log off (Enabled=0)"); return false; }
+    const bool cap = ApplyGcBlackCap(ini), log = GetPrivateProfileIntW(L"GcGrowLog", L"Enabled", 0, ini) != 0;
+    if (!log && !cap) { Log("gc grow log off (Enabled=0)"); return false; }
     const CallSite s[2] = {{GW_SITE[0], GW_EXPAND, (void*)GwThunk}, {GW_SITE[1], GW_EXPAND, (void*)GwThunk}};
-    if (!PatchCalls("gc grow log", s, 2)) return false;
+    if (!PatchCalls("gc grow log", s, 2)) return cap;
     ts3native_counters.gwReady = 1;
-    ts3native_counters.gwMode = 1;
-    if (InstallDetour("Simulator_LoadXmlAsString (gc grow log)", GW_XML, kGwXmlPro, sizeof(kGwXmlPro), (void*)GwXml, &g_gwXmlOrig))
+    ts3native_counters.gwMode = log;
+    if (log && InstallDetour("Simulator_LoadXmlAsString (gc grow log)", GW_XML, kGwXmlPro, sizeof(kGwXmlPro), (void*)GwXml, &g_gwXmlOrig))
         ts3native_counters.gwReady |= 2;
-    Log("OK   gc grow log: GC_expand_hp_inner 0x%08X calls 0x%08X / 0x%08X -> GwThunk (first 50 expansions, then >= 64 MB, the last 20 at "
-        "600 MB); xml key %s", GW_EXPAND, GW_SITE[0], GW_SITE[1], g_gwXmlOrig ? "on" : "SKIP");
-    return true;  // keep the log open for the gcgrow lines
+    Log("OK   gc grow log: GC_expand_hp_inner 0x%08X calls 0x%08X / 0x%08X -> GwThunk (%s); xml key %s", GW_EXPAND, GW_SITE[0], GW_SITE[1],
+        log ? "first 50 expansions, then >= 64 MB, the last 20 at 600 MB" : "count only, for the [GC] BlackListCapKB streak counter",
+        g_gwXmlOrig ? "on" : "SKIP");
+    return true;  // keep the log open for the gcgrow / black-list lines
 }

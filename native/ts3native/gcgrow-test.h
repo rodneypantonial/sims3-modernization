@@ -1,7 +1,7 @@
 // TestGcGrowLog ([GcGrowLog], gcgrow.cpp, docs/232 Run 8l). Included by selftest.cpp.
 // The thunk runs for real from a fake GC_collect_or_expand frame (esi = needed, one pushed argument, add esp,4 after the
 // call): the fake expand grows a fake heap; counters, failure, growth outside our calls, the line limits, the 600 MB ring,
-// the refusal text on fake Boehm globals and the LoadXmlAsString key are checked.
+// the refusal text on fake Boehm globals, the LoadXmlAsString key, the expand streak and GcBlackOk ([GC] BlackListCapKB) are checked.
 
 static DWORD g_gwFakeHeap, g_gwFakeAsk;
 static int __cdecl GwFakeExpand(DWORD blocks) {
@@ -25,6 +25,8 @@ static __declspec(naked) int __stdcall GwRunSite(DWORD /*blocks*/, DWORD /*neede
         ret 8
     }
 }
+static int g_gwWarned;
+static void __cdecl GwFakeWarn(const char*, DWORD bytes) { assert(bytes == 969u << 12); g_gwWarned++; }
 static DWORD __cdecl GwFakeOne() { return 1; }
 static DWORD __cdecl GwFakeAdj() { return 5000; }
 static DWORD __cdecl GwFakeMin() { return 4000; }
@@ -37,8 +39,8 @@ static DWORD __cdecl GwFakeXml(DWORD lo, DWORD hi, DWORD group, DWORD type) {
 }
 
 static void TestGcGrowLog() {
-    static_assert(offsetof(Ts3nCounters, gwMode) == 0x5B04 && offsetof(Ts3nCounters, gwUnseenKB) == 0x5B1C &&
-                      offsetof(Ts3nCounters, gwXmlMaxKB) == 0x5B28 && sizeof(Ts3nCounters) == 5835 * 4,
+    static_assert(offsetof(Ts3nCounters, gcBlackOk) == 0x5B30 && offsetof(Ts3nCounters, gwMode) == 0x5B04 && offsetof(Ts3nCounters, gwUnseenKB) == 0x5B1C &&
+                      offsetof(Ts3nCounters, gwXmlMaxKB) == 0x5B28 && sizeof(Ts3nCounters) == 5841 * 4,
                   "counters v161 layout (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     const MxAddrs saved = g_mx;
@@ -51,7 +53,7 @@ static void TestGcGrowLog() {
     g_gwLargeFree = &largeFree;
     g_gwExpand = GwFakeExpand;
     g_gwFakeHeap = 352u << 20, g_gwLastHeap = 0, g_gwRingN = 0, g_gwCrossed = false;
-    memset(&k.gwMode, 0, sizeof(LONG) * 10);
+    memset(&k.gwMode, 0, sizeof(LONG) * 16);
     k.gwMode = 1;
     assert(GwListIdx(969) == 60 && GwListIdx(32) == 32 && GwListIdx(33) == 32 && GwListIdx(255) == 59);
     char why[700];
@@ -64,11 +66,15 @@ static void TestGcGrowLog() {
     fin = 0;
     assert(GwRunSite(0x2000, 0x10) == 1 && g_gwFakeAsk == 0x2000 && g_gwFakeHeap == 384u << 20);
     assert(k.gwExpands == 1 && k.gwKB == 32 * 1024 && k.gwMaxAskKB == 32 * 1024 && k.gwLines == 1 && k.gwFails == 0);
+    assert(k.gcExpandStreak == 1 && k.gcExpandStreakMax == 1);
     assert(GwRunSite(3, 3) == 0 && k.gwFails == 1 && k.gwKB == 32 * 1024);
     g_gwFakeHeap += 1u << 20;  // growth not through our calls
     assert(GwRunSite(0x40, 0x40) == 1 && k.gwUnseenKB == 1024);
+    assert(k.gcExpandStreak == 3 && k.gcExpandStreakMax == 3);  // same gc_no: one streak
+    gcNo++;                                                   // a collection ends it
+    assert(GwRunSite(0x40, 0x40) == 1 && k.gcExpandStreak == 1 && k.gcExpandStreakMax == 3);
     for (int i = 0; i < 60; i++) GwRunSite(0x40, 1);
-    assert(k.gwExpands == 63 && k.gwLines == 50);   // first 50 only
+    assert(k.gwExpands == 64 && k.gwLines == 50 && k.gcExpandStreakMax == 61);   // first 50 only
     assert(GwRunSite(0x4000, 0x4000) == 1 && k.gwLines == 51 && k.gwMaxAskKB == 64 * 1024);  // >= 64 MB always
     // under 600 MB so far (385 + 61 x 0.25 + 64 MB); crossing writes the last 20, logged or not
     while (g_gwFakeHeap <= (600u << 20)) GwRunSite(0x800, 0x800);
@@ -78,14 +84,22 @@ static void TestGcGrowLog() {
     assert(GwRunSite(0x4000, 0x4000) == 1 && k.gwLines == 71);  // switch off: count only
     // LoadXmlAsString: key visible to an expansion on this thread while it runs, string size counted after
     g_gwXmlOrig = GwFakeXml;
-    g_gwFakeStr[2] = 3u << 20;  // 3 M chars = 6 MB
+    g_gwFakeStr[1] = 3u << 20;  // EA MonoString length at +4: 3 M chars = 6 MB
+    g_gwFakeStr[2] = 0x003F003C;  // "<?", what round 3 read as the length
     k.gwMode = 1;
     assert(GwXml(0x11111111, 0x22222222, 0x33, 0x0333E5C0) == (DWORD)(uintptr_t)g_gwFakeStr && g_gwXmlTid == 0);
     assert(g_gwXmlSeen[0] == 0x11111111 && g_gwXmlSeen[1] == 0x22222222 && g_gwXmlSeen[2] == 0x33 && g_gwXmlSeen[3] == 0x0333E5C0);
     assert(k.gwXmlCalls == 1 && k.gwXmlMaxKB == 6 * 1024);
+    // GcBlackOk: every punt counted, the warning forwarded every old-interval-th time
+    void* fakeWarn = (void*)GwFakeWarn;
+    void* const* savedWarn = g_gwWarnProc;
+    g_gwWarnProc = &fakeWarn, g_gwWarnEvery = 5, g_gwWarned = 0;
+    for (int i = 0; i < 7; i++) GcBlackOk("Repeated allocation", 969u << 12);
+    assert(k.gcBlackOk == 7 && k.gcBlackOkMaxKB == 3876 && g_gwWarned == 1);
+    g_gwWarnProc = savedWarn, g_gwWarnEvery = 5;
     g_mx = saved, g_gwb = savedB, g_gwLargeFree = GW_LARGE_FREE, g_gwExpand = (GwExpandFn)(uintptr_t)GW_EXPAND, g_gwLastHeap = 0;
-    g_gwXmlOrig = NULL, g_gwRingN = 0, g_gwCrossed = false, g_gwXmlLines = 0;
-    memset(&k.gwMode, 0, sizeof(LONG) * 10);
+    g_gwXmlOrig = NULL, g_gwRingN = 0, g_gwCrossed = false, g_gwXmlLines = 0, g_gwStreakGc = 0xFFFFFFFF;
+    memset(&k.gwMode, 0, sizeof(LONG) * 16);
     printf("GcGrowLog: thunk passes blocks and needed (esi kept), heap growth, failures, unseen growth, 50-line limit, >= 64 MB lines, "
-           "the last 20 at 600 MB once, refusal text (large bytes left, finalizer bytes), xml key and size, gwMode 0 counts only: ok\n");
+           "the last 20 at 600 MB once, refusal text (large bytes left, finalizer bytes), xml key and size (+4), gwMode 0 counts only, expand streak per gc_no, black-list punt count: ok\n");
 }
