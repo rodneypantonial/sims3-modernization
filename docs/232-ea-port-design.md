@@ -768,3 +768,31 @@ Setup: asi from 5b2c561 (`a94a70ce4056`: 55c696a plus spacing, heap, gc_no and s
 - Verdict: latent EA bug (an expand-only loop for a refused large request below the spacing), present at the stock heap for requests near the spacing; our 352 MB heap raises the spacing about 9x and turns a rare short streak into a 3.8 MB request that can run away (4 of 24). The cap covers both cases above it (1028 KB > 1024 KB; 8n: 0 streaks). Requests at or below the cap can still streak where the spacing exceeds them [inferred]. Turning the cap on for players is Rodney's call.
 
 Restore verified (14:22): state identical to the pre-state (Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes, ts3agent, ts3-nointro, scriptCache, Options.ini, LoadOption.ini), Mods listing identical (86 files), Saves 0 differences (2602 files), no game process, 92 GB free. Logs: `probe-out/ea-eamod-1103o.*`.
+
+### Run 8p (2026-11-03): memory stress, `[GC] BlackListCapKB=1024` vs 0, does the cap leak?
+
+Question: does letting requests above 1 MB take black-listed blocks make the heap, commit or address space grow faster over repeated load cycles? Same Bin pair as Run 8n (`ci-ea169-5b2c561`), release defaults with the EA rc ini zeroing, `[GcGrowLog] Enabled=1` in both arms, only `BlackListCapKB` differs. Save Baseline-SV-Spring, one launch per arm, 6 cycles per launch. A scratch driver (not committed) ran each cycle: 1 min of autopilot play at normal speed, a CAS/Buy visit (CAS hair/everyday/tops/basics, Buy Comfort/Surfaces/Decor), a save to a scratch file, EA's in-game Load of that file (ReloadWorld, which reads every tuning XML again), live mode, a 20 s settle, then one row from probe `/memory` plus counters v162. CC stays parked; `[MemDiag]` is off on EA, so the rows come from `/memory`, not `mem_mark`.
+
+Flow history (no data from the dropped flows is used in the verdict): (1) 2 min of ultra-speed autopilot play per cycle: the cap arm ran 2 clean cycles, then autopilot stopped on a story dialog with no safe button (harness guard, not the mod), and there was no off arm. (2) Visit with no play, twice in the off arm (paused, then normal speed): CAS entry right after a fresh load stayed on "Entering Create a Household..." and the save then refused (harness stall). (3) The flow above, locked; both arms ran it in full.
+
+| cycle | cap 1024: GC heap / private / commit / largest free (MB) | gcBlackOk | GC count | cap 0: GC heap / private / commit / largest free (MB) | GC count |
+|---|---|---|---|---|---|
+| 0 (load) | 352.5 / 1943.6 / 2198.2 / 1574.5 | 13 | 55 | 353.0 / 1987.9 / 2226.8 / 1530.9 | 54 |
+| 1 | 356 / 1957.3 / 2241.6 / 1556.1 | 30 | 79 | 356 / 1970.9 / 2245.3 / 1530.9 | 79 |
+| 2 | 360 / 2001.9 / 2277.3 / 1495.4 | 73 | 96 | 360 / 2004.1 / 2254.0 / 1499.0 | 96 |
+| 3 | 360 / 2019.6 / 2268.9 / 1463.3 | 116 | 105 | 368 / 2044.9 / 2290.6 / 1422.6 | 105 |
+| 4 | 368 / 2071.9 / 2332.5 / 1411.2 | 216 | 112 | 368 / 2077.5 / 2313.0 / 1406.6 | 113 |
+| 5 | 400 / 2107.4 / 2353.6 / 1379.2 | 351 | 120 | 400 / 2128.2 / 2370.6 / 1334.5 | 120 |
+| 6 | 432 / 2173.1 / 2424.1 / 1299.1 | 504 | 127 | 432 / 2194.8 / 2430.3 / 1270.5 | 128 |
+| per cycle (1-6) | +13.3 / +38.3 / +37.7 / -45.9 | | | +13.2 / +34.5 / +33.9 / -43.4 | |
+
+Both arms: 0 visit failures, reload 39-43 s, 2 heap expansions of 32 MB (cycles 5 and 6), expand streak max 1, no crash. Pass rule: per-cycle growth within about 5 % or 10 MB (whichever is larger) of the cap-0 arm.
+
+- GC heap per cycle is the same in both arms (+13.3 vs +13.2 MB), and the heap steps happen in the same cycles [verified, one launch per arm].
+- Private bytes +3.8 MB per cycle and commit +3.8 MB per cycle more with the cap, largest free block 2.5 MB per cycle more lost: all under the 10 MB bar. In absolute terms the cap arm ended lower on private (2173 vs 2195 MB) and higher on largest free (1299 vs 1271 MB). One launch per arm, so a 4 MB-per-cycle difference is inside launch-to-launch noise [inferred].
+- gcBlackOk grows with each reload (13 to 504): every reload reads the big tuning XMLs again and each such request now takes a black-listed block at once instead of being refused. No streak and no extra expansion came with it [verified].
+- The growth itself (about 35-38 MB private and 45 MB largest free per reload) is in both arms. It is EA's own reload growth, not the cap's [verified for "both arms"; its cause is not studied here].
+
+Verdict: PASS, no leak from the cap. `BlackListCapKB=1024` is now the EA shipped default: `tools/ea-ini.ts` `EA_SET` puts it in both EA inis (the rc ini shows 1024; the minimal ini zeroes `[GC]` anyway), and the ea-ini self-check fails if the Steam `ts3native.ini` stops saying `BlackListCapKB=0`.
+
+Restore verified (15:55): state identical to the pre-state, Mods listing identical, and a robocopy /L of Saves against the backup shows 0 differences (509 dirs, 2602 files). 92 GB free on C:.
