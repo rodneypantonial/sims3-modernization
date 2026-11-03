@@ -1,6 +1,7 @@
 // Self-check for the patch helpers on local memory (no game needed). Built and run by build.cmd.
 #define TS3NATIVE_NO_DLLMAIN
 #define TS3N_FAULTINJ  // docs/157: the P5 / P5b / P5c fault-injection hooks (p4.cpp, p5.cpp), test builds only
+#define TS3N_TEST_EXPECTED  // TestDetourCallRel: live bytes that differ from the literal, as on EA
 #include "ts3native.cpp"
 static void TestUfStrict();  // unseenfbc-test.h (docs/202 §3.1.1), run from the uf block
 #include <assert.h>
@@ -13337,8 +13338,8 @@ static DWORD WINAPI DtSpin(void* fn) {
     return 0;
 }
 // docs/232 Run 8e: a detour over `call rel32` re-targets the trampoline's copy at the callee of the LIVE bytes. With
-// TS3N_TEST_EXPECTED (EA port) the caller's literal points at another callee, as Steam bytes do on 1.69; taking the
-// rel32 from the literal returns 9 instead of 7 (the 0x769111 PRIV_INSTRUCTION crash).
+// TS3N_TEST_EXPECTED (both editions) the caller's literal points at another callee, as Steam bytes do on EA 1.69; taking
+// the rel32 from the literal returns 9 instead of 7 (the 0x769111 PRIV_INSTRUCTION crash).
 static int __cdecl DcHook() { return 1; }
 static void TestDetourCallRel() {
     u8* b = (u8*)VirtualAlloc(NULL, 128, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
