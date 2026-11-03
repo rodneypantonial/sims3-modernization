@@ -208,6 +208,30 @@ export function stallGuard(what: string, o: { port?: number; extra?: () => unkno
   };
 }
 
+// CAS/Buy UI waits (docs/232 Run 8f hf-statecmd): ts3agent times every cas_open/cas_category/cas_close/buy_open/buy_category/buy_close
+// (CasHandlers.cs Measure, its own 180 s cap) and refuses the next one with "previous CAS/Buy action is still being timed" while
+// cas_state.measuring is true, which outlasts the mode switch itself. A step is done when the timing ended AND its mode holds.
+// uiStep (pure, covered by --self-check), one call per GUARD_MS check: '' while waiting, else why once 2 checks in a row miss.
+// Miss = no cas_state answer, or the timing ended without the mode (the action is over and failed); still timing = progress.
+export const uiDone = (st: any, reached: (res: any) => boolean) => !!st?.ok && st.result?.measuring === false && reached(st.result);
+export function uiStep(s: { misses: number }, st: any): string {
+  const why = !st?.ok ? `cas_state not answering (${st?.error ?? '?'})` : st.result?.measuring === false ? 'timing ended but the mode was not reached' : '';
+  s.misses = why ? s.misses + 1 : 0;
+  return s.misses >= 2 ? why : '';
+}
+// polls cas_state every 2 s; every GUARD_MS: uiStep plus stallGuard (game process, probe, heartbeat). '' when done, else the FAIL reason.
+export async function untilUiDone(what: string, ag: (cmd: string) => Promise<any>, reached: (res: any) => boolean = () => true, port = 47891): Promise<string> {
+  const guard = stallGuard(what, { port }), s = { misses: 0 };
+  for (let next = Date.now() + GUARD_MS; ;) {
+    const st = await ag('cas_state');
+    if (uiDone(st, reached)) return '';
+    let why = await guard();
+    if (!why && Date.now() >= next) { next = Date.now() + GUARD_MS; const w = uiStep(s, st); if (w) why = `${what}: ${w} for ${2 * GUARD_MS / 1000} s (fail-fast guard)`; }
+    if (why) return `${why}; last cas_state ${JSON.stringify(st?.result ?? st?.error).slice(0, 500)}`;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+
 // ---- Hang capture (docs/172 §6). The game is hung but alive (heartbeat frozen, probe answering): before the kill, read
 // (1) /simstack x5 at 1 s spacing, (2) /threadstack?which=all once (route worker, job threads: who holds what), (3) /native and
 // the [HitchAttr] Holders ring ts3native_lockholders when the export exists, (4) /managedstack (the probe reads the interpreter
@@ -369,6 +393,14 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
   const lo = { last: null as string | null, misses: 0 };
   assert.equal(stallStep(lo, smp('a'), true), ''); assert.equal(stallStep(lo, smp('a'), true), ''); assert.equal(stallStep(lo, smp('a'), true), ''); // liveOnly ignores the mark
   assert.equal(stallStep(lo, smp('a', false), true), ''); assert.match(stallStep(lo, smp('a', false), true), /process gone/);
+  // uiDone/uiStep (Run 8f): Buy shown but still timed is not done; still timing = progress; timing over without the mode, or no answer = 2 misses
+  const buy = (r: any) => !!r?.buy_catalog, cs = (measuring: boolean, cat?: string) => ({ ok: true, result: { measuring, ...(cat && { buy_catalog: cat }) } });
+  assert.equal(uiDone(cs(true, 'ByRoom'), buy), false); assert.equal(uiDone(cs(false, 'ByRoom'), buy), true); assert.equal(uiDone(cs(false), buy), false);
+  assert.equal(uiDone({ ok: true, result: { buy_catalog: 'ByRoom' } }, buy), false); // an old agent without `measuring`: never done blind
+  const us = { misses: 0 };
+  assert.equal(uiStep(us, cs(true)), ''); assert.equal(uiStep(us, cs(true)), ''); assert.equal(us.misses, 0);
+  assert.equal(uiStep(us, cs(false)), ''); assert.match(uiStep(us, cs(false)), /timing ended but the mode was not reached/);
+  us.misses = 0; assert.equal(uiStep(us, { ok: false, error: 'timeout' }), ''); assert.match(uiStep(us, { ok: false, error: 'timeout' }), /not answering \(timeout\)/);
   // sim clock guard: Build mode pause is fine while the agent answers (bp-memsus-catalogue 2026-10-26), live-mode pause is not
   const ck = { last: null as number | null, misses: 0 } as Parameters<typeof clockStep>[0], tm = (m: number, speed = 'Normal') => ({ minutes_total: m, speed, day_number: 15, clock: '18:20' });
   assert.equal(clockStep(ck, tm(100)), ''); assert.equal(clockStep(ck, tm(101)), ''); // moving

@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { GUARD_MS, stallGuard } from './game-alive.ts';
+import { GUARD_MS, stallGuard, untilUiDone } from './game-alive.ts';
 import { BIN, GAME_EXE, isSteamGame } from './game-exe.ts';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
@@ -164,23 +164,20 @@ async function accept() {
 async function stateCmd() {
   // the move-offer dialog is modal and blocks buy_open (Round 8): autopilot dialogs answer it by rule, as in the other jobs
   await agent('autopilot', { enabled: true, speed: values.speed, dialogs: true });
-  // buy_open/buy_close are queued game tasks (Buy took >20 s on the EA laptop): wait on cas_state, not a fixed sleep (Round 8)
-  const reached = (r: any, cmd: string) => cmd === 'buy_open' ? !!r?.result?.buy_catalog : r?.result?.state === 'LiveModeState'; // agent() returns {id, ok, result}
-  for (const [cmd, waitS] of [['buy_open', 15], ['buy_close', 15], ['enter_live_mode', 90]] as const) {
+  // buy_open/buy_close are queued game tasks (Buy took >20 s on the EA laptop): wait on cas_state, not a fixed sleep (Round 8); the step is
+  // done only when ts3agent's timing of it ended too (measuring false), else the next action is refused (docs/232 Run 8f)
+  const reached = (res: any, cmd: string) => cmd === 'buy_open' ? !!res?.buy_catalog : res?.state === 'LiveModeState';
+  for (const cmd of ['buy_open', 'buy_close', 'enter_live_mode'] as const) {
     const r = await agent(cmd);
     log(`${cmd}: ${r.ok ? 'ok ' + JSON.stringify(r).slice(0, 300) : `error ${r.error}`}`);
     if (!r.ok) { console.log(`FAIL: state-cmd: ${cmd}: ${r.error}`); process.exit(1); }
-    await sleep(waitS * 1000);
-    if (cmd === 'enter_live_mode') break;
-    const t0 = Date.now();
-    for (let st = await agent('cas_state'); !reached(st, cmd); st = await agent('cas_state')) {
-      if (Date.now() - t0 > 180000) {
-        log(`${cmd}: last cas_state ${JSON.stringify(st).slice(0, 700)}; pending_dialogs ${JSON.stringify(await agent('pending_dialogs')).slice(0, 500)}`);
-        console.log(`FAIL: state-cmd: ${cmd}: mode not reached after 180 s`); process.exit(1);
-      }
-      await sleep(5000);
+    if (cmd === 'enter_live_mode') { await sleep(90000); break; } // not timed by the agent; 90 s = the mode guard's 3 checks
+    const t0 = Date.now(), why = await untilUiDone(`state-cmd ${cmd}`, agent, res => reached(res, cmd), Number(values.port));
+    if (why) {
+      log(`${cmd}: pending_dialogs ${JSON.stringify(await agent('pending_dialogs')).slice(0, 500)}`);
+      console.log(`FAIL: state-cmd: ${cmd}: ${why}`); process.exit(1);
     }
-    log(`${cmd}: mode reached after ${Math.round((Date.now() - t0) / 1000) + waitS} s`);
+    log(`${cmd}: mode reached and timing done after ${Math.round((Date.now() - t0) / 1000)} s`);
   }
   console.log(`PASS: state-cmd: harness state commands ran; the mode guard must not have stopped this job (${3 * GUARD_MS / 1000} s of checks)`);
 }

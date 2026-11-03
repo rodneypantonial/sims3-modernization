@@ -21,7 +21,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { stallGuard } from './game-alive.ts';
+import { stallGuard, untilUiDone } from './game-alive.ts';
 import { parseLog } from '../mem-report.ts';
 import { BIN, GAME_NAME } from './game-exe.ts';
 
@@ -129,8 +129,11 @@ async function visit() {
   const v = { at: new Date().toISOString(), failed: [] as string[] };
   for (const [cmd, args, waitS] of steps) {
     const r = await ag(cmd, args);
-    if (!r.ok) v.failed.push(`${cmd}: ${r.error}`);
-    await sleep(waitS * 1000);
+    if (!r.ok) { v.failed.push(`${cmd}: ${r.error}`); await sleep(waitS * 1000); continue; }
+    // ts3agent refuses the next CAS/Buy action while it still times this one (docs/232 Run 8f): wait for that, fail-fast guarded
+    const why = await untilUiDone(`visit ${cmd}`, c => ag(c), res => cmd === 'cas_open' ? !!res?.cas_ready : cmd === 'buy_open' ? !!res?.buy_catalog
+      : /_close$/.test(cmd) ? res?.state === 'LiveModeState' : true);
+    if (why) { v.failed.push(why); break; }
   }
   const st = await ag('game_state');
   if (st.ok && st.result?.sub_state !== 'LiveModeState') { v.failed.push(`left in ${st.result?.sub_state}`); await ag('enter_live_mode'); await sleep(10000); }
