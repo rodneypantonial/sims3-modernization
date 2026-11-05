@@ -34,7 +34,7 @@ export function loadDb(path = DB_PATH): Build[] { return existsSync(path) ? JSON
 export function saveDb(db: Build[], path = DB_PATH) { writeFileSync(path, `{ "builds": [\n${db.map(b => `  ${JSON.stringify(b)}`).join(',\n')}\n] }\n`); }
 
 // the DLL holds the log line format "ts3native <version> %04d..." (queue.ts staleAsi reads the same string)
-export const asiVersion = (b: Buffer) => /ts3native (\d+\.\d+\.\d+[a-z]?) %04d/.exec(b.toString('latin1'))?.[1];
+export const asiVersion = (b: Buffer) => /ts3native (\S+) %04d/.exec(b.toString('latin1'))?.[1];
 // first line of Bin/ts3native.log: "ts3native 0.36.40 2026-10-24 16:41:59"
 export const logVersion = (log: string) => /^ts3native (\S+) /.exec(log)?.[1];
 
