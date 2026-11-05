@@ -1074,3 +1074,57 @@ Live (run 173, `WorldAStarRefs=1` on Baseline-IP, 12 minutes, no crash) plus the
   - BigSave-IP saved normally with `WorldAStarRefs=1`.
   - Baseline-IP without the fix crashes before its first save, so it cannot be compared directly.
   - `PortalFlagRefs` did not change it (run 178), so it is not those flag writes [inferred].
+
+## 31. Crash Z (2026-11-05, an EA app player on v0.2.7, with Apex Radiance, DXVK, S3SS, S3PP; the same site on vanilla Steam in docs/05): a Sim outfit build reads a composite texture that was never created
+
+Sim outfit requests walk a state machine in the SimService update (`[request+0x190]`, dispatcher EA `0x5F1D90`). Sites in §31.1 and §31.4 are given for both exes; EA = Steam + 0xA60 in this function. Everything in §31.2 and §31.3 is EA 1.69; the Steam exe has the same bytes at the fault site.
+
+### 31.1 Fault [verified: report + disassembly of both exes]
+
+AV read 0x14 at EA `0x5EC891` = Steam `0x5EBE31`, `SimService_Process` (EA `0x5EC6B0`, Steam `0x5EBC50`) +0x1E1: `cmp dword ptr [edx+14h],800h`. edx is the result of lookup `0x5CEC60` (EA `0x5CFFA0`) for key `0x1F/4` on the builder `[request+0x20]`. The Image's +0x14 is its width. Largest free block at the crash: 32 MB. EA checks the second lookup (`0x1F/8`, ebp) for null and not the first.
+
+### 31.2 Who fills the table, and why the lookup is null
+
+| State | What it does | Evidence |
+|---|---|---|
+| 9 | EA `0x5EF190`: both textures ready or reusable -> 12; else `0x5D0DC0`, which drops unflagged table nodes (`0x5D0970`) and creates each texture in `0x5D0C90`; -> 10 | [verified] |
+| 10 | EA `0x5DD750`: fills the composite recipe; -> 11 | [verified] |
+| 11 | `SimService_Process`: starts the composites, marks each texture done, -> 6, or 12 if `[request+0x185]` | [verified] |
+| 6, 7, 8 / 12 | material set-up, finish | [verified] |
+
+`0x5D0C90` (EA): allocates the Image, calls create `0x619C80` (EA `0x61AE50`), and on a false answer releases the Image and calls store `0x5D0AB0` with null. Store with null and no node inserts nothing, so the lookup misses [verified]. So a null first texture after state 9 means its create failed. The second may be null for the same reason, or because a one-texture request never asks for it (mode 4 vs 12).
+
+Why the create failed: **[inferred]**, the player's largest free block was 32 MB and create makes a D3D texture. Not proven: the log has no create result. The hit line prints free address space to test this.
+
+### 31.3 What the skip does
+
+Every later use of the two results in `SimService_Process` [verified]:
+
+| Address (EA) | Use | With a null first result |
+|---|---|---|
+| `0x5EC8A2`-`0x5EC92F` | first composite (`0x5BCE40`, `0x5BC7C0`) | skipped by the guard |
+| `0x5EC934` | `cmp ebp,ebx`: second composite, uses ebp only | runs if the second exists |
+| `0x5ECA03` | mark `0x5CFDA0` with result 1 | safe: the pointer argument is never read, the key finds no node, no write |
+| `0x5ECA25` | next state | as normal |
+
+`0x5EC934` is EA's own target: `ja` for width > 0x800, and two earlier jumps (no recipe key, no layers) reach it with result 1 still null, so EA already runs this tail with null [verified].
+
+After the skip, all other readers are safe [verified]: the material step `0x5D0040` and the size accounting `0x5F1423` test for null, `0x5D01D0` tests the value, and the reuse path `0x5EE950` reads the texture only behind the done flag, which stays unset without a node.
+
+Meaning for the request [verified unless marked]: it advances once and finishes (not retried, no spin). Nothing leaks: the Image was released at the failed create. The Sim gets no composite from that build, and the request is not reused, so a later outfit build creates it again. What a player sees is **[inferred]**: that Sim drawn without its skin or outfit texture until the next rebuild. A visual glitch in place of a crash to desktop, at a moment the game is near Error 12 anyway.
+
+One narrow case stays [inferred]: a node with a null value that gets marked done would make `0x5EEA0C` fault for a later request. Node-with-null comes only from `0x5D09F0` (a state before 9), and state 9's `0x5D0970` erases unflagged nodes. So none exists at state 11, unless states run out of order, which the dispatcher does not show.
+
+Not covered: the sibling `0x5E15F0` (EA) makes the same two lookups and reads the first at `0x5E16FA` after its own composite start, with no null check. Different owner class, no crash report yet.
+
+### 31.4 Fix: `[EaCrashFixes] SimNoTexture` (0.36.152a, eafix.cpp, no counters, off by default; ledger docs/51 §426)
+
+The 11 bytes at `0x5EBE2D` (EA `0x5EC88D`; `mov edx,[esp+74h]; cmp dword ptr [edx+14h],800h`, bytes checked) become a jump to `SnStub`. It reloads edx, and for null calls `SnHit` (one "ea fix: SimNoTexture" line for each of the first 8, under pushad) and jumps to `0x5EBED4`; otherwise it runs the compare and returns to the `ja` at `0x5EBE38`, flags intact. Register liveness: edx and flags are dead at `0x5EBED4` [verified disassembly]; `reg-liveness.py` does not analyse mid-function stubs, which own every register.
+
+Existing-fix check 2026-11-06: no fix found. Web search (EA forums, Steam, MTS): nothing on this site. NRaas source: native crash, no match. Apex (docs/data/apex-hooks.csv, apex source): no hook in `0x5EB`-`0x5EC`.
+
+Selftest (`eafix-test.h`): normal width, too wide, missing with and without the second texture, foreign bytes, patch once.
+
+### 31.5 Repro
+
+`SimNoTextureRepro=N` (test key, off): the call at `0x5CFB7C` (EA `0x5D0D7C`) answers false for every Nth create, after the game's real create, so the caller takes its real failure path. Off arm (`SimNoTexture=0`) must crash at `0x5EBE31`; on arm must run and log hit lines. `tools/harness/repros.json` `ea-sim-no-texture`. **Not run yet.** Rare-crash rule (`docs/23`, 2026-11-01): seen in play twice, so the key can ship on once this repro passes.

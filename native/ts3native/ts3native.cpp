@@ -14,7 +14,7 @@
 #include <psapi.h>  // K32GetMappedFileNameW (XcptOtherModule)
 #include "ts3addr.h"  // TS3A(x): TS3W.exe addresses by Steam 1.67 value (tools/addr-codemod.ts)
 
-#define TS3NATIVE_VERSION "0.36.152"
+#define TS3NATIVE_VERSION "0.36.152a"
 
 typedef unsigned char u8;
 
