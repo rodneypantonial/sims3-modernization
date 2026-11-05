@@ -1,0 +1,63 @@
+{
+  "note": "NOT RUN (2026-11-03). docs/232 Runs 8h/8i: features that never fired on EA 1.69 (their rows said PASS or N/A). One job per feature, each with the smallest trigger. asi: the Bin build under test ('tested', ea169-structs CI 1b5be3a15d62 or newer: Watchpoint and FpRebuildLock are zeroed in the plain rc ini). Pass per job: nativeRequire (the trigger counter > 0, Verify/shadow mismatches 0) and no crash; an enabled feature whose counter rose 0 makes the row VOID (queue.ts featureVoids), never PASS. Realistic = player flow (Go Here, build mode); STRESS = spawned Sims / scripted interactions. Correctness only, no timing.",
+  "jobs": [
+    {
+      "id": "ea-trig-waterjps",
+      "note": "realistic: repro ea-water-swim (Isla Paradiso, active Sim swims into the sea and back twice). WaterJps is on by default; Verify=1 compares every jump",
+      "asi": "tested",
+      "save": "Baseline-IP-Spring",
+      "noiseCheck": false,
+      "ini": { "WaterJps.Enabled": 1, "WaterJps.Verify": 1 },
+      "nativeRequire": "waterJpsCallsK>=1,waterJpsMismatches==0",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "noSamplers": true, "repro": "ea-water-swim" } },
+      "timeoutMin": 30
+    },
+    {
+      "id": "ea-trig-terraingrave",
+      "note": "realistic: repro ea-terrain-sculpt (build mode terrain sculpt + level rect on the home lot, then a Go Here over it). HeightCache on so heightRebuilds counts the cell rebuilds",
+      "asi": "tested",
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "ini": { "TerrainGrave.Enabled": 1, "TerrainGrave.Mode": 1, "HeightCache.Enabled": 1 },
+      "nativeRequire": "vfRtGraveParked>=1,vfRtGraveRaces==0",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "noSamplers": true, "repro": "ea-terrain-sculpt" } },
+      "timeoutMin": 30
+    },
+    {
+      "id": "ea-trig-fprebuildlock",
+      "note": "realistic: repro bp-build-levels (walls, floors, stairs on the home lot; build exit rebuilds lot walls and level polygons, then a Go Here across the lot while townies' route jobs run). Mode=0 counts only. Pass: caSimInJob* sum > 0 (featureIdle: VOID when 0; one class alone is not required), caQlHeld 0",
+      "asi": "tested",
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "ini": { "RouteAsync.Enabled": 1, "RouteAsync.Mode": 1, "RouteGate.Enabled": 1, "RouteGate.Enforce": 1, "FpRebuildLock.Enabled": 1, "FpRebuildLock.Mode": 0 },
+      "nativeRequire": "caQlHeld==0",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "noSamplers": true, "repro": "bp-build-levels" } },
+      "timeoutMin": 30
+    },
+    {
+      "id": "ea-trig-watchpoint",
+      "note": "realistic flow, inferred trigger: repro bp-build-levels on Isla Paradiso (build exit rebuilds parent footprints of the classes whose slot +0x48 is the parent +0x30 setter 0x620D80; never called in 8i nor in the Steam 25 min IP run, docs/157 I-157-18). Lot = the Steam drift lot of this save (docs/157 §8.1) (same save files on EA; if the arm line is missing, read the id with list_lots and update Lot=): the logRequire arm line proves the Lot= path. Needs [RouteSnap] Lots=replay",
+      "asi": "tested",
+      "save": "Baseline-IP-Spring",
+      "noiseCheck": false,
+      "minCounters": 111,
+      "ini": { "RouteAsync.Enabled": 1, "RouteAsync.Mode": 1, "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 1, "RouteSnap.Lots": "replay",
+        "Watchpoint.Enabled": 1, "Watchpoint.Lot": "0x08F3005353628460", "Watchpoint.Arms": 4, "Watchpoint.Writers": 1, "Watchpoint.Follow": 1, "Watchpoint.LogHits": 32 },
+      "nativeRequire": "wrP30_0>=1",
+      "logRequire": { "watchpoint: Lot=0x08F3005353628460 Arms=4 Follow=1": 1, "watchpoint: lot 0x08F3005353628460 child footprint 0x[0-9A-F]+ .* armed DR\\d at its insert": 1, "OK   detour parent \\+0x30 setter 0x620D80": 1 },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "noSamplers": true, "repro": "bp-build-levels" } },
+      "timeoutMin": 30
+    },
+    {
+      "id": "ea-trig-rtoslot",
+      "note": "STRESS: repro ea-rto-slot-sit (10 spawned Sims Sit on far-lot seats twice while their walks keep route jobs running); 8i overlay keys for SlotEnabledRO + RouteToObjRO shadow",
+      "asi": "tested",
+      "save": "Baseline-SV-Spring",
+      "noiseCheck": false,
+      "ini": { "RouteAsync.Enabled": 1, "RouteAsync.Mode": 1, "RouteGate.Enabled": 1, "RouteGate.Enforce": 1, "SlotEnabledRO.Enabled": 1, "SlotEnabledRO.Mode": 1, "RouteToObjRO.Enabled": 1, "RouteToObjRO.Mode": 1, "RouteToObjRO.Shadow": 1 },
+      "nativeRequire": "rtoSlot>=1,rtoShadowMismatch==0,rtoShadowQueryMismatch==0,rtoSimWriteInRo==0",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "noSamplers": true, "repro": "ea-rto-slot-sit" } },
+      "timeoutMin": 30
+    }
+  ]
+}

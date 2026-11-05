@@ -208,6 +208,30 @@ export function stallGuard(what: string, o: { port?: number; extra?: () => unkno
   };
 }
 
+// CAS/Buy UI waits (docs/232 Run 8f hf-statecmd): ts3agent times every cas_open/cas_category/cas_close/buy_open/buy_category/buy_close
+// (CasHandlers.cs Measure, its own 180 s cap) and refuses the next one with "previous CAS/Buy action is still being timed" while
+// cas_state.measuring is true, which outlasts the mode switch itself. A step is done when the timing ended AND its mode holds.
+// uiStep (pure, covered by --self-check), one call per GUARD_MS check: '' while waiting, else why once 2 checks in a row miss.
+// Miss = no cas_state answer, or the timing ended without the mode (the action is over and failed); still timing = progress.
+export const uiDone = (st: any, reached: (res: any) => boolean) => !!st?.ok && st.result?.measuring === false && reached(st.result);
+export function uiStep(s: { misses: number }, st: any): string {
+  const why = !st?.ok ? `cas_state not answering (${st?.error ?? '?'})` : st.result?.measuring === false ? 'timing ended but the mode was not reached' : '';
+  s.misses = why ? s.misses + 1 : 0;
+  return s.misses >= 2 ? why : '';
+}
+// polls cas_state every 2 s; every GUARD_MS: uiStep plus stallGuard (game process, probe, heartbeat). '' when done, else the FAIL reason.
+export async function untilUiDone(what: string, ag: (cmd: string) => Promise<any>, reached: (res: any) => boolean = () => true, port = 47891): Promise<string> {
+  const guard = stallGuard(what, { port }), s = { misses: 0 };
+  for (let next = Date.now() + GUARD_MS; ;) {
+    const st = await ag('cas_state');
+    if (uiDone(st, reached)) return '';
+    let why = await guard();
+    if (!why && Date.now() >= next) { next = Date.now() + GUARD_MS; const w = uiStep(s, st); if (w) why = `${what}: ${w} for ${2 * GUARD_MS / 1000} s (fail-fast guard)`; }
+    if (why) return `${why}; last cas_state ${JSON.stringify(st?.result ?? st?.error).slice(0, 500)}`;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+
 // ---- Hang capture (docs/172 §6). The game is hung but alive (heartbeat frozen, probe answering): before the kill, read
 // (1) /simstack x5 at 1 s spacing, (2) /threadstack?which=all once (route worker, job threads: who holds what), (3) /native and
 // the [HitchAttr] Holders ring ts3native_lockholders when the export exists, (4) /managedstack (the probe reads the interpreter
@@ -325,14 +349,16 @@ export const dumpDir = () => process.env.TS3_DUMP_DIR ?? join(import.meta.dirnam
 const PS32 = 'C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe';
 
 // what to do (pure, covered by --self-check)
-export function dumpPlan(o: { pid: number | null; freeBytes: number; existing: string[]; procdump: string | null; dir: string; off?: boolean; now?: Date }):
+// mini (low address space, ts3probe.py): threads + stacks + the full region list, no memory contents; seconds, so it lands before
+// an out-of-memory crash whose own EA .mdmp comes out 0 bytes (docs/232 Run 8c). One full and one mini dump per PID.
+export function dumpPlan(o: { pid: number | null; freeBytes: number; existing: string[]; procdump: string | null; dir: string; off?: boolean; now?: Date; mini?: boolean }):
   { skip: string } | { tool: 'procdump' | 'powershell'; file: string } {
   if (o.off) return { skip: 'dump off (TS3_KILL_DUMP=off)' };
   if (!o.pid) return { skip: `no ${GAME_EXE} running` };
-  if (o.existing.some(f => f.startsWith(`ts3w-${o.pid}-`) && f.endsWith('.dmp'))) return { skip: `already dumped (PID ${o.pid})` };
+  if (o.existing.some(f => f.startsWith(`ts3w-${o.pid}-`) && f.endsWith('.dmp') && f.endsWith('.mini.dmp') === !!o.mini)) return { skip: `already dumped (PID ${o.pid}${o.mini ? ', mini' : ''})` };
   if (o.freeBytes < DUMP_MIN_FREE) return { skip: `disk free ${Math.round(o.freeBytes / 2 ** 30)} GB < 10 GB` };
   const ts = (o.now ?? new Date()).toISOString().replace(/[-:]/g, '').slice(0, 15);
-  return { tool: o.procdump ? 'procdump' : 'powershell', file: join(o.dir, `ts3w-${o.pid}-${ts}.dmp`) };
+  return { tool: o.procdump ? 'procdump' : 'powershell', file: join(o.dir, `ts3w-${o.pid}-${ts}${o.mini ? '.mini' : ''}.dmp`) };
 }
 
 const findProcdump = (): string | null => {
@@ -343,32 +369,39 @@ const gamePid = (image: string): number | null => {
   try { return Number(/^"[^"]+","(\d+)"/m.exec(execFileSync('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${image}`], { timeout: 15000 }).toString())?.[1]) || null; } catch { return null; }
 };
 
-export function dumpHungGame(reason: string, o: { pid?: number; image?: string; dir?: string; timeoutMs?: number } = {}): string {
+export function dumpHungGame(reason: string, o: { pid?: number; image?: string; dir?: string; timeoutMs?: number; mini?: boolean } = {}): string {
   const dir = o.dir ?? dumpDir(), timeout = o.timeoutMs ?? 180000;
   try { mkdirSync(dir, { recursive: true }); } catch { /* statfs below says why */ }
   let freeBytes = 0, existing: string[] = [];
   try { const s = statfsSync(dir); freeBytes = s.bavail * s.bsize; existing = readdirSync(dir); } catch { /* no dir: plan skips on 0 free */ }
   const procdump = findProcdump();
-  const plan = dumpPlan({ pid: o.pid ?? gamePid(o.image ?? GAME_EXE), freeBytes, existing, procdump, dir, off: process.env.TS3_KILL_DUMP === 'off' });
-  const tag = `${stamp()} kill dump (${reason})`;
+  const plan = dumpPlan({ pid: o.pid ?? gamePid(o.image ?? GAME_EXE), freeBytes, existing, procdump, dir, off: process.env.TS3_KILL_DUMP === 'off', mini: o.mini });
+  const tag = `${stamp()} ${o.mini ? 'mini' : 'kill'} dump (${reason})`;
   if ('skip' in plan) { console.log(`${tag}: skipped, ${plan.skip}`); return `kill dump skipped: ${plan.skip}`; }
   const pid = Number(/ts3w-(\d+)-/.exec(plan.file)![1]), t0 = Date.now();
   let err = '';
   try {
-    if (plan.tool === 'procdump') execFileSync(procdump!, ['-accepteula', '-ma', String(pid), plan.file], { timeout, stdio: 'ignore', windowsHide: true });
+    if (plan.tool === 'procdump') execFileSync(procdump!, ['-accepteula', o.mini ? '-mm' : '-ma', String(pid), plan.file], { timeout, stdio: 'ignore', windowsHide: true });
     else execFileSync(PS32, ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference='Stop'
 Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;using Microsoft.Win32.SafeHandles;public static class Dh{[DllImport("dbghelp.dll",SetLastError=true)]public static extern bool MiniDumpWriteDump(IntPtr p,uint id,SafeFileHandle f,uint t,IntPtr e,IntPtr u,IntPtr c);}'
 $p=Get-Process -Id ${pid}; $f=[IO.File]::Create('${plan.file.replace(/'/g, "''")}')
-try { if(-not [Dh]::MiniDumpWriteDump($p.Handle,${pid},$f.SafeFileHandle,0x1826,[IntPtr]::Zero,[IntPtr]::Zero,[IntPtr]::Zero)){ throw "MiniDumpWriteDump error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" } } finally { $f.Close() }`],
+try { if(-not [Dh]::MiniDumpWriteDump($p.Handle,${pid},$f.SafeFileHandle,${o.mini ? '0x1824' : '0x1826'},[IntPtr]::Zero,[IntPtr]::Zero,[IntPtr]::Zero)){ throw "MiniDumpWriteDump error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" } } finally { $f.Close() }`],
       { timeout, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true }); // 0x1826 = FullMemory|HandleData|UnloadedModules|FullMemoryInfo|ThreadInfo
   } catch (e: any) { err = e?.killed || e?.signal ? `timeout ${Math.round(timeout / 1000)} s` : String(e?.stderr || e?.message || e).trim().split(/\r?\n/)[0]; }
   let size = 0; try { size = statSync(plan.file).size; } catch { /* none written */ }
-  const line = size && !err ? `kill dump ${plan.tool} ${Math.round(size / 2 ** 20)} MB in ${Math.round((Date.now() - t0) / 1000)} s: ${plan.file}`
+  const line = size && !err ? `${o.mini ? 'mini' : 'kill'} dump ${plan.tool} ${Math.round(size / 2 ** 20)} MB in ${Math.round((Date.now() - t0) / 1000)} s: ${plan.file}`
     : `kill dump failed (${plan.tool}: ${err || 'no file'})${size ? `, partial ${plan.file}` : ''}`;
   console.log(`${tag}: ${line}`);
   return line;
 }
 
+// node tools/harness/game-alive.ts --dump <pid> [--mini] [--reason text]: one dump now (ts3probe.py calls it with --mini on low address space)
+if (process.argv[1]?.endsWith('game-alive.ts') && process.argv[2] === '--dump') {
+  const a = process.argv.slice(3), pid = Number(a[0]), ri = a.indexOf('--reason');
+  if (!(pid > 0)) { console.error('usage: node tools/harness/game-alive.ts --dump <pid> [--mini] [--reason text]'); process.exit(2); }
+  const line = dumpHungGame(ri >= 0 ? a[ri + 1] ?? '' : 'requested', { pid, mini: a.includes('--mini') });
+  process.exit(/failed|skipped/.test(line) ? 1 : 0);
+}
 if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-check')) {
   const assert = (await import('node:assert')).strict;
   const st = { last: null as string | null, misses: 0 }, smp = (mark: string, running = true, answering = true) => ({ running, answering, mark });
@@ -381,6 +414,14 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
   const lo = { last: null as string | null, misses: 0 };
   assert.equal(stallStep(lo, smp('a'), true), ''); assert.equal(stallStep(lo, smp('a'), true), ''); assert.equal(stallStep(lo, smp('a'), true), ''); // liveOnly ignores the mark
   assert.equal(stallStep(lo, smp('a', false), true), ''); assert.match(stallStep(lo, smp('a', false), true), /process gone/);
+  // uiDone/uiStep (Run 8f): Buy shown but still timed is not done; still timing = progress; timing over without the mode, or no answer = 2 misses
+  const buy = (r: any) => !!r?.buy_catalog, cs = (measuring: boolean, cat?: string) => ({ ok: true, result: { measuring, ...(cat && { buy_catalog: cat }) } });
+  assert.equal(uiDone(cs(true, 'ByRoom'), buy), false); assert.equal(uiDone(cs(false, 'ByRoom'), buy), true); assert.equal(uiDone(cs(false), buy), false);
+  assert.equal(uiDone({ ok: true, result: { buy_catalog: 'ByRoom' } }, buy), false); // an old agent without `measuring`: never done blind
+  const us = { misses: 0 };
+  assert.equal(uiStep(us, cs(true)), ''); assert.equal(uiStep(us, cs(true)), ''); assert.equal(us.misses, 0);
+  assert.equal(uiStep(us, cs(false)), ''); assert.match(uiStep(us, cs(false)), /timing ended but the mode was not reached/);
+  us.misses = 0; assert.equal(uiStep(us, { ok: false, error: 'timeout' }), ''); assert.match(uiStep(us, { ok: false, error: 'timeout' }), /not answering \(timeout\)/);
   // sim clock guard: Build mode pause is fine while the agent answers (bp-memsus-catalogue 2026-10-26), live-mode pause is not
   const ck = { last: null as number | null, misses: 0 } as Parameters<typeof clockStep>[0], tm = (m: number, speed = 'Normal') => ({ minutes_total: m, speed, day_number: 15, clock: '18:20' });
   assert.equal(clockStep(ck, tm(100)), ''); assert.equal(clockStep(ck, tm(101)), ''); // moving
@@ -426,6 +467,11 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
   assert.match((dumpPlan({ ...dp, freeBytes: 9 * 2 ** 30 }) as any).skip, /disk free 9 GB < 10 GB/);
   assert.match((dumpPlan({ ...dp, pid: null }) as any).skip, new RegExp(`no ${GAME_EXE.replace(/\./g, '\\.')} running`));
   assert.match((dumpPlan({ ...dp, off: true }) as any).skip, /dump off/);
+  // low-address-space mini dump (docs/232 Run 8c): own suffix, does not block the full kill dump of the same PID, nor the reverse
+  assert.deepEqual(dumpPlan({ ...dp, mini: true }), { tool: 'powershell', file: join('probe-out', 'dumps', 'ts3w-4242-20261026T030405.mini.dmp') });
+  assert.equal((dumpPlan({ ...dp, existing: ['ts3w-4242-20261026T010000.mini.dmp'] }) as any).tool, 'powershell', 'mini does not block the full dump');
+  assert.equal((dumpPlan({ ...dp, mini: true, existing: ['ts3w-4242-20261026T010000.dmp'] }) as any).tool, 'powershell', 'full does not block the mini dump');
+  assert.match((dumpPlan({ ...dp, mini: true, existing: ['ts3w-4242-20261026T010000.mini.dmp'] }) as any).skip, /already dumped \(PID 4242, mini\)/);
   assert.match(dumpHungGame('self-check', { image: 'no-such-image-ts3.exe', dir: join((await import('node:os')).tmpdir(), 'ts3-killdump-check') }), /skipped: no TS3W\.exe running/);
   // hang capture against fake probes (fixtures): healthy, dead (refused), hung (never answers)
   const { mkdtempSync, readdirSync, rmSync } = await import('node:fs'), { tmpdir } = await import('node:os');

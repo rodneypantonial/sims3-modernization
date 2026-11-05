@@ -270,6 +270,37 @@ function installExceptionHandler() { Process.setExceptionHandler(d => {
   return false;
 }); }
 
+// --- split begin (docs/232 Run 8c: what fills the address space, by owner; tools/probe/split-check.mjs runs this block)
+// Mapped file name per AllocationBase (K32GetMappedFileNameW, pseudo handle -1), cached: null = pagefile-backed section.
+const mappedNames = new Map();
+let getMappedName = null;
+function mappedName(allocBase) {
+  const key = allocBase.toString();
+  if (mappedNames.has(key)) return mappedNames.get(key);
+  let name = null;
+  try {
+    if (!getMappedName) getMappedName = new NativeFunction(k32.getExportByName('K32GetMappedFileNameW'), 'uint', ['pointer', 'pointer', 'pointer', 'uint']);
+    const buf = Memory.alloc(1040);
+    const n = getMappedName(ptr(-1), allocBase, buf, 520);
+    name = n > 0 ? buf.readUtf16String(n) : null;
+  } catch (e) { name = null; }
+  mappedNames.set(key, name);
+  return name;
+}
+// Bucket of one non-free region. driverImg: DXVK/Vulkan/GPU driver DLL images (verified by name). anonMapped: pagefile-backed
+// sections, i.e. DXVK MemoryFilePool texture views (docs/08) and driver mappings (inferred: no file name to prove the owner).
+const DRIVER_IMG = /^(d3d9|dxgi|d3d11|vulkan-1|ig[a-z0-9]*|nv[a-z0-9]*|amd[a-z0-9]*|ati[a-z0-9]*|intel[a-z0-9]*)\.dll$/i;
+function bucketOf(type, imageName, mapName) {
+  if (type === MEM_IMAGE) return imageName && DRIVER_IMG.test(imageName) ? 'driverImg' : 'imageOther';
+  if (type === MEM_MAPPED) {
+    if (!mapName) return 'anonMapped';
+    if (/\.package$/i.test(mapName)) return /\\mods\\/i.test(mapName) ? 'ccPkg' : 'gamePkg';
+    return 'otherMapped';
+  }
+  return 'private';
+}
+// --- split end
+
 function owner(base) {
   const m = Process.findModuleByAddress(base);
   return m ? m.name : null;
@@ -1658,12 +1689,21 @@ rpc.exports = {
       if (c.readS32() >= 158) f.push('rmSlW1Late');
       // v159 Mode 2 SACS bound-actor classes (docs/228 §11.8): rm2SacsCls_<0 self, 1 other Sim, 2 prop near, 3 slotted elsewhere, 4 object near, 5 object far, 6 not found, 7 fault>
       if (c.readS32() >= 159) f.push(...n('rm2SacsCls', 8));
-      // v160 [SaveSlim] (docs/15 phase 11): worker passes with an exception or a failed rewrite step (save left as written)
-      if (c.readS32() >= 160) f.push('slimFails');
-      // v161 [GcGrowLog] (docs/232 Run 8l), v162 [GC] BlackListCapKB (Run 8n), v163 its load-screen window (Run 8q)
-      if (c.readS32() >= 161) f.push('gwMode', 'gwReady', 'gwExpands', 'gwFails', 'gwKB', 'gwMaxAskKB', 'gwUnseenKB', 'gwLines', 'gwXmlCalls', 'gwXmlMaxKB');
-      if (c.readS32() >= 162) f.push('gcCapKB', 'gcBlackOk', 'gcBlackOkMaxKB', 'gcExpandStreak', 'gcExpandStreakMax', 'gcStrictN');
-      if (c.readS32() >= 163) f.push('gcLenientN', 'gcSwitchSec');
+      // EA 1.69 port layout (ea169-port docs/registry.md): v160 [ImageGuard] 8 slots at 0x5AE4, v161 [GcGrowLog] at 0x5B04, v162 at 0x5B2C, v163 at 0x5B44;
+      // main renumbered them (v160 SaveSlim, v161 at 0x5AE8), so the field list follows the host edition
+      if (gcAddrs()[0] === '0x127C920') {
+        if (c.readS32() >= 160) f.push('igReady', 'igCalls', 'igBig', 'igRejected', 'igOverflow', 'igMaxMB', 'igSpare0', 'igSpare1');
+        if (c.readS32() >= 161) f.push('gwMode', 'gwReady', 'gwExpands', 'gwFails', 'gwKB', 'gwMaxAskKB', 'gwUnseenKB', 'gwLines', 'gwXmlCalls', 'gwXmlMaxKB');
+        if (c.readS32() >= 162) f.push('gcCapKB', 'gcBlackOk', 'gcBlackOkMaxKB', 'gcExpandStreak', 'gcExpandStreakMax', 'gcStrictN');
+        if (c.readS32() >= 163) f.push('gcLenientN', 'gcSwitchSec');  // window (Run 8q), port offsets 0x5B44
+      } else {
+        // v160 [SaveSlim] (docs/15 phase 11): worker passes with an exception or a failed rewrite step (save left as written)
+        if (c.readS32() >= 160) f.push('slimFails');
+        // v161 [GcGrowLog] (docs/232 Run 8l), v162 [GC] BlackListCapKB (Run 8n), v163 its load-screen window (Run 8q)
+        if (c.readS32() >= 161) f.push('gwMode', 'gwReady', 'gwExpands', 'gwFails', 'gwKB', 'gwMaxAskKB', 'gwUnseenKB', 'gwLines', 'gwXmlCalls', 'gwXmlMaxKB');
+        if (c.readS32() >= 162) f.push('gcCapKB', 'gcBlackOk', 'gcBlackOkMaxKB', 'gcExpandStreak', 'gcExpandStreakMax', 'gcStrictN');
+        if (c.readS32() >= 163) f.push('gcLenientN', 'gcSwitchSec');
+      }
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key
@@ -1877,6 +1917,7 @@ rpc.exports = {
     const mbi = Memory.alloc(MBI_SIZE);
     const totals = { commit: 0, reserve: 0, free: 0 };
     const byType = { image: 0, mapped: 0, private: 0 };
+    const split = { driverImg: 0, anonMapped: 0, ccPkg: 0, gamePkg: 0, otherMapped: 0, imageOther: 0, private: 0 };
     let largestFree = { base: '0x0', size: 0 };
     const reservedBlocks = [];
     let a = ptr(0x10000);
@@ -1893,6 +1934,8 @@ rpc.exports = {
       } else {
         if (state === MEM_COMMIT) totals.commit += size; else totals.reserve += size;
         if (type === MEM_IMAGE) byType.image += size; else if (type === MEM_MAPPED) byType.mapped += size; else byType.private += size;
+        const allocBase = mbi.add(4).readPointer();
+        split[bucketOf(type, type === MEM_IMAGE ? owner(allocBase) : null, type === MEM_MAPPED ? mappedName(allocBase) : null)] += size;
         if (state === MEM_RESERVE && size >= 4 << 20) reservedBlocks.push({ base: base.toString(), size, owner: owner(base) });
       }
       const next = base.add(size);
@@ -1905,12 +1948,18 @@ rpc.exports = {
     // verified disassembly, docs/66 §6) and GC_gc_no [0x11F2F90] (collections so far, docs/119): the [GC] InitialHeapMB
     // right-size reads gcHeapMB growth and the gcCount difference before/after a job
     let gc = {};
-    try { gc = { gcHeapMB: mb(ptr('0x12225A0').readU32()), gcFreeMB: mb(ptr('0x12225B4').readU32()), gcCount: ptr('0x11F2F90').readU32() }; } catch (e) { /* not TS3W 1.67 */ }
+    // EA app 1.69.47 (PE stamp 0x6707155C): the same counters at 0x127C920 / 0x127C934 / 0x124D020 (ts3addr-ea169.h)
+    const G = gcAddrs();
+    try { gc = { gcHeapMB: mb(ptr(G[0]).readU32()), gcFreeMB: mb(ptr(G[1]).readU32()), gcCount: ptr(G[2]).readU32() }; } catch (e) { /* unknown build */ }
+    // Split (MB): DXVK/driver = driverImgMB + anonMappedMB (inferred), Mono/GC heap = gcHeapMB, CC = ccPkgMB, other = the rest
+    const privateOther = split.private - (gc.gcHeapMB || 0) * 1048576;
     return {
       ...gc,
       commitMB: mb(totals.commit), reserveOnlyMB: mb(totals.reserve), freeMB: mb(totals.free),
       largestFreeMB: mb(largestFree.size), largestFreeBase: largestFree.base,
       imageMB: mb(byType.image), mappedMB: mb(byType.mapped), privateMB: mb(byType.private),
+      driverImgMB: mb(split.driverImg), anonMappedMB: mb(split.anonMapped), ccPkgMB: mb(split.ccPkg), gamePkgMB: mb(split.gamePkg),
+      otherMappedMB: mb(split.otherMapped), imageOtherMB: mb(split.imageOther), privateOtherMB: mb(privateOther),
       biggestReservedOnly: reservedBlocks.slice(0, 15).map(b => ({ base: b.base, MB: mb(b.size), owner: b.owner })),
     };
   },
@@ -2068,3 +2117,15 @@ rpc.exports = {
 };
 
 pushEvent({ kind: 'note', message: `probe attached to pid ${Process.id}` });
+
+// Boehm counter addresses [heapsize, large free, gc_no] for the running exe: EA app 1.69.47 by PE stamp, else Steam 1.67.
+let gcAddrCache = null;
+function gcAddrs() {
+  if (gcAddrCache) return gcAddrCache;
+  gcAddrCache = ['0x12225A0', '0x12225B4', '0x11F2F90'];
+  try {
+    const mods = Process.enumerateModules(), m = mods.find(x => /^(TS3W|TS3|Sims3Launcher)\.exe$/i.test(x.name)) || mods[0];
+    if (m.base.add(m.base.add(0x3c).readU32() + 8).readU32() === 0x6707155C) gcAddrCache = ['0x127C920', '0x127C934', '0x124D020'];
+  } catch (e) { /* keep Steam */ }
+  return gcAddrCache;
+}

@@ -132,7 +132,7 @@ namespace Ts3Agent
                 if (object.ReferenceEquals(modal, sExpectAllModal) && System.Environment.TickCount - sExpectAllTick < 2000) return true;
                 sExpectAllModal = modal; sExpectAllTick = System.Environment.TickCount;
                 Dictionary<string, object> args = new Dictionary<string, object>();
-                args["accept"] = true; args["rules"] = false;
+                args["accept"] = true; args["rules"] = false; args["decline_save"] = true; // the move is accepted, a save offer never (DialogPick)
                 string clicked;
                 try { Dictionary<string, object> d = AutoDialog(new Args(args)) as Dictionary<string, object>; clicked = d != null ? d["clicked"] as string : "(no dialog)"; }
                 catch (McpException e) { clicked = "(not clicked: " + e.Message + ")"; }

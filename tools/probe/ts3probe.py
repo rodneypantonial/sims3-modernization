@@ -233,10 +233,12 @@ class Probe:
 
     def sample_memory(self):
         """Address-space timeline (memory.csv): shows what fills the 4 GB before an out-of-memory crash."""
-        cols = ['time', 'commitMB', 'reserveOnlyMB', 'freeMB', 'largestFreeMB', 'imageMB', 'mappedMB', 'privateMB', 'threads', 'gcHeapMB', 'gcFreeMB']  # gc*: Boehm heap (docs/66 §6)
+        cols = ['time', 'commitMB', 'reserveOnlyMB', 'freeMB', 'largestFreeMB', 'imageMB', 'mappedMB', 'privateMB', 'threads', 'gcHeapMB', 'gcFreeMB',  # gc*: Boehm heap (docs/66 §6)
+                # split (docs/232 Run 8c): DXVK/driver = driverImgMB + anonMappedMB, CC = ccPkgMB, other = the rest
+                'driverImgMB', 'anonMappedMB', 'ccPkgMB', 'gamePkgMB', 'otherMappedMB', 'imageOtherMB', 'privateOtherMB']
         with open(self.out / 'memory.csv', 'a', encoding='utf-8') as f:
             f.write(','.join(cols) + '\n')
-            n, threads = 0, 0
+            n, threads, low_seen = 0, 0, False
             while self.alive:
                 try:
                     m = self.script.exports_sync.address_space()
@@ -247,11 +249,43 @@ class Probe:
                     m['time'] = time.strftime('%H:%M:%S')
                     f.write(','.join(str(m.get(c, '')) for c in cols) + '\n')
                     f.flush()
-                    if m['largestFreeMB'] < 200:
+                    low = m['largestFreeMB'] < 200
+                    if low:
                         self.log({'kind': 'low-address-space', 'largestFreeMB': m['largestFreeMB'], 'freeMB': m['freeMB']})
+                    # docs/232 Run 8c: the regions behind the numbers every 60 s and on the first low sample (start-up and menu too)
+                    if n % 6 == 1 or (low and not low_seen):
+                        self.log_regions(m)
+                    if low and not low_seen:
+                        low_seen = True
+                        self.mini_dump(m)
                 except Exception:
                     pass  # game busy or gone; the detach handler reports that
                 time.sleep(self.args.memory_interval)
+
+    def log_regions(self, m):
+        """regions.jsonl: free / largest free / reserve-only totals, the biggest reserve-only blocks and allocations >= 64 MB."""
+        try:
+            allocs = self.script.exports_sync.allocations(64)
+        except Exception as e:
+            allocs = f'error: {e}'
+        row = {'time': m['time'], 'freeMB': m['freeMB'], 'largestFreeMB': m['largestFreeMB'], 'largestFreeBase': m.get('largestFreeBase'),
+               'reserveOnlyMB': m['reserveOnlyMB'], 'commitMB': m['commitMB'],
+               'split': {k: m.get(k) for k in ('gcHeapMB', 'driverImgMB', 'anonMappedMB', 'ccPkgMB', 'gamePkgMB', 'otherMappedMB', 'imageOtherMB', 'privateOtherMB')}, 'biggestReservedOnly': m.get('biggestReservedOnly'), 'allocations64': allocs}
+        with open(self.out / 'regions.jsonl', 'a', encoding='utf-8') as f:
+            f.write(json.dumps(row) + '\n')
+
+    def mini_dump(self, m):
+        """First low-address-space sample: a mini dump (threads, stacks, region list) before the out-of-memory crash, whose own
+        EA .mdmp comes out 0 bytes (docs/232 Run 8c). Runs beside the sampler; game-alive.ts writes it under probe-out/dumps."""
+        if os.environ.get('TS3_KILL_DUMP') == 'off':
+            return
+        if not hasattr(self, 'pid'):
+            self.pid = frida.get_local_device().get_process(GAME_EXE).pid
+        reason = f"low address space: largest free {m['largestFreeMB']} MB, free {m['freeMB']} MB"
+        out = open(self.out / 'mini-dump.log', 'a', encoding='utf-8')
+        subprocess.Popen(['node', str(Path(__file__).resolve().parents[1] / 'harness' / 'game-alive.ts'), '--dump', str(self.pid), '--mini', '--reason', reason],
+                         stdout=out, stderr=subprocess.STDOUT)
+        self.log({'kind': 'low-address-space-dump', 'reason': reason})
 
     def game_window(self, iconic_ok=False):
         """Largest visible top-level game window as (area, hwnd, x, y, iconic); a minimized one (area 0) only with iconic_ok."""
@@ -688,6 +722,7 @@ def main():
         assert [console_holder(*a) for a in ((2, 2), (2, 1), (2, 0xFFFFFFFF))] == ['our session', 'another user', 'nobody']
         assert [session_verdict(*a) for a in ((2, 1, 'Disconnected'), (1, 1, 'Active'), (1, 1, 'Active'), (2, 1, 'Active'), (2, 1, 'Idle'))] == [NO_DISPLAY, None, None, None, NO_DISPLAY]
         assert check_session()[0].startswith('console session state:')
+        assert (Path(__file__).resolve().parents[1] / 'harness' / 'game-alive.ts').is_file()  # mini_dump target
         print('self-check ok')
         return
     if args.cmd == 'session-check':
