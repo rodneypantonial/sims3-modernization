@@ -13,7 +13,7 @@
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 #include <psapi.h>  // K32GetMappedFileNameW (XcptOtherModule)
 
-#define TS3NATIVE_VERSION "0.36.168"
+#define TS3NATIVE_VERSION "0.36.169"
 
 typedef unsigned char u8;
 
