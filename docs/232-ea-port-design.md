@@ -863,3 +863,13 @@ VirusTotal: not uploaded. Three Chrome browsers are connected and none is select
 Verdict: **PASS.** The final EA build `703cd87` passes every shipped-on check: A 8 of 8, B 10 of 10, F baseline 10 of 10 with hf-kill as designed.
 
 Restore verified (06:33): Bin pair `c035abe5a3a6` / `8aa37522782a`, ts3fixes `ac2c3f8799af`, ts3agent `1921c00c4c14`, ts3-nointro `2d4394daca11`, scriptCache `db69b1b6a862`, Options.ini `50cb641832f8`, LoadOption.ini `e2dccbd46afd`, state identical to the pre-state, Mods listing identical (86 files), Saves 0 differences (509 dirs, 2602 files), no game process. Logs: `probe-out/ea-run9-*` (driver log, native log and memory.csv per job), queue files `sims-3-ea-mod-mode/probe-out/queue/ea-9a-*`, `ea-9b-*`, `vanilla-matrix-2026-11-03-*`.
+
+### Light on EA (2026-11-06)
+
+An EA player's log had no `diag: mem` lines, so an 830 MB growth in 22 min could not be split. `RC_ZERO_KEYS` in `tools/ea-ini.ts` zeroed `[MemDiag] Light` because the correctness self-test failed on `eaDir` / `eaDirN` (Run 8i notes above). That key is gone, so the rc ini keeps `Light=1`.
+
+- Light runs no self-test [verified: `ApplyMemDiag`], so that failure never reaches a Light line.
+- The fields are not wrong: the free side moved exactly -8.00 MB / -1 block, and the misses are one foreign block on the alloc side [inferred]. The self-test stays as it is; a pause-the-sim version needs a game run.
+- `eaDir` and `eaDirN` keep their `?` mark: `g_mdGameVerified` is false.
+- EA runs 8e to 8k ran Light with no MemDiag fault, and `tools/memory-report.ts` reads a Run 8j log [verified].
+- New field `casN`: entries in the CAS compositor registry, for the growth drafts #284 / #285 show on Steam. EA offsets [verified]: the insert at `0x5EF81A` uses `+0x104`, the map count is its `+0xC` (`0x5EEE2F`), so `[0x1228750]+0x110`. Marked `?`.

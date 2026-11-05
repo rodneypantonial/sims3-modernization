@@ -3,13 +3,14 @@
 // after userdiag.cpp (it reuses UdMemStat / UdMemWalk / UdMemSample / the memory worker; no second walk code).
 //   diag: mem #4 load ev=travel,world-switch priv=1851 wPriv=1830 wCom=2167 free=1646 big=1525? img=310? map=120 stkRes=140
 //     stkCom=9.1? miRes=320 miCom=210 eaDir=22.0? eaDirN=3? eaCom=612? eaRes=640? eaCoreN=46? rp=20.1 pl=96.0? sp=7.0? gcHeap=360? gcFree=151? gcN=812?
-//     rc=388? rcCold=14.2? rcBudget=200? rcN=41000? anim=4.1? rest=402? t=734   (t = seconds since the game started)
+//     rc=388? rcCold=14.2? rcBudget=200? rcN=41000? anim=4.1? rest=402? casN=29000? t=734   (t = seconds since the game started)
 // MB unless the key ends in N (count) or is gcN. "-" = not readable (no game, feature off). Suffix "?" = no validation has
 // passed for this field (read from a documented address, unproven), "!" = it failed this session's self-test; no suffix =
 // a self-test check passed (host selftest for walk / OS / routesnap fields, or this session's game self-test).
 // eaCom/eaRes/eaCoreN: EA GeneralAllocator cores (MemoryMan heap + the script heap when it is a separate object), committed /
 // reserved MB and count (docs/209 #96). rc is cache bytes, not 32-bit address space: under DXVK most texture data does not
 // sit in TS3W's address space (docs/40 §4-5), so rc falling does not mean free space rising by as much.
+// casN: entries in the CAS texture compositor registry (hash map at [0x11CE6A0]+0x104, count +0x110).
 // Validation in docs/191 "Goal: a correct memory measuring tool first".
 #include <initializer_list>
 
@@ -21,7 +22,7 @@ static const DWORD kMdSelfTestDelayMs = 30000;
 
 enum {
     MD_PRIV, MD_WPRIV, MD_WCOM, MD_FREE, MD_BIG, MD_IMG, MD_MAP, MD_STKRES, MD_STKCOM, MD_MIRES, MD_MICOM, MD_EADIR, MD_EADIRN,
-    MD_EACOM, MD_EARES, MD_EACOREN, MD_RP, MD_PL, MD_SP, MD_GCHEAP, MD_GCFREE, MD_GCN, MD_RC, MD_RCCOLD, MD_RCBUD, MD_RCN, MD_ANIM, MD_REST, MD_N
+    MD_EACOM, MD_EARES, MD_EACOREN, MD_RP, MD_PL, MD_SP, MD_GCHEAP, MD_GCFREE, MD_GCN, MD_RC, MD_RCCOLD, MD_RCBUD, MD_RCN, MD_ANIM, MD_REST, MD_CASN, MD_N
 };
 // check: 'H' = a check in the host selftest (selftest-all, every build) and in the game self-test, 'G' = game self-test
 // only (needs the EA heap), 0 = no check: unvalidated until docs/191's later modules add one.
@@ -31,7 +32,7 @@ static const MdDef kMd[MD_N] = {
     {"map", 0, 'H'},    {"stkRes", 0, 'H'}, {"stkCom", 0, 0},  {"miRes", 0, 'H'},   {"miCom", 0, 'H'}, {"eaDir", 0, 'G'},
     {"eaDirN", 1, 'G'}, {"eaCom", 0, 0},    {"eaRes", 0, 0},     {"eaCoreN", 1, 0}, {"rp", 0, 'H'},     {"pl", 0, 0},      {"sp", 0, 0},        {"gcHeap", 0, 0},  {"gcFree", 0, 0},
     {"gcN", 1, 0},      {"rc", 0, 0},       {"rcCold", 0, 0},  {"rcBudget", 0, 0},  {"rcN", 1, 0},     {"anim", 0, 0},
-    {"rest", 0, 0},
+    {"rest", 0, 0},     {"casN", 1, 0},
 };
 // 'G' fields count as validated in every session once mem-diag-verify.json passed on this build (set true then).
 static bool g_mdGameVerified = false;  // not const: no constant-condition warning
@@ -47,6 +48,8 @@ static const DWORD* g_mdGc[3] = {(const DWORD*)(uintptr_t)TS3A(0x012225A0), (con
 // I-130-7: a dedicated heap or the same object; the same object is counted once)
 static const u8* const* g_mdEaCoreSlot[2] = {(const u8* const*)(uintptr_t)TS3A(0x011CB864), (const u8* const*)(uintptr_t)TS3A(0x011D4BC8)};
 
+static const u8* const* g_mdCasSlot = (const u8* const*)(uintptr_t)TS3A(0x011CE6A0);  // SimService (+0x104 compositor registry)
+
 struct MdVals { double v[MD_N]; bool have[MD_N]; };
 
 static bool MdEaDirect(DWORD* bytes, DWORD* count) {  // heap +0x488 count / +0x48C bytes of direct-mapped blocks
@@ -61,6 +64,14 @@ static bool MdEaDirect(DWORD* bytes, DWORD* count) {  // heap +0x488 count / +0x
 // Cores (AddCore 0x4E4E30, exe bytes): a ring through core +0x18 (next) whose head node is heap +0x448 (first core =
 // [heap+0x460]); core +4 committed bytes, +8 reserved bytes. Read without the heap lock like eaDir: a core added or
 // trimmed mid-walk costs one sample's accuracy; a broken ring ends at the cap or the SEH guard (no field then).
+static bool MdCasCount(DWORD* n) {
+    __try {
+        const u8* svc = *g_mdCasSlot;
+        if (!svc) return false;
+        *n = *(const volatile DWORD*)(svc + 0x110);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
 static bool MdEaCores(double* com, double* res, DWORD* n) {
     __try {
         *com = *res = 0, *n = 0;
@@ -122,6 +133,8 @@ static void MdValues(const UdMemStat& s, u64 privUsage, MdVals& x) {
     if (MdEaCores(&ec, &er, &en)) set(MD_EACOM, ec * MB), set(MD_EARES, er * MB), set(MD_EACOREN, en);
     const Ts3nCounters& k = ts3native_counters;
     set(MD_RP, k.rpKB / 1024.0), set(MD_PL, k.plKB / 1024.0), set(MD_SP, k.spKB / 1024.0);
+    DWORD cas = 0;
+    if (MdCasCount(&cas)) set(MD_CASN, cas);
     if (MdGc(g)) set(MD_GCHEAP, g[0] * MB), set(MD_GCFREE, g[1] * MB), set(MD_GCN, g[2]);
     if (MdRc(r)) {
         set(MD_RC, r[0] * MB), set(MD_RCCOLD, r[1] * MB), set(MD_RCBUD, r[2] * MB), set(MD_RCN, r[3]);
