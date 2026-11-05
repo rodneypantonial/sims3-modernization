@@ -2,6 +2,24 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
+## v0.2.6 (2026-11-05)
+
+Hotfix: **the game froze and crashed on the fifth Power Cell** (Into the Future), and objects were destroyed without their own cleanup (v0.2.0 to v0.2.5, everyone). This release is a static fix: it comes from reading the game's code and has not been run in the game yet. Thanks to the Reddit player whose report and logs found it.
+
+### Download
+
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` and replace the old one.
+- `ts3native.asi` and `ts3native.ini` are unchanged from v0.2.5; you only need the zip if you don't have v0.2.5 yet.
+
+### Fixed
+
+- **No more freeze and crash on the fifth Power Cell.** A hook of ours, which only collected memory statistics, turned off a step of the game's object cleanup. The game's Power Cell loop then never ended, used up memory and crashed. The hook is gone.
+- **Objects get their full cleanup again.** The same hook affected every object the game destroys: an object's own cleanup was skipped, such as leaving an inventory, destroying what it holds, or a Sim's own cleanup. This can have caused leftover references in saves played on v0.2.0 to v0.2.5. Tools like NRaas ErrorTrap may report and clean up some of these once.
+- **Three smaller hooks removed for the same reason**, each of which skipped the game's special versions of a method:
+  - Rabbit hole doors: Into the Future buildings, hideouts and a few others now animate their own doors again. This takes back the v0.2.5 fix for a door that can't open (issue #167) until it is rebuilt, so a Sim can again fail to go in on such a door.
+  - Service Sims: the Grim Reaper, the time traveler and resort staff are picked by their own rules again.
+  - Returning from a trip: saved progress of opportunity counters is restored in full again.
+
 ## v0.2.5 (2026-11-05)
 
 The speed changes in this release are not timed as a set. What was checked on the release build: a back-to-back run on Bridgeport against v0.2.4 showed no regression (+1.9% iterations per second, inside the 4.4% spread between repeat runs; the machine was not quiet enough for this to count as formal timing evidence), and short smoke runs on Sunset Valley and Isla Paradiso passed.
