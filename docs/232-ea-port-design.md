@@ -873,3 +873,17 @@ An EA player's log had no `diag: mem` lines, so an 830 MB growth in 22 min could
 - `eaDir` and `eaDirN` keep their `?` mark: `g_mdGameVerified` is false.
 - EA runs 8e to 8k ran Light with no MemDiag fault, and `tools/memory-report.ts` reads a Run 8j log [verified].
 - New field `casN`: entries in the CAS compositor registry, for the growth drafts #284 / #285 show on Steam. EA offsets [verified]: the insert at `0x5EF81A` uses `+0x104`, the map count is its `+0xC` (`0x5EEE2F`), so `[0x1228750]+0x110`. Marked `?`.
+
+### Test build for player reports (2026-11-06, 0.36.152-test1)
+
+A second EA report (Apex 2.18.4, no crash): 1.3M AVs inside Apex, 92 GB decoded from 21 MB of mods, largest free block 1723 to 250 MB while free total fell far less. AllocSites stands down with Apex, so these lines assign ownership without hooks. All read-only, no behaviour change, no counters change.
+
+| Key | Lines | Cost |
+|---|---|---|
+| `[MemDiag] Blockers=1` | `diag: memblk`: top 5 free blocks, bounds of the two largest, top 8 allocations new or grown | inside the sample walk: a few compares per region, one pass over 64K slots, a few name lookups. Memory worker, every 5 min. 256 KB `.bss` |
+| `[Decompress] RepeatLog=1` | `decompress: repeats:` after each `decompress:` line | ~30-60 ns per decode [inferred from the instruction count; the selftest prints a measured figure]. 256 KB `.bss` |
+| always | `crash log:` `t=` uptime and `+N` per address since the last line; `exception` line `t=` | in the print only, not in XcptLog's fast path |
+
+Limits: repeat counts are a lower bound (a different resource can evict a slot) and "repeat" means same sizes and 24 sampled bytes [inferred same resource]. A private region has no owner name: `diag: memblk` gives size and neighbours only.
+
+`ts3native-ea169-test.ini` (CI artifact) = the rc ini + `tools/ea-ini.ts` `TEST_SET`; `ea-ini --self-check` proves it differs only there. Counters layout and version field unchanged (v163), so v0.2.7's `ts3fixes.package` matches.

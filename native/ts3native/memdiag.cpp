@@ -506,6 +506,113 @@ static DWORD MdWorkerPoll() {
     return INFINITE;
 }
 
+// Blockers (0.36.152-test1, docs/232 "Test build"): who splits the address space, for reports where AllocSites stands down
+// (Apex Radiance). Runs inside the sample's own VirtualQuery walk, so it works with any allocator and needs no hook. Lines
+// after each diag: mem line (N = that line's number; KB for regions, MB elsewhere):
+//   diag: memblk #N free MB: <size> at <base>, ...                     the five largest free blocks
+//   diag: memblk #N gap 1|2 <MB> at <base>: below <region>; above <region>   who bounds the two largest
+//   diag: memblk #N grew: <alloc base> <type> <new|+MB> (res R com C) [file], ...   top 8 allocations new or larger since the last sample
+// region = <base> +<KB> KB private|mapped|image reserve|commit alloc <allocation base> [file]. Reads only.
+struct MbReg { DWORD base, size, alloc, type, state; };
+struct MbGap { DWORD base, size; MbReg lo, hi; };
+struct MbGrew { DWORD base, res, com, type; LONG delta; bool fresh; };
+static bool g_mbOn;
+static volatile LONG g_mbBusy;  // the walk's state below has one owner: a second sample at the same time skips these lines
+static MbGap g_mbTop[5];
+static MbGrew g_mbGrew[8];
+static MbReg g_mbLast;
+static int g_mbGaps, g_mbGrown;
+static DWORD g_mbBase, g_mbRes, g_mbCom, g_mbType, g_mbNext;
+static DWORD g_mbPrev[0x10000];  // bytes of the allocation based here at the last sample, by base >> 16 (64 KB granularity)
+
+static bool MbBegin() {
+    if (!g_mbOn || InterlockedCompareExchange(&g_mbBusy, 1, 0)) return false;
+    g_mbGaps = g_mbGrown = 0, g_mbBase = g_mbRes = g_mbCom = g_mbNext = 0, g_mbLast = {};
+    return true;
+}
+static void MbGroupEnd() {  // the walk is in address order: slots skipped since the last group are allocations now gone
+    if (!g_mbBase) return;
+    const DWORD i = g_mbBase >> 16;
+    for (; g_mbNext < i; g_mbNext++) g_mbPrev[g_mbNext] = 0;
+    g_mbNext = i + 1;
+    const LONG delta = (LONG)(g_mbRes - g_mbPrev[i]);
+    const bool fresh = !g_mbPrev[i];
+    g_mbPrev[i] = g_mbRes;
+    if (delta > 0) {
+        int at = g_mbGrown;
+        while (at > 0 && g_mbGrew[at - 1].delta < delta) at--;
+        if (at < 8) {
+            const int last = g_mbGrown < 8 ? g_mbGrown++ : 7;
+            for (int j = last; j > at; j--) g_mbGrew[j] = g_mbGrew[j - 1];
+            g_mbGrew[at] = {g_mbBase, g_mbRes, g_mbCom, g_mbType, delta, fresh};
+        }
+    }
+    g_mbBase = g_mbRes = g_mbCom = 0;
+}
+static void MbRegion(const MEMORY_BASIC_INFORMATION& m) {
+    const DWORD base = (DWORD)(uintptr_t)m.BaseAddress, size = (DWORD)m.RegionSize, alloc = (DWORD)(uintptr_t)m.AllocationBase;
+    if (m.State == MEM_FREE) {
+        MbGroupEnd();
+        int at = g_mbGaps;
+        while (at > 0 && g_mbTop[at - 1].size < size) at--;
+        if (at < 5) {
+            const int last = g_mbGaps < 5 ? g_mbGaps++ : 4;
+            for (int j = last; j > at; j--) g_mbTop[j] = g_mbTop[j - 1];
+            g_mbTop[at] = {base, size, g_mbLast, {}};
+        }
+        return;
+    }
+    if (alloc != g_mbBase) MbGroupEnd();
+    g_mbBase = alloc, g_mbRes += size, g_mbType = m.Type;
+    if (m.State == MEM_COMMIT) g_mbCom += size;
+    g_mbLast = {base, size, alloc, m.Type, m.State};
+    for (int i = 0; i < g_mbGaps; i++)
+        if (g_mbTop[i].base + g_mbTop[i].size == base) g_mbTop[i].hi = g_mbLast;
+}
+static void MbEnd() {
+    MbGroupEnd();
+    for (; g_mbNext < 0x10000; g_mbNext++) g_mbPrev[g_mbNext] = 0;
+}
+static const char* MbType(DWORD t) { return t == MEM_IMAGE ? "image" : t == MEM_MAPPED ? "mapped" : "private"; }
+static void MbFile(char (&out)[44], DWORD alloc, DWORD type) {  // " name" of a module or mapped file, last path part, UTF-8; "" when none
+    out[0] = 0;
+    wchar_t w[MAX_PATH];
+    if (type == MEM_PRIVATE || !K32GetMappedFileNameW(GetCurrentProcess(), (void*)(uintptr_t)alloc, w, MAX_PATH)) return;
+    const wchar_t* n = wcsrchr(w, L'\\');
+    out[0] = ' ';
+    if (!WideCharToMultiByte(CP_UTF8, 0, n ? n + 1 : w, -1, out + 1, sizeof(out) - 2, NULL, NULL)) out[sizeof(out) - 2] = 0;  // too long: cut
+}
+static int MbRegText(char* d, int room, const MbReg& r) {
+    if (!r.size) return sprintf_s(d, room, "nothing");
+    char f[44];
+    MbFile(f, r.alloc, r.type);
+    return sprintf_s(d, room, "0x%08lX +%lu KB %s %s alloc 0x%08lX%s", r.base, r.size >> 10, MbType(r.type), r.state == MEM_COMMIT ? "commit" : "reserve", r.alloc, f);
+}
+static void MbLog() {
+    const LONG n = g_mdN;
+    char l[1200];
+    int at = sprintf_s(l, "diag: memblk #%ld free MB:", n);
+    for (int i = 0; i < g_mbGaps; i++) at += sprintf_s(l + at, sizeof(l) - at, "%s %lu at 0x%08lX", i ? "," : "", g_mbTop[i].size >> 20, g_mbTop[i].base);
+    Log("%s", l);
+    for (int i = 0; i < 2 && i < g_mbGaps; i++) {
+        at = sprintf_s(l, "diag: memblk #%ld gap %d %lu MB at 0x%08lX: below ", n, i + 1, g_mbTop[i].size >> 20, g_mbTop[i].base);
+        at += MbRegText(l + at, sizeof(l) - at, g_mbTop[i].lo);
+        at += sprintf_s(l + at, sizeof(l) - at, "; above ");
+        MbRegText(l + at, sizeof(l) - at, g_mbTop[i].hi);
+        Log("%s", l);
+    }
+    at = sprintf_s(l, "diag: memblk #%ld grew:", n);
+    for (int i = 0; i < g_mbGrown; i++) {
+        const MbGrew& g = g_mbGrew[i];
+        char f[44], d[20] = "new";
+        MbFile(f, g.base, g.type);
+        if (!g.fresh) sprintf_s(d, "+%.1f", g.delta / 1048576.0);
+        at += sprintf_s(l + at, sizeof(l) - at, "%s 0x%08lX %s %s (res %.1f com %.1f)%s", i ? "," : "", g.base, MbType(g.type), d, g.res / 1048576.0, g.com / 1048576.0, f);
+    }
+    Log("%s", l);
+    InterlockedExchange(&g_mbBusy, 0);
+}
+
 // Light (0.36.79, docs/191 "Player memory lines", release default on): the same "diag: mem" / "diag: memsus" lines (numbers
 // only, reads only) at world load / travel arrival, save start / end, exit and every 5 min of play, without the self-test.
 // Enabled=1 = the full tool for correctness runs (SelfTest allowed); Enabled=0 Light=0 = off.
@@ -516,6 +623,7 @@ static void ApplyMemDiag(const wchar_t* ini) {
     g_mdOn = full || g_mdLight;
     g_mdSelfTest = full && GetPrivateProfileIntW(L"MemDiag", L"SelfTest", 0, ini) > 0 ? 1 : 0;
     g_msSelfTest = g_mdSelfTest;  // the managed suspect-counter self-test (ts3fixes MemSuspects.cs) runs in the same runs
+    g_mbOn = g_mdOn && GetPrivateProfileIntW(L"MemDiag", L"Blockers", 0, ini) > 0;
     if (g_mdOn) g_udMemPeriodMs = 5 * 60 * 1000;  // set before the memory worker starts (userdiag.cpp)
     if (g_mdOn) Log("mem diag %s (docs/191): diag: mem + memsus lines at each memory at line, every 5 min of play%s", g_mdLight ? "light" : "on",
                     g_mdSelfTest ? "; self-test 30 s after the first world load (correctness runs only: leaks 8 MB on purpose)" : "");

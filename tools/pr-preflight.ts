@@ -35,7 +35,7 @@ const LEDGER = 'docs/51-inference-ledger.md', REGISTRY = 'docs/registry.md', RES
 const NATIVE_CPP = 'native/ts3native/ts3native.cpp';
 const docNum = (p: string) => { const m = p.match(/^docs\/(\d+)-[^/]*\.md$/); return m ? +m[1] : null; };
 const ledgerHeads = (t: string | null) => new Map([...(t ?? '').matchAll(/^## (\d+)\.\s*(.*)$/gm)].map(m => [+m[1], m[2].trim()] as [number, string]));
-const nativeVersion = (t: string | null) => t?.match(/#define TS3NATIVE_VERSION "(\d+)\.(\d+)\.(\d+)"/)?.slice(1).map(Number) ?? null;
+const nativeVersion = (t: string | null) => t?.match(/#define TS3NATIVE_VERSION "(\d+)\.(\d+)\.(\d+)[^"]*"/)?.slice(1).map(Number) ?? null;
 const cmpVer = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 const vstr = (v: number[]) => v.join('.');
 const reservations = (t: string | null): { id: string; kind: string; from: number; to: number; version?: number; what: string }[] => {

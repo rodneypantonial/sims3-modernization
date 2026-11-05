@@ -205,7 +205,59 @@ static void TestMemDiag() {
     assert(strstr(buf, "diag: mem selftest leak 8 x 1 MB wPriv +8.") && strstr(buf, "diag: mem selftest cross-check: OS private "));
     assert(g_mdPass & (1 << MD_STKRES) && !g_mdFail);
 
+    // Blockers: a fake walk, then a second one with one allocation grown and one gone
+    typedef MEMORY_BASIC_INFORMATION Mbi;
+    auto reg = [](DWORD b, DWORD n, DWORD al, DWORD ty, DWORD st) {
+        Mbi m = {};
+        m.BaseAddress = (void*)(uintptr_t)b, m.RegionSize = n, m.AllocationBase = (void*)(uintptr_t)al, m.Type = ty, m.State = st;
+        return m;
+    };
+    g_mbOn = true;
+    assert(MbBegin() && !MbBegin());  // one owner
+    MbRegion(reg(0x10000, 0x10000, 0x10000, MEM_PRIVATE, MEM_COMMIT));
+    MbRegion(reg(0x20000, 0x100000, 0, 0, MEM_FREE));
+    MbRegion(reg(0x120000, 0x10000, 0x120000, MEM_IMAGE, MEM_COMMIT));
+    MbRegion(reg(0x130000, 0x20000, 0x130000, MEM_PRIVATE, MEM_COMMIT));
+    MbRegion(reg(0x150000, 0x10000, 0x130000, MEM_PRIVATE, MEM_RESERVE));
+    MbRegion(reg(0x160000, 0x200000, 0, 0, MEM_FREE));
+    MbRegion(reg(0x360000, 0x10000, 0x360000, MEM_MAPPED, MEM_COMMIT));
+    MbEnd();
+    assert(g_mbGaps == 2 && g_mbTop[0].size == 0x200000 && g_mbTop[0].lo.base == 0x150000 && g_mbTop[0].hi.base == 0x360000);
+    assert(g_mbTop[1].size == 0x100000 && g_mbTop[1].lo.base == 0x10000 && g_mbTop[1].hi.alloc == 0x120000 && g_mbTop[1].hi.type == MEM_IMAGE);
+    assert(g_mbGrown == 4 && g_mbGrew[0].base == 0x130000 && g_mbGrew[0].res == 0x30000 && g_mbGrew[0].com == 0x20000 && g_mbGrew[0].fresh);
+    MbLog();
+    UdtLog(buf, sizeof(buf), h);
+    assert(strstr(buf, "free MB: 2 at 0x00160000, 1 at 0x00020000") && strstr(buf, "below 0x00150000 +64 KB private reserve alloc 0x00130000; above 0x00360000 +64 KB mapped commit"));
+    assert(strstr(buf, "grew: 0x00130000 private new (res 0.2 com 0.1)"));
+    assert(MbBegin());
+    MbRegion(reg(0x120000, 0x10000, 0x120000, MEM_IMAGE, MEM_COMMIT));
+    MbRegion(reg(0x130000, 0x30000, 0x130000, MEM_PRIVATE, MEM_COMMIT));
+    MbRegion(reg(0x160000, 0x10000, 0x130000, MEM_PRIVATE, MEM_COMMIT));
+    MbRegion(reg(0x360000, 0x10000, 0x360000, MEM_MAPPED, MEM_COMMIT));
+    MbEnd();
+    assert(g_mbGrown == 1 && g_mbGrew[0].delta == 0x10000 && !g_mbGrew[0].fresh && g_mbPrev[1] == 0 && g_mbPrev[0x12] == 0x10000);
+    MbLog();
+    g_mbOn = false, memset(g_mbPrev, 0, sizeof(g_mbPrev));
+    assert(!MbBegin());
+    // decompress repeats: same input repeats, other sizes or bytes do not, short inputs work; the cost printed for the record
+    u8 drIn[64];
+    for (int i = 0; i < 64; i++) drIn[i] = (u8)(i * 7);
+    assert(!DrRepeat(drIn, 64, 1000) && DrRepeat(drIn, 64, 1000));
+    assert(!DrRepeat(drIn, 64, 1001) && !DrRepeat(drIn, 63, 1000));
+    drIn[32] ^= 1;
+    assert(!DrRepeat(drIn, 64, 1000));
+    assert(!DrRepeat(drIn, 3, 9) && DrRepeat(drIn, 3, 9));
+    assert(!DrRepeat(NULL, 64, 7));  // unreadable input: never a repeat, no fault
+    LARGE_INTEGER t0, t1, qf;
+    QueryPerformanceFrequency(&qf);
+    QueryPerformanceCounter(&t0);
+    for (DWORD i = 0; i < 1u << 20; i++) DrRepeat(drIn, 64, i);
+    QueryPerformanceCounter(&t1);
+    printf("decompress repeat key: %.1f ns per call\n", (t1.QuadPart - t0.QuadPart) * 1e9 / qf.QuadPart / (1u << 20));
+    memset((void*)g_drTab, 0, sizeof(g_drTab));
+
     g_mdOn = wasOn, g_mdLegend = 0, g_mdPass = g_mdFail = 0;
+    g_mdCasSlot = savedCas;
     g_mdEaHeapSlot = savedEa, g_mdRcMgrSlot = savedRc;
     g_mdEaCoreSlot[0] = savedCore[0], g_mdEaCoreSlot[1] = savedCore[1];
     for (int i = 0; i < 3; i++) g_mdGc[i] = savedGc[i];

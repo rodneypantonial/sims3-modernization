@@ -213,7 +213,9 @@ static bool UdMemLow(char* out, size_t cap, DWORD bigMB) {  // the warning line,
     return true;
 }
 static volatile DWORD g_udLowBigMB = 0xFFFFFFFF;  // session low of the largest free block
-static LONG UdMemWalk(UdMemStat& s, u64* top, const void* ownLo = NULL, size_t ownLen = 0) {  // one VirtualQuery walk; returns its cost in us
+static void MbRegion(const MEMORY_BASIC_INFORMATION& m);  // memdiag.cpp [MemDiag] Blockers
+static void MbEnd();
+static LONG UdMemWalk(UdMemStat& s, u64* top, const void* ownLo = NULL, size_t ownLen = 0, bool blockers = false) {  // one VirtualQuery walk; returns its cost in us
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
     SYSTEM_INFO si;
@@ -224,11 +226,13 @@ static LONG UdMemWalk(UdMemStat& s, u64* top, const void* ownLo = NULL, size_t o
     for (uintptr_t a = (uintptr_t)si.lpMinimumApplicationAddress; a < (uintptr_t)si.lpMaximumApplicationAddress;) {
         if (!VirtualQuery((void*)a, &m, sizeof(m))) break;
         UdMemAdd(s, m);
+        if (blockers) MbRegion(m);
         const uintptr_t next = (uintptr_t)m.BaseAddress + m.RegionSize;
         if (next <= a) break;
         a = next;
     }
     UdMemGroupEnd(s);
+    if (blockers) MbEnd();
     if (top) *top = (u64)(uintptr_t)si.lpMaximumApplicationAddress + 1;
     return UsSince(t0);
 }
@@ -238,10 +242,13 @@ static u64 UdPrivateUsage() {
     return pc.PrivateUsage;
 }
 static void MdAfterSample(const char* what, const char* ev, const UdMemStat& s, u64 privUsage);  // memdiag.cpp
+static bool MbBegin();  // memdiag.cpp [MemDiag] Blockers
+static void MbLog();
 static void UdMemSample(const char* what, const char* ev = NULL) {
     UdMemStat s;
     u64 top;
-    const LONG us = UdMemWalk(s, &top);
+    const bool blockers = MbBegin();
+    const LONG us = UdMemWalk(s, &top, NULL, 0, blockers);
     const u64 privUsage = UdPrivateUsage();
     const DWORD big = (DWORD)(s.big1 >> 20);
     if (big < g_udLowBigMB) g_udLowBigMB = big;
@@ -251,6 +258,7 @@ static void UdMemSample(const char* what, const char* ev = NULL) {
     if (UdMemLow(line, sizeof(line), big)) Log("%s", line);
     LuAsk();  // [RouteSnap] LotUseReadout: the replay consumer walks the clone now
     MdAfterSample(what, ev, s, privUsage);  // [MemDiag]: the "diag: mem" line right after (no-op when off)
+    if (blockers) MbLog();
     CpAfterSample(big);  // [Compaction]: re-arm above threshold + rearm, the "+N min" line
 }
 

@@ -1,6 +1,7 @@
 // EA app 1.69.47 ini variants from the shipped Steam ini (build.yml native-ea169; docs/232 §5 rows 6-7):
 //   ts3native-ea169.ini     minimal: every integer key 0 except the ALLOW / ALLOW_ON sections (env, space separated)
 //   ts3native-ea169-rc.ini  release candidate: shipped values kept for every section that is clean on EA, zeroed otherwise
+//   ts3native-ea169-test.ini  player test build: the rc ini plus TEST_SET
 // Clean = none of the section's source files (tools/ini-sections.json, plus the cpp files that include a flagged .h) has
 // a `// unresolved` row in ts3addr-ea169.h or a `// bytes-bad` row in ts3bytes-ea169.h, it is not on the always-off list, and
 // none of its dependencies (DEPENDS, from the "Needs ..." notes in ts3native.ini and the SKIP lines in the cpp files) is zeroed.
@@ -23,6 +24,8 @@ export const ALWAYS_OFF: Record<string, string> = {
 // EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
 // ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
 export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024" };
+// the player test build's settings on top of the rc ini (docs/232 "Test build"): read-only logging + the crash guard
+export const TEST_SET: Record<string, string> = { "MemDiag.Blockers": "1", "Decompress.RepeatLog": "1", "EaCrashFixes.SimNoTexture": "1" };
 // a file that only serves one key group of a section (GC: memexp.cpp reads SqrtHeapLimit, shipped 0) does not count for that section
 export const IGNORE_FILE: Record<string, string[]> = { GC: ["memexp.cpp"] };
 const RG = ["RouteGate", "RouteAsync"];
@@ -101,6 +104,9 @@ function selfCheck() {
     ok(/^BlackListCapKB=1024\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, EA_SET)), "EA rc ini must carry BlackListCapKB=1024");
     const rc = render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, EA_SET);
     ok(/^Light=(\d)/m.exec(rc.slice(rc.indexOf("\r\n[MemDiag]\r\n")))?.[1] === "1", "EA rc ini keeps [MemDiag] Light=1");
+    const test = render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, { ...EA_SET, ...TEST_SET }).split("\r\n");
+    const base = rc.split("\r\n"), changed = test.filter((l, i) => l !== base[i]);
+    ok(test.length === base.length && changed.join() === Object.entries(TEST_SET).map(([k, v]) => k.split(".")[1] + "=" + v).sort((a, b) => test.indexOf(a) - test.indexOf(b)).join(), "test ini differs from rc only by TEST_SET: " + changed);
     console.log("ea-ini self-check: ok");
 }
 
@@ -121,6 +127,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         console.log(`minimal ini: on = ${allow.map((s) => "[" + s + "]").join(" ")}; ${bad.size} source files have unresolved or bytes-bad rows`);
         const plan = rcPlan(sections, enabled, map, bad), zeroed = new Set(plan.filter((r) => r.state === "zeroed").map((r) => r.section));
         writeFileSync(join(out, "ts3native-ea169-rc.ini"), render(ini, (s) => zeroed.has(s), () => false, EA_SET));
+        writeFileSync(join(out, "ts3native-ea169-test.ini"), render(ini, (s) => zeroed.has(s), () => false, { ...EA_SET, ...TEST_SET }));
         for (const r of plan) console.log(`rc [${r.section}] shipped Enabled=${r.shipped}: ${r.state}${r.state === "zeroed" ? " (" + r.reason + ")" : ""}`);
         console.log(`rc ini: ${plan.length - zeroed.size} sections kept as shipped (Enabled=1: ${plan.filter((r) => r.state === "kept" && r.shipped === "1").map((r) => r.section).join(" ")}), ${zeroed.size} zeroed`);
         if (v.md) writeFileSync(v.md, "| section | shipped Enabled | rc state | reason |\n|---|---|---|---|\n" + plan.map((r) => `| [${r.section}] | ${r.shipped} | ${r.state} | ${r.reason} |`).join("\n") + "\n");
