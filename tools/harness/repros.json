@@ -51857,6 +51857,44 @@
     "expect": "save: result 0 each; no .sims3.bad in Saves"
   },
   {
+    "id": "ip-lotgridmiss-save",
+    "bug": "PR #212 / docs/67 s31.8: a lot with no world grid point never finishes its routing build, so every save of that world returns result 12",
+    "fix": "[EaCrashFixes] LotGridMiss (ini only, no runtime switch: one job per arm; off gave 12, on 0,0,0, docs/67 s31.9)",
+    "save": "Baseline-IP",
+    "steps": [
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "IP-LotGrid-Scratch"
+        },
+        "waitS": 60,
+        "note": "scratch name, never Baseline"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "IP-LotGrid-Scratch"
+        },
+        "waitS": 60,
+        "note": "scratch name, never Baseline"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "IP-LotGrid-Scratch"
+        },
+        "waitS": 60,
+        "note": "scratch name, never Baseline"
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "on: save result 0 each and ea fix: LotGridMiss lines; off: result 12 on a save with such a lot; needs a save with such a lot (Dalexlol: his local Baseline-IP)"
+  },
+  {
     "id": "saveslim-save-m0",
     "bug": "#122: lived-in saves grow (ExportDB outfit copies and dead bytes)",
     "fix": "ts3native [SaveSlim] (saveslim.cpp), off by default",

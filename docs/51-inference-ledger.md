@@ -5619,6 +5619,15 @@ mono-cost11 (BP run + rerun, IP run + rerun, all exact, `listMissed` 0): I-393-1
 | I-921-2 | 207 §9.1 | Each fixture reaches its accessor offline: the constructors it uses (`GameObject`, `Lot`, `Sim`, `SimDescription`, `RoutingComponent`, the components) run without a world | read: `GameObject()` sets a delegate, `Sim()` counts and sets a posture, `Lot()` makes a commodity map, `SimDescription()` checks a static list | `MONOHOST_JITCORPUS=1 ... MONOHOST_JITCORPUS_FROM=158`, the trail lines | no exception on cases 158-174 except the ones the table names | a constructor exception on both arms | open: no monohost build on the contributor's machine |
 | I-921-3 | 207 §9.1 | Compiled and interpreted agree on the 17 accessors | — | the same run, `--report`: 0 differ | 0 differ | a MISMATCH | open |
 
+## 426. Isla Paradiso Error 12: two lots whose routing build never finishes (2026-11-03, docs/67 §31.8; `[EaCrashFixes] LotGridMiss`)
+
+| ID | Doc | Claim | Evidence | Check job | Confirms | Refutes | Verdict |
+|----|-----|-------|----------|-----------|----------|---------|---------|
+| I-426-1 | 67 §31.8 | On `Baseline-IP` the save context's ok flag drops in `LotRouting_SaveLevels` 0x63C690 (via 0x63C620, 0x7D77C0) for lots `08F30053536284C0` and `08F30053536284F0`; the rest of their entries is not written | Frida flag watch on 0x63C690 and its callees | `ip-e12-frida` (local, 2026-11-03 06:21 and 06:26) | flag 1 -> 0 inside 0x63C690 after `BeginResource 0x046A7235:<lot>`, callee 0x7D77C0 | the flag drops in another writer | verified |
+| I-426-2 | 67 §31.8 | 0x63C690 fails because the lot's "build in progress" byte (+0x8E) is still set after the forced rebuild; the finalize 0x82B590 skips its only clear when `lot+0x4BC == 0` and the grid lookup 0x651DA0 misses | disassembly of 0x63C690, 0x82B810, 0x82B590, 0x651DA0; writes to +0x8E (0x63CC17 set, 0x631A55 clear) | `ip-e12-frida` (06:30, 06:37) | stale check 1 after rebuild 1, branch 0x63C8C1; both lots `4bc 0, grid 0, cleared false` on every finalize; the other 13 lots cleared | the clear runs for either lot | verified |
+| I-426-3 | 67 §31.8 | Sending that miss to the game's own clear exit 0x82B7F4 makes the save whole | Frida patch of the je at 0x82B608 (process memory only) | `ip-e12-frida` (06:43) | `World_Save` true, `save: end #1 result 0`, 119 lot records, 13 SimService entries | Error 12, or a lot or SimService entry missing | verified (Frida) |
+| I-426-4 | 67 §31.8 | `[EaCrashFixes] LotGridMiss` does it natively: off gives 12, on gives result 0 for every save through save, Quit to Main Menu, reload, save and direct reload | ts3native build 07b9659 | `ip-lgm-off`, `ip-lgm-on` (local queue) | off: `result 12`; on: `OK   ea fix: LotGridMiss`, a hit line for the two lots, 3 saves with result 0 | on: any save not 0, or a reload fails | verified (2026-11-03 07:02-07:15, docs/67 §31.9: off `result 12`; on 3 saves `result 0`, menu and direct reloads, 8 hit lines for the two lots) |
+
 ## 922. Reward giver owner component (2026-11-02, docs/525; `rewardgiver`)
 
 | ID | Doc | Claim | Evidence | Check job | Confirms | Refutes | Verdict |
