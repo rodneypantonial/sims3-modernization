@@ -61,6 +61,12 @@
 // to composite, and the no-recipe paths reach the same target with a null first result. Fix: the load and compare (0x5EBE2D)
 // become a jump to SnStub, which takes that path for a missing texture. Nothing after it reads the first result: the mark
 // 0x5CEA60 ignores its pointer argument and finds no table entry. The Sim gets no composite from this build.
+//
+// SimNoTextureAtlas (off, docs/67 §34.6). 0x5E0720 on CAS::SimBuilder (runs with UseCompression and CacheAtlases, script
+// ThumbnailHelper for a household leaving CAS or stored to the Library) makes the same two lookups and reads the first at
+// 0x5E082A with no null check. A failed create (EA 0x5E277F -> 0x5D0BA0) stores nothing [verified disassembly]. Fix: the load
+// at 0x5E077D jumps to SaStub, which for a missing texture takes EA's own no-recipe jump to 0x5E0872, before the composite
+// starts. Nothing after that target reads the first texture: the mark at 0x5E098C ignores its pointer argument.
 
 static const DWORD CA_ASK_SITES[3] = {TS3A(0x0084EABD), TS3A(0x00849588), TS3A(0x00853521)};
 // mov ecx,[eax+1Ch]; mov edx,[ecx]; push eax; mov eax,[edx+10h]; call eax   (eax = controller)
@@ -653,6 +659,56 @@ static bool ApplySimNoTexture(const wchar_t* ini) {
     return true;  // keep the log open for the hit lines
 }
 
+// ---- SimNoTextureAtlas ----
+static const DWORD SA_SITE = TS3A(0x005E077D), SA_CONT = TS3A(0x005E0783), SA_SKIP = TS3A(0x005E0872);  // load, next instruction, EA's no-recipe target
+static const u8 kSaSite[6] = {0x8B, 0x96, 0xA8, 0x00, 0x00, 0x00};  // mov edx,[esi+0A8h]
+static DWORD g_saCont = SA_CONT, g_saSkip = SA_SKIP;  // stub targets (selftest swaps them)
+static volatile LONG g_saBad;
+
+static void __stdcall SaHit(const u8* builder, DWORD second) {
+    const LONG n = InterlockedIncrement(&g_saBad);
+    if (n > 8) return;
+    MEMORYSTATUSEX m = {sizeof(m)};
+    GlobalMemoryStatusEx(&m);
+    Log("ea fix: SimNoTextureAtlas #%ld: builder %p (second texture %s): first texture missing, atlas composite skipped; "
+        "%lu MB address space free", n, builder, second ? "present" : "missing", (DWORD)(m.ullAvailVirtual >> 20));
+}
+
+// In place of the 6 bytes at 0x5E077D, by jump: esi = the builder, ebx = the second texture, [esp+18h] = the first. eax, ecx,
+// edx and the flags are dead at the skip target (0x5E0872 cmp ebx,edi), where edi is still 0.
+static __declspec(naked) void SaStub() {
+    __asm {
+        cmp dword ptr [esp + 0x18], 0
+        je miss
+        mov edx, [esi + 0xA8]
+        jmp dword ptr [g_saCont]
+    miss:
+        pushad
+        push ebx
+        push esi
+        call SaHit
+        popad
+        jmp dword ptr [g_saSkip]
+    }
+}
+
+static bool SaPatch(u8* site) {
+    if (!Matches(site, kSaSite, sizeof(kSaSite))) return false;
+    u8 b[6] = {0xE9, 0, 0, 0, 0, 0x90};
+    *(LONG*)(b + 1) = (LONG)((uintptr_t)&SaStub - ((uintptr_t)site + 5));
+    return Write(site, b, sizeof(b));  // DllMain: no Sim is built yet
+}
+
+static bool ApplySimNoTextureAtlas(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"EaCrashFixes", L"SimNoTextureAtlas", 0, ini)) return false;
+    if (!SaPatch((u8*)(uintptr_t)SA_SITE)) {
+        Log("SKIP ea fix: SimNoTextureAtlas: bytes at 0x%08X differ: not installed", SA_SITE);
+        return false;
+    }
+    Log("OK   ea fix: SimNoTextureAtlas (docs/67 §34.6): a household atlas build whose composite texture is missing skips the composite");
+    return true;
+}
+
 static bool ApplyEaCrashFixes(const wchar_t* ini) {
     bool keep = ApplyConformActor(ini);
     ApplyThumbPose(ini);
@@ -661,5 +717,6 @@ static bool ApplyEaCrashFixes(const wchar_t* ini) {
     keep = ApplyGeomNoMaterial(ini) || keep;
     keep = ApplyMintDivGuard(ini) || keep;
     keep = ApplySimNoTexture(ini) || keep;
+    keep = ApplySimNoTextureAtlas(ini) || keep;
     return keep;
 }

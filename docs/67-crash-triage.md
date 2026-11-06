@@ -1423,7 +1423,7 @@ Meaning for the request [verified unless marked]: it advances once and finishes 
 
 One narrow case stays [inferred]: a node with a null value that gets marked done would make `0x5EEA0C` fault for a later request. Node-with-null comes only from `0x5D09F0` (a state before 9), and state 9's `0x5D0970` erases unflagged nodes. So none exists at state 11, unless states run out of order, which the dispatcher does not show.
 
-Not covered: the sibling `0x5E15F0` (EA) makes the same two lookups and reads the first at `0x5E16FA` after its own composite start, with no null check. Different owner class, no crash report yet.
+The sibling `0x5E15F0` (EA) makes the same two lookups and reads the first at `0x5E16FA` with no null check: §34.6.
 
 ### 34.4 Fix: `[EaCrashFixes] SimNoTexture` (0.36.152a, eafix.cpp, no counters; off in the Steam ini, on in the EA rc ini; ledger docs/51 §426)
 
@@ -1438,3 +1438,21 @@ Selftest (`eafix-test.h`): normal width, too wide, missing with and without the 
 `SimNoTextureRepro=N` (test key, off): the call at `0x5CFB7C` (EA `0x5D0D7C`) answers false for every Nth create, after the game's real create, so the caller takes its real failure path. Off arm (`SimNoTexture=0`) must crash at `0x5EBE31`; on arm must run and log hit lines. `tools/harness/repros.json` `ea-sim-no-texture`. Run on EA with the player test build: off crashes at EA `0x5EC891`, on runs clean; rerun on the rc build, see docs/232. Rare-crash rule (`docs/23`, 2026-11-01): seen in play twice, so the key can ship on once this repro passes.
 
 EA rc ini: `SimNoTexture=1` through `EA_SET` in `tools/ea-ini.ts` (rule `docs/23`: seen in a player crash, deterministic repro, the fix passes it). It is on no zero list.
+
+### 34.6 Sibling read at EA `0x5E16FA` (Steam `0x5E082A`): reachable, off-by-default key, no repro
+
+Function EA `0x5E15F0` = Steam `0x5E0720` (`0x5E15F0 - 0xED0` in this area; the 18 bytes at the load match on both exes).
+
+| Question | Answer | Evidence |
+|---|---|---|
+| Same null? | Yes. Same lookups (`0x1F/4`, `0x1F/8`, `0x5CFFA0`, EA) on `[this+0x20]`, first result in `[esp+18h]`, read at `0x5E16FA` as `mov ecx,[eax+18h]` (AV read 0x18). The second is checked. | [verified disassembly] |
+| Owner? | `CAS::SimBuilder`, a different class from the crash Z request, with its own builder (`0x5E0DE0`). `+0x64` TextureSize (`0x200` in the ctor at `0x5E4FB7`), `+0x69` UseCompression, `+0x6B` CacheAtlases: icall rows `0x11AB1DC` -> `0x5A6590` and `0x11AB1E4` -> `0x5A65E0`. | [verified: icall table + disassembly] |
+| Missing how? | Created at `0x5E277F` / `0x5E2792` through `0x5D0BA0`. On a false answer from create (`0x5D0C55` -> `0x61AE50`) it stores nothing, so the lookup misses. Same result as §34.2 by another creator. | [verified disassembly] |
+| Reached how? | Update `0x5E32F6` -> `0x5E1890` (state 4, flags `0x300` in `+0x1C`) -> `0x5E19C6` only when `+0x6B` and `+0x69` are set -> `0x5E15F0`, past a set recipe key, a non-empty layer list and a composite start other than -1. | [verified disassembly] |
+| From script? | `ThumbnailHelper.PrepareCASHouseholdForThumbnail` sets UseCompression, TextureSize 512 and CacheAtlases for a household marked by `CacheSimAtlasesForHousehold`. Two callers: `CASLogic.GenerateHouseholdThumbnails` and `Bin.StoreCASHouseholdToExportBin`. So: a household thumbnail after CAS, or a store to the Library. | [verified decompiled script] |
+| Stale flag? | Only `sBuilders[0]` clears CacheAtlases afterwards, so the other builders keep it for later thumbnails. | [inferred: no script clears the rest; `Clear()` not read natively] |
+| Crash seen? | No report at this site. It needs a failed create at 512 px, so the same low address space as crash Z, during a thumbnail. | [inferred] |
+
+Fix: `[EaCrashFixes] SimNoTextureAtlas` (eafix.cpp, no counters, off in every ini). The 6 bytes at Steam `0x5E077D` (EA `0x5E164D`, `mov edx,[esi+0A8h]`, bytes checked on both exes) jump to `SaStub`, which runs the load, or for a null first texture logs (one "ea fix: SimNoTextureAtlas" line for each of the first 8) and jumps to EA's own no-recipe target Steam `0x5E0872` (EA `0x5E1742`). That is before the composite starts, so no started composite is left open. edi is 0 there, as on EA's two jumps. The later mark at EA `0x5E185C` (`0x5CFDA0`) ignores its pointer (§34.3). The second composite runs if it exists; state goes to 6 as normal.
+
+Unlike the `0x5EC88D` site there is no repro and no test key: the harness has no action that sets `CacheSimAtlasesForHousehold` (`ReproHandlers` calls only `GenerateHouseholdThumbnail`, which does not reach this function), and the `0x5D0D7C` repro key does not touch the `0x5D0C55` creator. Selftest only. So it stays off under the rare-crash rule, which asks for a play sighting and a repro.
