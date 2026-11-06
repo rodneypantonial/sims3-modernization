@@ -196,10 +196,15 @@ static void TestCrashReport() {
         EXCEPTION_POINTERS xp = {&er, &cx};
         const LONG n0 = g_xcptN, other0 = g_xcptOtherN;
         assert(n0 <= 13 && other0 <= 6);
-        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 + 1 && g_xcptOtherN == other0 + 1 && g_xcptOther[other0] == k32);
-        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 + 1 && g_xcptOtherHits[other0] == 1);  // repeat: counted only
+        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 && g_xcptOtherN == other0 + 1 && g_xcptOther[other0] == k32);
+        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 && g_xcptOtherHits[other0] == 1);  // repeat: counted only
         cx.Eip = k32 + 4, er.ExceptionAddress = (void*)(uintptr_t)(k32 + 4);
-        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 + 2 && g_xcptOtherN == other0 + 2);  // another address: a line
+        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 && g_xcptOtherN == other0 + 2);  // another address: a line, no slot
+        g_xcptOtherN = XCPT_OTHER;  // table full: counted past the table, still no slot (a ninth Apex address burned them all)
+        const LONG over0 = g_xcptOtherOver;
+        cx.Eip = k32 + 8, er.ExceptionAddress = (void*)(uintptr_t)(k32 + 8);
+        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 && g_xcptOtherOver == over0 + 1);
+        g_xcptOtherOver = over0;
         g_xcptN = n0, g_xcptOtherN = other0, g_xcptOtherHits[other0] = g_xcptOtherHits[other0 + 1] = 0;
     }
     puts("crash report ok");

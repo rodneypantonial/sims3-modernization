@@ -14,7 +14,7 @@
 #include <psapi.h>  // K32GetMappedFileNameW (XcptOtherModule)
 #include "ts3addr.h"  // TS3A(x): TS3W.exe addresses by Steam 1.67 value (tools/addr-codemod.ts)
 
-#define TS3NATIVE_VERSION "0.36.152-test1"
+#define TS3NATIVE_VERSION "0.36.152-test2"
 
 typedef unsigned char u8;
 
@@ -207,14 +207,18 @@ static int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; 
 // report and no WER event (2026-10-17 bp-d-async). C++ exceptions (0xE06D7363) count for 2 lines at most.
 // docs/172 §7: an AV in another DLL's code is logged once per address, with "module+offset" (Apex Radiance's 14 or more
 // handled AVs at 1-2 addresses before the world loads took every slot, so a later TS3W crash had no line); repeats are counted.
-static volatile LONG g_xcptN, g_xcptCpp, g_xcptOtherN, g_xcptOtherHits[8];
-static DWORD g_selfLo, g_selfHi, g_xcptOther[8], g_xcptT0;  // g_xcptT0: GetTickCount at install, uptime in the crash log lines
+// 0.36.152-test2: AVs in other modules have their own table and take no slot of the 16: a ninth Apex address used to burn every
+// slot left (one line per hit), so a later game fault got no line (player log, EA, t=235 of 1291 s). Past the table: counted only.
+enum { XCPT_OTHER = 32 };
+static volatile LONG g_xcptN, g_xcptCpp, g_xcptOtherN, g_xcptOtherHits[XCPT_OTHER], g_xcptOtherOver;
+static DWORD g_selfLo, g_selfHi, g_xcptOther[XCPT_OTHER], g_xcptT0;  // g_xcptT0: GetTickCount at install, uptime in the crash log lines
 // "name+0xoffset" when a is in a loaded image other than TS3W.exe (base 0x400000) and this module. No loader lock.
 static bool XcptOtherModule(DWORD a, char* out, int cap) {
     MEMORY_BASIC_INFORMATION mbi;
     if (!VirtualQuery((const void*)(uintptr_t)a, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || mbi.Type != MEM_IMAGE) return false;
     const DWORD base = (DWORD)(uintptr_t)mbi.AllocationBase;
     if (base == 0x00400000 || base == g_selfLo) return false;
+    if (!out) return true;  // table full: only "is it another module", no name lookup
     wchar_t w[MAX_PATH];
     if (!K32GetMappedFileNameW(GetCurrentProcess(), mbi.AllocationBase, w, MAX_PATH)) wcscpy_s(w, L"?");
     const wchar_t* s = wcsrchr(w, L'\\');
@@ -281,15 +285,15 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     if ((code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION) && !(e->ContextRecord->Eip >= g_selfLo && e->ContextRecord->Eip < g_selfHi)) CfOnFault(e);
     const CONTEXT* c = e->ContextRecord;
     if (code == EXCEPTION_ACCESS_VIOLATION)  // docs/172 §7: another module's address already logged
-        for (LONG i = 0, n = g_xcptOtherN < 8 ? g_xcptOtherN : 8; i < n; i++)
+        for (LONG i = 0, n = g_xcptOtherN < XCPT_OTHER ? g_xcptOtherN : XCPT_OTHER; i < n; i++)
             if (g_xcptOther[i] == c->Eip) return InterlockedIncrement(&g_xcptOtherHits[i]), EXCEPTION_CONTINUE_SEARCH;
-    if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
     char refs[128], mod[MAX_PATH + 16] = "", in[MAX_PATH + 24] = "";
-    if (code == EXCEPTION_ACCESS_VIOLATION && XcptOtherModule(c->Eip, mod, sizeof(mod))) {
+    if (code == EXCEPTION_ACCESS_VIOLATION && XcptOtherModule(c->Eip, g_xcptOtherN < XCPT_OTHER ? mod : NULL, sizeof(mod))) {
         const LONG k = InterlockedIncrement(&g_xcptOtherN);
-        if (k <= 8) g_xcptOther[k - 1] = c->Eip;
+        if (k > XCPT_OTHER) return InterlockedIncrement(&g_xcptOtherOver), EXCEPTION_CONTINUE_SEARCH;
+        g_xcptOther[k - 1] = c->Eip;
         sprintf_s(in, " (%s)", mod);
-    }
+    } else if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
     XcptRefs(c, refs, sizeof(refs), 8);
     Log("exception %08lX at 0x%08lX%s (info %08lX %08lX) thread %lu eip %08lX esp %08lX t=%lu; stack code refs:%s", code,
         (DWORD)(uintptr_t)r->ExceptionAddress, in, r->NumberParameters > 0 ? (DWORD)r->ExceptionInformation[0] : 0,
@@ -319,7 +323,7 @@ static void InstallXcptLog(const wchar_t* ini) {
     const IMAGE_NT_HEADERS* nt = self ? (const IMAGE_NT_HEADERS*)((const u8*)self + ((const IMAGE_DOS_HEADER*)self)->e_lfanew) : NULL;
     g_selfLo = (DWORD)(uintptr_t)self;
     g_selfHi = nt ? g_selfLo + nt->OptionalHeader.SizeOfImage : g_selfLo;
-    if (AddVectoredExceptionHandler(1, XcptLog)) Log("crash log: first 16 first-chance exceptions, an AV in another module once per address (module 0x%08lX-0x%08lX)", g_selfLo, g_selfHi);
+    if (AddVectoredExceptionHandler(1, XcptLog)) Log("crash log: first 16 first-chance exceptions, an AV in another module once per address, up to %d addresses, none takes a slot (module 0x%08lX-0x%08lX)", XCPT_OTHER, g_selfLo, g_selfHi);
 }
 
 static void ApplyGc(const wchar_t* ini) {
@@ -2573,17 +2577,17 @@ static void MaybeLogCounters(ULONGLONG now) {
     if (c.p6wReady) P6wLogCounters();  // docs/189 phase 0
     if (c.workerReady || c.asyncReady)
         Log("route plans: off %ld (fails %ld) on %ld (fails %ld) hostCalls %ld", c.planOffCalls, c.planOffFails, c.planOnCalls, c.planOnFails, c.hostCalls);
-    static LONG xcptSkipLogged, xcptPrev[8];  // docs/172 §7: repeats per logged address, only when the total moved
+    static LONG xcptSkipLogged, xcptPrev[XCPT_OTHER];  // docs/172 §7: repeats per logged address, only when the total moved
     LONG xcptSkip = 0;
-    char xcptBy[8 * 36] = "";
-    for (int i = 0, n = g_xcptOtherN < 8 ? g_xcptOtherN : 8, len = 0; i < n; i++) {
+    char xcptBy[XCPT_OTHER * 36] = "";
+    for (int i = 0, n = g_xcptOtherN < XCPT_OTHER ? g_xcptOtherN : XCPT_OTHER, len = 0; i < n; i++) {
         const LONG hits = g_xcptOtherHits[i];
         xcptSkip += hits, len += sprintf_s(xcptBy + len, sizeof(xcptBy) - len, " %08lX x%ld +%ld", g_xcptOther[i], hits, hits - xcptPrev[i]);
         xcptPrev[i] = hits;
     }
     if (xcptSkip != xcptSkipLogged)
-        Log("crash log: %ld more AVs at logged addresses in other modules (not logged) t=%lu:%s", xcptSkipLogged = xcptSkip,
-            (GetTickCount() - g_xcptT0) / 1000, xcptBy);
+        Log("crash log: %ld more AVs at logged addresses in other modules (not logged) t=%lu:%s; past the table %ld", xcptSkipLogged = xcptSkip,
+            (GetTickCount() - g_xcptT0) / 1000, xcptBy, g_xcptOtherOver);
 }
 
 static LARGE_INTEGER g_qpf;
