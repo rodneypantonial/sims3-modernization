@@ -769,6 +769,7 @@ namespace Ts3Fixes
                     return false;
                 int[] c = PatchCounters();
                 int why = UfWhy(sim);
+                DiagSend(why != 0 ? 8 : 9, Handle);  // docs/197 §7 [RouteAsync] KdExemptSeen: this route's scope for its START
                 sUfLastWhy = why; sUfLastSim = sim;
                 if (why != 0 && sUrPlaced.Count > 0 && sUrPlaced.ContainsKey(sim.ObjectId.Value) && UrRepairSim(sim)) sUrPlaced.Remove(sim.ObjectId.Value);  // §3.9.7 (D)
                 if (why != 0)

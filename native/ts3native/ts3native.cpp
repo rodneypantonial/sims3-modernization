@@ -14,7 +14,7 @@
 #include <psapi.h>  // K32GetMappedFileNameW (XcptOtherModule)
 #include "ts3addr.h"  // TS3A(x): TS3W.exe addresses by Steam 1.67 value (tools/addr-codemod.ts)
 
-#define TS3NATIVE_VERSION "0.36.168b"
+#define TS3NATIVE_VERSION "0.36.168c-test1"
 
 typedef unsigned char u8;
 
@@ -2930,7 +2930,7 @@ static __declspec(thread) LONG t_fbCapUs, t_fbCapHit;
 // docs/134 §11 (worker, one foreign job): FbJobCapMs as a deadline from the job's start (the sim waits for the whole job, not
 // for its world A* nodes), when the cap fired, and the job's Route_PlanLocked / managed-call time. t_jobT0 0 = no foreign job
 static __declspec(thread) LONGLONG t_fbDeadline, t_jobT0, t_jobCapAt;
-static __declspec(thread) LONG t_jobPlanUs, t_jobHostUs;
+static __declspec(thread) LONG t_jobPlanUs, t_jobHostUs, t_jobNodes, t_jobPlans;
 // docs/163 §10 (stuckcheckcap): the worker runs a stuck-check probe job, cut at PlanDeadlineMs like a foreign sync plan
 static __declspec(thread) LONG t_scProbe;
 // P6 phase split (docs/94 §24.7, p5.cpp P6JobBegin / P6JobEnd), worker: the armed Route.Plan job running on this thread
@@ -3105,6 +3105,7 @@ static u8 CallPlanBudget0(void* world, void* edx, int* outList, int* starts, int
     u8 r = g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
     LONG us = UsSince(t0), nodes = t_budget.nodes;
     if (t_jobT0) t_jobPlanUs += us;  // shortcut: a plan nested in this one counts twice; nesting is rare (docs/134 §4)
+    t_jobNodes += nodes, t_jobPlans++;  // routefail logging (plandeadline.cpp RfJobNote); shortcut: no budget (an uncut job) = 0 nodes
     if (t_budget.capped) InterlockedExchangeAdd(&ts3native_counters.budgetCapUs, us);
     if (t_budget.capped && cap) t_fbCapHit = 1;
     if (t_budget.capped && dl && g_pdOn) PdCapped();
@@ -3166,6 +3167,8 @@ struct AsyncJob {
     u64 kdId;         // docs/197: the route's follower (route +0x40/+0x44) read at START with KindDeadlines on, 0 = unknown
     LONG uf;          // docs/202: 1 = an unseen Sim's route (UnseenFallback MARK right before its START): ufUs deadline
     LONG ufCut;       // docs/202: that job was cut (worker, before J_DONE); IcCollect hands it to the CUT? answer
+    LONG kdScope;     // docs/197 §7: 0 unknown, 1 seen (UfWhy != 0), 2 unseen (UfWhy 0), from ts3fixes right before START
+    u64 rfGoal;       // docs/197 §7: hash of the route's destinations at START (routefail retry: same request?)
 };
 // docs/134: 32 slots; with [RouteAsync] FallbackAsync off only the first kJobsBase are handed out (QueueFull as before)
 static const int kJobs = 32, kJobsBase = 8;
@@ -3657,6 +3660,9 @@ static void FbjdJobEnd(LONG us, LONGLONG end, LONGLONG dl);  // plandeadline.cpp
 static LONG KdJobBegin(const AsyncJob* j);                          // plandeadline.cpp (docs/197): -1 = KindDeadlines off
 static void KdJobEnd(const AsyncJob* j, bool capped, LONG us, LONGLONG end, LONGLONG dl);
 static u64 KdFollower(DWORD handle);  // sim thread, at START
+static u64 RfGoal(DWORD handle);      // sim thread, at START: destinations hash for routefail retry
+static LONG KdScopeTake(DWORD handle);
+static void RfJobNote(const AsyncJob* j, bool capped, LONG us, const JobSplit& s, LONG capUs, int cutMask);
 static void KdStuckMark(DWORD handle);
 static LONG ScProbeUs();              // the stuck-check probe's deadline: KindDeadlines' probe kind, else PlanDeadlineMs
 
@@ -3750,9 +3756,9 @@ static void ServeAsync() {
             t_fbCapUs = t_fbCapUs && t_fbCapUs < ufUs ? t_fbCapUs : ufUs;
         }
         t_fbDeadline = t_fbCapUs ? t0.QuadPart + (LONGLONG)t_fbCapUs * g_qpf.QuadPart / 1000000 : 0;
-        t_jobT0 = j->fb || t_scProbe || kdUs > 0 || t_ufJob ? t0.QuadPart : 0;
+        t_jobT0 = t0.QuadPart;  // docs/197 §7: every job, routefail logging reads its split (the clock only, nothing branches on it)
         t_jobCapAt = 0;
-        t_jobPlanUs = t_jobHostUs = 0;
+        t_jobPlanUs = t_jobHostUs = t_jobNodes = t_jobPlans = 0;
         t_fbCapHit = 0;
         t_fbjdCut[0] = t_fbjdCut[1] = t_fbjdCut[2] = 0;
         // docs/178 T1: the cell A* / water deadline exits (plandeadline.cpp) also answer this thread while the job has a
@@ -3770,6 +3776,7 @@ static void ServeAsync() {
         InterlockedExchange((volatile LONG*)&g_pdWkTid, 0);
         t_scProbe = 0;
         const LONGLONG dl = t_fbDeadline;
+        const LONG rfCapUs = t_fbCapUs;  // routefail logging: the deadline this job really had
         t_fbCapUs = 0;
         t_fbDeadline = 0;
         t_fbjdCut[0] = t_fbCapHit;
@@ -3818,6 +3825,7 @@ static void ServeAsync() {
             }
         }
         if (us >= 200000) JobLongNote(j, us, capped, j->fb ? &split : NULL);
+        RfJobNote(j, capped, us, split, rfCapUs, (t_fbjdCut[0] ? 1 : 0) | (t_fbjdCut[1] ? 2 : 0) | (t_fbjdCut[2] ? 4 : 0));
         j->doneTick = GetTickCount();
         InterlockedExchange(&j->state, J_DONE);
         SetEvent(g_asyncDone);
@@ -4494,6 +4502,8 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL, bool fo
     j->probe = probe;  // before J_PEND / J_QUEUED: the worker reads it once it claims the slot
     j->sc = sc;
     j->kdId = k.kdMode == 1 ? KdFollower(handle) : 0;  // docs/197: the backoff key, read here on the sim thread
+    j->rfGoal = j->kdId ? RfGoal(handle) : 0;
+    j->kdScope = KdScopeTake(handle);
     j->uf = UfTake(handle) ? 1 : 0;  // docs/202: the MARK is used up by the job it marks (a refused START leaves it to the sync IC)
     j->ufCut = 0;
     if (park) {  // the slot is this route's; READY (FbRetry) queues it once the pending updates are applied
@@ -5111,11 +5121,20 @@ static void Run(HMODULE self) {
     swprintf_s(ini, L"%s.ini", path);
     swprintf_s(log, L"%s.log", path);
     CrPreLog(ini, log);  // [CrashReport]: the previous session's last lines, before the log is truncated
+    char priorLog[64] = "";  // the version that wrote the old log: the only trace of the last installed build
+    HANDLE oldLog = CreateFileW(log, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (oldLog != INVALID_HANDLE_VALUE) {
+        DWORD got = 0;
+        if (ReadFile(oldLog, priorLog, sizeof(priorLog) - 1, &got, NULL)) priorLog[got] = 0;
+        priorLog[strcspn(priorLog, "\r\n")] = 0;
+        CloseHandle(oldLog);
+    }
     g_log = CreateFileW(log, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
     SYSTEMTIME st;
     GetLocalTime(&st);
     Log("ts3native " TS3NATIVE_VERSION " %04d-%02d-%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    if (!strncmp(priorLog, "ts3native ", 10)) Log("prior log: %s", priorLog);
 #ifdef TS3A_TABLE
     Log("release: v0.2.8 EA");  // own line: log parsers read the header version as digits
 #endif

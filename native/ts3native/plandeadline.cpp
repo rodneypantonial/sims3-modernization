@@ -85,14 +85,34 @@ static const char* const kKdName[KD_N] = {"own Plan", "own Replan", "own PlanFro
 static int g_kdIni;
 static const DWORD kKdWinMs = 10000, kKdStuckMs = 30000;
 static const int kKdRows = 64;
-struct KdRow { u64 id; DWORD cutTick; LONG level, pending; };  // level = cuts in a row (1 doubled, 2 uncut); pending = a cut not yet followed
+struct KdRow { u64 id; DWORD cutTick; LONG level, pending; DWORD cutH; u64 cutGoal; };  // level = cuts in a row (1 doubled, 2 uncut); pending = a cut not yet followed; cutH / cutGoal = that job (routefail retry)
 static KdRow g_kdTab[kKdRows];
 static SRWLOCK g_kdLock = SRWLOCK_INIT;
 static __declspec(thread) bool t_kdUncut;  // this job runs uncut because of its follower's backoff
+// docs/197 §7 [RouteAsync] KdExemptSeen: a job of a Sim the player can see never gets a KindDeadlines cut (player report 2026-11-07:
+// 6 of 12 active-Sim no-paths followed a cut). Scope = UfWhy: ts3fixes sends the answer per route right before START (UserDiag ops
+// 8 seen, 9 unseen, lo = route handle). Unknown (no answer: non-Sim, pet, ts3fixes check) = exempt for own jobs, cut as before for
+// foreign ones (boats keep their deadlines). The probe kind and an unseen-marked job keep theirs.
+static int g_kdExempt;
+static __declspec(thread) LONG t_kdExemptUs;  // this job is exempt: the deadline it would have had
+static bool KdExempt(const AsyncJob* j, int kind) {
+    if (!g_kdExempt || kind == KD_PROBE || j->uf || j->kdScope == 2) return false;
+    return !j->fb && !j->af ? true : j->kdScope == 1;
+}
+static DWORD g_kdScopeH;
+static LONG g_kdScope;
+// sim thread (UdTextMsg): this route's scope, good for its next START only
+static void KdScopeSet(DWORD handle, LONG scope) { g_kdScopeH = handle, g_kdScope = scope; }
+static LONG KdScopeTake(DWORD handle) {
+    const LONG s = handle && g_kdScopeH == handle ? g_kdScope : 0;
+    g_kdScopeH = 0;
+    return s;
+}
 
 static void ReadKindDeadlines(const wchar_t* ini) {
     Ts3nCounters& k = ts3native_counters;
     g_kdIni = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KindDeadlines", 0, ini), 0, 1);
+    g_kdExempt = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdExemptSeen", 0, ini), 0, 1);
     for (int i = 0; i < KD_N; i++) {
         const int ms = GetPrivateProfileIntW(L"RouteAsync", kKdIniKey[i], kKdDefMs[i], ini);
         k.kdUs[i] = ms > 0 ? Clamp(ms, 50, 60000) * 1000 : 0;
@@ -101,6 +121,7 @@ static void ReadKindDeadlines(const wchar_t* ini) {
         Log("route async: KindDeadlines=1 own Plan %ld Replan %ld PlanFromPoint %ld ReplanFromPosition %ld, A10 foreign %ld, foreign "
             "Plan %ld, probe %ld ms", k.kdUs[0] / 1000, k.kdUs[1] / 1000, k.kdUs[2] / 1000, k.kdUs[3] / 1000, k.kdUs[4] / 1000,
             k.kdUs[5] / 1000, k.kdUs[6] / 1000);
+    Log("route async: KdExemptSeen=%d", g_kdExempt);
 }
 static void KdInstalled() {  // after PdInstallAt: world A* through the cost stubs, cell A* and water through the entry stubs
     Ts3nCounters& k = ts3native_counters;
@@ -139,7 +160,7 @@ static KdRow* KdFind(u64 id, bool add) {
 // worker, before the job's IC: its deadline in us (0 = uncut), -1 = KindDeadlines off (the old rules apply)
 static LONG KdJobBegin(const AsyncJob* j) {
     Ts3nCounters& k = ts3native_counters;
-    t_kdKind = 0, t_kdUncut = false;
+    t_kdKind = 0, t_kdUncut = false, t_kdExemptUs = 0;
     if (k.kdMode != 1 || !k.kdReady) return -1;
     const int kind = KdKind(j);
     t_kdKind = kind + 1;
@@ -149,6 +170,10 @@ static LONG KdJobBegin(const AsyncJob* j) {
     }
     LONG us = k.kdUs[kind];
     if (!us) return 0;
+    if (KdExempt(j, kind)) {
+        t_kdExemptUs = us;
+        return 0;
+    }
     LONG level = 0;
     if (kind != KD_PROBE && j->kdId) {
         AcquireSRWLockShared(&g_kdLock);
@@ -168,6 +193,8 @@ static LONG KdJobBegin(const AsyncJob* j) {
     InterlockedIncrement(&k.kdJobs[kind]);
     return us;
 }
+struct RfRetry { bool on, same; DWORD cutH, agoMs; LONG level; };
+static __declspec(thread) RfRetry t_rfRetry;  // set under g_kdLock in KdJobEnd, logged after the job's lock is released (RfJobNote)
 // worker, after the job's IC (j->result filled): counters, the follower's backoff row and the outcome of an earlier cut
 static void KdJobEnd(const AsyncJob* j, bool capped, LONG us, LONGLONG end, LONGLONG dl) {
     Ts3nCounters& k = ts3native_counters;
@@ -190,11 +217,14 @@ static void KdJobEnd(const AsyncJob* j, bool capped, LONG us, LONGLONG end, LONG
         if (r->pending && fresh) {
             InterlockedIncrement(ok ? &k.kdAfterOk : &k.kdAfterFail);
             if (ok && t_kdUncut) InterlockedIncrement(&k.kdUncutOk);
+            t_rfRetry.on = true, t_rfRetry.cutH = r->cutH, t_rfRetry.level = r->level, t_rfRetry.agoMs = now - r->cutTick;
+            t_rfRetry.same = r->cutGoal == j->rfGoal;
         }
         if (capped) {
             r->level = fresh && r->level ? (r->level >= 2 ? 2 : r->level + 1) : 1;
             r->cutTick = now;
             r->pending = 1;
+            r->cutH = j->handle, r->cutGoal = j->rfGoal;
         } else {
             r->pending = 0;
             if (ok) r->level = 0;  // a success ends the backoff
@@ -202,6 +232,97 @@ static void KdJobEnd(const AsyncJob* j, bool capped, LONG us, LONGLONG end, LONG
     }
     ReleaseSRWLockExclusive(&g_kdLock);
 }
+// docs/197 §7 routefail logging: the destinations hash of a route (ReplanDedupe's walk, replandedupe.cpp), 0 = no route or none set
+static u64 RfGoal(DWORD handle) {
+    __try {
+        const u8* rm = *g_orRmSlot;
+        const u8* route = rm && handle ? g_orRoute(rm, NULL, handle) : NULL;
+        const u8* ds = route ? *(const u8* const*)(route + 0x144) : NULL;
+        if (!ds) return 0;
+        u64 g = 0xCBF29CE484222325ull;
+        const u8* head = ds + 0x18;
+        const u8* n = *(const u8* const*)head;
+        for (int i = 0; n && n != head && i < 16; i++, n = *(const u8* const*)n)
+            for (int w = 0; w < 16; w++) g = Fnv(g, ((const DWORD*)(n - 4))[w]);
+        return g;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+// One record per finished job, read back by the route id when a ts3fixes "routefail:" / "gohere" line names it, so the line carries
+// the job's fields itself. "routefail job:" lines cover the Sims ts3fixes does not log (no active household): failed or cut jobs.
+// Not marked unseen = never dropped; unseen 30 a minute. Worker writes under g_rfLock, sim thread reads; off the job's +0x918.
+struct RfRec {
+    DWORD h, seq;
+    LONG us, planUs, hostUs, capAtUs, tailUs, capUs, wouldUs, nodes, plans, res, kdKind, uf, scope, cutMask;
+    const char* why;  // the cut's owner, NULL = uncut
+    u64 follower;
+};
+static const int kRfN = 64;
+static RfRec g_rfJobs[kRfN];
+static LONG g_rfNext;
+static SRWLOCK g_rfLock = SRWLOCK_INIT;
+static void RfText(const RfRec& r, char* b, size_t n) {
+    char dl[48];
+    if (r.why) sprintf_s(dl, "cut (%s, mask %ld)", r.why, r.cutMask);
+    else if (r.wouldUs) sprintf_s(dl, "uncut (exempt)");
+    else sprintf_s(dl, "uncut");
+    _snprintf_s(b, n, _TRUNCATE, ", job seq %lu %ld ms result %ld, %s, kind %s deadline %ld ms, follower %016I64X, plan %ld host %ld other %ld ms, "
+                "capAt %ld tail %ld ms, nodes %ld in %ld plans, %s", r.seq, r.us / 1000, r.res, dl, r.kdKind ? kKdName[r.kdKind - 1] : "off",
+                (r.capUs ? r.capUs : r.wouldUs) / 1000, r.follower, r.planUs / 1000, r.hostUs / 1000, (r.us - r.planUs - r.hostUs) / 1000,
+                r.capAtUs < 0 ? -1 : r.capAtUs / 1000, r.tailUs < 0 ? -1 : r.tailUs / 1000, r.nodes, r.plans,
+                r.uf || r.scope == 2 ? "unseen" : r.scope == 1 ? "seen" : "scope unknown");
+}
+static bool RfLineOk(bool unseen) {  // worker only
+    static LONG total;
+    if (total >= 50000) return false;  // disk guard only
+    if (unseen) {
+        static DWORD minute;
+        static LONG lines;
+        const DWORD now = GetTickCount();
+        if (now - minute >= 60000) minute = now, lines = 0;
+        if (lines++ >= 30) return false;
+    }
+    total++;
+    return true;
+}
+// worker, after the job's lock is released, before J_DONE
+static void RfJobNote(const AsyncJob* j, bool capped, LONG us, const JobSplit& s, LONG capUs, int cutMask) {
+    RfRec r = {};
+    r.h = j->handle, r.seq = j->seq, r.us = us, r.planUs = s.planUs, r.hostUs = s.hostUs, r.capAtUs = s.capAtUs, r.tailUs = s.tailUs;
+    r.capUs = capUs, r.wouldUs = t_kdExemptUs, r.nodes = t_jobNodes, r.plans = t_jobPlans, r.res = *(const LONG*)j->result;
+    r.kdKind = t_kdKind, r.uf = j->uf, r.scope = j->kdScope, r.cutMask = cutMask, r.follower = j->kdId;
+    r.why = !capped ? NULL : j->uf ? "UnseenFallback" : t_kdKind ? "KindDeadlines" : j->probe ? "PlanDeadlineMs" : "FbJobCapMs";
+    AcquireSRWLockExclusive(&g_rfLock);
+    g_rfJobs[g_rfNext++ % kRfN] = r;
+    ReleaseSRWLockExclusive(&g_rfLock);
+    const bool unseen = r.uf || r.scope == 2;
+    char t[320];
+    RfText(r, t, sizeof(t));
+    if (t_kdExemptUs && us >= t_kdExemptUs) Log("kd exempt: would cut route %08lX%s", r.h, t);  // the job's length is the hitch cost
+    if ((r.res != 1 || capped) && RfLineOk(unseen)) Log("routefail job: route %08lX%s", r.h, t);
+    if (t_rfRetry.on) {
+        t_rfRetry.on = false;
+        if (RfLineOk(unseen)) Log("routefail retry: route %08lX after cut route %08lX %lu ms ago, request %s, backoff level %ld, %s%s", r.h, t_rfRetry.cutH,
+                                  t_rfRetry.agoMs, t_rfRetry.same ? "same" : "changed", t_rfRetry.level, r.res == 1 ? "succeeded" : "failed", t);
+    }
+    t_kdExemptUs = 0;
+}
+// sim thread: the fields of the newest job of the route a ts3fixes line names (", route XXXXXXXX"); nothing for a sync plan
+static void RfAppend(const char* line, char* out, size_t n) {
+    out[0] = 0;
+    const char* p = strstr(line, ", route ");
+    if (!p || strstr(line, " sync ")) return;
+    const DWORD h = strtoul(p + 8, NULL, 16);
+    RfRec r = {};
+    AcquireSRWLockShared(&g_rfLock);
+    for (LONG i = g_rfNext - 1; i >= 0 && i >= g_rfNext - kRfN; i--)
+        if (g_rfJobs[i % kRfN].h == h) { r = g_rfJobs[i % kRfN]; break; }
+    ReleaseSRWLockShared(&g_rfLock);
+    if (r.h) RfText(r, out, n);
+}
+
 // sim thread, every stuck-check mark (ScProbeMark): its follower had a job cut within 30 s
 static void KdStuckMark(DWORD handle) {
     if (ts3native_counters.kdMode != 1) return;

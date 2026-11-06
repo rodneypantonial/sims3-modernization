@@ -376,6 +376,39 @@ static void TestPlanDeadline() {
         memset(g_kdTab, 0, sizeof(g_kdTab));
         for (int i = 0; i < kKdRows; i++) KdFind(100 + i, true)->cutTick = 1000 + i;
         assert(KdFind(200, true) == &g_kdTab[0] && KdFind(101, false) && !KdFind(100, false));
+        // docs/197 §7 KdExemptSeen: own unknown or seen = exempt, own unseen or marked keeps its deadline; foreign only when known seen; probe never
+        g_kdExempt = 1;
+        AsyncJob s = {};
+        assert(KdJobBegin(&s) == 0 && t_kdExemptUs == 250000);
+        s.kdScope = 1;
+        assert(KdJobBegin(&s) == 0);
+        s.kdScope = 2;
+        assert(KdJobBegin(&s) == 250000 && !t_kdExemptUs);
+        s.kdScope = 0, s.uf = 1;
+        assert(KdJobBegin(&s) == 250000);
+        assert(KdJobBegin(&f) == 200000 && KdJobBegin(&a) == 200000);
+        f.kdScope = a.kdScope = 1, p.kdScope = 1;
+        assert(KdJobBegin(&f) == 0 && KdJobBegin(&a) == 0 && KdJobBegin(&p) == 180000);
+        KdScopeSet(0x25000009, 1);
+        assert(KdScopeTake(0x25000008) == 0 && KdScopeTake(0x25000009) == 0);  // another route's START used it up
+        KdScopeSet(0x25000009, 2);
+        assert(KdScopeTake(0x25000009) == 2);
+        // the job record behind a ts3fixes line: by route id, not for a sync plan
+        AsyncJob e = {};
+        e.handle = 0x25ABCDEF, e.seq = 9;
+        *(LONG*)e.result = 16;
+        const JobSplit sp = {-1, -1, 100000, 2000};
+        t_kdKind = 1, t_kdExemptUs = 250000;
+        RfJobNote(&e, false, 300000, sp, 0, 0);
+        assert(!t_kdExemptUs);
+        char rf[320];
+        RfAppend("routefail: x, Plan async No, route 25ABCDEF", rf, sizeof(rf));
+        assert(strstr(rf, "uncut (exempt)") && strstr(rf, "300 ms result 16") && strstr(rf, "deadline 250 ms") && strstr(rf, "scope unknown"));
+        RfAppend("gohere plan: Plan sync No, route 25ABCDEF", rf, sizeof(rf));
+        assert(!rf[0]);
+        RfAppend("routefail: x, route 25ABCDE0", rf, sizeof(rf));
+        assert(!rf[0]);
+        g_kdExempt = 0;
         t_kdKind = 0, k.kdMode = 0, k.kdReady = 0;
         memset(g_kdTab, 0, sizeof(g_kdTab));
         printf("KindDeadlines (docs/197): counters v134; kinds, last-round exemption, follower backoff doubled / uncut / reset, "

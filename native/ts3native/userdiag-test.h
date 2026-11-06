@@ -77,7 +77,7 @@ static void TestUserDiag() {
         for (size_t k = 0; k < 4 && i + k < strlen(line); k++) v |= (DWORD)(u8)line[i + k] << (8 * k);
         assert(UdTextMsg(v, kUdTextHi | 1 << 16) == 1);
     }
-    assert(UdTextMsg(0, kUdTextHi | 2 << 16) == 1 && UdTextMsg(0, kUdTextHi | 9 << 16) == 0);
+    assert(UdTextMsg(0, kUdTextHi | 2 << 16) == 1 && UdTextMsg(0, kUdTextHi | 10 << 16) == 0);
     UdtLog(buf, sizeof(buf), h);
     assert(strstr(buf, "ts3fixes: switches on: a?b\r\n"));
     // the GetOption hook routes 0x87 to the channel

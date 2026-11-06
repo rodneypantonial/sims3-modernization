@@ -23,6 +23,12 @@ namespace Ts3Fixes
     // interaction is Sim+DoShowOffMove, also on success, so the sequence PlanToPoint -> jig -> RouteToJigA -> DoRoute reads
     // in order. Cap: 30 lines a real minute, 400 a session. Off path (a successful plan outside DoShowOffMove): one Follower
     // read and one type compare. [687] routefail lines, [688] showoff lines, [689] lines dropped by the cap.
+    // docs/197 §7 (player report 2026-11-07, Go Here fails on the home lot): routefail lines of the active household are never
+    // dropped and carry ", route X" (ts3native appends that job's fields, "routefail job:"). A user-directed interaction of an
+    // active-household Sim is a "cmd": gohere start / goal / plan / near / end lines (near: only after a failed plan, 3 times a
+    // cmd at most, 8 objects within 2 m). routefail lines of a cmd say "cmd N". Failed plans of every Sim are counted per Sim and
+    // per lot, objects added / removed per lot; "routefail summary" lines at world quit and every 15 min with new failures.
+    // Off path (autonomous plan, no failure): one flag read.
     public static partial class Fixes
     {
         static readonly string[] kRflKind = { "Plan", "Replan", "PlanFromPoint", "ReplanFromPoint" };
@@ -30,11 +36,207 @@ namespace Ts3Fixes
         static bool sShowOffLooked;
         static readonly Dictionary<ulong, bool> sRflAsync = new Dictionary<ulong, bool>();
         static int sRflMinute = -1, sRflInMinute, sRflTotal;
+        class RflCmd { public InteractionInstance Ia; public int Id, Attempts, Fails, Near, Lines; }
+        class RflRow { public string Name; public int Seen, Unseen; public bool Household; }
+        static readonly Dictionary<ulong, RflCmd> sRflCmds = new Dictionary<ulong, RflCmd>();  // by Sim object id
+        static readonly Dictionary<ulong, RflRow> sRflSims = new Dictionary<ulong, RflRow>();
+        static readonly Dictionary<ulong, int[]> sRflLots = new Dictionary<ulong, int[]>();    // fails, added, removed, added and removed in build/buy
+        const int kRflMaxRows = 512;
+        static int sRflCmdSeq, sRflFails, sRflSeen, sRflUnseen, sRflHousehold, sRflTownie, sRflHome, sRflOther, sRflSummaryN, sRflSummaryFails, sRflSummaryAt, sRflBbAt;
+        static EventHandler sRflPlaced, sRflGone;
 
         static void ApplyRouteFailLog()
         {
             Patch(typeof(SimRoutingComponent), "DoRoute", typeof(RflRouteHook), "DoRouteHook", "DoRouteOrig");
             Patch(typeof(SocialJigTwoPerson), "PlaceJigAlongRoute", new Type[] { typeof(Sim), typeof(Sim), typeof(Route) }, typeof(RflJigHook), "PlaceHook", "PlaceOrig");
+        }
+
+        // at each world load: the object counters; -= first, the world's event lists outlive a quit
+        static void RflWorldLoad()
+        {
+            if (sRflPlaced == null)
+            {
+                sRflPlaced = delegate(object o, EventArgs e) { World.OnObjectPlacedInLotEventArgs a = e as World.OnObjectPlacedInLotEventArgs; if (a != null) RflObjectEvent(a.LotId, 1); };
+                sRflGone = delegate(object o, EventArgs e) { World.OnObjectPendingDestructionEventArgs a = e as World.OnObjectPendingDestructionEventArgs; if (a != null) RflObjectEvent(a.LotId, 2); };
+            }
+            World.OnObjectPlacedInLotEventHandler -= sRflPlaced;
+            World.OnObjectPlacedInLotEventHandler += sRflPlaced;
+            World.OnObjectPendingDestructionEventHandler -= sRflGone;
+            World.OnObjectPendingDestructionEventHandler += sRflGone;
+        }
+
+        static int[] RflLot(ulong lot)
+        {
+            int[] row;
+            if (sRflLots.TryGetValue(lot, out row)) return row;
+            if (sRflLots.Count >= kRflMaxRows) return new int[5];
+            return sRflLots[lot] = new int[5];
+        }
+
+        static void RflObjectEvent(ulong lot, int slot)
+        {
+            try
+            {
+                int[] row = RflLot(lot);
+                row[slot]++;
+                if (!Sims3.Gameplay.GameStates.IsBuildBuyLikeState) return;
+                row[slot + 2]++;
+                int now = System.Environment.TickCount;
+                if (unchecked(now - sRflBbAt) < 60000 && sRflBbAt != 0) return;
+                sRflBbAt = now;  // one line per burst: when build/buy touched which lot
+                DiagLine("routefail buildbuy: lot 0x" + lot.ToString("X") + (slot == 1 ? " object added" : " object removed") + ", session add " + row[3] + " remove " + row[4]);
+            }
+            catch (Exception) { }
+        }
+
+        static void RflCount(Sim sim)
+        {
+            bool seen = UfWhy(sim) != 0, hh = sim.IsInActiveHousehold;
+            sRflFails++;
+            if (seen) sRflSeen++; else sRflUnseen++;
+            if (hh) sRflHousehold++; else sRflTownie++;
+            Lot lot = sim.LotCurrent;
+            if (lot != null && lot == sim.LotHome) sRflHome++; else sRflOther++;
+            RflLot(lot != null ? lot.LotId : 0)[0]++;
+            ulong id = sim.SimDescription.SimDescriptionId;
+            RflRow r;
+            if (!sRflSims.TryGetValue(id, out r))
+            {
+                if (sRflSims.Count >= kRflMaxRows) return;
+                r = new RflRow();
+                r.Name = sim.FullName + " 0x" + id.ToString("X");
+                r.Household = hh;
+                sRflSims[id] = r;
+            }
+            if (seen) r.Seen++; else r.Unseen++;
+            int now = System.Environment.TickCount;
+            if (sRflSummaryAt == 0) sRflSummaryAt = now;
+            if (unchecked(now - sRflSummaryAt) >= 900000) RflSummary("15 min");
+        }
+
+        // cumulative: a crash after the last line still leaves the numbers up to it
+        static void RflSummary(string why)
+        {
+            try
+            {
+                if (sRflFails == sRflSummaryFails && why != "world quit") return;
+                sRflSummaryAt = System.Environment.TickCount;
+                sRflSummaryFails = sRflFails;
+                sRflSummaryN++;
+                DiagLine("routefail summary #" + sRflSummaryN + " (" + why + "): failed plans " + sRflFails + ", seen " + sRflSeen + " unseen " + sRflUnseen
+                    + ", household " + sRflHousehold + " townie " + sRflTownie + ", on own home lot " + sRflHome + " elsewhere " + sRflOther
+                    + ", Sims " + sRflSims.Count + ", lots " + sRflLots.Count);
+                List<KeyValuePair<ulong, RflRow>> sims = new List<KeyValuePair<ulong, RflRow>>(sRflSims);
+                sims.Sort(delegate(KeyValuePair<ulong, RflRow> a, KeyValuePair<ulong, RflRow> b) { return (b.Value.Seen + b.Value.Unseen).CompareTo(a.Value.Seen + a.Value.Unseen); });
+                List<string> items = new List<string>();
+                for (int i = 0; i < sims.Count && i < 12; i++)
+                {
+                    RflRow r = sims[i].Value;
+                    items.Add(r.Name + (r.Household ? " household" : " townie") + " seen " + r.Seen + " unseen " + r.Unseen);
+                }
+                DiagList("routefail summary Sims: ", items);
+                List<KeyValuePair<ulong, int[]>> lots = new List<KeyValuePair<ulong, int[]>>(sRflLots);
+                lots.Sort(delegate(KeyValuePair<ulong, int[]> a, KeyValuePair<ulong, int[]> b) { return (b.Value[0] + b.Value[1] + b.Value[2]).CompareTo(a.Value[0] + a.Value[1] + a.Value[2]); });
+                items = new List<string>();
+                for (int i = 0; i < lots.Count && i < 8; i++)
+                {
+                    int[] v = lots[i].Value;
+                    items.Add("0x" + lots[i].Key.ToString("X") + " fails " + v[0] + " added " + v[1] + " removed " + v[2] + " build/buy +" + v[3] + " -" + v[4]);
+                }
+                DiagList("routefail summary lots: ", items);
+            }
+            catch (Exception) { }
+        }
+
+        // the user-directed interaction this Sim runs, null = none. shortcut: an interaction a mod queues at user priority counts too
+        static RflCmd RflCmdOf(Sim sim)
+        {
+            InteractionInstance ia = sim.CurrentInteraction;
+            if (ia == null || ia.Autonomous || ia.GetPriority().Level != InteractionPriorityLevel.UserDirected || !sim.IsInActiveHousehold) return null;
+            if (!ShortcutOn("routefaillog")) return null;
+            ulong id = sim.ObjectId.Value;
+            RflCmd c;
+            if (sRflCmds.TryGetValue(id, out c) && ReferenceEquals(c.Ia, ia)) return c;
+            if (sRflCmds.Count >= 64) sRflCmds.Clear();
+            c = new RflCmd();
+            c.Ia = ia;
+            c.Id = ++sRflCmdSeq;
+            sRflCmds[id] = c;
+            return c;
+        }
+
+        static string RflLoc(Vector3 v)
+        {
+            LotLocation l = LotLocation.Invalid;
+            ulong lot = World.GetLotLocation(v, ref l, eRoomDefinition.Default);
+            return V(v) + " lot 0x" + lot.ToString("X") + " level " + l.mLevel + " room " + l.mRoom;
+        }
+
+        static string RflObj(ulong id)
+        {
+            GameObject o = id != 0 ? GameObject.GetObject(new ObjectGuid(id)) : null;
+            return o != null ? o.GetType().Name : "none";
+        }
+
+        static void RflCmdStart(RflCmd c, Sim sim, Vector3 goal)
+        {
+            InteractionInstance ia = c.Ia;
+            Household h = sim.Household;
+            int why = UfWhy(sim);
+            DiagLine("gohere start: cmd " + c.Id + " " + sim.FullName + " 0x" + sim.SimDescription.SimDescriptionId.ToString("X") + " follower " + sim.ObjectId.Value.ToString("X16")
+                + ", household " + (h != null ? h.Name : "none") + (sim.IsInActiveHousehold ? " active" : "") + (sim == Sim.ActiveActor ? " selected" : ""
+                ) + (sim.IsSelectable ? " selectable" : "") + ", why " + why + (why != 0 ? " seen" : " unseen") + ", interaction " + ia.GetType().Name
+                + (ia.Target != null ? " target " + ia.Target.GetType().Name : "") + ", from " + RflLoc(sim.Position));
+            FieldInfo f = ia.GetType().GetField("Hit", BindingFlags.Public | BindingFlags.Instance);  // InteractionGameObjectHit<,>.Hit: where the player clicked
+            string click = "no click point";
+            if (f != null && f.FieldType == typeof(GameObjectHit))
+            {
+                GameObjectHit hit = (GameObjectHit)f.GetValue(ia);
+                click = "click " + RflLoc(hit.mPoint) + " on " + hit.mType + " " + RflObj(hit.mId);
+            }
+            DiagLine("gohere goal: cmd " + c.Id + " goal " + RflLoc(goal) + " terrain " + World.GetTerrainType(goal) + (World.IsPositionOutside(goal) ? " outside" : " inside") + ", " + click);
+        }
+
+        static void RflCmdPlan(RflCmd c, ScriptCore.Route r, Sim sim, string what, RoutePlanResult res, uint t0)
+        {
+            Vector3 goal = r.GetApproximateOriginalDestination();
+            if (c.Attempts++ == 0) RflCmdStart(c, sim, goal);
+            bool ok = res.mType == RoutePlanResultType.Succeeded;
+            string b = res.mBlockerType.ToString();
+            if (res.mBlockerType != RouteBlockerType.None) b += " 0x" + res.mBlockerObjectId.ToString("X") + " " + RflObj(res.mBlockerObjectId) + " at " + V(res.mBlockerLocation);
+            DiagLine("gohere plan: cmd " + c.Id + " attempt " + c.Attempts + ", " + what + ", " + (ok ? "ok" : "failed") + " blocker " + b + ", path " + res.mDistanceTotal.ToString("0.0", CultureInfo.InvariantCulture)
+                + " m, candidates " + res.mNumCandidatePointsGenerated + "/" + res.mNumAcceptedPoints + "/" + res.mNumRejectedPoints + ", " + (unchecked(SrcNowUs() - t0) / 1000) + " ms, route " + r.Handle.ToString("X8"));
+            if (ok) return;
+            c.Fails++;
+            if (c.Near++ < 3) RflNear(c, goal);
+        }
+
+        // around a failed goal. Walls by direction, bit 0 +x, 1 -x, 2 +z, 3 -z, 1 m out; a fence blocks placement, not light [inferred]
+        static void RflNear(RflCmd c, Vector3 goal)
+        {
+            LotLocation l = LotLocation.Invalid;
+            ulong lot = World.GetLotLocation(goal, ref l, eRoomDefinition.Default);
+            int light = 0, place = 0;
+            Vector3[] dir = { new Vector3(1f, 0f, 0f), new Vector3(-1f, 0f, 0f), new Vector3(0f, 0f, 1f), new Vector3(0f, 0f, -1f) };
+            for (int i = 0; i < 4 && lot != 0; i++)
+            {
+                if (World.WallExistsBetweenPoints(lot, goal, goal + dir[i], eRoomDefinition.LightBlocking)) light |= 1 << i;
+                if (World.WallExistsBetweenPoints(lot, goal, goal + dir[i], eRoomDefinition.PlacementBlocking)) place |= 1 << i;
+            }
+            List<string> items = new List<string>();
+            GameObject[] near = Sims3.Gameplay.Queries.GetObjects<GameObject>(goal, 2f);
+            for (int i = 0; i < near.Length && i < 40 && items.Count < 8; i++)
+            {
+                GameObject o = near[i];
+                if (o is Sim && o.Position == goal) continue;
+                bool fp = false;
+                uint[] hashes = o.GetFootprintNameHashes();
+                for (int k = 0; hashes != null && k < hashes.Length && k < 4 && !fp; k++)
+                    fp = World.ObjectIsFootprintEnabled(o.ObjectId, hashes[k]) && World.ObjectFootprintContainsPoint(o.ObjectId, hashes[k], goal);
+                items.Add(o.GetType().Name + " " + (o.Position - goal).Length().ToString("0.0", CultureInfo.InvariantCulture) + " m level " + o.Level + " room " + o.RoomId + (fp ? " COVERS GOAL" : ""));
+            }
+            DiagLine("gohere near: cmd " + c.Id + " level " + l.mLevel + " room " + l.mRoom + ", walls light 0x" + light.ToString("X") + " placement 0x" + place.ToString("X") + ", objects within 2 m " + near.Length);
+            DiagList("gohere near: cmd " + c.Id + " ", items);
         }
 
         // AsyncWait (RouteBackoff.cs): this task's plan waits on a ts3native job. Read and cleared by RflPlan.
@@ -69,21 +271,24 @@ namespace Ts3Fixes
                 bool show = InShowOff(sim);
                 if (show && sim == sSoChild) { sSoSeen = true; sSoPlans++; if (!ok) sSoPlanFails++; if (async) sSoAsync++; }
                 if (show && sim == sSoAdult && !ok && sSoAdultRoute == -1) sSoAdultPlanFails++; // asyncjigsync repro: the partner's plans before its DoRoute (RouteToJigB to an unplaced jig); later plans (e.g. a locked-portal PlanFromPoint after the social) do not count
+                RflCmd cmd = RflCmdOf(sim);
+                string what = kRflKind[kind & 3] + (async ? " async" : " sync") + " " + res.mType;
+                if (cmd != null) RflCmdPlan(cmd, r, sim, what, res, t0);
                 if (ok && !show) return;
-                if (!show && !sim.IsInActiveHousehold) return;
                 if (!ShortcutOn("routefaillog")) return;
-                RflLine(show, sim, kRflKind[kind & 3] + (async ? " async" : " sync") + " " + res.mType + " blocker " + res.mBlockerType,
-                    r.GetApproximateOriginalDestination(), t0);
+                if (!ok) RflCount(sim);
+                if (!show && !sim.IsInActiveHousehold) return;
+                RflLine(show, sim, what + " blocker " + res.mBlockerType, r.GetApproximateOriginalDestination(), t0, r.Handle, cmd);
             }
             catch (Exception) { }
         }
 
-        static void RflLine(bool show, Sim sim, string what, Vector3 goal, uint t0)
+        static void RflLine(bool show, Sim sim, string what, Vector3 goal, uint t0, uint route, RflCmd cmd)
         {
             int minute = (int)(SrcNowUs() / 60000000u); // real minutes (SrcNowUs wraps after ~71 min: one short bucket)
             if (minute != sRflMinute) { sRflMinute = minute; sRflInMinute = 0; }
             int[] c = PatchCounters();
-            if (sRflInMinute >= 30 || sRflTotal >= 400) { c[689]++; return; }
+            if (!sim.IsInActiveHousehold && (sRflInMinute >= 30 || sRflTotal >= 400)) { c[689]++; return; }
             sRflInMinute++; sRflTotal++;
             c[show ? 688 : 687]++;
             InteractionInstance ia = sim.CurrentInteraction;
@@ -92,7 +297,9 @@ namespace Ts3Fixes
             string line = (show ? "showoff: " : "routefail: ") + sim.FullName + " 0x" + sim.SimDescription.SimDescriptionId.ToString("X")
                 + " " + sim.SimDescription.Age + (sim.IsInActiveHousehold ? " active" : "") + ", " + (ia != null ? ia.GetType().Name : "none") + ", " + what
                 + ", goal " + V(goal) + ", at " + V(p) + ", lot 0x" + (lot != null ? lot.LotId.ToString("X") : "0") + " room " + sim.RoomId
-                + ", " + (unchecked(SrcNowUs() - t0) / 1000) + " ms";
+                + ", " + (unchecked(SrcNowUs() - t0) / 1000) + " ms, " + (UfWhy(sim) != 0 ? "seen" : "unseen")
+                + (cmd != null ? ", cmd " + cmd.Id : "") + (route != 0 ? ", route " + route.ToString("X8") : "");
+            if (cmd != null) cmd.Lines++;
             DiagLine(line);
         }
 
@@ -106,17 +313,28 @@ namespace Ts3Fixes
             public bool DoRouteHook(Route r)
             {
                 uint t0 = SrcNowUs();
+                RflCmd cmd = null;
+                try { if (OwnerSim != null && r != null) cmd = RflCmdOf(OwnerSim); } catch (Exception) { }
                 bool ok = DoRouteOrig(r);
                 try
                 {
                     Sim sim = OwnerSim;
+                    if (sim != null && cmd != null)
+                    {
+                        Vector3 goal = r.GetApproximateOriginalDestination();
+                        if (cmd.Attempts == 0) RflCmdStart(cmd, sim, goal);
+                        RoutePlanResult er = r.PlanResult;
+                        DiagLine("gohere end: cmd " + cmd.Id + " DoRoute " + (ok ? "ok" : "false") + " plan " + er.mType + " blocker " + er.mBlockerType + (sim.HasExitReason() ? " exit " + sim.ExitReason : "")
+                            + ", " + (sim.Position - goal).Length().ToString("0.0", CultureInfo.InvariantCulture) + " m from goal " + V(goal) + ", at " + V(sim.Position) + ", plans " + cmd.Attempts
+                            + " failed " + cmd.Fails + ", routefail lines " + cmd.Lines + (ok ? "" : " +1") + ", " + (unchecked(SrcNowUs() - t0) / 1000) + " ms, route " + r.Handle.ToString("X8"));
+                    }
                     if (sim != null && sim == sSoChild && InShowOff(sim)) { sSoSeen = true; sSoRoute = ok ? 1 : 0; sSoRoutePlan = r != null ? r.PlanResult.mType.ToString() : "?"; }
                     if (sim != null && sim == sSoAdult && InShowOff(sim)) sSoAdultRoute = ok ? 1 : 0;
                     if (sim != null && r != null && (!ok || InShowOff(sim)) && (InShowOff(sim) || sim.IsInActiveHousehold) && ShortcutOn("routefaillog"))
                     {
                         RoutePlanResult pr = r.PlanResult;
                         RflLine(InShowOff(sim), sim, "DoRoute " + (ok ? "ok" : "false") + " plan " + pr.mType + " blocker " + pr.mBlockerType
-                            + (sim.HasExitReason() ? " exit " + sim.ExitReason : ""), r.GetApproximateOriginalDestination(), t0);
+                            + (sim.HasExitReason() ? " exit " + sim.ExitReason : ""), r.GetApproximateOriginalDestination(), t0, r.Handle, cmd);
                     }
                 }
                 catch (Exception) { } // logging never changes the route's answer
@@ -139,7 +357,7 @@ namespace Ts3Fixes
                         RoutePlanResult pr = routeToActorB != null ? routeToActorB.PlanResult : default(RoutePlanResult);
                         RflLine(true, actorA, "jig " + (ok ? "placed" : "NOT placed") + " at " + V(Position) + " (" + (Position - actorB.Position).Length().ToString("0.0", CultureInfo.InvariantCulture)
                             + " m from " + actorB.FullName + " " + actorB.SimDescription.Age + " room " + actorB.RoomId + "), route-to-B plan " + pr.mType,
-                            actorB.Position, t0);
+                            actorB.Position, t0, 0, null);
                     }
                 }
                 catch (Exception) { }

@@ -671,6 +671,7 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
         case 3: case 4: case 5: return MsOp((hi >> 16) & 0xFF);
         case 6: return PlAnswer();  // played.cpp: store ready / household played (docs/14 section 8.6)
         case 7: return CpOp(lo);    // compaction.cpp: [Compaction] verdict and steps (docs/204)
+        case 8: case 9: KdScopeSet(lo, ((hi >> 16) & 0xFF) == 8 ? 1 : 2); return 1;  // docs/197 §7: UfWhy of route lo, before its START
         case 0: g_udTxtN = 0; return 1;
         case 1:
             for (int i = 0; i < 4; i++) {
@@ -686,6 +687,14 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
             if (!strncmp(g_udTxt, "savecleanup: ", 13)) {  // per-action save cleanup lines (docs/14 section 8.6): own, larger cap
                 static LONG s_scLines;
                 if (s_scLines++ < 50000) Log("ts3fixes: %s", g_udTxt);
+                g_udTxtN = 0;
+                return 1;
+            }
+            if (!strncmp(g_udTxt, "routefail", 9) || !strncmp(g_udTxt, "gohere", 6)) {  // docs/197 §7: own cap (disk guard only), the job's fields appended
+                static LONG s_rfLines;
+                char job[320];
+                RfAppend(g_udTxt, job, sizeof(job));
+                if (s_rfLines++ < 50000) Log("ts3fixes: %s%s", g_udTxt, job);
                 g_udTxtN = 0;
                 return 1;
             }
