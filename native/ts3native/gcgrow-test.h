@@ -39,9 +39,9 @@ static DWORD __cdecl GwFakeXml(DWORD lo, DWORD hi, DWORD group, DWORD type) {
 }
 
 static void TestGcGrowLog() {
-    static_assert(offsetof(Ts3nCounters, gcBlackOk) == 0x5B30 && offsetof(Ts3nCounters, gwMode) == 0x5B04 && offsetof(Ts3nCounters, gwUnseenKB) == 0x5B1C &&
-                      offsetof(Ts3nCounters, gwXmlMaxKB) == 0x5B28 && sizeof(Ts3nCounters) == 5843 * 4,
-                  "counters v161 layout (docs/registry.md)");
+    static_assert(offsetof(Ts3nCounters, gcBlackOk) == 0x5B14 && offsetof(Ts3nCounters, gwMode) == 0x5AE8 && offsetof(Ts3nCounters, gwUnseenKB) == 0x5B00 &&
+                      offsetof(Ts3nCounters, gwXmlMaxKB) == 0x5B0C && sizeof(Ts3nCounters) == 5909 * 4,
+                  "counters v161-v163 layout (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     const MxAddrs saved = g_mx;
     const GwBoehm savedB = g_gwb;
@@ -97,7 +97,7 @@ static void TestGcGrowLog() {
     for (int i = 0; i < 7; i++) GcBlackOk("Repeated allocation", 969u << 12);
     assert(k.gcBlackOk == 7 && k.gcBlackOkMaxKB == 3876 && g_gwWarned == 1);
     g_gwWarnProc = savedWarn, g_gwWarnEvery = 5;
-    // window: off without a cap; with a cap but other bytes at the sites (no game exe here) nothing switches
+    // window: off without a cap; with a cap but other bytes at the sites (no TS3W here) nothing switches
     GcCapWindow(true, "test");
     assert(!g_gcStrict && k.gcStrictN == 0);
     g_gcCapBytes = 1u << 20;

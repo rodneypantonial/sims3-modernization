@@ -31,7 +31,7 @@ export const OUT = join(ROOT, 'probe-out', 'save-reload');
 
 // ---------------------------------------------------------------- pure parts (covered by --self-check)
 
-// [UserDiag] "save: end #N result R after X ms" lines in a log slice (the native save time; result 1 = ok)
+// [UserDiag] "save: end #N result R after X ms" lines in a log slice (the native save time; result 0 = the game saved, every good save in the logs)
 export function saveEnds(text: string): { n: number; result: number; ms: number }[] {
   return [...text.matchAll(/^save: end #(\d+) result (\d+) after (\d+) ms/gm)].map(m => ({ n: +m[1], result: +m[2], ms: +m[3] }));
 }
@@ -61,6 +61,7 @@ function selfCheck() {
 const { values } = parseArgs({ options: {
   world: { type: 'string' }, play: { type: 'string', default: '25' }, after: { type: 'string', default: '10' }, name: { type: 'string' },
   control: { type: 'boolean' }, 'no-visits': { type: 'boolean' }, 'no-direct': { type: 'boolean' }, port: { type: 'string', default: '47891' },
+  cycles: { type: 'string', default: '1' }, // menu-route reloads in a row (memory stress; marks sr-reload, sr-reload-2 ...)
   'self-check': { type: 'boolean' },
 } });
 if (values['self-check']) { selfCheck(); process.exit(0); }
@@ -99,12 +100,18 @@ async function until(what: string, capS: number, cond: () => Promise<boolean>, e
     await sleep(everyMs);
   }
 }
+// Steam GC_black_list_spacing 0x0119482C and the [GC] BlackListCapKB counters (docs/232 Run 8q); nulls when unreadable
+async function gcState() {
+  const rd = await get('read?addr=0x0119482C&len=4'), n = await get('native');
+  const keys = ['gcCapKB', 'gcStrictN', 'gcLenientN', 'gcSwitchSec', 'gcBlackOk', 'gcExpandStreakMax', 'gwExpands', 'gwKB'];
+  return { spacingKB: rd?.hex ? Buffer.from(rd.hex, 'hex').readUInt32LE(0) >> 10 : null, ...Object.fromEntries(keys.map(k => [k, n?.[k] ?? null])) };
+}
 async function mark(tag: string) {
   const r = await ag('mem_mark', { tag });
   if (!r.ok || !r.result?.accepted) throw new Error(`mem_mark ${tag}: ${r.error ?? 'not accepted ([MemDiag] / [UserDiag] off?)'}`);
-  out.marks[tag] = { at: new Date().toISOString(), memory: await get('memory') };
-  const m = out.marks[tag].memory;
-  log(`mark ${tag}: commit ${m?.commitMB} private ${m?.privateMB} largest free ${m?.largestFreeMB} MB`);
+  out.marks[tag] = { at: new Date().toISOString(), memory: await get('memory'), gc: await gcState() };
+  const m = out.marks[tag].memory, g = out.marks[tag].gc;
+  log(`mark ${tag}: commit ${m?.commitMB} private ${m?.privateMB} largest free ${m?.largestFreeMB} MB; bl spacing ${g.spacingKB} KB, strict/lenient ${g.gcStrictN}/${g.gcLenientN}, black ok ${g.gcBlackOk}, streak max ${g.gcExpandStreakMax}`);
   flush();
 }
 // realistic play: autopilot x3 (dialogs cleared), requests declined every 30 s; Buy + CAS visits at the given minutes
@@ -156,12 +163,12 @@ async function sampler() {
   return async () => { on = false; await loop; return peakOf(before, rows); };
 }
 
-// one save, timed: wall ms from save_game to save_in_progress false (seen true first, or the async_log line), native ms from the log
+// one save, timed: wall ms from save_game to the native "save: end" line (or save_in_progress seen true, then false), native ms from the log
 async function save(label: string) {
   await ag('autopilot', { enabled: false }); // it would unpause during the save
   await ag('set_speed', { speed: 'pause' });
   for (let i = 0; i < 5 && (await ag('auto_dialog')).result?.open; i++) await sleep(1500);
-  const off = logSize(), done0 = ((await ag('async_log')).result ?? []).filter((l: string) => l.startsWith(`save ${NAME} -> `)).length;
+  const off = logSize();
   const stop = await sampler();
   const t0 = Date.now(), r = await ag('save_game', { name: NAME }); // always by name: after a load SaveName can be empty (EA then opens the Save As dialog); the same name overwrites, as EA's AutoSave does
   if (!r.ok) throw new Error(`save ${label}: ${r.error}`);
@@ -169,15 +176,20 @@ async function save(label: string) {
   const wallMs = await until(`save ${label}`, 900, async () => {
     const st = await ag('game_state');
     if (st.ok && st.result.save_in_progress) seen = true;
-    const done = ((await ag('async_log')).result ?? []).filter((l: string) => l.startsWith(`save ${NAME} -> `)).length > done0;
-    return done || (seen && st.ok && !st.result.save_in_progress);
+    // the sim thread answers nothing while it saves, so a poll rarely lands with save_in_progress true: the native
+    // "save: end" line in the log slice is the sure sign (bp-save-reload 2026-11-02 05:24 waited 900 s on a 7 s save).
+    // The agent's async_log line is not: its task can finish before the game's save state runs (08:41: wall 49 ms on a
+    // 9.7 s save, then the mem_mark hit the busy sim thread), so it is not read here.
+    return saveEnds(logFrom(off)).length > 0 || (seen && st.ok && !st.result.save_in_progress);
   });
   await sleep(2000); // the save: end line follows the script side by a moment
   const peak = await stop();
   const end = saveEnds(logFrom(off)).at(-1) ?? null;
   out.saves.push({ label, wallMs, nativeMs: end?.ms ?? null, result: end?.result ?? null, peak });
   log(`save ${label}: wall ${wallMs} ms, native ${end?.ms ?? '?'} ms, result ${end?.result ?? '?'}; largest free ${peak.bigBefore} -> low ${peak.minBig} MB (need ${peak.bigNeedMB}), commit peak +${peak.commitPeakMB} MB, ${peak.reads} reads`);
-  if (end && end.result !== 1) throw new Error(`save ${label}: native result ${end.result}`);
+  // 0 = saved: the game's save returns an error code (saveslim.cpp SlimStart "0 = saved"; 150 of 150 "save: end" lines in
+  // probe-out/queue logs say 0, 2026-11-03). The old check wanted 1 and failed every save.
+  if (end && end.result !== 0) throw new Error(`save ${label}: native result ${end.result} (0 = saved)`);
   out.phases[`${label}Ms`] = Date.now() - t0;
   flush();
 }
@@ -202,26 +214,29 @@ try {
     await mark('sr-pre');
     await save('normal'); // (a): a new scratch file; every later save overwrites it
     await mark('sr-save');
-    // (b) menu route
-    const tc = Date.now();
-    await save('reloadSave');
-    const stopM = await sampler();
-    const r1 = await ag('main_menu');
-    if (!r1.ok) throw new Error(`main_menu: ${r1.error}`);
-    out.phases.menuMs = await until('unload to the main menu', 600, async () => (await get('agentstatus'))?.worldLoaded === false && (await ag('game_state')).result?.in_world === false);
-    let tl = Date.now(), lr = await ag('load_save', { file: `${NAME}.sims3` });
-    for (let i = 0; !lr.ok && /already in a world|no reply/.test(lr.error ?? '') && i < 20; i++) { await sleep(3000); lr = await ag('load_save', { file: `${NAME}.sims3` }); }
-    if (!lr.ok) throw new Error(`load_save: ${lr.error}`);
-    out.phases.menuToLoadMs = Date.now() - tl;
-    tl = Date.now();
-    out.phases.loadMs = await until('reload', 900, inLive, 1000);
-    out.phases.reloadCycleMs = Date.now() - tc;
-    out.reloadPeak = { menu: await stopM() }; // unload + load: the compaction itself must not run out of address space
-    log(`menu route: unload ${out.phases.menuMs} ms, load ${out.phases.loadMs} ms, cycle ${out.phases.reloadCycleMs} ms (save included)`);
-    await ag('quiet_ui', { memories_off: true });
-    await mark('sr-reload');
-    await play(Number(values.after));
-    await mark('sr-reload10');
+    // (b) menu route, --cycles times (cycle 1 keeps the old phase keys and marks)
+    for (let c = 1; c <= Number(values.cycles); c++) {
+      const sfx = c === 1 ? '' : `-${c}`;
+      const tc = Date.now();
+      await save(`reloadSave${sfx}`);
+      const stopM = await sampler();
+      const r1 = await ag('main_menu');
+      if (!r1.ok) throw new Error(`main_menu: ${r1.error}`);
+      out.phases[`menuMs${sfx}`] = await until('unload to the main menu', 600, async () => (await get('agentstatus'))?.worldLoaded === false && (await ag('game_state')).result?.in_world === false);
+      let tl = Date.now(), lr = await ag('load_save', { file: `${NAME}.sims3` });
+      for (let i = 0; !lr.ok && /already in a world|no reply/.test(lr.error ?? '') && i < 20; i++) { await sleep(3000); lr = await ag('load_save', { file: `${NAME}.sims3` }); }
+      if (!lr.ok) throw new Error(`load_save: ${lr.error}`);
+      out.phases[`menuToLoadMs${sfx}`] = Date.now() - tl;
+      tl = Date.now();
+      out.phases[`loadMs${sfx}`] = await until('reload', 900, inLive, 1000);
+      out.phases[`reloadCycleMs${sfx}`] = Date.now() - tc;
+      (out.reloadPeak ??= {})[`menu${sfx}`] = await stopM(); // unload + load: the compaction itself must not run out of address space
+      log(`menu route${sfx}: unload ${out.phases[`menuMs${sfx}`]} ms, load ${out.phases[`loadMs${sfx}`]} ms, cycle ${out.phases[`reloadCycleMs${sfx}`]} ms (save included)`);
+      await ag('quiet_ui', { memories_off: true });
+      await mark(`sr-reload${sfx}`);
+      await play(Number(values.after));
+      await mark(`sr-reload10${sfx}`);
+    }
     if (!values['no-direct']) { // (b2) EA's in-game Load (ReloadWorld): unload and load with no main menu step
       const td = Date.now();
       await save('directSave');
@@ -250,3 +265,4 @@ for (const tag of Object.keys(out.marks)) out.marks[tag].diag = markFields(text,
 out.ended = new Date().toISOString();
 flush();
 log(`${process.exitCode ? 'FAIL' : 'PASS'}: ${file}`);
+process.exit(process.exitCode ?? 0); // a save that threw leaves its sampler running; node would sit until the queue gives up (bp-save-reload 2026-11-02 sat 33 min)

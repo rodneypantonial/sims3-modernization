@@ -210,6 +210,7 @@ namespace Ts3Agent
                 o["routing"] = routing;
                 o["in_transit"] = InTransit(s);  // docs/202 §3.7: ts3fixes unseenfbpre walk-time hold (stuck-rule.ts: never stuck)
                 o["active_household"] = s.Household != null && s.Household == Household.ActiveHousehold;
+                if (a.Bool("motives", false) && (bool)o["active_household"]) o["motives"] = MotiveValues(s); // idle-watch.ts: needs at start and end
                 list.Add(o);
                 if (list.Count >= 400) break;
             }
@@ -313,14 +314,29 @@ namespace Ts3Agent
             new[] { new[] { "new towns available", "long-distance move", "preparing to move" }, new[] { "not now", "cancel", "later", "decline", "no" } },
             // Event invitations (Round 5: "Committee Hearing", "The Dish Showdown", "The Complete Circuit") and the move flow's second dialog: normal play must not move house or start events.
             new[] { new[] { "committee hearing", "the dish showdown", "the complete circuit", "moving to a new town" }, new[] { "cancel", "decline", "no" } },
+            // Career choice event (2026-11-03 bp-gug-t-ab: "...company is losing people due to low morale..." buttons 'Workshops' / 'Raises'):
+            // no safe word, the game sat paused 60 s and the fail-fast guard ended the job. Either answer is normal play; take raises.
+            new[] { new[] { "low morale" }, new[] { "raises", "workshops" } },
+            // Military career event (2026-11-04 al203b: "...romantically approached by one of the journalists..." buttons 'Brush Off' / 'Break Rank'):
+            // same 60 s pause stop. Brush off keeps the career and relationships as they were.
+            new[] { new[] { "romantically approached" }, new[] { "brush off" } },
+            // Career event (2026-11-05 v027-numbers-clean bp: "Lala now has a higher ranking position ... asked to think about whether or not that
+            // employee should keep their job", buttons 'fire fire' / 'k...' / one more): no safe word, 60 s pause stop. Keep the employee.
+            new[] { new[] { "tough decision" }, new[] { "keep", "retain", "don't fire" } },
             new[] { new[] { "mod scripts found" }, new[] { "accept", "ok", "continue" } },
         };
+
+        // A World Adventures trip asks to name its travel save, and cancelling that dialog drops the trip (2026-11-04 #208 save
+        // matrix: France, China and Egypt all "trip dropped"). travel_vacation and travel_home set this; until it runs out the
+        // "name your saved game" rule steps aside and the dialog gets the normal accept.
+        internal static int sTripSaveUntil;
+        static bool TripSavePending() { return sTripSaveUntil != 0 && System.Environment.TickCount - sTripSaveUntil < 0; }
 
         static string[] RuleFor(string text)
         {
             foreach (string[][] rule in kDialogRules)
                 foreach (string frag in rule[0])
-                    if (text.IndexOf(frag) >= 0) return rule[1];
+                    if (text.IndexOf(frag) >= 0) return frag == "name your saved game" && TripSavePending() ? null : rule[1];
             return null;
         }
 
@@ -334,7 +350,10 @@ namespace Ts3Agent
         // EA's lifetime wish dialog (a Sim ages up): Okay stays disabled until a wish is picked, and the buttons without
         // a wish tag open WishPickerDialog, whose OK also waits for a pick. Button scoring cannot answer either, so use
         // their own handlers: cancel an open picker, else select the first offered wish and press Okay.
-        static bool AnswerLifetimeWish(Dictionary<string, object> r)
+        // Only when that dialog is the top modal: sDialog stays set while another modal sits on top (2026-11-03: a second Sim's
+        // age-up dialog over a wish dialog), its Okay then ends nothing, and answering it every step left the top dialog unanswered
+        // until the clock guard failed the run (210 answers in 60 s).
+        static bool AnswerLifetimeWish(WindowBase modal, Dictionary<string, object> r)
         {
             const BindingFlags kAny = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
             Assembly ui = typeof(ModalDialog).Assembly;
@@ -342,6 +361,9 @@ namespace Ts3Agent
             object picker = pickerType != null ? pickerType.GetField("sDialog", kAny).GetValue(null) : null;
             object dlg = wishType != null ? wishType.GetField("sDialog", kAny).GetValue(null) : null;
             if (picker == null && dlg == null) return false;
+            ModalDialog top = (picker ?? dlg) as ModalDialog;
+            Dialog win = top != null ? top.ModalDialogWindow : null;
+            if (win == null || !object.ReferenceEquals(win, modal)) return false; // one wrapper per window handle (UIManager cache)
             r["title"] = picker != null ? "lifetime wish picker" : "lifetime wish";
             object wish = null;
             if (picker == null)
@@ -378,7 +400,7 @@ namespace Ts3Agent
             r["open"] = true;
             // a start-path step answers this dialog itself (StartPathHandlers: purchase confirm, Edit Town place dialog)
             if (HarnessOwnsDialog()) { r["title"] = null; r["clicked"] = "(left to a harness step)"; return r; }
-            if (AnswerLifetimeWish(r)) return r;
+            if (AnswerLifetimeWish(modal, r)) return r;
             List<string> texts = new List<string>();
             CollectTexts(modal, texts, 0);
             r["title"] = texts.Count > 0 ? texts[0] : null;
@@ -442,7 +464,8 @@ namespace Ts3Agent
                     foreach (KeyValuePair<WindowBase, object> kv in live)
                     {
                         string words = Words(kv.Key);
-                        if (words == w || words.StartsWith(w + " ") || (w.Length > 2 && words.IndexOf(w) >= 0)) { best = kv; how = "safe default"; break; }
+                        // "w," too: a mod's neighbour cleaning offer (2026-11-04 al203) had 'no, thank you' / 'yes, please' and stopped the run
+                        if (words == w || words.StartsWith(w + " ") || words.StartsWith(w + ",") || (w.Length > 2 && words.IndexOf(w) >= 0)) { best = kv; how = "safe default"; break; }
                     }
                 }
                 if (best == null) throw new McpException("no safe button, nothing clicked: '" + (r["title"] ?? "") + "' buttons: " + string.Join(", ", seen.ConvertAll(o => (string)o).ToArray()));
@@ -472,6 +495,7 @@ namespace Ts3Agent
             r["save_name"] = Sims3.Gameplay.UI.Responder.Instance.OptionsModel.SaveName;
             r["load_file"] = GameStates.LoadFileName; // set by load_save too; save_name stays null until a save
             r["save_in_progress"] = Sims3.Gameplay.UI.Responder.Instance.OptionsModel.SaveGameInProgress;
+            r["modal"] = UIManager.GetModalWindow() != null; // repro waits "until modal false" after a save (its own dialog) read a missing key before
             return r;
         }
 

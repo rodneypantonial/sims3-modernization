@@ -57,7 +57,7 @@ namespace Ts3Agent
             return (string)m.Invoke(null, new object[] { sd, world, false });
         }
 
-        // sims: names/ids (default: every active-household Sim in the world). The lead (first) is the active Sim when it travels.
+        // sims: names/ids (default: every active-household Sim in the world; pets stay home). The lead (first) is the active Sim when it travels.
         static List<Sim> Travellers(Args a, WorldName world, List<object> skipped)
         {
             Sim active = Util.ActiveSim();
@@ -84,6 +84,10 @@ namespace Ts3Agent
             bool clear = a.Bool("clear_recovery", false);
             foreach (Sim s in wanted)
             {
+                // A pet among the travellers drops the whole trip: the car interaction leaves the queue within a minute and the
+                // world never switches, with no exception (2026-11-02, Baseline-BP-Spring's Roxy Dog, main and branch alike).
+                // EA's trip planner offers no pets for a vacation; CheckForReasonsToFailTravel does not say so.
+                if (!s.SimDescription.IsHuman) { skipped.Add(s.FullName + ": pets do not go on vacation"); continue; }
                 if (clear && s.BuffManager.HasElement(BuffNames.WentToLocation)) s.BuffManager.RemoveElement(BuffNames.WentToLocation);
                 string why = TravelFailReason(s.SimDescription, world);
                 if (!string.IsNullOrEmpty(why)) { skipped.Add(s.FullName + ": " + why); continue; }
@@ -128,6 +132,7 @@ namespace Ts3Agent
             lead.InteractionQueue.CancelAllInteractions();
             Dictionary<string, object> r = Util.Obj();
             r["queued"] = lead.InteractionQueue.Add(trip);
+            sTripSaveUntil = System.Environment.TickCount + 15 * 60000;  // the travel save's name dialog is accepted (HarnessHandlers RuleFor)
             r["world"] = world.ToString();
             r["days"] = trip.TravelDuration;
             r["sims"] = sims.ConvertAll(s => (object)s.FullName);
@@ -607,6 +612,7 @@ namespace Ts3Agent
         static object TravelHome(Args a)
         {
             if (GameStates.IsTravelling) throw new McpException("a world switch is already running");
+            sTripSaveUntil = System.Environment.TickCount + 15 * 60000;  // as travel_vacation: the trip's save name dialog is accepted
             Sim s = Util.ActiveSim();
             if (GameUtils.IsFutureWorld())
             {

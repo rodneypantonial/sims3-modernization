@@ -2,16 +2,73 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
-## v0.2.5 (unreleased)
+## v0.2.7 (2026-11-05)
+
+The **EA app 1.69.47** version is now available. The Steam files are unchanged from v0.2.6.
+
+### Download
+
+- `ts3fixes.package`: unchanged from v0.2.6.
+- `ts3native-v0.2.7.zip` (Steam): `ts3native.asi` and `ts3native.ini`, unchanged from v0.2.6.
+- `ts3native-ea169-v0.2.7.zip` (EA app 1.69.47): `ts3native.asi` and `ts3native.ini`; replace both. Install steps: docs/PLAYERS.md, section "EA app version (1.69.47)".
+
+### EA app build
+
+- Made from the ea169-port branch at 703cd87, tested 11-03 on one machine, not retested with the v0.2.6 `ts3fixes.package`.
+- Tested: 18 of 18 runs passed on the EA app 1.69.47 (8 start-up checks + 10 full play-test jobs), plus a 10-job vanilla harness baseline.
+- Known issues (EA): MemDiag self-test fails (Light off); FootprintIndex 4 unmatched (off); WorldImage off (unmapped); benign handled AV in EA launcher memory (+0x67CC2); tested on one machine (Intel Xe iGPU, slim Mods), heavy CC only on Steam; ImageGuard off.
+
+## v0.2.6 (2026-11-05)
+
+Hotfix: **the game froze and crashed on the fifth Power Cell** (Into the Future), and objects were destroyed without their own cleanup (v0.2.0 to v0.2.5, everyone). This release is a static fix: it comes from reading the game's code and has not been run in the game yet. Thanks to u/IntelligentMight1124, whose report and logs found it.
+
+### Download
+
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` and replace the old one.
+- `ts3native.asi` and `ts3native.ini` are unchanged from v0.2.5; you only need the zip if you don't have v0.2.5 yet.
 
 ### Fixed
 
+- **No more freeze and crash on the fifth Power Cell.** A hook of ours, which only collected memory statistics, turned off a step of the game's object cleanup. The game's Power Cell loop then never ended, used up memory and crashed. The hook is gone.
+- **Objects get their full cleanup again.** The same hook affected every object the game destroys: an object's own cleanup was skipped, such as leaving an inventory, destroying what it holds, or a Sim's own cleanup. This can have caused leftover references in saves played on v0.2.0 to v0.2.5. Tools like NRaas ErrorTrap may report and clean up some of these once.
+- **Three smaller hooks removed for the same reason**, each of which skipped the game's special versions of a method:
+  - Rabbit hole doors: Into the Future buildings, hideouts and a few others now animate their own doors again. This takes back the v0.2.5 fix for a door that can't open (issue #167) until it is rebuilt, so a Sim can again fail to go in on such a door.
+  - Service Sims: the Grim Reaper, the time traveler and resort staff are picked by their own rules again.
+  - Returning from a trip: saved progress of opportunity counters is restored in full again.
+
+## v0.2.5 (2026-11-05)
+
+The speed changes in this release are not timed as a set. What was checked on the release build: a back-to-back run on Bridgeport against v0.2.4 showed no regression (+1.9% iterations per second, inside the 4.4% spread between repeat runs; the machine was not quiet enough for this to count as formal timing evidence), and short smoke runs on Sunset Valley and Isla Paradiso passed.
+
+### Download
+
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` and replace the old one.
+- `ts3native-v0.2.5.zip` (Steam) or `ts3native-ea169-v0.2.5.zip` (EA app): `ts3native.asi` and `ts3native.ini`; replace both.
+
+### Faster
+
+- **Sims you can't see cost less to animate.** For a Sim the camera cannot see, the game now updates its body pose every few frames instead of every frame, with the skipped time added in, so nothing is lost. Sims you can see, Sims near them and Sims near your household always update every frame. On by default (`[UnseenAnim] Enabled=1`, `CapPasses=4`; objects stay as before).
+- **Cheaper held-action check** (PR #245, by Dalexlol): the check for held actions walked every object in the world every few ticks; it now walks only the list of Sims, which the reporter measured at about 5% of the main thread on a 14,500-object save (issue #156; their number, not ours). On by default.
+- **One "can the player see it?" answer per object per frame.** Several of our speed-ups ask whether you can see a Sim or object; they now share one answer per frame instead of each asking the game again. On by default (`[UnseenTable] Enabled=1`). The speed-up above builds on it.
+
+### Fixed
+
+- **Rare memory runaway at game start.** The game's script memory manager avoids placing big blocks on memory pages that look in use, and how picky it is grows with the heap size. With our larger start heap it could refuse one big start-up file again and again and keep asking Windows for more memory instead of cleaning up, until the 32-bit game ran out of address space and crashed (seen on the EA app 1.69 version in about 4 of 24 launches; never seen on Steam, but the same code is there). Now it is lenient at start-up, at the main menu and on every loading screen, and goes back to the game's own rule once your world is loaded, so long play sessions are unchanged. `[GC] BlackListCapKB=1024` in `ts3native.ini` (0 = off). Tested on Steam: start-ups, 6 save/reload cycles with and without it, travel and normal play, all passed. Found and fixed on the EA app port (PR #238).
 - **No more crash from custom-content meshes without a material** (issue #80): a hair or clothing mesh made from a morph mesh crashed the game while it built a Sim. That part is now left out at that distance instead. On by default (`[EaCrashFixes] GeomNoMaterial=1`).
 - **Isla Paradiso routing crash** (issues #132, #136): on by default (`[EaCrashFixes] WorldAStarRefs=1`, `PortalFlagRefs=1`).
 
+- **Paired socials no longer fail with "cannot go there"** (Show Off Badges and other two-Sim socials that set up a spot first): with async routing the partner Sim could plan its walk before the spot existed. Plans now stay synchronous while that spot is being set up (switch `asyncjigsync`, on by default). On v0.2.4, set `Enabled=0` under `[RouteAsync]` in `ts3native.ini` as a workaround.
+- **Rabbit hole doors no longer block Sims** (issue #167): a rabbit hole door the animation can't open no longer stops the Sim from going in. Found by Dalexlol. On by default (switch `rabbitholedoor`).
+- **Saves with a removed service no longer break services** (issue #164): when a save holds a service whose mod or pack is gone, the maid, mail carrier, repairman and other services kept failing. The broken entry is now skipped. Found by Dalexlol. On by default (switch `nullservice`).
+
+### Test features (off, opt-in)
+
+- **Walking Sims re-check (test feature, off).** The game re-checks every animated object several times per frame for walking Sims; with `Enabled=1` under `[UnseenRootMotion]` in `ts3native.ini` (`Mode=1`, `Shortlist=1` are preset) it re-checks only the ones that are actually walking, same calls in the same order. Off in this release until we have a clean measurement.
+- **Smaller save files (SaveSlim, test feature, keep backups).** Every time a Sim leaves a lot, the game stores a new copy of that Sim's outfits in your save and never throws the old copy away, so long-played saves keep growing. With `Enabled=1` under `[SaveSlim]` in `ts3native.ini` (needs `[SaveWrite] Enabled=1`), after each normal save a background job rewrites the save's outfit store without the wasted space and, in `Mode=2` (the default), without outfit copies that nothing in the save uses any more. It checks the new file byte for byte before it replaces the old one; if anything goes wrong, your save stays exactly as the game wrote it. The file from before each rewrite is kept in `Documents\Electronic Arts\The Sims 3\SaveSlimBackup\<save name>.preslim\` (only the newest one), so an outfit that was dropped by mistake can be restored. `Mode=0` only measures and writes nothing. Tested: 12 of 12 runs passed over 4 saves (Bridgeport, Bridgeport with lots of custom content, a 2+ year NRaas save, Moonlight Falls), in Mode 0, Mode 2 and save-then-reload runs. By Dalexlol (PR #122). It changes your save files: copy your saves before you try it.
+
 ### Known issues
 
-- **Tiny UI Fix turns the Mono offload off** (`[AutShadow]`): Tiny UI Fix ships its own copies of `Sims3GameplaySystems` and `Sims3GameplayObjects`, and the offload's safety check switches itself off for the whole session when it sees game assemblies it does not know. The game runs as without the offload; nothing breaks. Tiny UI Fix's changes do not touch the methods the offload uses (docs/218), so a per-method check that keeps the offload on is planned for the next release. Found by Dalexlol.
+- **Tiny UI Fix is not supported yet in this release:** with it installed, the Mono speed-up (AutShadow) may switch itself off. The game still works; you just don't get that speed-up. Found by Dalexlol.
 
 ## v0.2.4 (2026-10-29)
 

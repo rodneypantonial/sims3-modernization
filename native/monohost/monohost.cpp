@@ -20,6 +20,7 @@
 #include <string.h>
 #include <limits.h>
 #include <intrin.h>  // _ReturnAddress (ts3native simloop.cpp SppHook)
+#include "../ts3native/ts3addr.h"  // TS3A() in the ts3native sources included below; no /DTS3A_TABLE here, so the host stays on Steam addresses
 
 typedef unsigned char u8;
 static const DWORD IMG_LO = 0x00400000, IMG_HI = 0x0125A000;  // SizeOfImage 0xE5A000 (Steam 1.67)
@@ -1039,6 +1040,8 @@ struct McCtr { LONG mcSwitch, mcReady, mcCall, mcCallvirt, mcRet, mcBailCall, mc
 static McCtr g_mcCtr;
 #define MC_CTR g_mcCtr
 #include "../ts3native/mintcall.cpp"
+static void* g_ilpNext;  // [IlPatch] (ilpatch.cpp) is not in the host: satb.cpp keeps its own cold site 0
+static void (*g_ilpColdEnter)(int site, DWORD arg0);
 #include "../ts3native/autshadow.cpp"
 static int AsTierOf(AsU64) { return 1; }  // unseen.cpp's tier rule (TierMs is 0 in the host: never asked)
 #pragma warning(pop)
@@ -1379,7 +1382,7 @@ static int AsG2() {
     mt::g_asMode = 1;  // R: reference on this thread, then the worker
     mt::MtTick();      // first Simulate entry: the AutShadowNative ICs register
     const int ver = I32(TA("Setup", 0, NULL));
-    if (!Check("AS-install", guards && k.descIcs == nIc && k.icRegistered == 31 && ver == 10 && p.workerState == 2,
+    if (!Check("AS-install", guards && k.descIcs == nIc && k.icRegistered == 34 && ver == 11 && p.workerState == 2,
                "guards %d (%ld descriptor ICs), AutShadowNative ICs %ld, Setup -> Version %d, worker state %ld", guards, k.descIcs,
                k.icRegistered, ver, p.workerState))
         return 160;
@@ -1474,6 +1477,7 @@ static int AsG2() {
     return 0;
 }
 
+static void JitCorpusWorkerPass();  // monohost-jit.cpp (round 10 C4), while the worker is idle
 static int M5() {
     // M1.5 hooked [0x11949CC]; hand it back so ApplyMonoThread finds the game's push and chains it
     *(void**)(uintptr_t)0x11949CC = (void*)g_pushOtherOrig;
@@ -1619,6 +1623,8 @@ static int M5() {
         const int rc = AsG2();
         if (rc) return rc;
     }
+
+    JitCorpusWorkerPass();
 
     void* ah[3] = {&h, &gn, &gs};
     int hb = I32(T("CheckGraph", 3, ah));

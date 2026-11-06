@@ -1,13 +1,29 @@
 // Unattended game-test queue: runs a list of jobs back to back, one game start per job, and records one result row each.
 //   node tools/harness/queue.ts tools/harness/queues/<name>.json [--from <job id>] [--only id,id] [--dry-run] [--no-smoke] [--stop-on-fail]
 //   node tools/harness/queue.ts --self-check          queue parsing, ini merge, verdict and usage parsing, content stash round trip, no game
-//   node tools/harness/queue.ts --restore-content     put CC/Store packages back from the stash manifest of an unfinished run
+//   node tools/harness/queue.ts --restore-content     put CC/Store packages (and ts3native + ts3fixes of an "ourMods": false job) back from the stash manifest of an unfinished run
 // Queue file: a JSON list of jobs (or { "jobs": [...] }):
 //   { id, note?, asi: "tested" | "<path from repo root>", ini?: { "Section.Key": value }, fixes?: { install?: [ids], uninstall?: [ids] },
-//     save?: "<name>[.sims3]" | "menu", content?: "as-is" | "no-cc" | "no-store", run: {repro: id} | {matrix: [args]} | {saveReload: [save-reload.ts args]} | {soak: {minutes, speed?}} | {menuMemory: {waitS?, draws?}}
+//     save?: "<name>[.sims3]" | "menu", content?: "as-is" | "no-cc" | "no-store" | "no-randomizer", run: {repro: id} | {matrix: [args]} | {saveReload: [save-reload.ts args]} | {script: ["<tools/harness script>.ts", args...]} | {soak: {minutes, speed?}} | {menuMemory: {waitS?, draws?}}
 //     | {profile: {minutes, seed?, repro?, mainstack?}} | {routelock: {minutes, speed?}} | {age: {days, checkpoint, keepAlive?, save?}}, gameArgs?: ["-disablestoryprogression"], defaultIni?: { "Config.SimulatorRandomSeed": n },
 //     s3ppIni?: { "Patches.MonoTypeEHashProbe": 0 }, s3ssToml?: { "patches.LotStreamingOptimizations.enabled": false }, minCounters?: 20, timeoutMin?,
 //     pin?: false | { cpus?: "4-15", priority?: "High", others?: boolean | [names] } }   (also queue-level beside "jobs"; pin.ts)
+// Vanilla mode (docs/236, TS3_VANILLA=1 or queue-level "vanilla": true): the game runs without ts3native and ts3fixes, only the
+// ts3agent package from TS3_AGENT_PACKAGE. vanilla.ts installs the state at the start (unless a stash is already installed, which
+// is then only read back) and restores it at the end; jobs must say asi "none" and use no ini, fixes, counters, log rules, profile,
+// routelock or worldimage. No asi, ini or ts3fixes copy; every game start reads the vanilla state back (a miss FAILs the job before
+// the game starts) and the jobGuard fails a run whose Bin or Mods leave that state. The asi/build/ts3native.log/counter/ts3fixes
+// checks are skipped and named as "N/A (vanilla): ..." in the row (never PASS). The click log comes from the autopilot poll
+// (<queue>-<date>-<job>.clicks.log); the same `blocked` dialog in two polls in a row fails the job (no safe button).
+// ourMods: false (a profile or repro job, README Baseline = community layer without our mods): after cycle.ts --restart the job moves
+// Bin/ts3native.asi, .ini, .log, autshadow.jsonl, Mods/Packages/ts3fixes*.package and scriptCache.package to "<user> ourmods-stash"
+// (vanilla.ts install on ourModsSpec(): manifest first, sha read-back). DXVK, wininet, MonoPatcher, S3SS, S3PP, the other Mods, ts3agent,
+// ts3-nointro and the Frida probe stay; a missing community file refuses the job. Everything is moved back and read back in restoreStart
+// (5 tries) whatever the job did; a failed restore stops the queue. Any other exit: the exit handler when the game is closed; a hard
+// kill: the next queue start, or --restore-content, restores before anything else (until then the game runs without our mods).
+// The job says asi "none" and may ask for nothing that needs ts3native or ts3fixes (ourModsRefusals). The checks that need them are
+// named "N/A (ourMods false): ..." in the row; the job FAILs if Bin/ts3native.log appears, /native answers, ts3fixes.applied is set or a
+// patches counter rises (ourModsFails, row.ourMods, and the jobGuard every 30 s).
 // pinReason: why a job pins a game-copy asi / fixesPackage (release or baseline arm, published-release check, a job about one old
 // build); without it, an asi older than the source or a game-copy package older than the ts3fixes source gets a WARN pin line.
 // pin (default on, TS3_PIN=off): while the game is up TS3W.exe runs on the game CPUs at High priority and heavy user apps on
@@ -54,6 +70,8 @@
 // earlyGates: [{ afterSec, counter, op, value, why }] (Rodney 2026-10-31, profile jobs): live /native paths (autshadow.req) or ts3fixes
 // counters (fixes:autshadow_gm6_faults, + sums) read every GUARD_MS from the profile start; past afterSec a gate that does not hold
 // stops the job at once with FAIL: early gate: <why> (<counter>=<v>) (see earlyGateGuard / gateFail).
+// report: ["rm2Why_", "rm2Quat", ...] (optional, needs earlyGates): the FAIL line ends with "; name=v ..." for the non-zero /native
+// counters of the same poll whose names start with a listed prefix.
 // stopQueueOnFail: true (job or queue level) or --stop-on-fail: after a FAIL row the queue stops with 'STOP: <job> failed (stopQueueOnFail): ...'
 // (chain scripts grep it); a noisy timing job whose -rerun was queued does not stop it.
 // scriptErrorsMax: N = at most N new ScriptError_*.xml in the user folder since the job start (known EA errors, known-script-errors.json,
@@ -70,6 +88,9 @@
 // gameArgs go to TS3W.exe (ts3probe.py serve --launch -- <args>); defaultIni is merged into Bin/Default.ini for the job, then put back;
 // s3ppIni the same for Bin/Sims3Performance.ini (S3PP switches, e.g. its Mono caches on/off); s3ssToml the same for
 // <user>/S3SS/S3SS.toml ("<table>.<key>", e.g. patches.LotStreamingOptimizations.enabled; S3SS reads it at game start);
+// d3d9Dll: repo-relative path of a dll that replaces Bin/d3d9.dll for the job (one-off renderer tests, tools/d3d9on12-test); the
+// DXVK d3d9.dll is saved as Bin/d3d9.dll.dxvk-bak first, put back and read back after the job (success or failure), and a leftover .dxvk-bak
+// from a killed queue is restored at the next queue start; a job whose Bin/d3d9on12-proxy.log lacks 'path=9On12' or says 'FELL BACK' FAILs.
 // dxvkConf the same for Bin/dxvk.conf (plain "key = value" lines, e.g. "d3d9.textureMemory": 64; DXVK reads it at start).
 // profile.repro: profile-world.ts --repro <id> runs that repros.json entry's steps at the window start (no stack samplers).
 // profile.untilCompares: N -> profile-world.ts --until-compares (end the window early once N shadow compares exist; 2N if N comes before 5 min; minutes is the cap).
@@ -144,14 +165,14 @@
 // Crash (TS3W.exe gone or "game died"): crash-ledger triage goes in the row, the queue goes on; it stops when the same job has
 // crashed twice (today's rows of this queue count, so a resume remembers) or two jobs crash in a row.
 // After each job: `ai-usage.ts G <job id>`; at >= 80% in either window the queue pauses and prints the --from line to resume.
-// Output: probe-out/queue/<queue>-<date>.jsonl (one row per job, times UTC), docs/data/results/<date>-queue-<queue>.md (table, UTC + PHT; TS3_MACHINE other than main: <date>-queue-<queue>.<machine>.md, row.machine and a machine column).
+// Output: probe-out/queue/<queue>-<date>.jsonl (one row per job, times UTC), docs/data/results/<date>-queue-<queue>.md (table, UTC + PHT; TS3_MACHINE other than main: <date>-queue-<queue>.<machine>.md, row.machineTag and a machine column).
 // After each job the game's Bin/ts3native.log is copied to probe-out/queue/<queue>-<date>-<job>-<HHMM>-ts3native.log (row.nativeLog),
 // and Bin/ts3native-shadow.jsonl (P4 shadow records) to ...-<HHMM>-shadow.jsonl (row.shadowLog) when the job wrote one;
 // Bin/autshadow.jsonl ([AutShadow] records; emptied at job start) to ...-<HHMM>-autshadow.jsonl (row.autshadowLog) when not empty.
 // At the end the Bin ts3native.asi and ts3native.ini found at the start are put back as a pair (copies in probe-out/queue/bin-before/;
 // until 2026-10-24 the asi came from native/ts3native/out/, which left an old build next to a job ini in Bin). The restored asi is
 // named from docs/data/builds.json; a WARN line says when it is not a release build. Windows-only by nature (TS3W.exe, taskkill).
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, copyFileSync, cpSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -161,12 +182,13 @@ import { CSV_HEADER, csvLine, summarize, type AgeRow } from './age-report.ts';
 import { ledgerReport } from './mono-ledger-report.ts';
 import { saveStats } from './save-stats.ts';
 import { matchKnown } from './known-script-errors.ts';
-import { dumpHungGame, GUARD_MS } from './game-alive.ts';
-import { BIN, EA_LAUNCHER, EA_URI, GAME_EXE, gameRunning, isSteamGame, killEaRelaunch, LAUNCH, MACHINE, machineTag } from './game-exe.ts';
+import { clickLines, dumpHungGame, GUARD_MS, logTail, type ModeSnap, modeExit, modeSnap, noSafeButton } from './game-alive.ts';
+import { BIN, EA_LAUNCHER, EA_URI, GAME_EXE, gameRunning, isSteamGame, killLeftovers, LAUNCH, logUntrackedGame, MACHINE, machineTag, seenPids } from './game-exe.ts';
 import { checkCfg as checkFailFast, describe as describeFailFast, routingGuard, type FailFast } from './routing-failfast.ts';
 import { checkRequire, flatDelta, parseRequire } from './fixes-require.ts';
 import { parseHitchTasks } from './hitch-tasks.ts';
 import { parseRule } from './frame-lead.ts';
+import { abFixesClash } from './native-switches.ts';
 import { checkLoop, ruleText, STOP_LINE, withRule, type Loop } from './repro-loop.ts';
 import { drift, driftLine, failMode, logCopy, parseReuse, readSwitches, REUSE_DEFAULTS, reproItems, restoreSwitches, reuseBlock, snapshot, stableKey, subTag, type Extra, type ReproItem, type ReuseOpts, type WorldSnap } from './session-reuse.ts';
 import { saveForeground } from './focus-game.ts';
@@ -180,6 +202,7 @@ import { jsonlRows, queueFile, rowTiming, timingText } from './run-verdict.ts';
 import { loadRun as hitchRun, runIters, toolCosts, toolsOn, withBaseIni } from './hitch-ab.ts';
 import { mergeFile as mergeCallsites } from '../callsite-db.ts';
 import { asiCheck, asiVersion, fixesCheck, loadDb, logVersionCheck, packageTuning, type Build } from '../builds.ts';
+import { COMMUNITY, defaultSpec as vanillaSpec, install as vanillaInstall, mfile as vanillaMf, ourModsSpec, problems as vanillaProblems, restore as vanillaRestore, vanilla as vanillaEnv } from './vanilla.ts';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
   'dry-run': { type: 'boolean' }, from: { type: 'string' }, only: { type: 'string' }, 'self-check': { type: 'boolean' }, 'restore-content': { type: 'boolean' }, 'no-smoke': { type: 'boolean' }, 'stop-on-fail': { type: 'boolean' }, 'close-spotify': { type: 'boolean' }, port: { type: 'string', default: '47891' },
@@ -197,17 +220,73 @@ const LIBRARY = join(USER, 'Library'), LOTS_MANIFEST = join(dirname(USER), 'The 
 const FIXES_STATE = join(process.env.LOCALAPPDATA ?? join(homedir(), '.local', 'share'), 'ts3-fixes', 'state.json');
 const base = `http://127.0.0.1:${values.port}`;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+const ourModsMf = () => vanillaMf(ourModsSpec()); // exists = an ourMods false job's files are in the stash
 const stamp = () => new Date().toISOString().slice(11, 19);
 const log = (m: string) => console.log(`${stamp()} queue: ${m}`);
 
 // ---------------------------------------------------------------- pure parts (covered by --self-check)
+// machine column / jsonl field only off the main machine: main-machine results stay byte-identical (docs/TESTING.md)
+function machineCols(tag: string) { return tag ? { head: ' machine |', sep: '---|', cell: (m: string) => ` ${m} |` } : { head: '', sep: '', cell: (_m: string) => '' }; }
+function machineField(tag: string): { machineTag?: string } { return tag ? { machineTag: tag } : {}; }
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
-  save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; run: { repro?: string; saveReload?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
-    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; stopQueueOnFail?: boolean; scriptErrorsMax?: number; timeoutMin?: number; pin?: false | PinOpts;
-  saveMatrix?: { fixes?: 'all' | 'shipped' }; fixesBuild?: string; fixesPackage?: string; pinReason?: string; rerunOf?: string; shadowCheck?: boolean };
+  save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; run: { repro?: string; saveReload?: string[]; script?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
+    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; d3d9Dll?: string; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; report?: string[]; stopQueueOnFail?: boolean; scriptErrorsMax?: number; timeoutMin?: number; pin?: false | PinOpts;
+  saveMatrix?: { fixes?: 'all' | 'shipped' }; fixesBuild?: string; fixesPackage?: string; iniBase?: string; pinReason?: string; rerunOf?: string; shadowCheck?: boolean; skipIfMissing?: boolean; ourMods?: false };
 
 // every top-level job key queue.ts reads (Job type plus the optional extras); anything else is a typo or a profile key at the wrong level
-const JOB_KEYS = new Set(['id', 'note', 'asi', 'ini', 'defaultIni', 's3ppIni', 's3ssToml', 'dxvkConf', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'noiseCheck', 'earlyGates', 'routingFailFast', 'scriptErrorsMax', 'stopQueueOnFail', 'reuseSession', 'releaseDefaults']);
+const JOB_KEYS = new Set(['id', 'note', 'asi', 'ini', 'defaultIni', 's3ppIni', 's3ssToml', 'dxvkConf', 'd3d9Dll', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'iniBase', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'noiseCheck', 'earlyGates', 'report', 'routingFailFast', 'scriptErrorsMax', 'stopQueueOnFail', 'reuseSession', 'releaseDefaults', 'skipIfMissing', 'ourMods']);
+// ---- vanilla mode (docs/236): what a job may not ask for without ts3native/ts3fixes, and the checks the row names as N/A
+export const VANILLA_NA = ['asi build check', 'ts3fixes build check', 'ts3native.log version gate', 'ts3native.ini features', 'hook FAIL lines and route hook state', 'counter gate and /native counters', 'ts3fixes activity'];
+// "ourMods": false: a plain profile window or one repro (queue repros run --no-load, so no restart; its steps must not need ts3fixes); anything
+// that needs ts3native or ts3fixes, or restarts the game inside the job (cycle.ts would reinstall ts3fixes), is refused
+export const OURMODS_NA = VANILLA_NA.filter(c => c !== 'ts3fixes activity');
+export function ourModsRefusals(j: Job): string[] {
+  const out = vanillaRefusals({ ...j, run: { ...j.run, profile: undefined } });
+  if (!j.run.profile && !j.run.repro) out.push('no run.profile');
+  const kinds = Object.keys(j.run);
+  if (kinds.length > 1 || kinds.some(k => k !== 'profile' && k !== 'repro')) out.push('a run kind besides profile');
+  for (const k of ['repro', 'repros', 'ab', 'fixesOn', 'fixesOff', 'fixesReport', 'fixesRequire', 'untilCompares', 'frameLead', 'hitchTasks']) if ((j.run.profile as any)?.[k] !== undefined) out.push(`run.profile.${k}`);
+  for (const k of ['reuseSession', 'd3d9Dll', 'iniBase'] as const) if (j[k] !== undefined) out.push(k);
+  return out;
+}
+// the proof of a clean baseline: no ts3native in the process, ts3fixes never started (Fixes.Apply sets ts3fixes.applied first), no counter
+// above 0 (the agent reads them from ts3fixes' array; without it a zero array, and -1 for rates). Switches are booleans with defaults: not activity
+export function ourModsFails(x: { logExists: boolean; native: unknown[]; patches: any[] }): string[] {
+  const out = new Set<string>();
+  if (x.logExists) out.add('Bin/ts3native.log written: ts3native loaded');
+  for (const c of x.native) if (c !== null && c !== undefined) out.add(`/native answered (${JSON.stringify(c).slice(0, 80)}): ts3native loaded`);
+  for (const p of x.patches) {
+    if (!p) { out.add('UNKNOWN: no patches reply, ts3fixes not proven absent'); continue; }
+    if (p.applied !== null && p.applied !== undefined) out.add('ts3fixes.applied set: ts3fixes ran');
+    const busy = Object.entries(p).filter(([, v]) => typeof v === 'number' ? v > 0 : Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v !== '').map(([k, v]) => `${k} ${typeof v === 'number' ? v : '[...]'}`);
+    if (busy.length) out.add(`ts3fixes activity: ${busy.slice(0, 12).join(', ')}`);
+  }
+  return [...out];
+}
+export function vanillaRefusals(j: Job): string[] {
+  const out: string[] = [];
+  if (j.asi !== 'none') out.push(`asi "${j.asi}" (vanilla jobs say "none")`);
+  if (Object.keys(j.ini ?? {}).length) out.push('ini');
+  for (const k of ['fixes', 'fixesBuild', 'fixesPackage', 'fixesRequire', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'earlyGates', 'routingFailFast', 'saveMatrix', 'callSites', 'releaseDefaults'] as const)
+    if ((j as any)[k] !== undefined) out.push(k);
+  for (const k of ['profile', 'routelock', 'worldimage'] as const) if ((j.run as any)[k]) out.push(`run.${k}`);
+  return out;
+}
+// autopilot poll in place of the ts3native.log click lines: the same `blocked` dialog in two polls in a row is a live block; the
+// "Saving..." text stays in `blocked` after a save (docs/236 finding 2) and is not one
+// docs/236 Round 6: a safe-default click is a WARN in the job verdict (the run goes on); click log lines look like `<time> <title> -> #3 cancel (safe default; buttons: ...)`
+export const safeDefaultWarns = (lines: string[]): string[] => lines.filter(l => /\(safe default[;)]/.test(l)).map(l => l.replace(/^\d\d:\d\d:\d\d /, '').replace(/^.*ap click: /, ''));
+// the agent's never-drained click history (`autopilot` reply `history`, lines `HH:MM:SS text` in UTC) minus the lines the click file already has (ignoring the time)
+export const missingHistory = (hist: string[], fileLines: string[]): string[] => {
+  const have = new Set(fileLines.map(l => l.replace(/^\d\d:\d\d:\d\d /, '').replace(/^.*ap click: /, '')));
+  return hist.filter(l => !have.has(l.replace(/^\d\d:\d\d:\d\d /, '')));
+};
+export const vanillaBlock = (prev: string | null, cur: string | null): string => cur && cur === prev && !/nothing clicked: 'Saving/.test(cur) ? cur : '';
+// docs/236 Round 7: a window with no buttons at all ("Entering Create a Household...", a transition text) has nothing to click; it is a block only
+// when it stays (sinceMs = how long the same empty-button text has been there), not on two polls in a row
+export const emptyButtons = (cur: string | null): boolean => !!cur && /buttons: *$/.test(cur);
+export const vanillaBlockFor = (prev: string | null, cur: string | null, sinceMs: number): string => emptyButtons(cur) && sinceMs <= 2 * GUARD_MS ? '' : vanillaBlock(prev, cur);
+
 export function parseQueue(json: unknown): Job[] {
   const jobs = Array.isArray(json) ? json : (json as any)?.jobs;
   if (!Array.isArray(jobs) || !jobs.length) throw new Error('queue: expected a non-empty list of jobs (or { "jobs": [...] })');
@@ -226,11 +305,17 @@ export function parseQueue(json: unknown): Job[] {
     for (const k of Object.keys(j.defaultIni ?? {})) if (!/^\w+\.\w+$/.test(k)) throw new Error(`${at}: defaultIni key "${k}" must be Section.Key`);
     for (const k of Object.keys(j.s3ppIni ?? {})) if (!/^\w+\.\w+$/.test(k)) throw new Error(`${at}: s3ppIni key "${k}" must be Section.Key`);
     for (const k of Object.keys(j.s3ssToml ?? {})) if (!/^\w+(\.\w+)+$/.test(k)) throw new Error(`${at}: s3ssToml key "${k}" must be table.key (e.g. patches.LotStreamingOptimizations.enabled)`);
+    if (j.ourMods !== undefined) { // refused here, so a --dry-run shows it too
+      if (j.ourMods !== false) throw new Error(`${at}: ourMods is false or left out`);
+      const bad = ourModsRefusals(j); if (bad.length) throw new Error(`${at}: ourMods false refuses: ${bad.join(', ')}`);
+    }
+    if (j.d3d9Dll !== undefined && !(typeof j.d3d9Dll === 'string' && /^[\w.\/-]+\.dll$/.test(j.d3d9Dll) && !j.d3d9Dll.includes('..'))) throw new Error(`${at}: d3d9Dll must be a repo-relative .dll path`);
     for (const k of Object.keys(j.dxvkConf ?? {})) if (!/^\w+\.\w+$/.test(k)) throw new Error(`${at}: dxvkConf key "${k}" must be component.option (e.g. d3d9.textureMemory)`);
     if (j.gameArgs && !(Array.isArray(j.gameArgs) && j.gameArgs.every((x: unknown) => typeof x === 'string' && x.startsWith('-')))) throw new Error(`${at}: gameArgs must be a list of -switches`);
     for (const k of ['install', 'uninstall']) if (j.fixes?.[k] && !Array.isArray(j.fixes[k])) throw new Error(`${at}: fixes.${k} must be a list of ids`);
-    const kinds = Object.keys(j.run ?? {}).filter(k => ['repro', 'matrix', 'soak', 'menuMemory', 'profile', 'routelock', 'worldimage', 'age', 'saveReload'].includes(k));
-    if (kinds.length !== 1 || Object.keys(j.run).length !== 1) throw new Error(`${at}: run needs exactly one of repro, matrix, soak, menuMemory, profile, routelock, worldimage, age, saveReload`);
+    const kinds = Object.keys(j.run ?? {}).filter(k => ['repro', 'matrix', 'soak', 'menuMemory', 'profile', 'routelock', 'worldimage', 'age', 'saveReload', 'script'].includes(k));
+    if (kinds.length !== 1 || Object.keys(j.run).length !== 1) throw new Error(`${at}: run needs exactly one of repro, matrix, soak, menuMemory, profile, routelock, worldimage, age, saveReload, script`);
+    if (j.run.script !== undefined && !(Array.isArray(j.run.script) && j.run.script.every((x: unknown) => typeof x === 'string') && /^[\w-]+\.ts$/.test(j.run.script[0] ?? ''))) throw new Error(`${at}: run.script must be ["<tools/harness script>.ts", args...]`);
     if (j.run.saveReload !== undefined && !(Array.isArray(j.run.saveReload) && j.run.saveReload.every((x: unknown) => typeof x === 'string'))) throw new Error(`${at}: run.saveReload must be a list of save-reload.ts args`);
     if (j.run.worldimage) {
       const w = j.run.worldimage;
@@ -269,6 +354,10 @@ export function parseQueue(json: unknown): Job[] {
     if (j.run.profile?.frameLead !== undefined) parseRule(JSON.stringify(j.run.profile.frameLead));
     if (j.run.profile?.fixesOn !== undefined && !/^[a-z0-9]+(,[a-z0-9]+)*$/.test(String(j.run.profile.fixesOn))) throw new Error(`${at}: run.profile.fixesOn must be comma-separated switch names`);
     if (j.run.profile?.untilCompares !== undefined && !(Number.isInteger(j.run.profile.untilCompares) && j.run.profile.untilCompares > 0)) throw new Error(`${at}: run.profile.untilCompares must be a positive integer`);
+    // the check profile-world.ts makes after the load, here before the game starts (2026-11-04: it cost a 3-minute launch)
+    { const sp = (v: unknown) => (v === undefined ? [] : String(v).split(',')), p = j.run.profile ?? {};
+      const twice = abFixesClash(sp(p.ab), sp(p.fixesOn), sp(p.fixesOff));
+      if (twice.length) throw new Error(`${at}: run.profile ab / fixesOn / fixesOff name the switch ${twice.join(',')} twice`); }
     if (j.run.profile?.abOnFirst !== undefined && (typeof j.run.profile.abOnFirst !== 'boolean' || !j.run.profile.ab)) throw new Error(`${at}: run.profile.abOnFirst must be true/false and needs run.profile.ab`);
     if (j.run.profile?.slice !== undefined && !(Number(j.run.profile.slice) > 0)) throw new Error(`${at}: run.profile.slice must be > 0 minutes`);
     if (j.run.profile?.inroom !== undefined && typeof j.run.profile.inroom !== 'boolean') throw new Error(`${at}: run.profile.inroom must be true or false`);
@@ -290,12 +379,14 @@ export function parseQueue(json: unknown): Job[] {
     if (j.run.routelock?.speed && !['normal', 'fast', 'ultra'].includes(j.run.routelock.speed)) throw new Error(`${at}: run.routelock.speed must be normal, fast or ultra`);
     if (j.run.menuMemory && j.save && j.save !== 'menu') throw new Error(`${at}: menuMemory runs at the menu, set save "menu" or leave it out`);
     if (!j.save && !j.run.repro && !j.run.menuMemory) throw new Error(`${at}: save is required (a save name or "menu")`);
+    if (j.skipIfMissing !== undefined && !(j.skipIfMissing === true && j.fixes?.install?.length)) throw new Error(`${at}: skipIfMissing must be true and needs fixes.install`);
     if (j.noiseCheck !== undefined && typeof j.noiseCheck !== 'boolean') throw new Error(`${at}: noiseCheck must be true or false`);
     if (j.callSites !== undefined && typeof j.callSites !== 'boolean') throw new Error(`${at}: callSites must be true or false`);
     if (j.releaseDefaults !== undefined && typeof j.releaseDefaults !== 'boolean') throw new Error(`${at}: releaseDefaults must be true or false`);
     // fixesPackage: a shipped ts3fixes.package (path from the repo root) installed over cycle.ts's build/ copy before each start (repro jobs: the start-path controls, release-validate *-v016)
-    if (j.fixesPackage !== undefined && (typeof j.fixesPackage !== 'string' || !j.fixesPackage || j.fixesBuild !== undefined || !(j.run?.profile || j.run?.soak || j.run?.repro)))
-      throw new Error(`${at}: fixesPackage must be a path, only on profile/soak/repro jobs, not with fixesBuild`);
+    if (j.fixesPackage !== undefined && (typeof j.fixesPackage !== 'string' || !j.fixesPackage || j.fixesBuild !== undefined || !(j.run?.profile || j.run?.soak || j.run?.repro || j.run?.script)))
+      throw new Error(`${at}: fixesPackage must be a path, only on profile/soak/repro/script jobs, not with fixesBuild`);
+    if (j.iniBase !== undefined && (typeof j.iniBase !== 'string' || !j.iniBase)) throw new Error(`${at}: iniBase must be a path from the repo root`);
     if (j.pinReason !== undefined && (typeof j.pinReason !== 'string' || !j.pinReason.trim())) throw new Error(`${at}: pinReason must be a non-empty text (why this job pins its asi/package)`);
     if (fridaAttach(j) && (j.callSites || Number(j.ini?.['ProbeSnap.CallSites']))) throw new Error(`${at}: ProbeSnap.CallSites with a second Frida agent (${fridaAttach(j)}): int3 traps + agent attach crashed the game (docs/67 §7); set run.profile.noProf (and drop the side probe) or callSites false`);
     if (j.timeoutMin !== undefined && !(j.timeoutMin > 0)) throw new Error(`${at}: timeoutMin must be > 0`);
@@ -319,6 +410,8 @@ export function parseQueue(json: unknown): Job[] {
       const late = (j.earlyGates as EarlyGate[]).filter(g => g.afterSec >= j.run.profile!.minutes * 60);
       if (late.length) throw new Error(`${at}: earlyGates ${late.map(g => `${g.counter} from ${g.afterSec} s`).join(', ')} never run: the profile ends at ${j.run.profile.minutes * 60} s`);
     }
+    if (j.report !== undefined && !(j.earlyGates && Array.isArray(j.report) && j.report.length && j.report.every((p: unknown) => typeof p === 'string' && /^\w+$/.test(p))))
+      throw new Error(`${at}: report must be a non-empty list of counter-name prefixes (e.g. ["rm2Why_", "rm2Quat"]) on a job with earlyGates`);
     const ccDir = (x: unknown) => typeof x === 'string' && /^game-copy\/cc-synth\/[\w.-]+$/.test(x);
     if (j.ccSet !== undefined && !(ccDir(j.ccSet) || (Array.isArray(j.ccSet) && j.ccSet.length && j.ccSet.every(ccDir) && new Set(j.ccSet.map(x => basename(x))).size === j.ccSet.length))) throw new Error(`${at}: ccSet must be "game-copy/cc-synth/<set>" (a tools/cc-gen.ts output dir) or a list of distinct ones`);
     if (j.ccLots !== undefined && !ccDir(j.ccLots)) throw new Error(`${at}: ccLots must be "game-copy/cc-synth/<dir>" (a tools/cc-lot-gen.ts output dir)`);
@@ -401,8 +494,16 @@ function gateTerm(t: string, native: any, fixes: any): number | null | undefined
   const v = fx ? src[t.slice(6)] : t.split('.').reduce((o: any, k) => o?.[k], src);
   return typeof v === 'number' ? v : typeof v === 'boolean' ? Number(v) : null;
 }
-// '' = all due gates hold (or a source did not answer), else the FAIL reason of the first failing gate
-export function gateFail(gs: EarlyGate[], elapsedSec: number, native: any, fixes: any): string {
+// report (per job, 2026-11-02: the Mode 2 smoke FAILed rm2Elig=0 and the cause, rm2Why_6, needed a separate read): the
+// non-zero top-level /native counters whose names start with one of the prefixes, from the poll that failed the gate
+export const reportCounters = (native: any, pre?: string[]) => !pre?.length || !native ? '' : Object.entries(native)
+  .filter(([k, v]) => typeof v === 'number' && v !== 0 && pre.some(p => k.startsWith(p))).map(([k, v]) => `${k}=${v}`).join(' ');
+// '' = all due gates hold (or a source did not answer), else the FAIL reason of the first failing gate (+ "; " report counters)
+export function gateFail(gs: EarlyGate[], elapsedSec: number, native: any, fixes: any, report?: string[]): string {
+  const r = gateFail1(gs, elapsedSec, native, fixes), rc = r && reportCounters(native, report);
+  return rc ? `${r}; ${rc}` : r;
+}
+function gateFail1(gs: EarlyGate[], elapsedSec: number, native: any, fixes: any): string {
   for (const g of gs) {
     if (elapsedSec < g.afterSec) continue;
     const vs = g.counter.split('+').map(t => gateTerm(t, native, fixes));
@@ -440,7 +541,7 @@ export const callSitesOffNote = (j: Job) => callSitesWanted(j) && fridaAttach(j)
 export const releaseDefaults = (j: Job) => !!j.releaseDefaults || /ts3native\.asi\.rel\d/i.test(j.asi);
 export const lightIni = (j: Job): Record<string, number> => j.run.worldimage || releaseDefaults(j) ? {} : { 'CrashForensics.Light': 1 };
 // the ini overrides a row records (job ini + the coverage key + Light; worldimage's filled-in paths stay out of the row)
-export const rowIni = (j: Job) => ({ ...callSitesIni(j), ...lightIni(j), ...j.ini });
+export const rowIni = (j: Job) => (j.ourMods === false ? {} : { ...callSitesIni(j), ...lightIni(j), ...j.ini }); // no ts3native: no ini tools
 export const jobIni = (j: Job): Record<string, string | number | boolean> | undefined => !j.run.worldimage ? (Object.keys(rowIni(j)).length ? rowIni(j) : j.ini)
   : { 'WorldImage.OutDir': join(GAME_COPY, 'worldimage'), 'WorldImage.Helper': join(ROOT, 'native', 'worldimage', 'out', 'worldimage.exe'), ...j.ini,
     ...(j.ini?.['WorldImage.OutDir'] ? { 'WorldImage.OutDir': resolve(ROOT, String(j.ini['WorldImage.OutDir'])) } : {}) };
@@ -460,12 +561,16 @@ export function wiHeader(text: string) {
 }
 
 // content variants: fixes.json sets moved out of Mods (offload-phase0.ts: nocc-* = neither set, cc-* = no Store repacks)
-const CONTENT: Record<string, string[]> = { 'as-is': [], 'no-cc': ['user-cc', 'store-repacks-test'], 'no-store': ['store-repacks-test'] };
+const CONTENT: Record<string, string[]> = { 'as-is': [], 'no-cc': ['user-cc', 'store-repacks-test'], 'no-store': ['store-repacks-test'],
+  'no-randomizer': ['randomizer'] };
 const NEVER_MOVE = /(^|\/)(ts3agent|ts3fixes|ts3-nointro)\.package$/i;
-type ContentSet = { include: string[]; exclude: string[] };
+// match: only files whose Mods-relative path contains it
+type ContentSet = { include: string[]; exclude: string[]; match?: string };
+// harness-only sets (no install-fixes entry): Lyralei's TheRandomizer pops event dialogs the autopilot can't answer (2026-11-04)
+const LOCAL_SETS: Record<string, ContentSet> = { randomizer: { include: ['Packages'], exclude: [], match: 'TheRandomizer' } };
 const contentSets = (variant: string): ContentSet[] => {
   const fixes = JSON.parse(readFileSync(join(ROOT, 'tools', 'setup', 'fixes.json'), 'utf8')) as { id: string; config?: ContentSet }[];
-  return CONTENT[variant].map(id => fixes.find(f => f.id === id)!.config!);
+  return CONTENT[variant].map(id => LOCAL_SETS[id] ?? fixes.find(f => f.id === id)!.config!);
 };
 // files other fixes installed (absolute paths in install-fixes state.json): never moved
 const fixFiles = (statePath: string): Set<string> => {
@@ -482,6 +587,7 @@ export function contentFiles(mods: string, sets: ContentSet[], keep: Set<string>
     for (const n of readdirSync(join(mods, inc), { recursive: true }).map(String)) {
       const rel = `${inc}/${n.replace(/\\/g, '/')}`;
       if (!rel.toLowerCase().endsWith('.package') || c.exclude.some(x => rel.startsWith(x)) || NEVER_MOVE.test(rel)) continue;
+      if (c.match && !rel.includes(c.match)) continue;
       if (!keep.has(normalize(join(mods, rel)).toLowerCase())) out.add(rel);
     }
   }
@@ -492,6 +598,11 @@ const move = (from: string, to: string) => {
   try { renameSync(from, to); } catch (e: any) { if (e.code !== 'EXDEV') throw e; copyFileSync(from, to); rmSync(from); }
 };
 const manifestOf = (stash: string) => join(stash, 'manifest.json');
+// read-back after a restore (docs/236 #16): '' when the file holds exactly `want`, else why
+export const readBack = (path: string, want: Buffer | string): string => {
+  try { return readFileSync(path).equals(Buffer.from(want)) ? '' : `read-back mismatch: ${path} differs from what was restored`; }
+  catch (e) { return `read-back failed: ${path}: ${String(e).split('\n')[0]}`; }
+};
 const ccSetFiles = (dir: string) => readdirSync(dir).filter(f => f.toLowerCase().endsWith('.package')).sort(); // cc-gen writes a flat dir
 // one set: its own dir, flat; several: their parent dir, files as <set>/<file> (Mods/Packages/cc-synth/<set>/; Resource.cfg reads 5 levels)
 export const ccPlan = (set: string | string[], root = ROOT) => typeof set === 'string' ? { dir: join(root, set), files: ccSetFiles(join(root, set)) }
@@ -537,8 +648,13 @@ export function restoreContent(stash: string): { restored: number; problems: str
     const from = join(stash, rel), to = join(m.mods, rel);
     if (!existsSync(from)) continue; // not moved yet when the run stopped, or already back
     if (existsSync(to)) { problems.push(`in Mods and in the stash, stash copy kept: ${rel}`); continue; }
-    try { move(from, to); restored++; } catch (e) { problems.push(`${rel}: ${String(e).split('\n')[0]}`); }
+    const size = statSync(from).size;
+    try { move(from, to); restored++; } catch (e) { problems.push(`${rel}: ${String(e).split('\n')[0]}`); continue; }
+    if (!existsSync(to) || statSync(to).size !== size) problems.push(`read-back: ${rel} not in Mods with ${size} bytes after the move`); // docs/236 #16
   }
+  // listing read-back: every manifest file is in Mods now (a file missing from both places was lost, not "already back")
+  const lost = m.files.filter(rel => !existsSync(join(m.mods, rel)) && !existsSync(join(stash, rel)));
+  if (lost.length) problems.push(`read-back: ${lost.length} manifest files in neither Mods nor the stash: ${lost.slice(0, 3).join(', ')}`);
   const left = readdirSync(stash, { recursive: true, withFileTypes: true })
     .filter(e => e.isFile() && !(e.name === 'manifest.json' && normalize(e.parentPath) === normalize(stash)));
   if (!problems.length && left.length) problems.push(`${left.length} files in ${stash} not in the manifest; stash kept`);
@@ -586,8 +702,16 @@ const COUNTERS: Record<string, RegExp> = {
   RouteCache: /^(enabled|calls|hits|misses|stored|otherFails)$/, RouteWorker: /^(worker\w*|waitUs|fallbacks|watchdogs|invoke\w*|hostCalls|planO\w*)$/,
   RouteAsync: /^async\w*$/, RouteBudget: /^budget\w*$/, SaveWrite: /^save\w*$/, Decompress: /^decompress\w*$/, Alloc: /^alloc\w*$/,
   WaterJps: /^waterJps\w*$/, SaveFlush: /^flush\w*$/, SaveCompress: /^compress\w*$/, HeightCache: /^height\w*$/, GcThreadCheck: /^gc\w*$/,
-  LotStream: /^(ls[A-Z]\w*|lot[A-Z]\w*|pump[A-Z]\w*|sync[A-Z]\w*|objScene\w*)$/, Verify: /^vf\w*$/,
+  LotStream: /^(ls[A-Z]\w*|lot[A-Z]\w*|pump[A-Z]\w*|sync[A-Z]\w*|objScene\w*)$/, Verify: /^vf\w*$/, UnseenCost: /^uc[A-Z]\w*$/,
+  UnseenAnim: /^(aa[A-Z]\w*|ao[A-Z]\w*)$/, UnseenRootMotion: /^rm[A-Z]\w*$/, UnseenTable: /^utb[A-Z]\w*$/,
 };
+// a COUNTERS section the job turns on (<Sec>.Enabled non-zero) whose fields never reached the row: FAIL, so a no-data run
+// (2026-11-02: bp/ip-uao-hist, UnseenAnim had no entry here) can't PASS again
+export function counterGaps(ini: Record<string, unknown>, after: Record<string, unknown> | null): string[] {
+  if (!after) return [];
+  return Object.keys(COUNTERS).filter(s => Number(ini[`${s}.Enabled`]) && !Object.keys(after).some(k => COUNTERS[s].test(k)))
+    .map(s => `counters not recorded: ${s}`);
+}
 // minCounters gate on the /native answer after the load: '' = go, else why the job refuses
 export function counterGate(c: Record<string, unknown> | null, min?: number): string {
   if (min === undefined) return '';
@@ -617,6 +741,10 @@ export function iniNum(ini: string, sec: string, key: string): number {
   const b = ini.split(/^\s*\[/m).find(x => x.toLowerCase().startsWith(sec.toLowerCase() + ']')) ?? '';
   return Number(b.match(new RegExp(`^\\s*${key}\\s*=\\s*(-?\\d+)\\b`, 'im'))?.[1] ?? NaN);
 }
+// every [Section] with Enabled >= 1 in the ini the game started with, so a row names all features it ran (docs/236: the minimal
+// EA ini of the 7-series runs turned several features on in one run without saying so)
+export const iniFeaturesOn = (ini: string): string[] =>
+  ini.split(/^\s*\[/m).slice(1).map(b => b.match(/^([^\]]+)\]/)?.[1] ?? '').filter(s => s && iniNum(ini, s, 'Enabled') >= 1);
 // pre-run self check: any "FAIL ..." hook line ts3native wrote so far means a feature the job relies on is off, run void
 // (2026-10-22/23: 4 runs PASSed with "FAIL route worker:", Frida prologue on the runtime_invoke slot); '' when fine
 // baseline save integrity (2026-10-24: Baseline-BP-Spring was overwritten by a manual Save and no run noticed): the Baseline-* /
@@ -672,6 +800,10 @@ export function heavyTools(j: Job, repoIniText: string, costs = toolCosts()): st
 // one profile window of the smoke: arms = A/B or armed loop; iters = hitch-ab runIters, wait = wait-ab seconds per side
 // A rerun on the same UTC date must not overwrite the first run's per-tag files: first free of base, base-r2, base-r3 ...
 export const freeTag = (base: string, taken: (tag: string) => boolean): string => { let t = base, n = 1; while (taken(t)) t = `${base}-r${++n}`; return t; };
+// a file of tag t: t then '-' or '.', but not a file of a longer sibling tag that extends t (2026-11-04: combo-rtotail ran after
+// combo-rtotail-shadow, whose files start with 'combo-rtotail-', so it ran as combo-rtotail-r2 and the reports missed it)
+export const tagOwns = (t: string, f: string, siblings: string[]): boolean =>
+  (f.startsWith(`${t}-`) || f.startsWith(`${t}.`)) && !siblings.some(o => o.startsWith(`${t}-`) && (f.startsWith(`${o}-`) || f.startsWith(`${o}.`)));
 export type SmokeWin = { tag: string; arms: boolean; iters: { on: number; off: number } | null; invalid: string | null; wait: { on: number; off: number } | null };
 export function smokeProblems(x: { row: any; wins: SmokeWin[]; log: string; p6: boolean; nativeLog: string }): string[] {
   if (!x.row) return ['no smoke row (child queue ended before the job did)'];
@@ -703,7 +835,8 @@ export function routeHookState(ini: string, n: any): string {
 }
 // post-run self check: [RouteAsync] on but no async job started = the async arm never ran ('' when fine)
 export function asyncIdle(ini: string, c0: any, c1: any): string {
-  if (iniNum(ini, 'RouteAsync', 'Enabled') !== 1 || iniNum(ini, 'RouteAsync', 'Mode') < 1 || !c1 || !('asyncStarted' in c1)) return '';
+  if (iniNum(ini, 'RouteAsync', 'Enabled') !== 1 || iniNum(ini, 'RouteAsync', 'Mode') < 1) return '';
+  if (!c1 || !('asyncStarted' in c1)) return `UNKNOWN: [RouteAsync] on but /native ${c1 ? 'has no asyncStarted' : 'did not answer'}: run void`; // docs/236: absent is never ok
   const d = Number(c1.asyncStarted) - Number(c0?.asyncStarted ?? 0);
   return d > 0 ? '' : `self check: [RouteAsync] on but ${d} async route jobs started (invokeHook ${c1.invokeHook ?? '?'}): async off, run void`;
 }
@@ -723,6 +856,9 @@ export const ACTIVITY: { what: string; on: string[]; counters: string[]; fix?: s
   { what: '[RouteGate] Enforce', on: ['RouteGate.Enabled', 'RouteGate.Enforce'], counters: ['rgEntries'] },
   { what: '[Discourage] DeferFootprint', on: ['RouteAsync.Enabled', 'RouteAsync.Mode', 'Discourage.Enabled', 'Discourage.DeferFootprint'], counters: ['usfDeferred'] },
   { what: '[RouteAsync] RefcountGuard', on: ['RouteAsync.Enabled', 'RouteAsync.Mode', 'RouteAsync.RefcountGuard'], counters: ['rcDeferred', 'rcWould'] },
+  // Verify runs (docs/236): 0 mismatches with 0 calls is no verification
+  { what: '[WaterJps] Verify', on: ['WaterJps.Enabled', 'WaterJps.Verify'], counters: ['waterJpsCallsK', 'waterJpsCellsK'] },
+  { what: '[LotSinCos] Verify', on: ['LotSinCos.Enabled', 'LotSinCos.Verify'], counters: ['lscCallsK', 'lscHitsK'] },
   { what: 'ts3fixes overwatchchain', on: [], fix: 'overwatchchain', when: '3am', counters: ['owchain_alarms', 'owspread_types_run'], standDown: /^overwatchspread: .*\boff\b/ },
   { what: 'ts3fixes stuckcheckasync', on: [], fix: 'stuckcheckasync', when: '3am', counters: ['stuckcheckasync_queued', 'stuckcheckasync_run'] },
   { what: 'ts3fixes errortrapspread', on: [], fix: 'errortrapspread', when: 'load', counters: ['etspread_passes'], standDown: /^errortrapspread: .*\boff\b/ },
@@ -730,7 +866,9 @@ export const ACTIVITY: { what: string; on: string[]; counters: string[]; fix?: s
     counters: ['stuckcheckcap_marked', 'stuckcheck_noplan', 'stuckcheck_notstuck', 'stuckcheck_rearmed', 'stuckcheck_reset'] })),
 ];
 export function featureIdle(ini: string, c0: any, c1: any): string[] {
-  return ACTIVITY.filter(a => !a.fix && a.on.every(k => iniNum(ini, k.split('.')[0], k.split('.')[1]) >= 1) && c1 && a.counters.every(k => k in c1)).flatMap(a => {
+  return ACTIVITY.filter(a => !a.fix && a.on.every(k => iniNum(ini, k.split('.')[0], k.split('.')[1]) >= 1)).flatMap(a => {
+    const miss = c1 ? a.counters.filter(k => !(k in c1)) : a.counters; // docs/236: an absent counter is UNKNOWN, never ok (was: skipped)
+    if (miss.length) return [`UNKNOWN: ${a.what} on but ${miss.join('+')} missing from /native${c1 ? ' (asi without the counter)' : ' (no answer)'}: run void`];
     const d = a.counters.reduce((s, k) => s + Number(c1[k]) - Number(c0?.[k] ?? 0), 0);
     return d > 0 ? [] : [`self check: ${a.what} on but ${a.counters.join('+')} rose ${d}: feature idle, run void`];
   });
@@ -763,7 +901,12 @@ export function fixActivity(p0: any, p1: any, t0: any, t1: any, cfg: { fixesOn?:
   }
   const applied: string[] = Array.isArray(p1?.applied) ? p1.applied.map(String) : [];
   const on = new Set(cfg.fixesOn?.split(',') ?? []), off = new Set(cfg.fixesOff?.split(',') ?? []);
-  for (const a of ACTIVITY.filter(x => x.fix && p1 && x.counters.every(k => k in p1))) {
+  for (const a of ACTIVITY.filter(x => x.fix)) {
+    const miss = p1 ? a.counters.filter(k => !(k in p1)) : a.counters;
+    if (miss.length) { // docs/236: a fix judged on with absent counters is UNKNOWN, never ok (was: skipped)
+      if (!a.record && (on.has(a.fix!) || (p1?.[a.fix!] === true && !off.has(a.fix!)))) fails.push(`UNKNOWN: ${a.what} on but ${miss.join('+')} missing from the patches reply${p1 ? '' : ' (no answer)'}: run void`);
+      continue;
+    }
     for (const k of a.counters) counters[k] = { before: p0 && k in p0 ? Number(p0[k]) : null, after: Number(p1[k]) };
     if (a.record || !(on.has(a.fix!) || (p1[a.fix!] === true && !off.has(a.fix!)))) continue;
     const down = a.standDown && applied.find(l => a.standDown!.test(l));
@@ -785,6 +928,8 @@ export const jobFixesCfg = (p: any) => {
 };
 // ts3native.log copies to merge into the call-site DB: each repro slice (own game start after a reload) and the row's copy;
 // mergeLog is idempotent per run, so slices of one start add only their growth
+// the log copies the job's log rules read: phase copies (save matrix before its reload restarts), then the final copy
+export const ruleLogs = (row: any): string[] => [...(row.phaseLogs ?? []), row.nativeLog].filter((f: string) => f && existsSync(f));
 export const callsiteLogs = (row: any): string[] => [...new Set<string>([...(row.repros ?? []).map((r: any) => r.nativeLog), row.nativeLog].filter(Boolean))];
 // profile.fixesOn: profile-world.ts prints `fixes on: <names> (verified)` after reading the switches back; '' when it did
 export const fixesOnFail = (fixesOn: string | undefined, out: string) => !fixesOn || out.includes(`fixes on: ${fixesOn} (verified)`) ? ''
@@ -831,10 +976,21 @@ export function profileHead(code: number | null, timedOut: boolean, stop: string
   return !timedOut && !!stop && /^stopped at /.test(stop) && verdicts(out).some(v => /^FAIL: /.test(v)) ? 'ran' : 'FAIL';
 }
 
+// every FAIL line plus the last 8 others: an early FAIL must not drop out of the row (docs/236 #15)
 export function verdicts(out: string): string[] {
-  return out.split(/\r?\n/).map(l => l.replace(/^\d\d:\d\d:\d\d /, '').trim())
-    .filter(l => /(^|[\s:])(PASS|FAIL|PENDING)\b|^summary:/.test(l) && !/^(fix under test|step )/.test(l)).slice(-8);
+  const v = out.split(/\r?\n/).map(l => l.replace(/^\d\d:\d\d:\d\d /, '').trim())
+    .filter(l => /(^|[\s:])(PASS|FAIL|PENDING|UNKNOWN)\b|^summary:|^N\/A: /.test(l) && !/^(fix under test|step )/.test(l));
+  return v.filter((l, i) => isFail(l) || i >= v.length - 8);
 }
+// docs/236 Round 9: a child's "N/A: <why>" line (vanilla-steps.ts: the move offer never appeared) with no FAIL, crash, timeout or error:
+// the row is N/A, never PASS (row.pass stays false), and not a FAIL (no queue exit 1, no stopQueueOnFail stop)
+// skipIfMissing jobs: the manual downloads install-fixes.ts plan reports missing (install would exit 0 and run the job without the mod)
+export const missingFixes = (plan: string): string[] => [...plan.matchAll(/^(?:installed|pending)\s+(\S+).*manual: MISSING \((.*)\)\s*$/gm)].map(m => `${m[1]} <- ${m[2]}`);
+export const naRow = (row: { pass?: boolean; crashed?: boolean; timedOut?: boolean; error?: string | null; selfCheckFail?: string; verdict: string[] }): boolean =>
+  !row.pass && !row.crashed && !row.timedOut && !row.error && !row.selfCheckFail && row.verdict.some(l => /^N\/A: /.test(l)) && !row.verdict.some(isFail);
+// a verdict line in the children's own format: "FAIL: why" (repro.ts, profile-world.ts, cycle.ts) or "<id>: FAIL" (repro.ts, save-matrix.ts);
+// UNKNOWN (absent data, e1cdbc4) counts as a failed result too: repro.ts prints "<id>: UNKNOWN: ..." and exits 1
+export const isFail = (l: string) => /^(FAIL|UNKNOWN): |^[\w.\- ]+: (FAIL|UNKNOWN)\b/.test(l);
 // the last "hang capture: ..." summary a child printed (game-alive.ts captureHang), up to the dump/file part, or null
 export const hangCaptureLine = (out: string): string | null => [...out.matchAll(/hang capture: [^\r\n]*/g)].at(-1)?.[0].replace(/; (dump|probe-out|[A-Z]:\\|\/).*$/, '') ?? null;
 // a child that failed with no verdict line gets one naming that (2026-10-16 bp-travel-future: stopped from outside, the md said "-")
@@ -849,7 +1005,7 @@ export function silentFail(code: number | null, out: string, timedOut: boolean):
 // "FAIL in 2.6 min" with no reason and the game stayed open): name it, close the game now, before Bin is restored
 export async function childLost(name: string, r: { code: number | null; signal?: string | null; out: string }, close: () => Promise<void>, logFn: (s: string) => void): Promise<string> {
   if (r.code === 0 && !r.signal) return '';
-  if (!r.signal && verdicts(r.out).length) return ''; // the child wrote its own FAIL/PASS
+  if (!r.signal && verdicts(r.out).some(l => isFail(l) || /^N\/A: /.test(l))) return ''; // the child wrote its own FAIL or N/A line (docs/236 Round 9: vanilla-steps.ts exits 1 on N/A); a PASS-like line on a non-zero exit is no result (docs/236 #15)
   const why = `child ${name} exited (${r.signal ? `signal ${r.signal}` : `code ${r.code}`}) without a result`;
   logFn(`${why}; closing the game`);
   await close();
@@ -882,8 +1038,8 @@ export function routelockSummary(r: any): any {
 }
 
 // stopQueueOnFail / --stop-on-fail: '' = go on, else the STOP reason naming the job (a noisy job with its -rerun queued goes on)
-export function failStop(j: { id: string; stopQueueOnFail?: boolean }, row: { pass?: boolean; rerun?: string; error?: string | null; verdict?: string[] }, cli: boolean): string {
-  if (row.pass || row.rerun || !(j.stopQueueOnFail || cli)) return '';
+export function failStop(j: { id: string; stopQueueOnFail?: boolean }, row: { pass?: boolean; na?: boolean; rerun?: string; error?: string | null; verdict?: string[] }, cli: boolean): string {
+  if (row.pass || row.na || row.rerun || !(j.stopQueueOnFail || cli)) return '';
   return `${j.id} failed (stopQueueOnFail): ${String(row.error || row.verdict?.find(v => /^FAIL/.test(v)) || 'see the row').slice(0, 200)}`;
 }
 // stop rule after a job: same job crashed twice (earlier rows count), or this and the previous job both crashed
@@ -896,6 +1052,8 @@ export function crashStop(crashed: boolean, earlierCrashesOfJob: number, prevCra
 
 if (values['self-check']) {
   const assert = (await import('node:assert')).strict;
+  assert.equal(machineCols('').head + machineCols('').sep + machineCols('').cell('main'), ''); assert.deepEqual(machineField(''), {}); // main: no column, no field
+  assert.equal(machineCols('ea-laptop').head, ' machine |'); assert.equal(machineCols('ea-laptop').sep, '---|'); assert.equal(machineCols('ea-laptop').cell('ea-laptop'), ' ea-laptop |'); assert.deepEqual(machineField('ea-laptop'), { machineTag: 'ea-laptop' });
   const ok = parseQueue([{ id: 'a', asi: 'tested', save: 'Baseline-BP', run: { soak: { minutes: 5 } } }, { id: 'b', asi: 'x', run: { repro: 'r1' } },
     { id: 'c', asi: 'tested', save: 'menu', run: { menuMemory: { waitS: 30 } } }]);
   assert.equal(ok.length, 3);
@@ -1004,6 +1162,8 @@ if (values['self-check']) {
   assert.equal(mergeConf('d3d9.samplerAnisotropy = 16\r\n', { 'd3d9.textureMemory': 64 }), 'd3d9.samplerAnisotropy = 16\r\nd3d9.textureMemory = 64\r\n');
   assert.equal(mergeConf('d3d9.textureMemory=100\n# x\n', { 'd3d9.textureMemory': 64 }), 'd3d9.textureMemory = 64\n# x\n');
   assert.throws(() => parseQueue([{ id: 'a', asi: 'tested', save: 'menu', dxvkConf: { textureMemory: 64 }, run: { menuMemory: {} } }]), /dxvkConf/);
+  assert.throws(() => parseQueue([{ id: 'a', asi: 'tested', save: 'menu', d3d9Dll: '../evil.dll', run: { menuMemory: {} } }]), /d3d9Dll/);
+  assert.doesNotThrow(() => parseQueue([{ id: 'a', asi: 'tested', save: 'menu', d3d9Dll: 'tools/d3d9on12-test/out/d3d9.dll', run: { menuMemory: {} } }]));
   // S3SS.toml: dotted tables, true/false values
   const toml = '[patches.Mimalloc]\nenabled = true\n\n[patches.LotStreamingOptimizations]\nenabled = true\n';
   assert.equal(mergeIni(toml, tomlSet({ 'patches.LotStreamingOptimizations.enabled': false })), '[patches.Mimalloc]\nenabled = true\n\n[patches.LotStreamingOptimizations]\nenabled=false\n');
@@ -1027,6 +1187,12 @@ if (values['self-check']) {
   assert.deepEqual(pickCounters(c, ['Alloc']), { version: 14, allocHitsK: 10, allocMode: 1 });
   assert.deepEqual(pickCounters(c, ['HeightCache', 'SaveFlush', 'GC']), { version: 14, heightHits: 3, flushJobs: 2 });
   assert.equal(pickCounters(null, ['Alloc']), null);
+  // unseen sections reach the row; an enabled section with no recorded field fails the job
+  const u = { version: 152, aoKindN0: 3, aaPasses: 2, rmPasses: 1, utbRowCalc: 4, ucReady: 1, auMode: 1 };
+  assert.deepEqual(pickCounters(u, ['UnseenAnim', 'UnseenRootMotion', 'UnseenTable']), { version: 152, aoKindN0: 3, aaPasses: 2, rmPasses: 1, utbRowCalc: 4 });
+  assert.deepEqual(counterGaps({ 'UnseenAnim.Enabled': 1, 'UnseenRootMotion.Enabled': 0 }, pickCounters(u, ['UnseenAnim'])), []);
+  assert.deepEqual(counterGaps({ 'UnseenAnim.Enabled': 1, 'UnseenTable.Enabled': 1 }, { version: 152, aaPasses: 2 }), ['counters not recorded: UnseenTable']);
+  assert.deepEqual(counterGaps({ 'UnseenTable.Enabled': 1 }, null), []);
   // Verify group (docs/51): every vf* key, nothing else
   const v = { version: 20, vfEnabled: 1, vfThreadsOffMain: 3, vfRaceCellSwap: 0, verbose: 1, lotAdds: 2 };
   assert.deepEqual(pickCounters(v, ['Verify']), { version: 20, vfEnabled: 1, vfThreadsOffMain: 3, vfRaceCellSwap: 0 });
@@ -1067,7 +1233,13 @@ if (values['self-check']) {
   assert.deepEqual(featureIdle(fIni, { rgEntries: 5, usfDeferred: 1, rcDeferred: 0, rcWould: 0 }, { rgEntries: 90, usfDeferred: 7, rcDeferred: 0, rcWould: 3 }), []);
   assert.deepEqual(featureIdle(fIni, { rgEntries: 5, usfDeferred: 1, rcDeferred: 2, rcWould: 0 }, { rgEntries: 5, usfDeferred: 7, rcDeferred: 2, rcWould: 0 }),
     ['self check: [RouteGate] Enforce on but rgEntries rose 0: feature idle, run void', 'self check: [RouteAsync] RefcountGuard on but rcDeferred+rcWould rose 0: feature idle, run void']);
-  assert.deepEqual(featureIdle(fIni, {}, { rgEntries: 3 }), []); // v16 asi: no usf*/rc* fields
+  assert.deepEqual(iniFeaturesOn('[General]\nLog=1\n[RouteAsync]\nEnabled=1\nMode=1\n[WaterJps]\nEnabled=0\n[LotSinCos]\r\nEnabled = 1\r\n'), ['RouteAsync', 'LotSinCos']);
+  assert.deepEqual(featureIdle(fIni, {}, { rgEntries: 3 }), ['UNKNOWN: [Discourage] DeferFootprint on but usfDeferred missing from /native (asi without the counter): run void',
+    'UNKNOWN: [RouteAsync] RefcountGuard on but rcDeferred+rcWould missing from /native (asi without the counter): run void'], 'docs/236: absent counters are UNKNOWN');
+  const vIni = '[WaterJps]\nEnabled=1\nVerify=1\n[LotSinCos]\nEnabled=1\nVerify=0\n';
+  assert.deepEqual(featureIdle(vIni, { waterJpsCallsK: 4, waterJpsCellsK: 9 }, { waterJpsCallsK: 4, waterJpsCellsK: 9, waterJpsMismatches: 0 }), ['self check: [WaterJps] Verify on but waterJpsCallsK+waterJpsCellsK rose 0: feature idle, run void']);
+  assert.deepEqual(featureIdle(vIni, {}, { waterJpsCallsK: 2, waterJpsCellsK: 5 }), [], 'LotSinCos Verify=0: not judged');
+  assert.match(featureIdle(vIni.replace('Verify=0', 'Verify=1'), {}, { waterJpsCallsK: 2, waterJpsCellsK: 5 }).join(), /^UNKNOWN: \[LotSinCos\] Verify on but lscCallsK\+lscHitsK missing/);
   // ts3fixes rows: 3 AM covered or not, after-load pass by session total, stand-down, switch off / old agent = skip
   assert.equal(eventCovered('3am', { minutes_total: 0, clock: '02:00' }, { minutes_total: 70 }), true);
   assert.equal(eventCovered('3am', { minutes_total: 0, clock: '02:00' }, { minutes_total: 65 }), false);
@@ -1091,7 +1263,8 @@ if (values['self-check']) {
   // docs/196 §4 step 1: the agent reads an unset default-on switch as false (shipped package): counters recorded, never judged
   const relR = fixActivity(fx, { ...fx, overwatchchain: false, stuckcheckasync: false, errortrapspread: false, owchain_alarms: 5 }, night[0], night[1]);
   assert.deepEqual([relR.fails, relR.notes, relR.counters.owchain_alarms, relR.counters.etspread_passes], [[], [], { before: 2, after: 5 }, { before: 1, after: 1 }]);
-  assert.deepEqual(fixActivity(null, { overwatchchain: true }, night[0], night[1]).fails, []); // old agent: no counters
+  assert.deepEqual(fixActivity(null, { overwatchchain: true }, night[0], night[1]).fails, ['UNKNOWN: ts3fixes overwatchchain on but owchain_alarms+owspread_types_run missing from the patches reply: run void']); // docs/236: was [] (skipped)
+  assert.equal(fixActivity(null, null, night[0], night[1], { fixesOn: 'stuckcheckasync' }).fails.length, 1); assert.deepEqual(fixActivity(null, null, night[0], night[1]).fails, [], 'nothing judged on');
   // stuck-check outcomes (docs/163 §10.1): recorded with stuckcheckown or stuckcheckcap on, idle or not, never a fail or note
   const sc = { stuckcheckown: true, stuckcheckcap: false, stuckcheckcap_marked: 0, stuckcheck_noplan: 1, stuckcheck_notstuck: 2, stuckcheck_rearmed: 0, stuckcheck_reset: 0 };
   const scR = fixActivity(sc, { ...sc, stuckcheck_reset: 1 }, night[0], night[1]);
@@ -1110,8 +1283,10 @@ if (values['self-check']) {
   assert.deepEqual(jobFixesCfg({ fixesOn: 'a', fixesOff: 'c', repros: [{ id: 'r1', fixesOn: 'b' }, 'r2'] }), { fixesOn: 'a,b', fixesOff: 'c', report: 'a,b' });
   assert.deepEqual(jobFixesCfg({ fixesOn: 'autlive', fixesReport: 'g8_', ab: 'autunseen' }), { fixesOn: 'autlive', fixesOff: undefined, report: 'g8_,autlive,autunseen' });
   assert.deepEqual(callsiteLogs({ nativeLog: 'm', repros: [{ nativeLog: 'a' }, {}, { nativeLog: 'm' }] }), ['a', 'm']);
+  assert.deepEqual(ruleLogs({ nativeLog: import.meta.filename, phaseLogs: ['no-such-file', import.meta.filename] }), [import.meta.filename, import.meta.filename]);
   assert.deepEqual(featureIdle(fIni.replace('DeferFootprint=1', 'DeferFootprint=0').replace('Mode=1', 'Mode=0'), {}, { rgEntries: 3, usfDeferred: 0, rcDeferred: 0, rcWould: 0 }), []);
-  assert.deepEqual(featureIdle(fIni, null, null), []);
+  assert.equal(featureIdle(fIni, null, null).length, 3); assert.match(featureIdle(fIni, null, null)[0], /missing from \/native \(no answer\)/);
+  assert.match(asyncIdle(raOn, {}, null), /^UNKNOWN: \[RouteAsync\] on but \/native did not answer/); assert.match(asyncIdle(raOn, {}, { invokeHook: 1 }), /has no asyncStarted/);
   assert.equal(fixesOnFail(undefined, ''), ''); assert.equal(fixesOnFail('a,b', '12:00:00 fixes on: a,b (verified)\n'), '');
   assert.match(fixesOnFail('a,b', '12:00:00 fixes on: a (verified)\n'), /fixesOn a,b without/);
   // pair check: same id stem, profiler tools differ -> one warning line (the 2026-10-24 sv-soak case); other jobs left alone
@@ -1127,6 +1302,10 @@ if (values['self-check']) {
   assert.equal(pw.length, 2); assert.match(pw[0], /^WARN pin old: .*0\.36\.105, source is 0\.36\.148/); assert.match(pw[1], /^WARN pin pkg: fixesPackage/);
   assert.throws(() => parseQueue([{ ...pj('e'), pinReason: ' ' }]), /pinReason/);
   { const used = new Set(['q-d-j', 'q-d-j-r2']); assert.equal(freeTag('q-d-j', t => used.has(t)), 'q-d-j-r3'); assert.equal(freeTag('q-d-k', t => used.has(t)), 'q-d-k'); }
+  // a longer sibling's files (its reruns too) do not take the shorter tag; a stranger with the same start does not either
+  { const sib = ['q-d-j', 'q-d-j-x'];
+    assert.ok(tagOwns('q-d-j', 'q-d-j-ab.json', sib) && tagOwns('q-d-j', 'q-d-j.log', sib) && tagOwns('q-d-j-x', 'q-d-j-x-ab.json', sib));
+    assert.ok(!tagOwns('q-d-j', 'q-d-j-x-ab.json', sib) && !tagOwns('q-d-j', 'q-d-j-x-r2-ab.json', sib) && !tagOwns('q-d-j', 'q-d-jj-ab.json', sib)); }
   // ABBA set and two-load pair: paired across on/off and across repeats; a same-stem stranger (-x) and a longer id are not
   assert.deepEqual(pairWarnings(parseQueue([pj('bp-pc-off-1'), pj('bp-pc-on-1', { noSamplers: true }), pj('bp-pc-x'), pj('bp-pc-on-2', { noSamplers: true })])),
     ['WARN pair bp-pc-off-1 / bp-pc-on-1 differ in profiler tools: noSamplers - vs true (cost known? else not comparable)',
@@ -1169,7 +1348,20 @@ if (values['self-check']) {
     'hang capture: 5 sim stacks, top frame ts3native.asi+0x1 (5/5 same); 3 other thread stacks; managed top A.B');
   assert.equal(hangCaptureLine('no hang'), null);
   assert.deepEqual(verdicts(matrix), ['control: PASS', 'identical: FAIL', 'summary: 2 cases, 1 passed, 1 failed (identical)']);
+  // docs/236 #15: an early FAIL survives 10 later PASS lines; summary counts are not FAIL lines
+  const many = ['12:00:00 FAIL: [vres] last snapshot / dump: x', ...Array.from({ length: 10 }, (_, i) => `12:00:0${i} c${i}: PASS`)].join('\n');
+  assert.deepEqual(verdicts(many), ['FAIL: [vres] last snapshot / dump: x', ...Array.from({ length: 8 }, (_, i) => `c${i + 2}: PASS`)]);
+  assert.ok(isFail('identical: FAIL') && isFail('reload on: FAIL: x') && isFail('FAIL: x') && isFail('bp-x: UNKNOWN: sims_activity answered 1 times (expected: no stuck)'));
+  assert.deepEqual(verdicts('12:00:00 bp-x: UNKNOWN: counters missing from /native: a (expected: b)'), ['bp-x: UNKNOWN: counters missing from /native: a (expected: b)']);
+  assert.ok(!isFail('summary: 3 PASS, 0 FAIL') && !isFail('control: PASS') && !isFail('PASS: no FAIL lines'));
   assert.deepEqual(silentFail(1, matrix, false), verdicts(matrix));
+  { // docs/236 Round 9: N/A rows (offer never appeared) are neither PASS nor FAIL
+    const na = 'N/A: not triggered: no dialog matching "x" in 6 min (1 windows); the offer never appeared (Steam edition: never seen there); nothing accepted';
+    assert.deepEqual(silentFail(1, `12:00:00 dialog_expect armed\n12:06:00 ${na}`, false), [na]);
+    const r = { pass: false, crashed: false, timedOut: false, error: null, verdict: [na, 'N/A (vanilla): asi build check'] };
+    assert.ok(naRow(r)); assert.ok(!naRow({ ...r, pass: true }) && !naRow({ ...r, crashed: true }) && !naRow({ ...r, verdict: [na, 'FAIL: x'] }) && !naRow({ ...r, verdict: ['N/A (vanilla): asi build check'] }));
+    assert.equal(failStop({ id: 'm', stopQueueOnFail: true }, { pass: false, na: true, verdict: [na] }, false), '');
+  }
   assert.deepEqual(silentFail(0, 'ok', false), []);
   assert.deepEqual(silentFail(1, '12:00:00 trip status: loaded true\n', false), ['FAIL: exit 1 with no verdict line (child stopped from outside or died before its summary); last output: 12:00:00 trip status: loaded true']);
   // profile-world.ts failed repro step: the reason reaches the job verdict (2026-10-19 bp-ab-wildflowertask)
@@ -1187,11 +1379,20 @@ if (values['self-check']) {
     assert.equal(await childLost('profile-world', { code: 1, signal: null, out: reproFail }, close, lg), '');
     assert.equal(await childLost('profile-world', { code: 0, signal: null, out: '' }, close, lg), '');
     assert.equal(closes, 2);
+    // docs/236 #15: a PASS-like line on a non-zero exit is not the child's result
+    assert.equal(await childLost('save-matrix', { code: 1, signal: null, out: '12:00:00 control: PASS\n12:00:01 summary: 1 cases\n' }, close, lg), 'child save-matrix exited (code 1) without a result');
+    assert.equal(await childLost('save-matrix', { code: 1, signal: null, out: '12:00:00 identical: FAIL\n' }, close, lg), '');
+    { // docs/236 Round 9 (Steam vh-move): a child that prints only an N/A line and exits 1 is an N/A row, not "FAIL in 7.6 min" via childLost
+      const out = '12:07:30 N/A: not triggered: no dialog matching "x" in 6 min (1 windows); the offer never appeared; nothing accepted\n';
+      const row = { pass: false, crashed: false, timedOut: false, error: (await childLost('vanilla-steps', { code: 1, signal: null, out }, close, lg)) || null, verdict: silentFail(1, out, false) };
+      assert.equal(row.error, null); assert.ok(naRow(row)); assert.equal(failStop({ id: 'vh-move', stopQueueOnFail: true }, { ...row, na: naRow(row) }, false), '');
+    }
+    assert.equal(closes, 3);
     // restore EBUSY: close, retry; still busy: log and go on
     let tries = 0;
     const busyOnce = () => { if (tries++ === 0) throw Object.assign(new Error("EBUSY: resource busy or locked, copyfile 'a' -> 'ts3native.asi'"), { code: 'EBUSY' }); };
     assert.equal(await copyRetry(busyOnce, 'restore ts3native.asi', close, lg), true);
-    assert.equal(closes, 3);
+    assert.equal(closes, 4);
     assert.equal(await copyRetry(() => { throw new Error('EBUSY'); }, 'restore ts3native.asi', close, lg), false);
     assert.match(logged.at(-1)!, /failed again: Error: EBUSY; continuing$/);
   }
@@ -1292,6 +1493,16 @@ if (values['self-check']) {
   assert.equal(gateFail(gates, 310, null, null), ''); // probe/agent did not answer: skip the round (the game guard covers a dead probe)
   assert.equal(gateFail(gates, 160, nat(5), {}), 'early gate: G-M6 guard faults (fixes:autshadow_gm6_faults missing)'); // old package / wrong name
   assert.equal(gateFail([{ afterSec: 1, counter: 'p.1', op: '>=', value: 2, why: 'arr' }], 5, { p: [0, 2] }, null), '');
+  // report (2026-11-02): a FAIL line carries the non-zero counters of the listed prefixes from the same poll; a pass stays ''
+  const eligGate: EarlyGate[] = [{ afterSec: 60, counter: 'rm2Elig', op: '>', value: 0, why: 'no eligible decision' }];
+  const rmNat = { rm2Elig: 0, rm2Why_3: 12, rm2Why_6: 9560, rm2Why_7: 0, rm2QuatBad: 284640, rm2RouteRecs: 284640, rm2CamIc_1: 2, rm2Coarse: 4 };
+  const rep = ['rm2Why_', 'rm2CamIc_', 'rm2Quat'];
+  assert.equal(gateFail(eligGate, 70, rmNat, null, rep), 'early gate: no eligible decision (rm2Elig=0) [want >0 from 60 s]; rm2Why_3=12 rm2Why_6=9560 rm2QuatBad=284640 rm2CamIc_1=2');
+  assert.equal(gateFail(eligGate, 70, { ...rmNat, rm2Elig: 3 }, null, rep), '');
+  assert.equal(gateFail(eligGate, 70, rmNat, null), 'early gate: no eligible decision (rm2Elig=0) [want >0 from 60 s]');
+  assert.throws(() => parseQueue([{ ...eg(g1)[0], report: [] }]), /report must be/);
+  assert.throws(() => parseQueue([{ id: 'g', asi: 'x', save: 'S', report: ['rm2Why_'], run: { profile: { minutes: 5 } } }]), /report must be/);
+  assert.deepEqual(parseQueue([{ ...eg(g1)[0], report: ['rm2Why_'] }])[0].report, ['rm2Why_']);
 
   // content stash round trip on a temp Mods tree
   const tmp = mkdtempSync(join(tmpdir(), 'queue-content-')), mods = join(tmp, 'Mods'), stash = join(tmp, 'stash');
@@ -1304,6 +1515,8 @@ if (values['self-check']) {
   const files = contentFiles(mods, sets, new Set([normalize(join(mods, 'Packages/CC/fix.package')).toLowerCase()]));
   assert.deepEqual(files, moved);
   assert.deepEqual(contentFiles(mods, []), []);
+  assert.deepEqual(contentFiles(mods, [{ include: ['Packages'], exclude: [], match: 'root' }]), ['Packages/root.package']);
+  assert.equal(contentSets('no-randomizer')[0].match, 'TheRandomizer');
   stashContent(mods, stash, files, { job: 't' });
   assert.ok(moved.every(r => !existsSync(join(mods, r)) && existsSync(join(stash, r))), 'moved to the stash');
   assert.ok(all.filter(r => !moved.includes(r)).every(r => existsSync(join(mods, r))), 'the rest stays');
@@ -1321,6 +1534,21 @@ if (values['self-check']) {
   assert.equal(r2.restored, 1);
   assert.match(r2.problems.join(), /stash copy kept: Packages\/CC\/a\.package/);
   assert.ok(existsSync(join(mods, moved[0])) && readFileSync(join(mods, moved[1]), 'utf8') === moved[1] && existsSync(manifestOf(stash)), 'kept for a human');
+  // docs/236 #16 read-back: a manifest file in neither place is lost (stash kept, job fails); readBack compares bytes
+  {
+    const st2 = join(tmp, 'stash-lost'), m2 = join(tmp, 'Mods-lost');
+    mkdirSync(join(st2, 'Packages'), { recursive: true }); writeFileSync(join(st2, 'Packages', 'x.package'), 'x');
+    writeFileSync(manifestOf(st2), JSON.stringify({ mods: m2, files: ['Packages/x.package', 'Packages/gone.package'] }));
+    const r3 = restoreContent(st2);
+    assert.equal(r3.restored, 1);
+    assert.deepEqual(r3.problems, ['read-back: 1 manifest files in neither Mods nor the stash: Packages/gone.package']);
+    assert.ok(existsSync(manifestOf(st2)), 'stash kept for a human');
+    writeFileSync(join(tmp, 'rb.ini'), 'a=1\r\n');
+    assert.equal(readBack(join(tmp, 'rb.ini'), 'a=1\r\n'), '');
+    assert.equal(readBack(join(tmp, 'rb.ini'), Buffer.from('a=1\r\n')), '');
+    assert.match(readBack(join(tmp, 'rb.ini'), 'a=2\r\n'), /^read-back mismatch: /);
+    assert.match(readBack(join(tmp, 'no.ini'), 'a'), /^read-back failed: .*no\.ini/);
+  }
   // ccSet: set dir -> Mods/Packages/cc-synth and back with the same manifest pair (moves, the set's manifest.json stays put)
   const set = join(tmp, 'cc-1k'), ccd = join(tmp, 'Mods2', 'Packages', 'cc-synth');
   mkdirSync(set, { recursive: true }); for (const f of ['ccgen-1-object-00000.package', 'ccgen-1-cas-00001.package', 'manifest.json']) writeFileSync(join(set, f), f);
@@ -1360,7 +1588,10 @@ if (values['self-check']) {
   assert.throws(() => parseQueue([{ id: 'f3', asi: 'x', save: 'S', fixesBuild: 3, run: { soak: { minutes: 1 } } }]), /fixesBuild must be/);
   // fixesPackage (docs/196 §4 step 1: a shipped ts3fixes.package on profile/soak jobs)
   assert.equal(parseQueue([{ id: 'f4', asi: 'x', save: 'S', fixesPackage: 'game-copy/p', run: { profile: { minutes: 1 } } }])[0].fixesPackage, 'game-copy/p');
+  assert.deepEqual(missingFixes('pending    a-mod                      v1   manual: MISSING (https://x/1)\ninstalled  b-mod                      v1   manual: found\n'), ['a-mod <- https://x/1']);
+  assert.throws(() => parseQueue([{ id: 'sm', asi: 'x', save: 'S', skipIfMissing: true, run: { profile: { minutes: 1 } } }]), /skipIfMissing/);
   assert.throws(() => parseQueue([{ id: 'f5', asi: 'x', save: 'S', fixesPackage: 'p', fixesBuild: 'b', run: { soak: { minutes: 1 } } }]), /fixesPackage/);
+  assert.equal(parseQueue([{ id: 'ib', asi: 'x', save: 'S', iniBase: 'game-copy/asi-v027/ts3native.ini', fixesPackage: 'game-copy/p', run: { script: ['idle-watch.ts'] } }])[0].iniBase, 'game-copy/asi-v027/ts3native.ini'); // idle-watch queue
   assert.throws(() => parseQueue([{ id: 'f6', asi: 'x', save: 'S', fixesPackage: 'p', run: { matrix: [] } }]), /fixesPackage/);
   assert.equal(parseQueue([{ id: 'f7', asi: 'x', save: 'menu', fixesPackage: 'game-copy/p', run: { repro: 'r' } }])[0].fixesPackage, 'game-copy/p'); // start-path controls
   const bdb = loadDb();
@@ -1420,6 +1651,60 @@ if (values['self-check']) {
   assert.deepEqual(smokeProblems({ row: okRow, wins: [{ ...win, arms: false, iters: null, wait: null }], log: '', p6: false, nativeLog: '' }), [], 'no arms: no split needed'); }
   assert.throws(() => parseQueue([{ id: 'k', asi: 'x', save: 'S', fixesOff: 'a', run: { profile: { minutes: 5 } } }]), /job 1 .k.: unknown job key "fixesOff".*run[.]profile/); // job-level profile key
   assert.throws(() => parseQueue([{ id: 'k', asi: 'x', save: 'S', bogus: 1, run: { profile: { minutes: 5 } } }]), /unknown job key "bogus"/);
+  { // ourMods false: refusals at parse time, the clean-baseline proof, the queue file itself (stash round trip: vanilla.ts --self-check)
+    const oj = (j: any) => ({ id: 'o', asi: 'none', ourMods: false, save: 'S', run: { profile: { minutes: 10, seed: 1 } }, ...j });
+    assert.equal(parseQueue([oj({})])[0].ourMods, false);
+    assert.throws(() => parseQueue([oj({ ourMods: true })]), /ourMods is false or left out/);
+    assert.throws(() => parseQueue([oj({ asi: 'tested' })]), /refuses: asi "tested"/);
+    assert.throws(() => parseQueue([oj({ ini: { 'GC.Enabled': 0 }, minCounters: 72 })]), /refuses: ini, minCounters/);
+    assert.throws(() => parseQueue([oj({ fixesPackage: 'game-copy/p' })]), /refuses: fixesPackage/);
+    assert.throws(() => parseQueue([oj({ run: { soak: { minutes: 1 } } })]), /no run.profile, a run kind besides profile/);
+    assert.equal(parseQueue([oj({ run: { repro: 'r' } })])[0].run.repro, 'r');
+    assert.throws(() => parseQueue([oj({ run: { repro: 'r', profile: { minutes: 1 } } })]), /a run kind besides profile/);
+    assert.throws(() => parseQueue([oj({ run: { profile: { minutes: 10, fixesOff: 'gohome' } } })]), /run.profile.fixesOff/);
+    assert.throws(() => parseQueue([oj({ run: { profile: { minutes: 10, repros: ['r'] } } })]), /run.profile.repros/);
+    assert.throws(() => parseQueue([oj({ reuseSession: true })]), /refuses: reuseSession/);
+    assert.deepEqual(rowIni(parseQueue([oj({})])[0]), {}, 'no Light or call-site keys in the row of a run without ts3native');
+    assert.ok(OURMODS_NA.length === VANILLA_NA.length - 1 && !OURMODS_NA.includes('ts3fixes activity'), 'ts3fixes activity is checked, not N/A');
+    // a reply without ts3fixes (PatchHandlers.cs Patches): applied null, counters 0, rates -1, switches at their defaults
+    const clean = { applied: null, gohome: true, gohome_runs: 0, unseenroute_c_hit_pm: -1, recent: null };
+    assert.deepEqual(ourModsFails({ logExists: false, native: [null, null], patches: [clean, clean] }), []);
+    assert.match(ourModsFails({ logExists: true, native: [null], patches: [clean] })[0], /ts3native\.log written/);
+    assert.match(ourModsFails({ logExists: false, native: [{ version: 72 }, null], patches: [clean] })[0], /\/native answered/);
+    assert.match(ourModsFails({ logExists: false, native: [null], patches: [{ ...clean, applied: [] }] })[0], /ts3fixes\.applied set/); // the empty list counts: Apply ran
+    assert.match(ourModsFails({ logExists: false, native: [null], patches: [clean, { ...clean, owchain_alarms: 4 }] })[0], /ts3fixes activity: owchain_alarms 4/); // the bp-baseline-rel row
+    assert.match(ourModsFails({ logExists: false, native: [null], patches: [{ ...clean, recent: ['x'] }] })[0], /ts3fixes activity: recent/);
+    assert.match(ourModsFails({ logExists: false, native: [null], patches: [clean, undefined] })[0], /^UNKNOWN: no patches reply/);
+    assert.equal(ourModsFails({ logExists: true, native: [{ a: 1 }, { a: 1 }], patches: [{ ...clean, applied: [] }, { ...clean, applied: [] }] }).length, 3, 'one line per cause');
+    assert.ok(isFail(`FAIL: our mods present: ${ourModsFails({ logExists: true, native: [], patches: [] })[0]}`));
+    assert.ok(!isFail(`N/A (ourMods false): ${OURMODS_NA.join(', ')}`), 'the N/A line is no FAIL'); assert.ok(!naRow({ pass: true, verdict: [`N/A (ourMods false): x`] }), 'not an N/A row');
+    const bq = parseQueue(JSON.parse(readFileSync(H('queues/v027-baseline-true.json'), 'utf8')));
+    assert.deepEqual(bq.map(j => [j.id, j.save, j.ourMods, j.asi, j.run.profile!.minutes, j.run.profile!.seed]), ['bp', 'ip', 'sv'].map(t => [`${t}-baseline-true`, t === 'bp' ? 'Baseline-BP' : `Baseline-${t.toUpperCase()}-Spring`, false, 'none', 10, 12345]));
+  }
+  { // vanilla mode (docs/236): refusals, the autopilot-poll block rule, the script run kind, and the vanilla queue file itself
+    const v = (j: any) => vanillaRefusals(parseQueue([{ id: 'v', save: 'S', run: { soak: { minutes: 1 } }, ...j }])[0]);
+    assert.deepEqual(v({ asi: 'none' }), []);
+    assert.deepEqual(v({ asi: 'tested', ini: { 'GC.Enabled': 0 }, minCounters: 20, logRequire: { x: 1 } }), ['asi "tested" (vanilla jobs say "none")', 'ini', 'minCounters', 'logRequire']);
+    assert.deepEqual(v({ asi: 'none', run: { profile: { minutes: 5 } } }), ['run.profile']);
+    assert.equal(vanillaBlock(null, 'no safe button: x'), '');
+    assert.equal(vanillaBlock('no safe button: x', 'no safe button: x'), 'no safe button: x');
+    assert.equal(vanillaBlock("no safe button, nothing clicked: 'Saving... ' buttons: ", "no safe button, nothing clicked: 'Saving... ' buttons: "), '');
+    assert.equal(vanillaBlock('a', null), '');
+    const eb = "no safe button, nothing clicked: 'Entering Create a Household... ' buttons: ";
+    assert.equal(vanillaBlockFor(eb, eb, 5000), '', 'no-button window seen briefly'); assert.equal(vanillaBlockFor(eb, eb, 2 * GUARD_MS + 1), eb, 'no-button window that stays');
+    assert.equal(vanillaBlockFor('x buttons: #1 ok', 'x buttons: #1 ok', 0), 'x buttons: #1 ok', 'buttons but no safe one: block at once');
+    assert.deepEqual(missingHistory(['12:00:01 A -> #1 ok', '12:00:02 B -> #3 cancel (safe default)'], ['12:00:09 A -> #1 ok']), ['12:00:02 B -> #3 cancel (safe default)']);
+    assert.deepEqual(safeDefaultWarns(['12:00:01 x -> #2 yes (accept requested)', '12:00:02 Hot Dogs -> #3 cancel (safe default; buttons: #1 a, #3 cancel)', '12:00:03 Y -> #3 cancel (safe default)']),
+      ['Hot Dogs -> #3 cancel (safe default; buttons: #1 a, #3 cancel)', 'Y -> #3 cancel (safe default)']);
+    assert.deepEqual(parseQueue([{ id: 's', asi: 'none', save: 'S', run: { script: ['travel-trip.ts', '--to', 'france'] } }])[0].run.script, ['travel-trip.ts', '--to', 'france']);
+    assert.throws(() => parseQueue([{ id: 's', asi: 'none', save: 'S', run: { script: ['../x.ts'] } }]), /run.script/);
+    const vq = JSON.parse(readFileSync(H('queues/vanilla-matrix.json'), 'utf8'));
+    assert.equal(vq.vanilla, true);
+    for (const j of parseQueue(vq)) {
+      assert.deepEqual(vanillaRefusals(j), [], `vanilla-matrix ${j.id}`);
+      if (j.run.script) assert.ok(existsSync(H(j.run.script[0])), `vanilla-matrix ${j.id}: ${j.run.script[0]} missing`);
+    }
+  }
   console.log('self-check ok');
   process.exit(0);
 }
@@ -1440,9 +1725,11 @@ async function ensureSteam() {
 }
 
 if (values['restore-content']) {
-  const stashes = [CC_DIR, CONTENT_STASH].filter(d => existsSync(manifestOf(d)));
-  if (!stashes.length && !existsSync(LOTS_MANIFEST)) { console.log(`no content stash manifest in ${CONTENT_STASH} or ${CC_DIR}, no ${LOTS_MANIFEST}: nothing to restore`); process.exit(0); }
+  const stashes = [CC_DIR, CONTENT_STASH].filter(d => existsSync(manifestOf(d))), ours = existsSync(ourModsMf());
+  if (!stashes.length && !existsSync(LOTS_MANIFEST) && !ours) { console.log(`no content stash manifest in ${CONTENT_STASH} or ${CC_DIR}, no ${LOTS_MANIFEST}: nothing to restore`); process.exit(0); }
   if (gameRunning()) { console.error(`${GAME_EXE} is running: close the game first`); process.exit(2); }
+  if (ours) try { console.log(`restored ts3native + ts3fixes: ${vanillaRestore(ourModsSpec())} files, sha read back`); }
+  catch (e) { console.error(`manifest kept: ${ourModsMf()}; ${(e as Error).message}`); process.exit(1); }
   if (existsSync(LOTS_MANIFEST)) {
     const r = removeLots();
     console.log(`removed ${r.removed} ccLots copies from ${LIBRARY}`);
@@ -1470,6 +1757,14 @@ if (stale && !values['dry-run']) { console.error(`refusing to start: ${stale}`);
 const queueName = basename(file).replace(/\.json$/i, '');
 const queueJson = JSON.parse(readFileSync(resolve(file), 'utf8'));
 const all = parseQueue(queueJson);
+// vanilla mode (header): the env or the queue file turns it on; children (cycle.ts, save-matrix.ts) read TS3_VANILLA
+const VANILLA = vanillaEnv() || queueJson?.vanilla === true;
+if (VANILLA) {
+  process.env.TS3_VANILLA = '1';
+  const bad = all.flatMap(j => vanillaRefusals(j).map(r => `${j.id}: ${r}`));
+  if (bad.length) { console.error(`vanilla mode: these need ts3native or ts3fixes: ${bad.join('; ')}`); process.exit(2); }
+}
+const noOurs = (j: Job) => VANILLA || j.ourMods === false; // no asi, ini, ts3native.log or ts3fixes in this job's game start
 let jobs = all;
 if (values.from) {
   const i = all.findIndex(j => j.id === values.from);
@@ -1502,7 +1797,10 @@ function storyCopy(j: Job, s: string) { // a declaration: --self-check runs befo
     : `Story-${s.replace(/\.sims3$/i, '').replace(/[^A-Za-z0-9_-]/g, '_')}-s${(j.run.profile.story as any).seed ?? j.run.profile.seed ?? 1}`;
 }
 const ageName = (j: Job) => j.run.age?.save ?? `${j.id}-${new Date().toISOString().slice(0, 10)}`;
-const tagTaken = (t: string) => [join(ROOT, 'probe-out', 'profile'), OUT].some(d => existsSync(d) && readdirSync(d).some(f => f.startsWith(`${t}-`) || f.startsWith(`${t}.`)));
+const tagTaken = (t: string) => {
+  const sib = all.map(j => `${queueName}-${new Date().toISOString().slice(0, 10)}-${j.id}`);
+  return [join(ROOT, 'probe-out', 'profile'), OUT].some(d => existsSync(d) && readdirSync(d).some(f => tagOwns(t, f, sib)));
+};
 const tagOf = new Map<Job, string>(); // resolved once per job: every artifact path, the row and the reports share it
 const profileTag = (j: Job) => tagOf.get(j) ?? (tagOf.set(j, freeTag(`${queueName}-${new Date().toISOString().slice(0, 10)}-${j.id}`, tagTaken)), tagOf.get(j)!);
 // p: the job's profile, or for one repro of profile.repros that merged with the item (docs/170 §1); extra: session flags
@@ -1511,7 +1809,7 @@ const profileArgs = (j: Job, p: any = j.run.profile!, tag = profileTag(j), extra
       ...(p.ab ? ['--ab', p.ab, '--slice', String(p.slice ?? 2), ...(p.abOnFirst ? ['--ab-on-first'] : [])] : []), ...(p.untilCompares ? ['--until-compares', String(p.untilCompares)] : []), ...(p.fixesOff ? ['--fixes-off', p.fixesOff] : []), ...(p.fixesOn ? ['--fixes-on', p.fixesOn] : []), ...(p.taskstall ? ['--taskstall', String(p.taskstall)] : []),
       ...(p.inroom ? ['--inroom'] : []), ...(p.watchstalk ? ['--watchstalk'] : []), ...(p.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(p.livereads2 ? ['--livereads2'] : []), ...(p.f4b ? ['--f4b'] : []), ...(p.vres ? ['--vres'] : []), ...(p.vresDry ? ['--vres-dry', String(p.vresDry)] : []), ...(p.noSamplers ? ['--no-samplers'] : []), ...(p.noFrames ? ['--no-frames'] : []), ...(p.cameraPan ? ['--camera-pan'] : []), ...(p.profOpts ? ['--prof-opts', JSON.stringify(p.profOpts)] : []), ...(p.noEnv ? ['--no-env'] : []), ...(p.envGuard === false ? ['--no-env-guard'] : []), ...(p.story ? ['--story', JSON.stringify(p.story)] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) || p.noProf ? ['--no-prof'] : []), ...(p.travel ? ['--travel', p.travel] : []), ...(p.fixesRequire ? ['--fixes-require', p.fixesRequire] : []), ...(p.frameLead ? ['--frame-lead', JSON.stringify(p.frameLead)] : []), ...(p.hitchTasks ? ['--hitch-tasks', JSON.stringify(p.hitchTasks)] : []), ...extra];
 const runArgs = (j: Job): string[] | null =>
-  j.run.repro ? [H('repro.ts'), 'run', j.run.repro, '--no-load'] : j.run.saveReload ? [H('save-reload.ts'), ...j.run.saveReload, '--port', values.port!] : j.run.matrix ? [H('save-matrix.ts'), ...j.run.matrix, ...(j.saveMatrix?.fixes ? ['--fixes', j.saveMatrix.fixes] : [])]
+  j.run.script ? [H(j.run.script[0]), ...j.run.script.slice(1)] : j.run.repro ? [H('repro.ts'), 'run', j.run.repro, '--no-load'] : j.run.saveReload ? [H('save-reload.ts'), ...j.run.saveReload, '--port', values.port!] : j.run.matrix ? [H('save-matrix.ts'), ...j.run.matrix, ...(j.saveMatrix?.fixes ? ['--fixes', j.saveMatrix.fixes] : [])]
     : j.run.profile ? profileArgs(j)
     : j.run.age ? [H('age-save.ts'), '--days', String(j.run.age.days), '--checkpoint', String(j.run.age.checkpoint), '--save', ageName(j), '--port', values.port!,
       '--keep-alive', String(j.run.age.keepAlive ?? -50)] : null;
@@ -1528,12 +1826,12 @@ const installFixesPackage = (j: Job) => {
 const LOG = join(BIN, 'ts3native.log');
 // saves an age job would overwrite: <name>.sims3 and <name>-day*.sims3
 const ageClash = (j: Job) => { const n = ageName(j).toLowerCase(); return existsSync(SAVES) ? readdirSync(SAVES).filter(f => f.toLowerCase() === `${n}.sims3` || f.toLowerCase().startsWith(`${n}-day`)) : []; };
-const DEFAULT_INI = join(BIN, 'Default.ini'), S3PP_INI = join(BIN, 'Sims3Performance.ini'), S3SS_TOML = join(USER, 'S3SS', 'S3SS.toml'), DXVK_CONF = join(BIN, 'dxvk.conf');
+const DEFAULT_INI = join(BIN, 'Default.ini'), S3PP_INI = join(BIN, 'Sims3Performance.ini'), S3SS_TOML = join(USER, 'S3SS', 'S3SS.toml'), DXVK_CONF = join(BIN, 'dxvk.conf'), D3D9_DLL = join(BIN, 'd3d9.dll'), D3D9_BAK = join(BIN, 'd3d9.dll.dxvk-bak'), D3D9_PROXY_LOG = join(BIN, 'd3d9on12-proxy.log');
 const sha = (p: string) => (existsSync(p) ? createHash('sha256').update(readFileSync(p)).digest('hex').slice(0, 12) : 'missing');
 // docs/170: jobs with the same key need the same game start (what is written before the launch); reuseOf null = reuse off
 const reuseOf = (j: Job): ReuseOpts | null => parseReuse(j.reuseSession);
 const keyOf = (j: Job) => stableKey({ asi: asiPath(j), sha: sha(asiPath(j)), ini: jobIni(j) ?? {}, fixes: j.fixes ?? null, fixesPackage: j.fixesPackage ?? null, save: saveFile(saveOf(j) ?? ''), content: j.content ?? 'as-is', ccSet: j.ccSet ?? null, ccLots: j.ccLots ?? null,
-  gameArgs: j.gameArgs ?? [], defaultIni: j.defaultIni ?? null, s3ppIni: j.s3ppIni ?? null, s3ssToml: j.s3ssToml ?? null, dxvkConf: j.dxvkConf ?? null, pin: pinConfig(j.pin) ?? null });
+  gameArgs: j.gameArgs ?? [], defaultIni: j.defaultIni ?? null, s3ppIni: j.s3ppIni ?? null, s3ssToml: j.s3ssToml ?? null, dxvkConf: j.dxvkConf ?? null, d3d9Dll: j.d3d9Dll ?? null, pin: pinConfig(j.pin) ?? null });
 const itemsOf = (j: Job): ReproItem[] | null => (j.run.profile?.repros ? reproItems(j.run.profile.repros) : null);
 // the next job may take over the running game: reuse on for it, same key, a profile run that can share a load
 const canTakeOver = (key: string, next?: Job) => !!next && !!reuseOf(next) && !reuseBlock(next) && keyOf(next) === key;
@@ -1584,8 +1882,10 @@ const smokeLine = smoke ? `measurement smoke ${smoke.id} (${smoke.run.profile!.m
 
 if (values['dry-run']) {
   console.log(`queue ${queueName}: ${jobs.length} of ${all.length} jobs (dry run, nothing touched)`);
+  if (VANILLA) console.log(`  vanilla mode (docs/236): ${existsSync(join(vanillaSpec().stash, 'manifest.json')) ? 'stash already installed: read back only, left in place' : `vanilla.ts install at the start (agent ${vanillaSpec().agent ?? '** TS3_AGENT_PACKAGE unset: a real run refuses **'}), restore at the end`}; N/A per row: ${VANILLA_NA.join(', ')}`);
   console.log(`  ${smokeLine}`);
   if (stale) console.log(`** a real run would refuse to start: ${stale}`);
+  if (existsSync(ourModsMf())) console.log(`** ts3native + ts3fixes are in the stash of an unfinished run (${ourModsSpec().stash}): a real run restores them first`);
   for (const w of pairs) console.log(`** ${w}`);
   let dryKey = '', dryWin = 0, dryPrev = '';
   for (const j of jobs) {
@@ -1610,6 +1910,13 @@ if (values['dry-run']) {
       console.log(`  0 ccLots ${j.ccLots}: ${n ? `manifest ${LOTS_MANIFEST}, copy ${n} lots into ${LIBRARY}; deleted after the job` : '** MISSING or empty: make it with tools/cc-lot-gen.ts; the job refuses before touching the game **'}`);
     }
     console.log(`  1 node tools/harness/cycle.ts --restart`);
+    if (VANILLA) console.log('  2 vanilla read-back (no *.asi, no ts3native.*, no ts3fixes, agent/wininet/d3d9 sha): a miss FAILs before the game starts; no asi, ini or ts3fixes copy');
+    else if (j.ourMods === false) {
+      const miss = COMMUNITY.filter(c => !existsSync(join(BIN, c)));
+      console.log(`  2 ourMods false: move Bin/ts3native.asi + .ini + .log + autshadow.jsonl, Mods/Packages/ts3fixes*.package, scriptCache.package to ${ourModsSpec().stash} (manifest first, sha read back); no asi, ini or ts3fixes copy`);
+      console.log(`  2 stays loaded: ${COMMUNITY.join(', ')}, the other Mods, ts3agent + ts3-nointro packages, Frida probe${miss.length ? `  ** MISSING: ${miss.join(', ')}: the job refuses **` : ''}`);
+      console.log('  8 proof: FAIL if Bin/ts3native.log appears, /native answers, ts3fixes.applied is set or a patches counter rises; moved back + sha read back in every outcome');
+    } else {
     console.log(`  2 asi ${j.asi === 'tested' ? 'tested build' : j.asi}${existsSync(a) ? '' : '  ** MISSING: the job refuses before touching the game **'}${staleAsi(j) ? `  ** STALE: ${staleAsi(j)}; the job refuses **` : ''} -> Bin/ts3native.asi`);
     // build check (what a real run verifies before the game starts; cycle.ts installs build/ts3fixes.package)
     if (existsSync(a)) {
@@ -1623,13 +1930,15 @@ if (values['dry-run']) {
     let instT = 'missing';
     try { if (inst) instT = packageTuning(inst).digest.slice(0, 12); } catch (e: any) { instT = e.message; }
     console.log(`  2 build check: ts3fixes expected ${j.fixesBuild ?? j.fixesPackage ?? 'build/ts3fixes.package'} tuning ${fc.expected?.slice(0, 12) ?? '?'}; ${j.fixesPackage ? 'package' : 'build/'} tuning ${fc.digest?.slice(0, 12) ?? 'missing'} (${fc.names.join(', ') || 'not in DB'}); installed now ${instT}${fc.fails.length ? `  ** once cycle.ts installs build/: ${fc.fails.join('; ')}: the job refuses **` : ''}`);
+    }
     console.log(`  2 save guard: ${Object.entries(hashSaves(SAVES, guardedSaves(s))).map(([k, v]) => `${k} ${v}`).join(', ')} hashed before and after; a change FAILs the job and stops the queue`);
     const ji = jobIni(j);
     if (callSitesOffNote(j)) console.log(`  3 ${callSitesOffNote(j)}`);
-    console.log(`  3 Bin/ts3native.ini = repo ini${Object.keys(ji ?? {}).length ? ` + ${Object.entries(ji!).map(([k, v]) => `${k}=${v}`).join(', ')}` : ' (unchanged)'}`);
+    if (!noOurs(j)) console.log(`  3 Bin/ts3native.ini = ${j.iniBase ? `iniBase ${j.iniBase}` : 'repo ini'}${Object.keys(ji ?? {}).length ? ` + ${Object.entries(ji!).map(([k, v]) => `${k}=${v}`).join(', ')}` : ' (unchanged)'}`);
     if (j.run.worldimage && !existsSync(String(ji!['WorldImage.Helper']))) console.log(`  3 ** helper MISSING: build native\\worldimage\\build.cmd; the job refuses before touching the game **`);
     if (j.defaultIni) console.log(`  3 Bin/Default.ini + ${Object.entries(j.defaultIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
     if (j.s3ppIni) console.log(`  3 Bin/Sims3Performance.ini + ${Object.entries(j.s3ppIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
+    if (j.d3d9Dll) console.log(`  3 Bin/d3d9.dll replaced by ${j.d3d9Dll}${existsSync(join(ROOT, j.d3d9Dll)) ? '' : '  ** MISSING **'}   (DXVK dll saved as d3d9.dll.dxvk-bak, put back and read back after the job)`);
     if (j.dxvkConf) console.log(`  3 Bin/dxvk.conf + ${Object.entries(j.dxvkConf).map(([k, v]) => `${k} = ${v}`).join(', ')}${existsSync(DXVK_CONF) ? '' : '  ** MISSING **'}   (put back after the job)`);
     if (j.s3ssToml) console.log(`  3 S3SS/S3SS.toml + ${Object.entries(j.s3ssToml).map(([k, v]) => `${k}=${v}`).join(', ')}${existsSync(S3SS_TOML) ? '' : '  ** MISSING **'}   (put back after the job)`);
     if (j.routingFailFast) console.log(`  5 ${describeFailFast(j.routingFailFast)}`);
@@ -1697,6 +2006,12 @@ const killTree = (pid?: number) => { if (pid) try { execFileSync('taskkill', ['/
 
 // set while a job's game runs: '' when the game and the probe server are up, else why not; stall = the guard's verdict
 let jobGuard: (() => string) | null = null, stall = '';
+// a fail-fast stop of a healthy game (noise, routing, early gate) takes the game down first: killing the child alone tore
+// down its Frida sessions (stutter profiler, frame-times CModule hook) inside the running game, which crashed it
+// (2026-11-03: AV in frida-agent.dll writing a code page, twice in a row, which stopped the queue). With the game gone the
+// sessions just detach. Not a crash: the job's row reads guardClosed.
+let guardClosed = false;
+const stopGameFirst = () => { if (gameRunning()) { guardClosed = true; try { execFileSync('taskkill', ['/F', '/IM', GAME_EXE], { stdio: 'ignore' }); } catch { /* gone */ } } };
 // set while a timing (profile) job's child runs: '' = fine or not judged yet, else the early noise verdict (stops the child at once)
 let noiseGuard: (() => string) | null = null;
 // set while a routingFailFast job's profile runs: '' or the FAIL reason (stops the child at once, like noiseGuard)
@@ -1704,7 +2019,59 @@ let routeGuard: (() => string) | null = null;
 // set while an earlyGates job's profile runs: '' or the FAIL reason. The guard is sync, so each call starts one async /native
 // (+ agent patches when a gate reads fixes:) read and returns the verdict of the previous one (one GUARD_MS behind)
 let gateGuard: (() => string) | null = null;
-function earlyGateGuard(gs: EarlyGate[]): () => string {
+// set while a launched game runs: '' or "unrequested mode exit ..." / the autopilot's "no safe button" line (docs/236). Sync like
+// gateGuard: each call starts one async game_state + /status read and returns the previous verdict. Log lines from `from` on only.
+let modeGuard: (() => string) | null = null;
+// vanilla (clicksFile set): no ts3native.log, so the autopilot poll is the click log; it starts after the load (clicksOn: the agent
+// mailbox takes one call at a time, docs/236 finding 1). A dialog_expect accept-on-match counts as a requested state change.
+let clicksOn = false;
+const ACCEPT_WINDOW_S = 900;
+function unrequestedModeGuard(from = 0, clicksFile = ''): () => string { // from 0: set at launch, and every start rewrites ts3native.log
+  let prev: ModeSnap | null = null, verdict = '', busy = false, prevBlocked: string | null = null, acceptAt = 0, nAccept = 0, emptySince = 0;
+  const recent: string[] = [];
+  return () => {
+    if (!busy && !verdict) {
+      busy = true;
+      (async () => {
+        let ns = '', clicks: string[];
+        if (clicksFile) {
+          if (!clicksOn) return;
+          const ap = (await agent('autopilot'))?.result, cl: string[] = (ap?.cleared ?? []).map(String);
+          if (cl.length) appendFileSync(clicksFile, cl.map(c => `${stamp()} ${c}\n`).join(''));
+          recent.push(...cl); recent.splice(0, Math.max(0, recent.length - 10));
+          if (cl.some(c => c.startsWith('dialog_expect accept'))) acceptAt = Date.now();
+          const b: string | null = ap ? ap.blocked ?? null : prevBlocked;
+          if (!emptyButtons(b) || b !== prevBlocked) emptySince = Date.now();
+          ns = vanillaBlockFor(prevBlocked, b, Date.now() - emptySince); prevBlocked = b;
+          clicks = [...recent];
+        } else {
+          const tail = logTail(1 << 20, from);
+          ns = noSafeButton(tail).replace(/^.*ap click: /, '');
+          clicks = clickLines(tail).map(l => l.replace(/^.*ap click: /, ''));
+          const na = (tail.match(/ap click: .* -> dialog_expect accept:/g) ?? []).length;
+          if (na > nAccept) { nAccept = na; acceptAt = Date.now(); }
+        }
+        if (ns) { verdict = emptyButtons(ns) ? `autopilot: window with no buttons stayed over ${2 * GUARD_MS / 1000} s (${ns.slice(0, 300)})` : `autopilot: dialog with no safe button, nothing clicked (${ns.slice(0, 300)})`; return; }
+        const ago = (await get('status'))?.state_cmd_ago_s, acc = acceptAt ? (Date.now() - acceptAt) / 1000 : null;
+        // an accept the harness armed (dialog_expect accept) may leave live mode for a long time (a move): excused for ACCEPT_WINDOW_S
+        const cur = modeSnap(await agent('game_state')), why = acc !== null && acc <= ACCEPT_WINDOW_S ? '' : modeExit(prev, cur, ago);
+        if (why) verdict = `${why}; last clicks: ${clicks.join(' | ') || (clicksFile ? 'none in the autopilot poll' : 'none in ts3native.log')}`;
+        if (cur) prev = cur;
+      })().catch(() => { /* next round */ }).finally(() => { busy = false; });
+    }
+    return verdict;
+  };
+}
+async function addAgentHistory(file: string) {
+  try {
+    const ap = (await agent('autopilot'))?.result;
+    if (!ap) return;
+    const have = existsSync(file) ? readFileSync(file, 'latin1').split(/\r?\n/) : [], cl: string[] = (ap.cleared ?? []).map(String);
+    const add = missingHistory((ap.history ?? []).map(String), [...have, ...cl]);
+    if (cl.length || add.length) appendFileSync(file, [...cl.map(c => `${stamp()} ${c}\n`), ...add.map(l => `${l}\n`)].join(''));
+  } catch { /* the game is gone or busy: the file keeps what the polls got */ }
+}
+function earlyGateGuard(gs: EarlyGate[], report?: string[]): () => string {
   const t0 = Date.now(), needFixes = gs.some(g => g.counter.includes('fixes:'));
   let verdict = '', busy = false;
   return () => {
@@ -1712,14 +2079,14 @@ function earlyGateGuard(gs: EarlyGate[]): () => string {
       busy = true;
       (async () => {
         const sec = (Date.now() - t0) / 1000, n = await get('native'), f = needFixes ? (await agent('patches'))?.result ?? null : null;
-        verdict = gateFail(gs, sec, n, f);
+        verdict = gateFail(gs, sec, n, f, report);
       })().catch(() => { /* next round */ }).finally(() => { busy = false; });
     }
     return verdict;
   };
 }
 // child process with output to the console and the job log; killed (whole tree) at the deadline
-function run(cmd: string, args: string[], logFile: string, deadline: number, onLine?: (l: string) => void): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean }> {
+function run(cmd: string, args: string[], logFile: string, deadline: number, onLine?: (l: string) => void, plannedEnd = false): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean }> {
   return new Promise(res => {
     const p = spawn(cmd, args, { cwd: ROOT }), f = createWriteStream(logFile, { flags: 'a' });
     let out = '', timedOut = false, part = '';
@@ -1729,19 +2096,21 @@ function run(cmd: string, args: string[], logFile: string, deadline: number, onL
       if (onLine) { const ls = (part + s).split(/\r?\n/); part = ls.pop()!; ls.forEach(onLine); }
     };
     p.stdout.on('data', on); p.stderr.on('data', on);
-    const t = setTimeout(() => { timedOut = true; on(Buffer.from(`${dumpHungGame('job deadline')}\n`)); killTree(p.pid); }, Math.max(1000, deadline - Date.now()));
+    const t = setTimeout(() => { timedOut = true; if (!plannedEnd) on(Buffer.from(`${dumpHungGame('job deadline')}\n`)); killTree(p.pid); }, Math.max(1000, deadline - Date.now()));
     // fail fast (Rodney 2026-10-16): once the game is launched, every 30 s the game and the probe server must still be up;
     // two misses in a row end the child instead of waiting for the job deadline (default 60 min)
     let misses = 0;
     const g = jobGuard && setInterval(() => {
       const nz = noiseGuard?.() ?? '';
-      if (nz) { noiseGuard = null; stall ||= nz; on(Buffer.from(`FAIL: ${nz}; child stopped\n`)); killTree(p.pid); return; }
+      if (nz) { noiseGuard = null; stall ||= nz; on(Buffer.from(`FAIL: ${nz}; child stopped\n`)); stopGameFirst(); killTree(p.pid); return; }
       let rf = ''; try { rf = routeGuard?.() ?? ''; } catch (e) { on(Buffer.from(`routing fail-fast check failed (ignored): ${e}
 `)); }
       if (rf) { routeGuard = null; stall ||= rf; on(Buffer.from(`FAIL: ${rf}; child stopped
-`)); killTree(p.pid); return; }
+`)); stopGameFirst(); killTree(p.pid); return; }
       const eg = gateGuard?.() ?? '';
-      if (eg) { gateGuard = null; stall ||= eg; on(Buffer.from(`FAIL: ${eg}; child stopped\n`)); killTree(p.pid); return; }
+      if (eg) { gateGuard = null; stall ||= eg; on(Buffer.from(`FAIL: ${eg}; child stopped\n`)); stopGameFirst(); killTree(p.pid); return; }
+      const mx = modeGuard?.() ?? '';
+      if (mx) { modeGuard = null; stall ||= mx; on(Buffer.from(`FAIL: ${mx}; child stopped\n`)); killTree(p.pid); return; }
       const why = jobGuard!();
       misses = why ? misses + 1 : 0;
       if (misses >= 2) { stall ||= `${why} for ~${2 * GUARD_MS / 1000} s (fail-fast guard)`; on(Buffer.from(`FAIL: ${stall}; child stopped\n${dumpHungGame('fail-fast guard')}\n`)); killTree(p.pid); }
@@ -1750,7 +2119,11 @@ function run(cmd: string, args: string[], logFile: string, deadline: number, onL
     p.on('close', (code, signal) => { clearTimeout(t); if (g) clearInterval(g); f.end(); res({ code, signal, out, timedOut }); });
   });
 }
-const node = (args: string[], logFile: string, deadline: number, onLine?: (l: string) => void) => run(process.execPath, args, logFile, deadline, onLine);
+// children that run with the game closed (--restart, install-fixes, cache-clear) have no game or probe for jobGuard to watch (docs/236 #18):
+// they get 15 min, not the job deadline (default 60 min)
+const noGameDeadline = (deadline: number) => Math.min(deadline, Date.now() + 15 * 60000);
+// plannedEnd: the deadline is the end of the test (soak/routelock watchdog run for N min): no 2 GB hang dump of a healthy game (Round 6: every soak wrote one)
+const node = (args: string[], logFile: string, deadline: number, onLine?: (l: string) => void, plannedEnd = false) => run(process.execPath, args, logFile, deadline, onLine, plannedEnd);
 
 async function closeGame(probePid?: number) {
   await get('detach', 10000); // detach first: killing a host mid-call can take the game down
@@ -1758,9 +2131,15 @@ async function closeGame(probePid?: number) {
   if (gameRunning()) try { execFileSync('taskkill', ['/F', '/IM', GAME_EXE], { stdio: 'ignore' }); } catch { /* gone */ }
   for (let i = 0; i < 60 && gameRunning(); i++) await sleep(1000);
   if (gameRunning()) log(`closeGame: ${GAME_EXE} still running after 60 s`);
+  else { const left = killLeftovers(); if (left.length) log(`closeGame: leftovers killed: ${left.join('; ')}`); } // EA helpers of a hung launch (docs/236 round 4)
 }
+// an EA crash report (xcpt*.txt) written since the job started
+const freshCrashReport = (since: string) => {
+  try { return readdirSync(USER).some(n => /^xcpt .*\.txt$/i.test(n) && statSync(join(USER, n)).mtime >= new Date(since)); }
+  catch { return false; }
+};
 const triage = (since: string) => {
-  try { return execFileSync(process.execPath, [H('crash-ledger.ts'), 'triage', '--since', since]).toString().trim().split(/\n\s*\n/).at(-1) ?? ''; }
+  try { return execFileSync(process.execPath, [H('crash-ledger.ts'), 'triage', '--since', since, ...(seenPids.size ? ['--pids', [...seenPids].join(',')] : [])]).toString().trim().split(/\n\s*\n/).at(-1) ?? ''; }
   catch (e) { return `crash-ledger triage failed: ${String(e).split('\n')[0]}`; }
 };
 
@@ -1830,7 +2209,7 @@ const pht = (iso: string) => new Date(Date.parse(iso) + 8 * 3600e3).toISOString(
 let build = 'unknown';
 try { build = execFileSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD']).toString().trim(); } catch { /* not a repo */ }
 if (!existsSync(md)) writeFileSync(md, `# Queue ${queueName} ${date}\n\nTool: \`tools/harness/queue.ts\` (docs/TESTING.md). Times UTC (PHT in brackets). Rows: \`probe-out/queue/${queueName}-${date}.jsonl\`.\n${machineTag() ? `\nMachine: ${MACHINE}\n` : ''}`);
-appendFileSync(md, `\n## ${new Date().toISOString().slice(0, 16)} UTC, build ${build}, jobs ${jobs.map(j => j.id).join(', ')}\n\n| job | start | min | result | verdict | exit | commit / private / largest free MB (before -> after) | counters changed | note | machine |\n|---|---|---|---|---|---|---|---|---|---|\n`);
+appendFileSync(md, `\n## ${new Date().toISOString().slice(0, 16)} UTC, build ${build}, jobs ${jobs.map(j => j.id).join(', ')}\n\n| job | start | min | result | verdict | exit | commit / private / largest free MB (before -> after) | counters changed | note |${machineCols(machineTag()).head}\n|---|---|---|---|---|---|---|---|---|${machineCols(machineTag()).sep}\n`);
 
 // keep what Bin had, to restore the ini and fall back for the asi at the end
 const BEFORE = join(OUT, 'bin-before');
@@ -1844,17 +2223,49 @@ if (!values['dry-run']) {
 if (!values['dry-run']) saveForeground(); // the window to give focus back to once the game takes it (focus-game.ts)
 // apps a killed run left on the narrowed CPUs go back first; the same on any exit of this run (pin.ts)
 if (pinStatePending()) log(`pin: leftover from an earlier run: ${restorePins()}`);
-process.on('exit', () => { if (pinStatePending()) restorePins(); clearJob(); });
+process.on('exit', () => { // a throw outside the job's try, a signal: with the game closed nothing has to wait for the next queue start
+  if (pinStatePending()) restorePins(); clearJob();
+  try { if (existsSync(ourModsMf()) && !gameRunning()) log(`restored ts3native + ts3fixes on exit: ${vanillaRestore(ourModsSpec())} files`); } catch (e) { console.error(`ts3native + ts3fixes left in the stash: ${e}; run --restore-content`); }
+});
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, () => process.exit(130));
 mkdirSync(BEFORE, { recursive: true });
+// a d3d9Dll job of a killed queue left the proxy in Bin: the DXVK dll is in d3d9.dll.dxvk-bak, put it back before anything starts
+if (!values['dry-run'] && existsSync(D3D9_BAK)) {
+  const bak = readFileSync(D3D9_BAK); writeFileSync(D3D9_DLL, bak);
+  const bad = readBack(D3D9_DLL, bak);
+  if (bad) { console.error(`could not restore the DXVK Bin/d3d9.dll from d3d9.dll.dxvk-bak (${bad})`); process.exit(4); }
+  rmSync(D3D9_BAK); log('restored the DXVK Bin/d3d9.dll from a leftover d3d9.dll.dxvk-bak (an earlier d3d9Dll run was killed)');
+}
+// an "ourMods": false job of a killed queue left ts3native and ts3fixes in the stash: back first, bin-before reads the pair next
+if (!values['dry-run'] && existsSync(ourModsMf())) {
+  await closeGame(); // the game of the killed queue may still run: the script cache is open
+  try { log(`restored ts3native + ts3fixes: ${vanillaRestore(ourModsSpec())} files, sha read back (an earlier ourMods false job was killed)`); }
+  catch (e) { console.error(`could not restore ts3native + ts3fixes from ${ourModsSpec().stash}, stash kept: ${(e as Error).message}`); process.exit(4); }
+}
 for (const f of ['ts3native.asi', 'ts3native.ini', 'Default.ini', 'Sims3Performance.ini', 'dxvk.conf']) if (existsSync(join(BIN, f))) copyFileSync(join(BIN, f), join(BEFORE, f));
+// vanilla: vanilla.ts moves the pair out and back (manifest + sha read-back); the pair is never copied into Bin here
+let vanillaHere = false;
+if (VANILLA && !values['dry-run']) {
+  const vs = vanillaSpec();
+  if (!existsSync(join(vs.stash, 'manifest.json'))) {
+    if (!vs.agent) { console.error('vanilla mode: set TS3_AGENT_PACKAGE to the ts3agent build to install (with dialog_expect accept)'); process.exit(2); }
+    await closeGame(); // files must not be open when they move
+    vanillaInstall(vs); vanillaHere = true;
+    log(`vanilla: installed (ts3native pair, its outputs, ts3fixes and scriptCache moved to ${vs.stash}; agent ${vs.agent})`);
+  } else log(`vanilla: stash manifest found (${vs.stash}): installed before this run, read back only and left in place at the end`);
+  const vp = vanillaProblems(vs);
+  if (vp.length) { console.error(`vanilla mode: state check failed before any job: ${vp.join('; ')}`); process.exit(2); }
+}
 if (existsSync(S3SS_TOML)) copyFileSync(S3SS_TOML, join(BEFORE, 'S3SS.toml'));
 const repoIni = readFileSync(REPO_INI, 'utf8');
+// iniBase: a job's own base ini (path from the repo root, e.g. a release zip's ts3native.ini) instead of the repo one; job.ini still merges over it
+const baseIni = (j: Job) => (j.iniBase ? readFileSync(resolve(ROOT, j.iniBase), 'utf8') : repoIni);
 const memLine = (m: any) => (m ? `${m.commitMB}/${m.privateMB}/${m.largestFreeMB}` : '?');
 
 let prevCrashed = !!earlier.at(-1)?.crashed, stopWhy = '', exitCode = 0;
 const ledgerBlocks: string[] = [];  // mono ledger probe (docs/51, mono-ledger-report.ts): printed under the result table at the end
 // the running game and what its start changed; kept across jobs only when reuseSession lets the next job take it over (docs/170 §2)
+let d3d9Orig: Buffer | null = null; // DXVK d3d9.dll while a d3d9Dll job has the Bin swapped; not reset per job (a failed put-back must survive)
 let stopPin = () => {}, probe: ReturnType<typeof spawn> | undefined, applied = { install: [] as string[], uninstall: [] as string[] }, launched = false, defaultIniOrig: string | null = null, s3ppIniOrig: string | null = null, s3ssTomlOrig: string | null = null, dxvkConfOrig: string | null = null, stashed = false, ccInstalled = false, lotsInstalled = false;
 type Sess = { key: string; reuse: ReuseOpts | null; load: number; windows: number; logOff: number; base: WorldSnap | null; frames: string; carry?: string };
 let sess: Sess | null = null, loads = 0;
@@ -1875,7 +2286,8 @@ const buildLine = (b: BuildRec | null) => !b ? '' : `build: asi ${b.asiSha.slice
   + `ts3fixes tuning ${b.fixesTuning?.slice(0, 12) ?? '?'} ${b.fixesDb.join('/') || 'not in DB'} (expected ${b.fixesExpected})`;
 // after start-up (agent answering): ts3native.log was rewritten by this start and names the expected version
 function logVersionGate() {
-  const b = lastBuild!;
+  const b = lastBuild;
+  if (!b) return; // vanilla, ourMods false: no ts3native.log, N/A
   const why = !existsSync(LOG) ? 'Bin/ts3native.log missing after start-up (asi not loaded?)'
     : statSync(LOG).mtimeMs < b.launchedAt - 5000 ? 'Bin/ts3native.log not rewritten by this start (asi not loaded?)' : logVersionCheck(readFileSync(LOG, 'latin1'), b.version);
   if (why) throw new Error(`build check: ${why}; refused, nothing run`);
@@ -1883,13 +2295,25 @@ function logVersionGate() {
   log(`build check ok: ${buildLine(b)}`);
 }
 const startProbe = (j: Job) => {
+  if (noOurs(j)) lastBuild = null; // no asi or ts3fixes to check: N/A in the row
+  else {
   const bc = buildCheck(j, readFileSync(join(BIN, 'ts3native.asi')));
   lastBuild = bc.rec;
   if (bc.fails.length) throw new Error(`build check: ${bc.fails.join('; ')}; refused before the game started`);
+  }
+  const sc = spawnSync('python', [join(ROOT, 'tools', 'probe', 'ts3probe.py'), 'session-check'], { encoding: 'utf8', timeout: 30000 });
+  const scOut = sc.stdout.split(/\r?\n/);
+  log(`${j.id}: ${scOut[0]}`);
+  if (sc.status === 3) throw new Error(`${scOut[1]}; refused before the game started`); // FAIL, never PASS
   const pf =createWriteStream(join(OUT, `${queueName}-${date}-${j.id}-probe.log`), { flags: 'a' });
   const pr = probe = spawn('python', [join(ROOT, 'tools', 'probe', 'ts3probe.py'), 'serve', '--launch', '--port', values.port!, ...(j.gameArgs?.length ? ['--', ...j.gameArgs] : [])], { cwd: ROOT });
   pr.stdout?.pipe(pf); pr.stderr?.pipe(pf); launched = true;
+  const clicksFile = noOurs(j) ? join(OUT, `${queueName}-${date}-${j.id}.clicks.log`) : '';
+  if (clicksFile) process.env.TS3_CLICKS_LOG = clicksFile; // children (vanilla-steps.ts accept) read the accept lines from it
+  modeGuard = unrequestedModeGuard(0, clicksFile);
   jobGuard = () => pr.exitCode !== null || pr.signalCode !== null ? `probe server exited (${pr.exitCode ?? pr.signalCode})` : !gameRunning() ? `${GAME_EXE} process gone`
+    : VANILLA ? vanillaProblems(vanillaSpec()).map(x => `vanilla state changed: ${x}`).join('; ') // a ts3native file or ts3fixes back in Bin/Mods
+    : j.ourMods === false ? vanillaProblems(ourModsSpec()).map(x => `ourMods false state changed: ${x}`).join('; ')
     : existsSync(LOG) ? hookFailLine(readFileSync(LOG, 'latin1')) : ''; // a hook refused mid-run (lazy route worker hook) voids the run
 };
 // a fresh load of the job's game start (asi, ini, configs and fixes already in place): one Sess per load
@@ -1909,10 +2333,10 @@ async function carryCheck(o: ReuseOpts, x: Extra): Promise<{ reasons: string[]; 
 async function reloadGame(j: Job, logFile: string, deadline: number, why: string) {
   log(`${j.id}: reload (${why})`);
   await closeGame(probe?.pid); stopPin();
-  const rr = await node([H('cycle.ts'), '--restart'], logFile, deadline);
+  const rr = await node([H('cycle.ts'), '--restart'], logFile, noGameDeadline(deadline));
   if (rr.code !== 0) throw new Error(`reload: cycle.ts --restart exit ${rr.code}`);
   copyFileSync(asiPath(j), join(BIN, 'ts3native.asi')); // --restart installs the source build
-  writeFileSync(join(BIN, 'ts3native.ini'), mergeIni(repoIni, jobIni(j)));
+  writeFileSync(join(BIN, 'ts3native.ini'), mergeIni(baseIni(j), jobIni(j)));
   installFixesPackage(j);
   startProbe(j); stopPin = startPinner(pinConfig(j.pin));
   const ls = await node([H('cycle.ts'), '--save', saveFile(saveOf(j)!)], logFile, deadline);
@@ -1922,7 +2346,7 @@ async function reloadGame(j: Job, logFile: string, deadline: number, why: string
 }
 // close the running game (pins back first)
 async function endGame(j: Job) {
-  jobGuard = null;
+  jobGuard = null; modeGuard = null; clicksOn = false;
   stopPin(); stopPin = () => {};
   const pin = pinConfig(j.pin);
   if (pin?.others.length || pinStatePending()) log(`${j.id}: pin: apps back: ${restorePins(pin)}`);
@@ -1932,11 +2356,27 @@ async function endGame(j: Job) {
 async function restoreStart(id: string, logFile: string): Promise<string[]> {
   const errs: string[] = [];
   sess = null;
+  if (existsSync(ourModsMf())) { // the game is closed; the manifest exists from before the first move, so this covers a job stopped anywhere after it
+    let why = 'not tried', n = 0;
+    for (let t = 0; t < 5 && why; t++) { try { n = vanillaRestore(ourModsSpec()); why = ''; } catch (e) { why = String((e as Error).message ?? e); await new Promise(r => setTimeout(r, 2000)); } }
+    if (why) { stopWhy ||= `could not put back ts3native + ts3fixes (${why}); stash kept at ${ourModsSpec().stash}; node tools/harness/queue.ts --restore-content`; errs.push(stopWhy); log(`${id}: ${stopWhy}`); }
+    else log(`${id}: ts3native + ts3fixes put back (${n} files, sha read back)`);
+  }
   if (defaultIniOrig !== null) try { writeFileSync(DEFAULT_INI, defaultIniOrig); } catch (e) { stopWhy ||= `could not put back Bin/Default.ini (${e}; copy in probe-out/queue/bin-before)`; }
   if (s3ppIniOrig !== null) try { writeFileSync(S3PP_INI, s3ppIniOrig); } catch (e) { stopWhy ||= `could not put back Bin/Sims3Performance.ini (${e}; copy in probe-out/queue/bin-before)`; }
   if (s3ssTomlOrig !== null) try { writeFileSync(S3SS_TOML, s3ssTomlOrig); } catch (e) { stopWhy ||= `could not put back S3SS/S3SS.toml (${e}; copy in probe-out/queue/bin-before)`; }
   if (dxvkConfOrig !== null) try { writeFileSync(DXVK_CONF, dxvkConfOrig); } catch (e) { stopWhy ||= `could not put back Bin/dxvk.conf (${e}; copy in probe-out/queue/bin-before)`; }
+  for (const [p, orig] of [[DEFAULT_INI, defaultIniOrig], [S3PP_INI, s3ppIniOrig], [S3SS_TOML, s3ssTomlOrig], [DXVK_CONF, dxvkConfOrig]] as const) {
+    const why = orig === null ? '' : readBack(p, orig); // docs/236 #16: the next job must not start on a config we think we put back
+    if (why) { stopWhy ||= why; errs.push(why); log(`${id}: ${why}`); }
+  }
   defaultIniOrig = s3ppIniOrig = s3ssTomlOrig = dxvkConfOrig = null;
+  if (d3d9Orig !== null) { // the DXVK dll must never stay out of Bin: retry, read back, then drop the backup copy
+    let why = 'not tried';
+    for (let t = 0; t < 5 && why; t++) { try { writeFileSync(D3D9_DLL, d3d9Orig); why = readBack(D3D9_DLL, d3d9Orig); } catch (e) { why = String(e); } if (why) await new Promise(r => setTimeout(r, 2000)); }
+    if (why) { stopWhy ||= `could not put back the DXVK Bin/d3d9.dll (${why}); copy at Bin/d3d9.dll.dxvk-bak`; errs.push(stopWhy); log(`${id}: ${stopWhy}`); }
+    else { try { rmSync(D3D9_BAK); } catch { /* backup already gone */ } d3d9Orig = null; log(`${id}: DXVK d3d9.dll put back (read back ok)`); }
+  }
   // undo installer changes (game closed, so files are not locked); state unknown when this fails, so stop
   for (const [k, undo] of [['install', 'uninstall'], ['uninstall', 'install']] as const) {
     if (!applied[k].length) continue;
@@ -1985,6 +2425,7 @@ for (const [n, j] of jobs.entries()) {
   await waitHold(log); // crash-triage build running (hold.ts, AGENTS.md Rules): no next job until it is done
   markJob(j.id); // hold.ts wait-job-end waits for this to go
   const t0 = new Date().toISOString(), deadline = Date.now() + (j.timeoutMin ?? 60) * 60000;
+  seenPids.clear(); // crash pickup: only this job's game PIDs (triage)
   // 2026-10-25: a child that threw left the game up; closing it here made the job a CRASH with an old xcpt (sv-jobyield-verify)
   let closedByUs = false;
   const closeLost = () => { closedByUs = gameRunning(); return closeGame(probe?.pid); };
@@ -1993,12 +2434,20 @@ for (const [n, j] of jobs.entries()) {
   const sections = [...new Set(Object.keys(j.ini ?? {}).map(k => k.split('.')[0]))];
   const s = saveOf(j)!;
   log(`== ${j.id} (${n + 1}/${jobs.length})${j.note ? `: ${j.note}` : ''}; log ${logFile}`);
-  const row: any = { time: t0, machine: MACHINE, queue: queueName, build, job: j.id, note: j.note ?? null, asi: j.asi, asiSha: sha(asiPath(j)), ini: rowIni(j), fixes: j.fixes ?? null,
+  const row: any = { time: t0, ...machineField(machineTag()), queue: queueName, build, job: j.id, note: j.note ?? null, asi: j.asi, asiSha: sha(asiPath(j)), ini: rowIni(j), fixes: j.fixes ?? null,
     save: s, content: j.content ?? 'as-is', contentMoved: 0, run: j.run, gameArgs: j.gameArgs ?? [], defaultIni: j.defaultIni ?? null, s3ppIni: j.s3ppIni ?? null, s3ssToml: j.s3ssToml ?? null, dxvkConf: j.dxvkConf ?? null, profileTag: j.run.profile ? profileTag(j) : null, exitCode: null, verdict: [], pass: false, crashed: false, crash: null, timedOut: false, memory: {}, counters: {}, error: null };
   const pin = pinConfig(j.pin), machineFile = join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-machine.jsonl`);
   if (pin) process.env.TS3_GAME_CPUS = pin.cpus; // child samplers (profile-world.ts) split by the same set
   row.pin = describePin(pin);
   if (j.rerunOf) row.rerunOf = j.rerunOf;
+  let miss: string[] = [];
+  if (j.skipIfMissing) try { miss = missingFixes(execFileSync(process.execPath, [fixesTool, 'plan', '--only', j.fixes!.install!.join(',')], { cwd: ROOT, encoding: 'utf8' })); } catch (e) { log(`${j.id}: install-fixes plan: ${String(e).split('\n')[0]}`); } // the install below then decides
+  if (miss.length) {
+    row.verdict = [`N/A: skipped, download missing: ${miss.join('; ')}`]; row.end = t0; row.minutes = 0; row.na = naRow(row);
+    appendFileSync(jsonl, JSON.stringify(row) + '\n');
+    appendFileSync(md, `| ${j.id} | ${t0.slice(11, 16)} (${pht(t0)}) | 0 | **N/A** | ${row.verdict[0].replace(/\|/g, '/')} | - | - | - | - |${machineCols(machineTag()).cell(MACHINE)}\n`);
+    log(`${j.id}: ${row.verdict[0]}`); clearJob(); continue;
+  }
   const guarded = guardedSaves(s);
   row.saveHashes = { before: hashSaves(SAVES, guarded) };
   let stopLoad: (() => void) | null = null, iniUsed: string | undefined;
@@ -2009,7 +2458,7 @@ for (const [n, j] of jobs.entries()) {
   else { stopPin = () => {}; probe = undefined; applied = { install: [], uninstall: [] }; launched = false; defaultIniOrig = s3ppIniOrig = s3ssTomlOrig = dxvkConfOrig = null; stashed = false; ccInstalled = false; lotsInstalled = false; lastBuild = null; }
   let jobLogOff = 0;
   try {
-    if (!existsSync(asiPath(j))) throw new Error(`asi missing: ${j.asi} (refused before touching the game)`);
+    if (!noOurs(j) && !existsSync(asiPath(j))) throw new Error(`asi missing: ${j.asi} (refused before touching the game)`);
     if (j.ccSet && !ccSetReady(j.ccSet)) throw new Error(`ccSet missing or empty: ${[j.ccSet].flat().join(' + ')} (make it with tools/cc-gen.ts; refused before touching the game)`);
     if (j.ccLots && !(existsSync(join(ROOT, j.ccLots)) && lotFiles(join(ROOT, j.ccLots)).length)) throw new Error(`ccLots missing or empty: ${j.ccLots} (make it with tools/cc-lot-gen.ts; refused before touching the game)`);
     if (!reused) { // ---- game start and load (indent kept: the pre-docs/170 body)
@@ -2024,7 +2473,7 @@ for (const [n, j] of jobs.entries()) {
       stashContent(join(USER, 'Mods'), CONTENT_STASH, files, { queue: queueName, job: j.id, content: row.content });
       row.contentMoved = files.length;
       log(`${j.id}: content ${row.content}: ${files.length} packages moved to ${CONTENT_STASH}`);
-      const rc = await node([fixesTool, 'install', '--only', 'cache-clear'], logFile, deadline);
+      const rc = await node([fixesTool, 'install', '--only', 'cache-clear'], logFile, noGameDeadline(deadline));
       if (rc.code !== 0) throw new Error(`install-fixes cache-clear exit ${rc.code}`);
     }
     if (j.ccSet) {
@@ -2035,7 +2484,7 @@ for (const [n, j] of jobs.entries()) {
       stashContent(dir, CC_DIR, files, { queue: queueName, job: j.id, ccSet: j.ccSet });
       row.ccSet = j.ccSet; row.ccMoved = files.length;
       log(`${j.id}: ccSet ${j.ccSet}: ${files.length} packages moved to ${CC_DIR}`);
-      const rc = await node([fixesTool, 'install', '--only', 'cache-clear'], logFile, deadline);
+      const rc = await node([fixesTool, 'install', '--only', 'cache-clear'], logFile, noGameDeadline(deadline));
       if (rc.code !== 0) throw new Error(`install-fixes cache-clear exit ${rc.code}`);
     }
     if (j.ccLots) {
@@ -2046,13 +2495,26 @@ for (const [n, j] of jobs.entries()) {
       row.ccLots = j.ccLots; row.ccLotsCopied = files.length;
       log(`${j.id}: ccLots ${j.ccLots}: ${files.length} lots copied to ${LIBRARY}`);
     }
-    const r0 = await node([H('cycle.ts'), '--restart'], logFile, deadline);
+    const r0 = await node([H('cycle.ts'), '--restart'], logFile, noGameDeadline(deadline));
     if (r0.code !== 0) throw new Error(`cycle.ts --restart exit ${r0.code}`);
+    if (VANILLA) { // read back before the game starts; a miss FAILs the job here (H-fault #4)
+      const vp = vanillaProblems(vanillaSpec());
+      row.vanilla = { readBack: vp.length ? vp : 'OK', na: VANILLA_NA };
+      if (vp.length) throw new Error(`vanilla read-back: ${vp.join('; ')}; refused before the game started`);
+    } else if (j.ourMods === false) { // after --restart, which installs build/ts3fixes.package; install read-back failing leaves the manifest for restoreStart
+      if (gameRunning()) throw new Error(`ourMods false: ${GAME_EXE} still running, nothing moved`);
+      const miss = COMMUNITY.filter(c => !existsSync(join(BIN, c)));
+      if (miss.length) throw new Error(`ourMods false: community file ${miss.join(', ')} missing from Bin; refused before the game started`);
+      const m = vanillaInstall(ourModsSpec());
+      row.ourMods = { removed: m.entries.map(e => e.rel), kept: [...COMMUNITY, 'other Mods', 'ts3agent.package', 'ts3-nointro.package', 'Frida probe'], na: OURMODS_NA };
+      log(`${j.id}: ourMods false: ${row.ourMods.removed.join(', ')} moved to ${ourModsSpec().stash}, read back ok`);
+    } else {
     installFixesPackage(j);
     copyFileSync(asiPath(j), join(BIN, 'ts3native.asi'));
-    writeFileSync(join(BIN, 'ts3native.ini'), mergeIni(repoIni, jobIni(j)));
+    writeFileSync(join(BIN, 'ts3native.ini'), mergeIni(baseIni(j), jobIni(j)));
     // ts3native appends Bin/autshadow.jsonl across loads ([AutShadow] live-drop, dry-diff, dry-sim-mis): fresh per job
     try { writeFileSync(join(BIN, 'autshadow.jsonl'), ''); } catch (e) { log(`${j.id}: truncate autshadow.jsonl: ${e}`); }
+    }
     if (callSitesOffNote(j)) log(`${j.id}: ${callSitesOffNote(j)}`);
     if (j.defaultIni) { defaultIniOrig = readFileSync(DEFAULT_INI, 'utf8'); writeFileSync(DEFAULT_INI, mergeIni(defaultIniOrig, j.defaultIni)); }
     if (j.s3ppIni) {
@@ -2063,15 +2525,27 @@ for (const [n, j] of jobs.entries()) {
       if (!existsSync(S3SS_TOML)) throw new Error('s3ssToml: S3SS/S3SS.toml missing (s3ss-config not installed)');
       s3ssTomlOrig = readFileSync(S3SS_TOML, 'utf8'); writeFileSync(S3SS_TOML, mergeIni(s3ssTomlOrig, tomlSet(j.s3ssToml)));
     }
+    if (j.d3d9Dll) {
+      const src = join(ROOT, j.d3d9Dll);
+      if (!existsSync(src)) throw new Error(`d3d9Dll missing: ${j.d3d9Dll} (build it: node tools/d3d9on12-test/build.ts)`);
+      if (d3d9Orig === null) { // first swap: backup on disk first, so a killed queue is recoverable at the next start
+        const orig = readFileSync(D3D9_DLL); writeFileSync(D3D9_BAK, orig);
+        const bad = readBack(D3D9_BAK, orig); if (bad) throw new Error(`d3d9Dll: backup of the DXVK dll failed (${bad}); Bin untouched`);
+        d3d9Orig = orig;
+      }
+      try { rmSync(D3D9_PROXY_LOG); } catch { /* none yet */ }
+      writeFileSync(D3D9_DLL, readFileSync(src));
+      log(`${j.id}: Bin/d3d9.dll = ${j.d3d9Dll} (sha ${sha(D3D9_DLL)}); DXVK dll backed up to d3d9.dll.dxvk-bak`);
+    }
     if (j.dxvkConf) {
       if (!existsSync(DXVK_CONF)) throw new Error('dxvkConf: Bin/dxvk.conf missing (dxvk-conf not installed)');
       dxvkConfOrig = readFileSync(DXVK_CONF, 'utf8'); writeFileSync(DXVK_CONF, mergeConf(dxvkConfOrig, j.dxvkConf));
     }
     for (const [k, ids] of [['install', j.fixes?.install], ['uninstall', j.fixes?.uninstall]] as const) {
       if (!ids?.length) continue;
-      const r = await node([join(ROOT, 'tools', 'setup', 'install-fixes.ts'), k, '--only', ids.join(',')], logFile, deadline);
+      applied[k] = [...ids]; // before the run: a failed install may have placed part of its files, restoreStart undoes those too
+      const r = await node([join(ROOT, 'tools', 'setup', 'install-fixes.ts'), k, '--only', ids.join(',')], logFile, noGameDeadline(deadline));
       if (r.code !== 0) throw new Error(`install-fixes ${k} exit ${r.code}`);
-      applied[k] = [...ids];
     }
     startProbe(j);
     stopPin = startPinner(pin); // waits for TS3W.exe, then keeps it (and the apps) on their CPUs
@@ -2101,7 +2575,7 @@ for (const [n, j] of jobs.entries()) {
       if (r.code !== 0) throw new Error(`cycle.ts --save exit ${r.code}${r.timedOut ? ' (timeout)' : ''}`);
     }
     logVersionGate();
-    loaded(j);
+    loaded(j); clicksOn = true;
     } else stopLoad = startMachineLoad(machineFile, 30, pin?.cpus ?? gameCpus()); // ---- end of game start and load
     sess!.reuse = reuseOf(j); // this job's limits decide whether the next one may take the game over
     if ((sess!.reuse || itemsOf(j)) && !sess!.base) sess!.base = await snapshot(ioAgent); // switch values and world right after the load
@@ -2111,11 +2585,12 @@ for (const [n, j] of jobs.entries()) {
       row.rngDraws = [];
       for (let i = 0; i < j.run.menuMemory.draws; i++) row.rngDraws.push((await agent('reflect_call', { path: 'Sims3.SimIFace.RandomGen.NextDouble' }))?.result ?? null);
     }
-    const jobIniText = iniUsed = readFileSync(join(BIN, 'ts3native.ini'), 'utf8');
+    const jobIniText = iniUsed = noOurs(j) ? '' : readFileSync(join(BIN, 'ts3native.ini'), 'utf8');
+    row.featuresOn = iniFeaturesOn(jobIniText); log(`${j.id}: ts3native.ini features on: ${row.featuresOn.join(', ') || 'none'}${noOurs(j) ? ' (no ts3native)' : ''}`);
     // self check before any arm runs (fail fast): no ts3native hook FAIL line, route worker hook not refused. The hook installs at the
     // first worker plan, which comes only after profile-world's paused setup and profiler attach, so 'wait' is normal here: the run
     // guard (hookFailLine every GUARD_MS) and the post-run asyncIdle check catch a later refusal
-    const why0 = hookFailLine(existsSync(LOG) ? readFileSync(LOG, 'latin1') : '') || routeHookState(jobIniText, await get('native'));
+    const why0 = noOurs(j) ? '' : hookFailLine(existsSync(LOG) ? readFileSync(LOG, 'latin1') : '') || routeHookState(jobIniText, await get('native'));
     if (why0 && why0 !== 'wait') throw new Error(why0);
     row.memory.before = await get('memory');
     const resetMax = !!j.ini?.['Verify.Enabled'];
@@ -2123,7 +2598,7 @@ for (const [n, j] of jobs.entries()) {
     const gate = counterGate(c0, j.minCounters);
     if (gate) throw new Error(`${gate}; refused, nothing run`);
     const fixRead = async () => ({ p: (await agent('patches'))?.result, t: (await agent('time'))?.result }); // ts3fixes rows of ACTIVITY
-    const fx0 = j.run.profile || j.run.soak ? await fixRead() : null;
+    const fx0 = !VANILLA && (j.run.profile || j.run.soak || j.ourMods === false) ? await fixRead() : null;
     const items = itemsOf(j), args = j.run.profile && !items ? profileArgs(j, j.run.profile, profileTag(j), sessionFlags(j)) : runArgs(j);
     let afterRun: { mem: any; native: any } | null = null;
     // early machine-load verdict (PLAN.md 2026-10-24): a timing run on a noisy machine stops ~2.5 min in instead of finishing void;
@@ -2133,7 +2608,7 @@ for (const [n, j] of jobs.entries()) {
       noiseGuard = () => { const v = earlyNoise(machineFile, from); if (v !== null) noiseGuard = null; return v ?? ''; };
     }
     if (j.routingFailFast) { routeGuard = routingGuard(j.routingFailFast, LOG, join(ROOT, 'probe-out', 'profile', profileTag(j))); log(`${j.id}: ${describeFailFast(j.routingFailFast)}`); }
-    if (j.earlyGates) { gateGuard = earlyGateGuard(j.earlyGates); log(`${j.id}: ${describeGates(j.earlyGates)}`); }
+    if (j.earlyGates) { gateGuard = earlyGateGuard(j.earlyGates, j.report); log(`${j.id}: ${describeGates(j.earlyGates)}`); }
     if (items) {
       // ---- profile.repros (docs/170 §1): one window per repro in this load, each its own tag, pass rules and log slice
       row.repros = [];
@@ -2152,7 +2627,7 @@ for (const [n, j] of jobs.entries()) {
         const r = await node(profileArgs(j, p, tag, sessionFlags(j)), join(OUT, `${tag}.log`), deadline); // <tag>.log: the queue log the hitch reports read
         sess!.windows++;
         const rr: any = { id: it.id, tag, load: sess!.load, sinceLoad, exitCode: r.code, timedOut: r.timedOut, stop: STOP_LINE.exec(r.out)?.[1] ?? null, stuck: stuckOf(tag), cleanupFailed: /cleanup \S+: ERROR/.test(r.out) };
-        rr.verdict = [`${r.code === 0 ? 'PASS' : 'FAIL'}: ${it.id}: profile ${rr.stop ? `${rr.stop}, cap ${p.minutes} min` : `${p.minutes} min`}, ${sinceLoad ? `reused session (#${sinceLoad} since load)` : 'first window after load'}`, ...(r.code === 0 ? [] : silentFail(r.code, r.out, r.timedOut))];
+        rr.verdict = [`${r.code === 0 ? 'PASS' : 'FAIL'}: ${it.id}: profile ${rr.stop ? `${rr.stop}, cap ${p.minutes} min` : `${p.minutes} min`}, ${sinceLoad ? `reused session (#${sinceLoad} since load)` : 'first window after load'}`, ...(r.code === 0 ? verdicts(r.out).filter(isFail) : silentFail(r.code, r.out, r.timedOut))];
         const fo = r.code === 0 ? fixesOnFail((p as any).fixesOn, r.out) : '';
         if (fo) { rr.verdict.push(`FAIL: ${it.id}: ${fo}`); rr.exitCode = 1; }
         if (it.nativeRequire) {
@@ -2211,17 +2686,17 @@ for (const [n, j] of jobs.entries()) {
       // release mode: the matrix's reload case runs here (two restarts, as its printed commands), not by hand
       if (j.saveMatrix?.fixes === 'shipped' && !lost && !r.timedOut && !stall && /\breload: PENDING/.test(r.out)) {
         afterRun = { mem: await get('memory'), native: await get('native') }; // the matrix load's numbers, not the reload loads'
-        if (existsSync(LOG)) copyFileSync(LOG, join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-matrix-ts3native.log`));
+        if (existsSync(LOG)) { const f = join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-matrix-ts3native.log`); copyFileSync(LOG, f); row.phaseLogs = [...(row.phaseLogs ?? []), f]; }
         const pend = JSON.parse(readFileSync(join(ROOT, 'probe-out', 'save-matrix', 'reload-pending.json'), 'utf8'));
         for (const side of ['on', 'off'] as const) {
           const name = String(pend[side]?.save ?? '');
           if (!name) throw new Error(`reload: no ${side} save in reload-pending.json`);
           log(`${j.id}: reload ${side.toUpperCase()}: restart, load ${name}, save-matrix.ts --reload-check`);
           await closeGame(probe?.pid);
-          const rr = await node([H('cycle.ts'), '--restart'], logFile, deadline);
+          const rr = await node([H('cycle.ts'), '--restart'], logFile, noGameDeadline(deadline));
           if (rr.code !== 0) throw new Error(`reload ${side}: cycle.ts --restart exit ${rr.code}`);
           copyFileSync(asiPath(j), join(BIN, 'ts3native.asi')); // --restart installs the source build; the job's asi and ini again
-          writeFileSync(join(BIN, 'ts3native.ini'), mergeIni(repoIni, jobIni(j)));
+          writeFileSync(join(BIN, 'ts3native.ini'), mergeIni(baseIni(j), jobIni(j)));
           startProbe(j); // shortcut: the pinner watched the first TS3W.exe only; the reload loads run unpinned (no timing measured there)
           const ls = await node([H('cycle.ts'), '--save', saveFile(name)], logFile, deadline);
           if (ls.code !== 0) throw new Error(`reload ${side}: cycle.ts --save exit ${ls.code}${ls.timedOut ? ' (timeout)' : ''}`);
@@ -2234,12 +2709,12 @@ for (const [n, j] of jobs.entries()) {
       if (j.run.profile) row.stop = STOP_LINE.exec(r.out)?.[1] ?? null; // loop repro: 'stopped at N events after M min (...)' or the cap line
       // a loop that met its stop rule is not a failure of its own: when the child named a FAIL (e.g. fixes counters), the profile
       // line says 'ran' so the row's first FAIL is the real reason (2026-11-01 sv-ur-car-loop: two FAILs, one cause)
-      if (j.run.profile) row.verdict = [`${profileHead(r.code, r.timedOut, row.stop, r.out)}: profile ${row.stop ? `${row.stop}, cap ${j.run.profile.minutes} min` : `${j.run.profile.minutes} min`}, ${j.run.profile.seed !== undefined ? `seed ${j.run.profile.seed}` : 'unseeded'} (rng-compare.ts)`, ...(r.code === 0 ? [] : silentFail(r.code, r.out, r.timedOut))]; // keeps the child's FAIL reason, e.g. a failed repro step
+      if (j.run.profile) row.verdict = [`${profileHead(r.code, r.timedOut, row.stop, r.out)}: profile ${row.stop ? `${row.stop}, cap ${j.run.profile.minutes} min` : `${j.run.profile.minutes} min`}, ${j.run.profile.seed !== undefined ? `seed ${j.run.profile.seed}` : 'unseeded'} (rng-compare.ts)`, ...(r.code === 0 ? verdicts(r.out).filter(isFail) : silentFail(r.code, r.out, r.timedOut))]; // keeps the child's FAIL reason, e.g. a failed repro step
       const fo = j.run.profile && r.code === 0 ? fixesOnFail((j.run.profile as any).fixesOn, r.out) : '';
       if (fo) { row.verdict.push(`FAIL: ${fo}`); row.selfCheckFail = fo; }
     } else if (j.run.soak) {
       await agent('autopilot', { enabled: true, speed: j.run.soak.speed ?? 'ultra', dialogs: true });
-      const wd = await node([H('watchdog.ts'), '--every', '1', '--port', values.port!], logFile, Math.min(deadline, Date.now() + j.run.soak.minutes * 60000));
+      const wd = await node([H('watchdog.ts'), '--every', '1', '--port', values.port!], logFile, Math.min(deadline, Date.now() + j.run.soak.minutes * 60000), undefined, true);
       const ranOut = wd.timedOut; // the watchdog only exits on its own with a diagnosis
       row.exitCode = ranOut ? 0 : 1;
       row.verdict = [ranOut ? `PASS: soak ${j.run.soak.minutes} min, watchdog quiet` : `FAIL: watchdog: ${wd.out.trim().split(/\r?\n/).at(-1) ?? `exit ${wd.code}`}`];
@@ -2247,7 +2722,7 @@ for (const [n, j] of jobs.entries()) {
       await agent('autopilot', { enabled: true, speed: j.run.routelock.speed ?? 'ultra', dialogs: true });
       const st = await get('routelock?start=1', 60000);
       if (!st?.hooked) throw new Error(`routelock start failed: ${JSON.stringify(st)?.slice(0, 300)}`); // byte check refused, or no probe
-      const wd = await node([H('watchdog.ts'), '--every', '1', '--port', values.port!], logFile, Math.min(deadline, Date.now() + j.run.routelock.minutes * 60000));
+      const wd = await node([H('watchdog.ts'), '--every', '1', '--port', values.port!], logFile, Math.min(deadline, Date.now() + j.run.routelock.minutes * 60000), undefined, true);
       const rep = await get('routelock?stop=1', 60000); // detach the hooks before anything else
       writeFileSync(join(OUT, `${queueName}-${date}-${j.id}-routelock.json`), JSON.stringify(rep, null, 1));
       row.routelock = routelockSummary(rep);
@@ -2271,7 +2746,7 @@ for (const [n, j] of jobs.entries()) {
     row.memory.after = afterRun?.mem ?? await get('memory');
     const c1 = afterRun?.native ?? await get('native');
     if (j.nativeRequire) row.nativeDelta = flatDelta(c0, c1);
-    const idle = j.run.menuMemory ? '' : asyncIdle(jobIniText, c0, c1); // the hook can still fail after the check: plans prove it ran
+    const idle = j.run.menuMemory || noOurs(j) ? '' : asyncIdle(jobIniText, c0, c1); // the hook can still fail after the check: plans prove it ran
     if (idle) { row.verdict.push(`FAIL: ${idle}`); row.selfCheckFail = idle; }
     // forced repro loops exercise one path: a default-on feature the job's own ini does not name may idle there (2026-10-25:
     // DeferFootprint voided the boat and Overwatch verify jobs), so it is a note; natural and bundle runs keep the void
@@ -2280,7 +2755,12 @@ for (const [n, j] of jobs.entries()) {
       if (focused && !Object.keys(j.ini ?? {}).some(k => f.includes(k.split('.')[1]))) { row.verdict.push(`note: ${f.replace(', run void', ' (forced repro: not the job subject)')}`); continue; }
       row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f;
     }
-    if (fx0) {
+    if (j.ourMods === false) { // read while the game is up; a job that threw before this has row.error, and the jobGuard watched the Bin
+      const fails = ourModsFails({ logExists: existsSync(LOG), native: [c0, c1], patches: [fx0?.p, (await fixRead()).p] });
+      row.ourMods.proof = fails.length ? fails : 'clean: no Bin/ts3native.log, /native null, ts3fixes.applied null, no counter above 0';
+      for (const f of fails) { row.verdict.push(`FAIL: our mods present: ${f}`); row.selfCheckFail ||= f; }
+      if (!fails.length) row.verdict.push(`PASS: clean baseline: ${row.ourMods.proof}`);
+    } else if (fx0) {
       const fx1 = await fixRead(), fa = fixActivity(fx0.p, fx1.p, fx0.t, fx1.t, jobFixesCfg(j.run.profile));
       row.fixActivity = { simStart: fx0.t?.clock, simMinutes: Number(fx1.t?.minutes_total) - Number(fx0.t?.minutes_total), counters: fa.counters, lists: fa.lists, notes: fa.notes };
       // 0->0 counters stay in the row only (a fixesReport prefix can match ~30 gates)
@@ -2295,6 +2775,7 @@ for (const [n, j] of jobs.entries()) {
       const lr = ledgerReport(c0, c1, j.run?.profile?.minutes ?? 10);
       row.ledger = lr.lines;
       row.verdict.push(`mono ledger ${lr.ok ? 'ok' : 'INCOMPLETE'}: per-item numbers below the table`);
+      if (!lr.ok) { row.verdict.push('FAIL: UNKNOWN: mono ledger INCOMPLETE (items without numbers)'); row.selfCheckFail ||= 'mono ledger INCOMPLETE'; } // docs/236
       ledgerBlocks.push(`\n### ${j.id}: mono ledger probe (docs/51)\n\n${lr.lines.map(l => '    ' + l).join('\n')}\n`);
     }
     if (c1?.autshadow || /\baut/.test(j.run.profile?.fixesOn ?? '')) {
@@ -2307,16 +2788,33 @@ for (const [n, j] of jobs.entries()) {
       if (j.shadowCheck !== false) for (const f of shadowFails(rowIni(j), j.run.profile?.fixesOn, c0, c1, row.fixesApplied, row.fixActivity?.counters)) { row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f; }
     }
     row.counters ={ before: pickCounters(c0, sections), after: pickCounters(c1, sections) };
+    // every counter, before and after, beside the row: the row keeps only the sections of the job's ini (COUNTERS), so a
+    // module without an entry there lost its counters on a run without an A/B (2026-11-03)
+    if (c0 || c1) try { writeFileSync(row.nativeFile = join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-native.json`), JSON.stringify({ before: c0, after: c1 })); }
+    catch (e) { log(`${j.id}: native counter file not written: ${e}`); }
     row.counters.delta = delta(row.counters.before, row.counters.after);
+    if (j.d3d9Dll) { // proxy log: the arm is only valid when the game really went through D3D9On12
+      let pl = ''; try { pl = readFileSync(D3D9_PROXY_LOG, 'utf8'); } catch { /* none */ }
+      row.d3d9on12 = pl.trim().split(/\r?\n/).join(' | ') || 'no proxy log';
+      if (/FELL BACK/.test(pl) || !/path=9On12/.test(pl)) { const f = `d3d9on12 proxy did not take the 9On12 path (${row.d3d9on12})`; row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f; }
+      else row.verdict.push(`PASS: d3d9on12 proxy: ${row.d3d9on12}`);
+    }
+    for (const f of counterGaps(j.ini ?? {}, row.counters.after)) { row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f; }
   } catch (e) { row.error = String((e as Error).message ?? e); log(`${j.id}: ${row.error}`); }
-  noiseGuard = null; routeGuard = null; gateGuard = null;
+  noiseGuard = null; routeGuard = null; gateGuard = null; // modeGuard stays for the next job of a shared load
   if (stopLoad) { stopLoad(); const ml = loadSummary(machineFile); Object.assign(row, { machine: ml.line, noise: ml.noise, noiseNote: ml.short, machineLog: machineFile }); log(`${j.id}: ${ml.line}`); }
   if (stall && !row.error?.includes(stall)) row.error = [row.error, stall].filter(Boolean).join('; ');
   stall = '';
-  row.crashed = launched && !closedByUs && !gameRunning() || row.verdict.some((v: string) => /game died/.test(v));
-  if (row.crashed) { row.crash = triage(t0); log(`${j.id}: game crashed\n${row.crash}`); }
+  // a fresh EA crash report also counts (2026-11-04: the game died while a read-back FAIL closed it, so closedByUs was set
+  // and the job showed as FAIL; the queue's two-crashes stop then missed it)
+  row.crashed = launched && !closedByUs && !guardClosed && !gameRunning() || row.verdict.some((v: string) => /game died/.test(v)) ||
+    launched && freshCrashReport(t0);
+  guardClosed = false;
+  if (row.crashed) { row.crash = triage(t0); log(`${j.id}: game crashed\n${row.crash}`); await logUntrackedGame(s => log(`${j.id}: ${s}`)); } // EA only: names game processes this run never saw (docs/236 #20)
   try { row.hangCapture = hangCaptureLine(readFileSync(logFile).subarray(logOff).toString()); } catch { /* no job log */ }
-  row.pass = row.exitCode === 0 && !row.crashed && !row.error && !row.timedOut && !row.selfCheckFail;
+  if (VANILLA) row.verdict.push(`N/A (vanilla): ${VANILLA_NA.join(', ')}`); // skipped, never PASS
+  else if (j.ourMods === false) row.verdict.push(`N/A (ourMods false): ${OURMODS_NA.join(', ')}`);
+  row.pass = row.exitCode === 0 && !row.crashed && !row.error && !row.timedOut && !row.selfCheckFail && !row.verdict.some(isFail); // any FAIL line counts, exit 0 or not (docs/236 #15)
   // docs/170 §2: the next job may take this game over (reuse on for both, same game start); else it closes now, as always
   const next = jobs[n + 1];
   const mayKeep = !!sess?.reuse && !reuseBlock(j) && !row.crashed && !stopWhy && canTakeOver(sess.key, next);
@@ -2328,15 +2826,20 @@ for (const [n, j] of jobs.entries()) {
   // every game start of the row: profile.repros reloads keep their starts only in the per-repro slices (docs/133 §8)
   if (launched && Number(rowIni(j)['ProbeSnap.CallSites'])) for (const f of callsiteLogs(row)) try { log(`${j.id}: ${mergeCallsites(f, j.id)}`); } catch (e) { log(`${j.id}: callsites merge ${f}: ${e}`); }
   // repro event checks (docs/169): the job passes only when the repro fired what it is for (native counter deltas, log lines)
+  const logGone = (j.logRequire || j.logForbid) && !(row.nativeLog && existsSync(row.nativeLog));
+  // log rules read every copy of the job: a save matrix restarts the game for its reloads, and the final copy only has the last
+  // load (2026-11-04: the matrix phase's verdict lines were in the -matrix- copy and the rule saw 0)
+  const ruleLog = (j.logRequire || j.logForbid) ? ruleLogs(row).map(f => readFileSync(f, 'utf8')).join('\n') : '';
+  if (logGone) { row.verdict.push('FAIL: UNKNOWN: no ts3native.log copy, log rules not checked'); row.pass = false; } // docs/236: absent log is not "no lines"
   if (j.nativeRequire || j.logRequire) {
     const fails = [...(j.nativeRequire ? checkRequire(j.nativeRequire, row.nativeDelta) : []),
-      ...(j.logRequire ? logFails(row.nativeLog && existsSync(row.nativeLog) ? readFileSync(row.nativeLog, 'utf8') : '', j.logRequire) : [])];
+      ...(j.logRequire ? logFails(ruleLog, j.logRequire) : [])];
     row.verdict.push(fails.length ? `FAIL: events not fired: ${fails.join('; ')}` : 'PASS: repro events fired');
     if (fails.length) row.pass = false;
   }
   if (j.logForbid) {  // correctness lines that must not appear (a replay audit MISMATCH, a clone-run fault)
-    const bad = logForbidFails(row.nativeLog && existsSync(row.nativeLog) ? readFileSync(row.nativeLog, 'utf8') : '', j.logForbid);
-    row.verdict.push(bad.length ? `FAIL: forbidden log lines: ${bad.join('; ')}` : 'PASS: no forbidden log lines');
+    const bad = logForbidFails(ruleLog, j.logForbid);
+    if (!logGone) row.verdict.push(bad.length ? `FAIL: forbidden log lines: ${bad.join('; ')}` : 'PASS: no forbidden log lines');
     if (bad.length) row.pass = false;
   }
   if (j.scriptErrorsMax !== undefined) {
@@ -2346,6 +2849,11 @@ for (const [n, j] of jobs.entries()) {
     const bad = unknown.length > j.scriptErrorsMax;
     row.verdict.push(`${bad ? 'FAIL' : 'PASS'}: ${unknown.length} new script errors (max ${j.scriptErrorsMax}${news.length > unknown.length ? `, ${news.length - unknown.length} known EA ignored` : ''})${unknown.length ? `: ${unknown.slice(0, 3).join(', ')}` : ''}`);
     if (bad) row.pass = false;
+  }
+  if (noOurs(j)) { // safe-default clicks: WARN, never FAIL (no safe button still stops the run in the mode guard)
+    if (clicksOn || gameRunning()) await addAgentHistory(join(OUT, `${queueName}-${date}-${j.id}.clicks.log`)); // lines a late poll lost
+    const cf = join(OUT, `${queueName}-${date}-${j.id}.clicks.log`), w = existsSync(cf) ? safeDefaultWarns(readFileSync(cf, 'latin1').split(/\r?\n/)) : [];
+    if (w.length) row.verdict.push(`WARN: ${w.length} safe-default click(s): ${w.join(' | ')}`);
   }
   // story jobs (docs/171): stories ran, story.jsonl written, story-report joins hitches (census-only jobs run no stories)
   const st = j.run.profile?.story as any;
@@ -2393,13 +2901,14 @@ for (const [n, j] of jobs.entries()) {
     Object.assign(row, { timing: tm.timing, timingWhy: tm.why });
     for (const rr of row.repros ?? []) { const w = tm.windows?.[rr.id]; if (w) Object.assign(rr, { timing: w.timing, timingWhy: w.why }); }
   } catch (e) { row.timing = 'invalid'; row.timingWhy = `timing verdict failed: ${String(e).split('\n')[0]}`; }
+  row.na = naRow(row);
   appendFileSync(jsonl, JSON.stringify(row) + '\n');
   clearJob();
   const cd = row.counters.delta ? Object.entries(row.counters.delta).map(([k, v]) => `${k} ${(v as number) > 0 ? '+' : ''}${v}`).join(', ') : '-';
   const cell = (x: string) => x.replace(/\|/g, '/').replace(/\r?\n/g, '<br>').slice(0, 400);
-  appendFileSync(md, `| ${j.id} | ${t0.slice(11, 16)} (${pht(t0)}) | ${row.minutes} | ${row.pass ? 'PASS' : row.crashed ? '**CRASH**' : '**FAIL**'} | ${cell(row.verdict.join('<br>') || row.error || '-')} | ${row.exitCode ?? '-'} | ${memLine(row.memory.before)} -> ${memLine(row.memory.after)} | ${cell(cd || '-')} | ${cell([countsNote(row), `timing: ${timingText({ timing: row.timing, why: row.timingWhy })}`, buildLine(row.buildCheck), row.saveHashes.after && saveDrift(row.saveHashes.before, row.saveHashes.after).length ? 'BASELINE SAVE CHANGED' : '', row.session.line !== 'fresh load' || row.session.after ? [row.session.line, row.session.after, row.session.next].filter(Boolean).join('; ') : '', row.noiseNote, row.hangCapture, j.note, row.content !== 'as-is' ? `content ${row.content} (${row.contentMoved} moved)` : '', row.crashed ? row.crash.split('\n')[1]?.trim() : '', row.error && row.verdict.length ? row.error : ''].filter(Boolean).join('; ') || '')} | ${MACHINE} |\n`);
-  log(`${j.id}: ${row.pass ? 'PASS' : row.crashed ? 'CRASH' : 'FAIL'} in ${row.minutes} min`);
-  if (!row.pass) exitCode = 1;
+  appendFileSync(md, `| ${j.id} | ${t0.slice(11, 16)} (${pht(t0)}) | ${row.minutes} | ${row.pass ? 'PASS' : row.na ? '**N/A**' : row.crashed ? '**CRASH**' : '**FAIL**'} | ${cell(row.verdict.join('<br>') || row.error || '-')} | ${row.exitCode ?? '-'} | ${memLine(row.memory.before)} -> ${memLine(row.memory.after)} | ${cell(cd || '-')} | ${cell([countsNote(row), `timing: ${timingText({ timing: row.timing, why: row.timingWhy })}`, buildLine(row.buildCheck), row.saveHashes.after && saveDrift(row.saveHashes.before, row.saveHashes.after).length ? 'BASELINE SAVE CHANGED' : '', row.session.line !== 'fresh load' || row.session.after ? [row.session.line, row.session.after, row.session.next].filter(Boolean).join('; ') : '', row.noiseNote, row.hangCapture, j.note, row.content !== 'as-is' ? `content ${row.content} (${row.contentMoved} moved)` : '', row.crashed ? row.crash.split('\n')[1]?.trim() : '', row.error && row.verdict.length ? row.error : ''].filter(Boolean).join('; ') || '')} |${machineCols(machineTag()).cell(MACHINE)}\n`);
+  log(`${j.id}: ${row.pass ? 'PASS' : row.na ? 'N/A' : row.crashed ? 'CRASH' : 'FAIL'} in ${row.minutes} min`);
+  if (!row.pass && !row.na) exitCode = 1;
 
   const earlierCrashes = earlier.filter(r => r.job === j.id && r.crashed).length;
   stopWhy ||= crashStop(row.crashed, earlierCrashes, prevCrashed);
@@ -2424,11 +2933,18 @@ for (const [n, j] of jobs.entries()) {
 
 // a game kept for a job that does not run now (STOP after the keep decision, AI pause, --only end): close it and undo its start
 if (sess) { const last = jobs.find(x => keyOf(x) === sess!.key)!; await endGame(last); const errs = await restoreStart(last.id, join(OUT, `${queueName}-${date}-${last.id}.log`)); if (errs.length) { log(`session end: ${errs.join('; ')}`); exitCode = 1; } }
+// vanilla: vanilla.ts restore (sha read-back, stash kept on any loss) when this run installed it; else the pair is put back from bin-before
+if (VANILLA) {
+  if (vanillaHere) try { log(`vanilla: restored ${vanillaRestore(vanillaSpec())} files (sha read back)`); } catch (e) { log(`RESTORE FAILED: vanilla: ${String((e as Error).message ?? e)}`); exitCode = 1; }
+  else if (!values['dry-run']) log('vanilla: state left installed (stash from before this run; node tools/harness/vanilla.ts restore)');
+} else
 // put back the asi and ini found at the start as a pair (game is closed after every job)
 {
   const asiOk = !existsSync(join(BEFORE, 'ts3native.asi')) || await copyRetry(() => copyFileSync(join(BEFORE, 'ts3native.asi'), join(BIN, 'ts3native.asi')), 'restore Bin/ts3native.asi', () => closeGame(), log);
   const iniOk = !existsSync(join(BEFORE, 'ts3native.ini')) || await copyRetry(() => copyFileSync(join(BEFORE, 'ts3native.ini'), join(BIN, 'ts3native.ini')), 'restore Bin/ts3native.ini', () => closeGame(), log);
-  if (asiOk && iniOk) {
+  const rb = asiOk && iniOk ? ['ts3native.asi', 'ts3native.ini'].filter(f => existsSync(join(BEFORE, f))).map(f => readBack(join(BIN, f), readFileSync(join(BEFORE, f)))).filter(Boolean) : []; // docs/236 #16
+  if (rb.length) { log(`RESTORE FAILED: ${rb.join('; ')} (copies in ${BEFORE})`); exitCode = 1; }
+  else if (asiOk && iniOk) {
     const sha = existsSync(join(BIN, 'ts3native.asi')) ? createHash('sha256').update(readFileSync(join(BIN, 'ts3native.asi'))).digest('hex') : '';
     const b = loadDb().find(x => x.sha256 === sha);
     log(`restored: Bin/ts3native.asi + ini from the start (asi ${b ? b.name : `unknown build ${sha.slice(0, 12)}`})`);

@@ -56,9 +56,9 @@ static __declspec(naked) void __stdcall IgRunFrame(const void* /*info*/, const v
 }
 
 static void TestImageGuard() {
-    static_assert(offsetof(Ts3nCounters, igReady) == 0x5AE4 && offsetof(Ts3nCounters, igRejected) == 0x5AF0 &&
-                      offsetof(Ts3nCounters, igMaxMB) == 0x5AF8 && sizeof(Ts3nCounters) == 5843 * 4,
-                  "counters v160 layout (docs/registry.md)");
+    static_assert(offsetof(Ts3nCounters, igReady) == 0x5C34 && offsetof(Ts3nCounters, igRejected) == 0x5C40 &&
+                      offsetof(Ts3nCounters, igMaxMB) == 0x5C48 && sizeof(Ts3nCounters) == 5909 * 4,
+                  "counters v908 layout (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     unsigned __int64 b;
     const DWORD MB = 1u << 20;

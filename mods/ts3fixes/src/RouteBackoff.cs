@@ -32,11 +32,13 @@ namespace Ts3Fixes
             public RoutePlanResult PlanHook()
             {
                 DoorMirror.SyncRoute(this, Vector3.Invalid); // doormirror: push the start/goal lots' doors to ts3native (DoorMirror.cs)
+                uint rflT0 = SrcNowUs(); // routefaillog (RouteFailLog.cs)
                 RouteSrcCall src = RouteSrcBegin(this, 0, Vector3.Invalid); // routesrc: source of this plan (RouteSources.cs, docs/151)
                 RoutePlanResult r = UfPlan(0, Vector3.Invalid); // docs/202 unseenfbplan wraps the whole plan (UnseenFallback.cs)
                 if (!UfTakeNotFail()) NotePlanResult(Follower, r.mType == RoutePlanResultType.Succeeded, this); // the stuck watchdog's route-fail count and success memo (RouteFixes.cs); docs/202: not for a cut plan
                 StuckCheckPlanned(r.mType == RoutePlanResultType.Succeeded); // docs/163 §10 stuck-check outcome counters (FewerPlans.cs)
                 RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
+                RflPlan(this, 0, rflT0, r);
                 return r;
             }
 
@@ -172,11 +174,20 @@ namespace Ts3Fixes
             // it as "Foreign" otherwise; older ts3native and the game answer false, so the plan stays synchronous as before.
             // (The code is inlined in PlanBackoffBody above, issue #92.)
 
+            // docs/240 asyncjigsync: no START while the Sim's interaction (or its linked one) holds a SocialJig not yet in the
+            // world, so the partner never runs while the initiator sleeps between CreateObjectOutOfWorld and AddToWorld.
+            // Counters: [758] own plans kept sync, [759] of those with the jig only in the linked interaction.
             bool AsyncEligible(Sims3.Gameplay.Actors.Sim sim, string shortcut)
             {
-                return sim != null && ShortcutOn(shortcut) && Simulator.CurrentTask == sim.ObjectId
+                if (!(sim != null && ShortcutOn(shortcut) && Simulator.CurrentTask == sim.ObjectId
                     && GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown
-                    && Simulator.CheckYieldingContext(false);
+                    && Simulator.CheckYieldingContext(false))) return false;
+                int jig = JigPending(sim);
+                if (jig == 0) return true;
+                int[] c = PatchCounters();
+                c[758]++;
+                if (jig == 2) c[759]++;
+                return false;
             }
 
             // docs/163 §7: foreign plans whose task is the only one that drives the follower, so the own START (bit 58) is as safe
@@ -223,8 +234,10 @@ namespace Ts3Fixes
             // route being followed (Active)
             static bool ForeignEligible()
             {
-                return ShortcutOn("asyncroute") && GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown
-                    && Simulator.CheckYieldingContext(false);
+                if (!(ShortcutOn("asyncroute") && GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown
+                    && Simulator.CheckYieldingContext(false))) return false;
+                IScriptProxy task = Simulator.GetProxy(Simulator.CurrentTask);
+                return JigPending(task != null ? task.Target as Sims3.Gameplay.Actors.Sim : null) == 0; // asyncjigsync (AsyncJigSync.cs), uncounted here
             }
 
             // after a START answered yes: sleep a tick at a time until READY
@@ -232,6 +245,7 @@ namespace Ts3Fixes
             {
                 int[] c = PatchCounters();
                 c[56]++;
+                RflAsyncMark(); // routefaillog: this plan waits on a ts3native job
                 for (int i = 0; !GetOption2(kAsyncReady); i++)
                 {
                     // shortcut: a fixed cap (~10-20 s real time); past it the plan waits natively and is then made
@@ -292,9 +306,11 @@ namespace Ts3Fixes
             // answer is ignored). ts3native refuses a route that is being followed. Switch "asyncreplan" (default on).
             public RoutePlanResult ReplanHook()
             {
+                uint rflT0 = SrcNowUs(); // routefaillog (RouteFailLog.cs)
                 RouteSrcCall src = RouteSrcBegin(this, 1, Vector3.Invalid);
                 RoutePlanResult r = UfPlan(1, Vector3.Invalid);
                 RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
+                RflPlan(this, 1, rflT0, r);
                 return r;
             }
             RoutePlanResult ReplanAsync()
@@ -316,9 +332,11 @@ namespace Ts3Fixes
 
             public RoutePlanResult PlanFromPointHook(Vector3 startPosition)
             {
+                uint rflT0 = SrcNowUs(); // routefaillog (RouteFailLog.cs)
                 RouteSrcCall src = RouteSrcBegin(this, 2, startPosition);
                 RoutePlanResult r = UfPlan(2, startPosition);
                 RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
+                RflPlan(this, 2, rflT0, r);
                 return r;
             }
             RoutePlanResult PlanFromPointAsync(Vector3 startPosition)
@@ -340,9 +358,11 @@ namespace Ts3Fixes
 
             public RoutePlanResult ReplanFromPointHook(Vector3 fromPt)
             {
+                uint rflT0 = SrcNowUs(); // routefaillog (RouteFailLog.cs)
                 RouteSrcCall src = RouteSrcBegin(this, 3, fromPt);
                 RoutePlanResult r = UfPlan(3, fromPt);
                 RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
+                RflPlan(this, 3, rflT0, r);
                 return r;
             }
             RoutePlanResult ReplanFromPointAsync(Vector3 fromPt)
