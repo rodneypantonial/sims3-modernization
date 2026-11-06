@@ -1,13 +1,13 @@
 // TestMonoJit ([MonoJit], monojit.cpp, docs/527 step 1). Included by selftest.cpp. No EA interpreter here: a fake opcode table
 // whose entries stop the run (JitTestStop) stands in for EA's handlers, so compiled templates really execute: what a run must
-// leave is the state an exit hands the interpreter (edi = ip, eax = op, esi, arena).
-// Not covered: EA's real opcode numbers and handlers (the monohost corpus has those).
+// leave is the state an exit hands the interpreter (edi = ip, eax = op, esi, arena). The verify test adds a one-opcode
+// interpreter (JitTestLdc) for pass 2. Not covered: EA's real opcode numbers and handlers (the monohost corpus has those).
 
 enum { JT_LDC2 = 1, JT_LDC3, JT_ADD, JT_STLOC, JT_LDLOC, JT_RET, JT_BRS, JT_BRTRUE, JT_LDFLD, JT_STFLD, JT_LDELEM, JT_LDFLDR4, JT_LDLOCVT, JT_LDCS, JT_MYSTERY, JT_LEAVES = 0x9C, JT_SWITCH = 0xE8 };
 static const char* g_jtNames[0x1A9];
 static BYTE g_jtLen[0x1C1];
 static DWORD g_jtTable[0x1C1];
-static DWORD g_jtEsp, g_jtEdi, g_jtEsi, g_jtEax, g_jtEbpIn, g_jtSpIn, g_jtIpIn;
+static DWORD g_jtEsp, g_jtEdi, g_jtEsi, g_jtEax, g_jtEbpIn, g_jtSpIn, g_jtIpIn, g_jtInterp;
 static DWORD g_jtFr[64], g_jtArena[64], g_jtLocals[16], g_jtVt[8];
 static BYTE g_jtInv[0x20], g_jtState[0x150];
 static DWORD* const g_jtEbp = g_jtFr + 32;
@@ -41,7 +41,21 @@ static __declspec(naked) void JitTestRun() {  // the interpreter's dispatch of t
         jmp dword ptr [ecx + eax * 4]
     }
 }
+static __declspec(naked) void JitTestLdc() {  // pass 2's interpreter: one opcode, pushes g_jtInterp, dispatches the next word
+    __asm {
+        mov eax, g_jtInterp
+        mov [esi], eax
+        add esi, 8
+        add edi, 2
+        movzx eax, word ptr [edi]
+        mov edx, eax
+        mov ecx, g_jitTableP
+        jmp dword ptr [ecx + eax * 4]
+    }
+}
 static void __cdecl JtMemcpy(void* d, const void* s, size_t n) { memmove(d, s, n); }
+static BYTE* __cdecl JtNoBase(const void*) { return NULL; }
+static void __cdecl JtNoRoots(void*, void*) {}
 
 static void JtFrame() {
     memset(g_jtFr, 0, sizeof(g_jtFr)), memset(g_jtArena, 0, sizeof(g_jtArena)), memset(g_jtLocals, 0, sizeof(g_jtLocals)), memset(g_jtVt, 0, sizeof(g_jtVt));
@@ -97,6 +111,7 @@ static void TestMonoJit() {
         {JT_LDELEM, "ldelem.i4", 1}, {JT_LDFLDR4, "ldfld.r4", 2}, {JT_LDLOCVT, "ldloc.vt", 4}, {JT_LDCS, "ldc.i4.s", 2}, {JT_MYSTERY, "mystery", 1}, {JT_LEAVES, "leave.s", 2}, {JT_SWITCH, "switch", 3}};
     for (const auto& o : kOps) g_jtNames[o.op] = o.name, g_jtLen[o.op] = (BYTE)o.len;
     g_jitTableP = g_jtTable, g_jitOpNames = g_jtNames, g_jitOpLen = g_jtLen, g_jitMemcpy = (DWORD)(uintptr_t)JtMemcpy;
+    g_jitAddRoots = JtNoRoots, GcBase = (GcBaseFn)JtNoBase;
     assert(JitTemplates(255) == 15);  // every row above but "mystery" and leave.s
     memset(g_opInfo, 0, sizeof(g_opInfo));
     assert(JitTemplates(255 & ~1) == 14 && g_opInfo[JT_LDFLDR4].kind == K_EXIT);  // Groups: group 1 left out
@@ -314,6 +329,44 @@ static void TestMonoJit() {
     assert(!JitFaultName(1, nm, sizeof(nm)));
     C.jitFaults = 0;
 
+    // verify: pass 1 compiled, restore, pass 2 interpreted, compare. Mismatch twice: counted, the method back on EA's words
+    g_jitMode = 2, g_jitVerifyOn = 1, g_jitEvery = 1;
+    g_jitV = (JitV*)calloc(JIT_VD, sizeof(JitV));
+    assert(g_jitV);
+    g_jtTable[JT_LDC2] = (DWORD)(uintptr_t)JitTestLdc;
+    static unsigned short q[] = {JT_LDC2, JT_RET};
+    static JtMeth mQ;
+    JtCompile(mQ, q, 2);
+    JitMeth& Q = g_jitMeth[g_jitMethN - 1];
+    assert(Q.verifyOk);
+    g_jtInterp = 2;
+    JtFrame();
+    JtGo(q, 8);
+    assert(C.jitVerified == 1 && !C.jitMismatch && g_jtEax == JT_RET && g_jtEdi == (DWORD)(uintptr_t)(q + 1) && g_jtArena[8] == 2);
+    g_jitEvery = 2;  // sampled: the next call runs compiled only, the one after is verified
+    Q.tick = 0;
+    JtFrame();
+    JtGo(q, 8);
+    assert(C.jitVerified == 1 && g_jtEax == JT_RET && g_jtArena[8] == 2);
+    JtFrame();
+    JtGo(q, 8);
+    assert(C.jitVerified == 2);
+    g_jitEvery = 1;
+    g_jtInterp = 3;  // the interpreter disagrees: retried once, then the method is off, and the interpreter's result stays
+    JtFrame();
+    JtGo(q, 8);
+    assert(C.jitMismatch == 1 && C.jitVerified == 2 && C.jitFirstBad == (LONG)(&Q - g_jitMeth) + 1 && Q.dead && q[0] == JT_LDC2 && q[1] == JT_RET && g_jtArena[8] == 3);
+    const LONG calls1 = C.jitCalls;
+    JtFrame();
+    JtGo(q, 8);
+    assert(g_jtEax == JT_RET && g_jtArena[8] == 3 && C.jitCalls == calls1);  // EA's words only
+    C.jitSwitch = 0;
+    JitTick();
+    C.jitSwitch = 1;
+    JitTick();
+    assert(q[0] == JT_LDC2 && a[0] == JIT_OP);  // a dead method stays off across the runtime byte
+    g_jtTable[JT_LDC2] = (DWORD)(uintptr_t)JitTestStop;
+
     // the region: code pages are not writable once a method is done
     MEMORY_BASIC_INFORMATION mbi;
     assert(VirtualQuery(g_jitMeth[0].native0, &mbi, sizeof(mbi)) && mbi.Protect == PAGE_EXECUTE_READ);
@@ -321,7 +374,8 @@ static void TestMonoJit() {
     // leave nothing behind for the other tests
     JitSetPatched(false);
     DeleteCriticalSection(&g_jitCs);
-    g_jitMode = 0, g_jitSimTid = 0, g_jitPatched = false, g_jitMethN = 0;
+    free(g_jitV);
+    g_jitV = NULL, g_jitMode = 0, g_jitVerifyOn = 0, g_jitSimTid = 0, g_jitPatched = false, g_jitMethN = 0;
     memset(&C.jitOn, 0, offsetof(Ts3nCounters, jitCodeKB) + 4 - offsetof(Ts3nCounters, jitOn));
     printf("monojit: ok\n");
 }

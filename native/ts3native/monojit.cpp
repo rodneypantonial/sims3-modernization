@@ -16,6 +16,11 @@
 // ForceJIT (MonoPatcher, 0xE5637D jne -> 90 90) re-transforms a method on every call into new mint code: the post-pass
 // refuses while the byte is not 0x75, and old patched words are simply not reached, so unlike a lazy call site nothing
 // here needs the per-call test of mintcall.cpp (compiled code is only entered through words in the code EA dispatches).
+//
+// Verify (Mode=2, docs/527 §3): one fresh call in VerifyEvery per method runs compiled, the reachable graph is restored,
+// EA's interpreter runs the same call and every word must match; what stays is the interpreter's result. The first
+// mismatch of a method unpatches it for the session. Not covered: a call that ends by exception (abandoned), a graph over
+// the snapshot size (compiled only).
 
 #include "ts3addr.h"  // TS3A(x): TS3W.exe addresses by their Steam 1.67 value
 
@@ -30,6 +35,8 @@ static const BYTE* g_jitForceJit = (const BYTE*)(uintptr_t)TS3A(0x00E5637D);    
 static DWORD g_jitMemcpy = TS3A(0x00F7E8A6), g_jitFmod = TS3A(0x00F7EFB0);        // EA's CRT memcpy thunk, _CIfmod
 static const DWORD* g_jitMemmove = (const DWORD*)(uintptr_t)TS3A(0x00F95684);    // the memmove import
 static void** g_jitObjectClassP = (void**)(uintptr_t)(TS3A(0x01220E40) + 4);     // mono_defaults.object_class
+typedef void(__cdecl* JitAddRootsFn)(void* lo, void* hi);
+static JitAddRootsFn g_jitAddRoots = (JitAddRootsFn)(uintptr_t)TS3A(0x00E4D9F0);  // GC_add_roots
 struct JitRow { const char* key; DWORD size; BYTE sha[32]; };
 #include "monojit-list.h"  // kJitRows, kJitRowN: the built-in list, name + size + SHA-256 of each known IL body (tools/jit-hot.ts --emit-native)
 static const JitRow* g_jitRows = kJitRows;
@@ -38,7 +45,8 @@ static char g_jitUserBuf[512];       // [MonoJit] List=: narrows the built-in li
 static const char* g_jitUser[32];
 static int g_jitUserN;
 static int g_jitGroups = 255;        // [MonoJit] Groups: template mask, as MONOHOST_JITC2
-static int g_jitMode;                // 0 off, 1 compiled
+static int g_jitMode;                // 0 off, 1 compiled, 2 verify
+static DWORD g_jitEvery = 16;        // [MonoJit] VerifyEvery
 static volatile DWORD g_jitSimTid;   // set by the first JitTick; 0 = nothing compiled runs yet
 static bool g_jitDead;               // a fault inside the compiler: no more compiles this session
 static LONG g_jitLogN;
@@ -245,7 +253,7 @@ struct JitEnt { DWORD ip; u8* native; DWORD orig; JitMeth* m; };
 static_assert(sizeof(JitEnt) == 16 && offsetof(JitEnt, native) == 4 && offsetof(JitEnt, orig) == 8, "JitEnter reads these offsets");
 static const DWORD JIT_TAB_N = 1 << 15;  // JitEnter's mask
 static const int JIT_METH_N = 2048, JIT_POS_N = 24576, JIT_MAX_POS = 4000, JIT_MAX_WORDS = 16384, JIT_CODE_BYTES = 2 << 20;
-struct JitMeth { u8* rm; unsigned short* code; int words; int pos0, posN; char name[96]; int nativeOps, exitOps, bytes; u8* native0; };
+struct JitMeth { u8* rm; unsigned short* code; int words; int pos0, posN; char name[96]; int nativeOps, exitOps, bytes; u8* native0; bool verifyOk, dead; DWORD tick; };
 struct JitFix { u8* rel; int targetW; bool abs; };  // abs: a switch table slot takes the label itself
 struct JitScratch { int posW[JIT_MAX_POS + 64]; unsigned short posOp[JIT_MAX_POS + 64]; u8* label[JIT_MAX_POS + 64]; JitFix fix[JIT_MAX_POS + 64]; int wordToPos[JIT_MAX_WORDS]; };
 static JitEnt* g_jitTab;                 // JIT_TAB_N entries + a 4096-entry overflow tail (no wrap in the probe loop)
@@ -259,7 +267,14 @@ static u8* g_jitCode;
 static u8* g_jitCodeEnd;
 static size_t g_jitCodeUsed;
 static bool g_jitPatched;
+static volatile int g_jitVerifyOn;       // JitEnter's branch to the verify path
 
+static JitEnt* JitFind(DWORD ip) {
+    for (DWORD i = (ip >> 1) & (JIT_TAB_N - 1);; i++) {
+        if (g_jitTab[i].ip == ip) return &g_jitTab[i];
+        if (!g_jitTab[i].ip) return NULL;
+    }
+}
 static JitEnt* JitAdd(DWORD ip) {
     DWORD i = (ip >> 1) & (JIT_TAB_N - 1);
     while (g_jitTab[i].ip && g_jitTab[i].ip != ip) i++;
@@ -271,11 +286,13 @@ static void JitProt(u8* p, size_t n, DWORD prot) {
     DWORD old;
     VirtualProtect(p, n, prot, &old);
 }
+static void JitVerifyExitStub();
 
 // exit to the live handler of base opcode `op` at ip (state is exactly the interpreter's: esi, frame memory)
-static void EmitExit(Em& e, const unsigned short* ip, DWORD op) {
+static void EmitExit(Em& e, const unsigned short* ip, DWORD op, bool ret) {
     e.incAbs(&ts3native_counters.jitExits);
     e.b(0xBF); e.d((DWORD)(uintptr_t)ip);   // mov edi, ip
+    if (ret && g_jitMode == 2) { e.jmpTo((const void*)JitVerifyExitStub); return; }
     e.op(0x89, EDI, EBP, -4);                // mov [ebp-4], edi
     e.movRI(EAX, op);
     e.rr(0x8B, EAX, EDX);                    // mov edx, eax (rr: r/m operand first, reg operand second)
@@ -533,7 +550,7 @@ static const char* JitCompile(u8* rm) {
             e.fld8(ESI, -16); e.fld8(ESI, -8); e.b(0xE8); e.d(g_jitFmod - ((DWORD)(uintptr_t)e.p + 4)); e.fstp8(ESI, -16); e.addEsi(-8); break;
         case K_SWITCH: {  // value [esi-8]; u32 n at ip+1, then n i32 word offsets from the end of the instruction (EA's 0xE558B1);
             const int cnt = *(const int*)(ip + 1);  // out of range falls through
-            if (cnt < 0 || cnt > 1024 || nf + cnt > 4000) { EmitExit(e, ip, op); ex++; continue; }
+            if (cnt < 0 || cnt > 1024 || nf + cnt > 4000) { EmitExit(e, ip, op, false); ex++; continue; }
             e.op(0x8B, EAX, ESI, -8); e.addEsi(-8);
             e.b(0x3D); e.d((DWORD)cnt);  // cmp eax, n
             u8* over = e.jcc(0x83);  // jae: next instruction
@@ -609,7 +626,7 @@ static const char* JitCompile(u8* rm) {
             else if (t.x >= 4) { e.load(t.x == 4 ? 1 : t.x == 5 ? 2 : t.x == 6 ? 3 : 4, EAX, ESI, -8); e.op(0x89, EAX, ESI, -8); }
             break;  // conv.i4.i8: the low word already is the result
         default:
-            EmitExit(e, ip, op);
+            EmitExit(e, ip, op, t.kind == K_RET);
             ex++;
             continue;
         }
@@ -619,7 +636,7 @@ static const char* JitCompile(u8* rm) {
             if (exitRel[0]) Fix(exitRel[0], e.p);
             if (exitRel[1]) Fix(exitRel[1], e.p);
             if (exitRel[2]) Fix(exitRel[2], e.p);
-            EmitExit(e, ip, op);
+            EmitExit(e, ip, op, false);
             Fix(skip, e.p);
         }
     }
@@ -640,6 +657,9 @@ static const char* JitCompile(u8* rm) {
     JitMeth& M = g_jitMeth[g_jitMethN];
     M.rm = rm, M.code = code, M.words = words, M.pos0 = g_jitPosN, M.nativeOps = nat, M.exitOps = ex, M.native0 = start, M.bytes = bytes;
     JitMethodName(rm, M.name, sizeof(M.name));
+    bool branch0 = false;
+    for (int f = 0; f < nf; f++) branch0 |= fix[f].targetW == 0;
+    M.verifyOk = !branch0;
     for (int k = 0; k < n; k++) {
         JitEnt* en = JitAdd((DWORD)(uintptr_t)(code + posW[k]));
         if (!en) return "ip table full";
@@ -653,20 +673,29 @@ static const char* JitCompile(u8* rm) {
     if (g_jitPatched) JitPatchMeth(M, true);
     ts3native_counters.jitMethods = g_jitMethN;
     ts3native_counters.jitCodeKB = (LONG)(g_jitCodeUsed >> 10);
-    if (g_jitLogN++ < 256) Log("jit: compiled %s: %d positions, %d native, %d exits, %d bytes", M.name, n, nat, ex, bytes);
+    if (g_jitLogN++ < 256) Log("jit: compiled %s: %d positions, %d native, %d exits, %d bytes%s", M.name, n, nat, ex, bytes, M.verifyOk ? "" : ", not verified (branch to word 0)");
     return NULL;
 }
 
 // patch (true) or restore (false) one method's opcode words; the native code stays
 static void JitPatchMeth(const JitMeth& m, bool on) {
-    for (int k = m.pos0; k < m.posN; k++) m.code[g_jitPos[k]] = on ? JitWord(g_jitOrigW[k]) : g_jitOrigW[k];
+    for (int k = m.pos0; k < m.posN; k++) m.code[g_jitPos[k]] = on && !m.dead ? JitWord(g_jitOrigW[k]) : g_jitOrigW[k];
 }
 static void JitSetPatched(bool on) {
     for (int m = 0; m < g_jitMethN; m++) JitPatchMeth(g_jitMeth[m], on);
     g_jitPatched = on;
 }
+// the first mismatch of a method: EA's words back, for the session (a yielded or suspended frame resumes at the original opcode)
+static void JitKill(JitMeth& m, DWORD ip) {
+    Ts3nCounters& C = ts3native_counters;
+    m.dead = true;
+    JitPatchMeth(m, false);
+    if (!C.jitFirstBad) C.jitFirstBad = (LONG)(&m - g_jitMeth) + 1;
+    Log("jit verify: %s off for the session (its ret at word %ld, %ld mismatches so far)", m.name, (long)(((const unsigned short*)(uintptr_t)ip) - m.code), C.jitMismatch);
+}
 
 // ---- JitEnter: the jump-table entry of JIT_OP (eax = edx = JIT_OP, edi = ip); jitCalls counts entries: calls and returns into a method ----
+static void JitVerifyEnterStub();
 static __declspec(naked) void JitEnter() {
     __asm {
         mov eax, edi
@@ -686,6 +715,8 @@ static __declspec(naked) void JitEnter() {
         cmp ecx, g_jitSimTid
         jne other
         inc ts3native_counters.jitCalls
+        cmp g_jitVerifyOn, 0
+        jne slow
         mov ebx, [ebp - 8]
         mov ebx, [ebx + 0x10]      // arena base (arguments)
         mov edi, [ebp - 0x14]      // locals base
@@ -697,6 +728,369 @@ static __declspec(naked) void JitEnter() {
         mov [ebp - 4], edi
         mov ecx, g_jitTableP
         jmp dword ptr [ecx + edx * 4]
+    slow:
+        jmp JitVerifyEnterStub
+    }
+}
+
+// ---- verify mode (docs/207 §8.3): every verifiable call runs twice, compiled first, then EA's interpreter on the restored
+// state; return value and every snapshotted byte must match. Snapshot = the frame's arena (arguments, locals, eval stack),
+// the free arena space after it (callee frames), the stack arguments, and the whole object graph reachable from the
+// receiver and the arguments (GC blocks, plus 32 bytes behind a byref into a caller frame), up to JIT_SNAP_OBJS objects /
+// 1 MB. A call whose graph is larger runs compiled only and is counted as "too large" (never restored half-way).
+struct JitRegs { DWORD edi, esi, ebp, esp_, ebx, edx, ecx, eax; };  // pushad layout
+struct JitRegion { u8* at; DWORD n, off; };
+static const int JIT_SNAP_OBJS = 4096;
+struct JitSnap {
+    JitRegion r[JIT_SNAP_OBJS];
+    int n;
+    bool full;
+    u8* buf;
+    DWORD used, cap;
+    DWORD hs[2 * JIT_SNAP_OBJS], hg[2 * JIT_SNAP_OBJS], gen;  // open-addressing set of region starts (slot live if hg == gen)
+    void Clear() { n = 0, used = 0, full = false, gen++; }
+    bool Contains(DWORD k) const {
+        for (DWORD i = (k >> 3) & (2 * JIT_SNAP_OBJS - 1); hg[i] == gen; i = (i + 1) & (2 * JIT_SNAP_OBJS - 1))
+            if (hs[i] == k) return true;
+        return false;
+    }
+    bool Insert(const u8* p) {  // false if already present
+        DWORD k = (DWORD)(uintptr_t)p, i = (k >> 3) & (2 * JIT_SNAP_OBJS - 1);
+        while (hg[i] == gen) { if (hs[i] == k) return false; i = (i + 1) & (2 * JIT_SNAP_OBJS - 1); }
+        hs[i] = k, hg[i] = gen;
+        return true;
+    }
+    bool Add(u8* p, DWORD sz) {  // true if added
+        if (n >= JIT_SNAP_OBJS || used + sz > cap) { full = true; return false; }
+        if (!Insert(p)) return false;
+        r[n].at = p, r[n].n = sz, r[n++].off = used, used += sz;
+        return true;
+    }
+    void Take(JitSnap& into) const {  // copy the current bytes of this snapshot's regions into `into`'s buffer
+        into.n = n, into.used = used;
+        memcpy(into.r, r, sizeof(JitRegion) * n);
+        for (int i = 0; i < n; i++) memcpy(into.buf + r[i].off, r[i].at, r[i].n);
+    }
+    void Restore() const { for (int i = 0; i < n; i++) memcpy(r[i].at, buf + r[i].off, r[i].n); }
+};
+struct JitV { bool active; int phase; u8* rm; JitMeth* meth; DWORD sp0, ebp, fr[6]; JitSnap *s0, *s1, *s2; u8 r1[64], r2[64]; int rn, calleeRegion; bool retried; struct JitNewSet* nw; };
+static const DWORD JIT_VD = 32;  // verified depths (snapshot buffers per depth)
+static JitV* g_jitV;           // [JIT_VD], sim thread only
+static int g_jvLogged;
+static bool g_jvQuiet;  // first attempt of a verified call: mismatches are logged only if the retry repeats them
+static char g_jvWhat[256];
+typedef u8* (__cdecl* GcBaseFn)(const void*);
+static GcBaseFn GcBase = (GcBaseFn)(uintptr_t)TS3A(0x00E4DC30);
+static DWORD GcSize(const u8* base) {  // Boehm block size: HDR(base)->hb_sz in words (same lookup as GC_base TS3A(0x00E4DC30))
+    DWORD p = (DWORD)(uintptr_t)base;
+    const DWORD* top = *(const DWORD* const*)(uintptr_t)(TS3A(0x01233318) + (p >> 22) * 4);
+    DWORD hdr = top ? top[(p >> 12) & 0x3FF] : 0;
+    if (hdr <= 0xFFF) return 0;
+    DWORD words = *(const DWORD*)(uintptr_t)hdr;
+    return words * 4 > 0x40000 ? 0x40000 : words * 4;
+}
+static const u8* g_jvInv;  // the MonoInvocation being snapshotted (byref targets must lie in one of its frames' arenas)
+// add the object (or byref target) a word points at; returns the region index or -1
+static int JitSnapRef(JitSnap& s, DWORD w) {
+    if (w < 0x10000) return -1;
+    u8* b = GcBase((void*)(uintptr_t)w);
+    if (b) {
+        DWORD sz = GcSize(b);
+        return sz && s.Add(b, sz) ? s.n - 1 : -1;
+    }
+    // byref into a caller frame: only inside the arena of a frame of this activation (MonoInvocation parents); arbitrary
+    // writable memory (CRT heap, GC free lists) must never be restored
+    for (const u8* f = g_jvInv; f; f = *(const u8* const*)f) {
+        const u8* frm = *(const u8* const*)(f + 4);
+        const u8* base = *(const u8* const*)(f + 0x10);
+        DWORD sz = frm ? *(const unsigned short*)(frm + 0x38) : 0;
+        if (base && w >= (DWORD)(uintptr_t)base && w < (DWORD)(uintptr_t)base + sz) {
+            DWORD n = (DWORD)(uintptr_t)base + sz - w;
+            return s.Add((u8*)(uintptr_t)w, n < 32 ? n : 32) ? s.n - 1 : -1;
+        }
+    }
+    return -1;
+}
+// breadth-first over regions [from, n): every aligned word that is the start of a GC object joins the snapshot
+static void JitSnapGraph(JitSnap& s, int from) {
+    for (int i = from; i < s.n && !s.full; i++) {
+        const u8* p = s.r[i].at;
+        DWORD n = s.r[i].n;
+        for (DWORD o = (4 - ((DWORD)(uintptr_t)p & 3)) & 3; o + 4 <= n; o += 4) {
+            DWORD v = *(const DWORD*)(p + o);
+            if (v >= 0x10000 && !(v & 3) && GcBase((void*)(uintptr_t)v) == (u8*)(uintptr_t)v) JitSnapRef(s, v);
+        }
+    }
+}
+// objects the compiled pass allocated, copied before the restore (the GC may reuse their memory during pass 2)
+struct JitNew { DWORD p, n, off; };
+static const int JIT_NEW_N = 2048;
+struct JitNewSet { JitNew o[JIT_NEW_N]; int n; DWORD used; u8* buf; int hs[2 * JIT_NEW_N]; DWORD hg[2 * JIT_NEW_N], gen; };  // per depth
+static JitNewSet* g_jn;  // the set JitAllocEqual reads (the depth being compared)
+static int JitNewFind(const JitNewSet& s, DWORD w) {  // index or -1 (slot live if hg == gen)
+    for (DWORD i = (w >> 3) & (2 * JIT_NEW_N - 1); s.hg[i] == s.gen; i = (i + 1) & (2 * JIT_NEW_N - 1))
+        if (s.o[s.hs[i]].p == w) return s.hs[i];
+    return -1;
+}
+// keep a copy of a word's object if it is not part of the entry snapshot (= allocated during the compiled pass), and of
+// the new objects it points at
+static void JitKeepNew(JitNewSet& s, const JitSnap& s0, DWORD w, int depth = 0) {
+    if (w < 0x10000 || (w & 3) || s.n >= JIT_NEW_N || GcBase((void*)(uintptr_t)w) != (u8*)(uintptr_t)w || JitNewFind(s, w) >= 0) return;
+    if (s0.Contains(w)) return;  // an object of the entry snapshot, not a new one
+    DWORD n = GcSize((u8*)(uintptr_t)w);
+    if (!n || s.used + n > (1u << 20)) return;
+    const DWORD off = s.used;
+    memcpy(s.buf + off, (void*)(uintptr_t)w, n);
+    DWORD i = (w >> 3) & (2 * JIT_NEW_N - 1);
+    while (s.hg[i] == s.gen) i = (i + 1) & (2 * JIT_NEW_N - 1);
+    s.hs[i] = s.n, s.hg[i] = s.gen;
+    s.o[s.n++] = {w, n, off};
+    s.used += n;
+    if (depth < 3) for (DWORD o = 0; o + 4 <= n; o += 4) JitKeepNew(s, s0, *(const DWORD*)(s.buf + off + o), depth + 1);
+}
+// two words differ: equal when the compiled pass's word is an object it allocated (kept copy) and the interpreted pass's
+// word an object of the same size whose words are equal, or again such a pair (one allocation in each pass)
+static bool JitAllocEqual(DWORD a, DWORD b, int depth = 0) {
+    if (!g_jn || depth > 3 || a < 0x10000 || b < 0x10000 || GcBase((void*)(uintptr_t)b) != (u8*)(uintptr_t)b) return false;
+    DWORD sb = GcSize((u8*)(uintptr_t)b);
+    int i = JitNewFind(*g_jn, a);
+    if (i < 0 || g_jn->o[i].n != sb) return false;
+    const DWORD* x = (const DWORD*)(g_jn->buf + g_jn->o[i].off);
+    const DWORD* y = (const DWORD*)(uintptr_t)b;
+    DWORD used = sb;
+    if (x[0] != y[0]) return false;
+    // GC_malloc_atomic leaves a block's slack uninitialised: compare the class's bytes only. MonoVTable+0 = klass;
+    // MonoClass name +0x34 / namespace +0x38 [verified live]; instance_size +0x54 (0xE6F5A0 reads it)
+    const u8* kl = *(const u8* const*)(uintptr_t)y[0];
+    const char* nm = *(const char* const*)(kl + 0x34), *ns = *(const char* const*)(kl + 0x38);
+    const size_t nl = strlen(nm);
+    const bool arr = nl && nm[nl - 1] == ']';
+    if (!arr && !strcmp(nm, "String") && !strcmp(ns, "System")) {
+        if (x[1] == y[1] && 8 + 2 * x[1] <= sb) used = 8 + 2 * x[1];  // vtable, length, UTF-16 chars
+    } else if (!arr) {
+        const DWORD is = *(const DWORD*)(kl + 0x54);
+        if (is >= 4 && is <= sb) used = is;
+    } else if (!x[1] && !y[1] && x[2] == y[2] && x[2] && 0x10 + x[2] <= sb) {
+        // array (vtable, bounds 0, length): compare 0x10 + length * the largest element size (1..8) that fits the block
+        // [inferred: no element class lookup]
+        DWORD es = 8;
+        while (es > 1 && 0x10 + x[2] * es > sb) es >>= 1;
+        used = 0x10 + x[2] * es;
+    }
+    for (DWORD k = 0; k < (used + 3) / 4; k++)
+        if (x[k] != y[k] && !JitAllocEqual(x[k], y[k], depth + 1)) return false;
+    return true;
+}
+static bool JitSameBytes(const u8* x, const u8* y, DWORD n, DWORD* at) {
+    for (DWORD i = 0; i < n; i++) {
+        if (x[i] == y[i]) continue;
+        DWORD a4 = i & ~3u;
+        if (a4 + 4 <= n && JitAllocEqual(*(const DWORD*)(x + a4), *(const DWORD*)(y + a4))) { i = a4 + 3; continue; }
+        *at = i;
+        if (a4 + 4 <= n) {
+            DWORD a = *(const DWORD*)(x + a4), b = *(const DWORD*)(y + a4);
+            int k = -1;
+            for (int j = 0; g_jn && j < g_jn->n; j++) if (g_jn->o[j].p == a) k = j;
+            const DWORD* xa = k >= 0 ? (const DWORD*)(g_jn->buf + g_jn->o[k].off) : NULL;
+            const DWORD* yb = GcBase((void*)(uintptr_t)b) == (u8*)(uintptr_t)b ? (const DWORD*)(uintptr_t)b : NULL;
+            DWORD fk = 0;
+            if (xa && yb) while (fk < g_jn->o[k].n / 4 && xa[fk] == yb[fk]) fk++;
+            sprintf_s(g_jvWhat, "compiled %08lX interpreted %08lX; kept %d size %lu/%lu words %08lX %08lX %08lX %08lX / %08lX %08lX %08lX %08lX; "
+                      "first differing word %lu: %08lX / %08lX", a, b,
+                      k, k >= 0 ? g_jn->o[k].n : 0, yb ? GcSize((const u8*)yb) : 0, xa ? xa[0] : 0, xa ? xa[1] : 0, xa ? xa[2] : 0, xa ? xa[3] : 0,
+                      yb ? yb[0] : 0, yb ? yb[1] : 0, yb ? yb[2] : 0, yb ? yb[3] : 0, fk, xa && yb ? xa[fk] : 0, xa && yb ? yb[fk] : 0);
+        }
+        return false;
+    }
+    return true;
+}
+static int JitRetBytes(const JitRegs* r, DWORD op, const unsigned short* ip, u8* out) {
+    const char* nm = g_jitOpNames[op];
+    if (!strcmp(nm, "ret.void")) return 0;
+    const u8* top = (const u8*)(uintptr_t)(r->esi - 8);
+    if (!strcmp(nm, "ret.vt")) {  // the slot holds a pointer to the value; operand = size
+        DWORD sz = *(const DWORD*)(ip + 1);
+        if (sz > 64) sz = 64;
+        memcpy(out, *(const u8* const*)top, sz);
+        return (int)sz;
+    }
+    memcpy(out, top, 8);
+    return 8;
+}
+static void JitVLog(JitV& v, const char* what, DWORD at) {
+    if (!g_jvQuiet && g_jvLogged++ < 40) Log("jit verify MISMATCH %s: %s at +%lu (%s)", v.meth ? v.meth->name : "?", what, at, g_jvWhat);
+}
+static u8* JitNative(JitRegs* r, const JitEnt* e) {
+    r->ebx = *(const DWORD*)(uintptr_t)(*(const DWORD*)(uintptr_t)(r->ebp - 8) + 0x10);
+    r->edi = *(const DWORD*)(uintptr_t)(r->ebp - 0x14);
+    return e->native;
+}
+static void* JitOrig(JitRegs* r, DWORD ip, DWORD op) {
+    r->edi = ip, r->eax = r->edx = op;
+    *(DWORD*)(uintptr_t)(r->ebp - 4) = ip;
+    return (void*)(uintptr_t)g_jitTableP[op];  // the live entry, as EmitExit
+}
+
+// on first use per depth: 3 snapshots + the kept copies, 1 MB each. s0 is a GC root: an object only s0 still names (a field
+// the compiled pass overwrote) must survive a collection in that pass, or the restore would bring back a freed pointer.
+static bool JitVAlloc(JitV& v) {
+    JitSnap** ss[3] = {&v.s0, &v.s1, &v.s2};
+    for (JitSnap** s : ss) {
+        if (*s) continue;
+        JitSnap* p = (JitSnap*)VirtualAlloc(NULL, sizeof(JitSnap) + (1 << 20), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        if (!p) return false;
+        p->cap = 1 << 20, p->buf = (u8*)(p + 1), *s = p;
+        if (s == &v.s0) g_jitAddRoots(p->buf, p->buf + (1 << 20));
+    }
+    JitNewSet* n = (JitNewSet*)VirtualAlloc(NULL, sizeof(JitNewSet) + (1 << 20), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!n) return false;
+    n->buf = (u8*)(n + 1), v.nw = n;
+    return true;
+}
+
+static void* __cdecl JitVerifySlow(JitRegs* r, JitEnt* e, int fromExit) {
+    if (!e) e = JitFind(r->edi);
+    Ts3nCounters& C = ts3native_counters;
+    JitMeth* const m = e->m;
+    const u8* rm = m->rm;
+    DWORD depth = *(const DWORD*)(uintptr_t)(*(const DWORD*)(uintptr_t)(r->ebp + 8) + 0x140);
+    if (depth >= JIT_VD) return fromExit ? JitOrig(r, r->edi, e->orig) : JitNative(r, e);
+    JitV& v = g_jitV[depth];
+    const unsigned short* code = *(const unsigned short* const*)rm;
+    const bool mine = v.active && v.rm == rm && v.ebp == r->ebp;  // ebp = the interpreter activation (nested ones restart at depth 0)
+    if ((DWORD)(uintptr_t)code == r->edi && v.active && v.ebp != r->ebp) return JitNative(r, e);  // slot held by an outer activation
+    // one verification in flight per activation: compiled callees of a verified frame run compiled in its pass 1 and
+    // interpreted in its pass 2, so pass 2 is a pure-interpreter reference for the whole call tree (and cost stays 2x)
+    int outer = 0;
+    for (DWORD k = 0; k < depth; k++) if (g_jitV[k].active && g_jitV[k].ebp == r->ebp) outer = g_jitV[k].phase;
+    if (fromExit) {  // a compiled ret
+        if (!mine || v.phase != 1) return JitOrig(r, r->edi, e->orig);
+        v.rn = JitRetBytes(r, e->orig, (const unsigned short*)(uintptr_t)r->edi, v.r1);
+        v.s0->Take(*v.s1);
+        v.nw->n = 0, v.nw->used = 0, v.nw->gen++;  // keep copies of what the compiled pass allocated (changed words that are new objects)
+        for (int i = 0; i < v.s0->n; i++)
+            for (DWORD o = 0; o + 4 <= v.s0->r[i].n; o += 4) {
+                DWORD a = *(const DWORD*)(v.s1->buf + v.s0->r[i].off + o);
+                if (a != *(const DWORD*)(v.s0->buf + v.s0->r[i].off + o)) JitKeepNew(*v.nw, *v.s0, a);
+            }
+        for (int o = 0; o + 4 <= v.rn; o += 4) JitKeepNew(*v.nw, *v.s0, *(const DWORD*)(v.r1 + o));
+        v.s0->Restore();
+        r->esi = v.sp0;
+        for (int i = 0; i < 6; i++) *(DWORD*)(uintptr_t)(r->ebp - 0x8 - 4 * i) = v.fr[i];  // interpreter frame words [ebp-8]..[ebp-0x1C] (vt area cursor [ebp-0xC])
+        v.phase = 2;
+        return JitOrig(r, (DWORD)(uintptr_t)code, JitFind((DWORD)(uintptr_t)code)->orig);  // pass 2 from word 0
+    }
+    if ((DWORD)(uintptr_t)code == r->edi && !(mine && v.phase == 2)) {  // fresh call
+        for (DWORD d = depth; d < JIT_VD; d++) if (g_jitV[d].active && g_jitV[d].ebp == r->ebp) g_jitV[d].active = false, C.jitAbandoned++;
+        if (outer) return outer == 2 ? JitOrig(r, r->edi, e->orig) : JitNative(r, e);
+        if (!m->verifyOk || ++m->tick % g_jitEvery) return JitNative(r, e);  // one call in VerifyEvery per method
+        if (!v.nw && !JitVAlloc(v)) { C.jitLarge++; return JitNative(r, e); }
+        v.active = true, v.phase = 1, v.rm = (u8*)rm, v.meth = m, v.sp0 = r->esi, v.ebp = r->ebp;
+        for (int i = 0; i < 6; i++) v.fr[i] = *(const DWORD*)(uintptr_t)(r->ebp - 0x8 - 4 * i);
+        v.s0->Clear(), v.calleeRegion = -1, v.retried = false;
+        const u8* inv = (const u8*)(uintptr_t)*(const DWORD*)(uintptr_t)(r->ebp - 8);
+        u8* arena = *(u8* const*)(inv + 0x10);
+        DWORD asz = *(const unsigned short*)(rm + 0x38);
+        v.s0->Add(arena, asz);
+        {  // callee arenas: the same leftover bytes in both passes (ret copies the dead high word of a 4-byte slot); only up to
+           // the end of the current arena chunk (state+0x13C -> chunk: +0 top, +4 end), never into other heap memory
+            const u8* chunk = *(const u8* const*)(uintptr_t)(*(const DWORD*)(uintptr_t)(r->ebp + 8) + 0x13C);
+            const u8* cend = chunk ? *(const u8* const*)(chunk + 4) : NULL;
+            if (chunk && arena >= chunk && arena + asz <= cend) {
+                DWORD n = (DWORD)(cend - (arena + asz));
+                if (n && v.s0->Add(arena + asz, n < 2048 ? n : 2048)) v.calleeRegion = v.s0->n - 1;
+            }
+        }
+        u8* sargs = *(u8* const*)(inv + 0x14);
+        int np = rm[0x40];
+        if (sargs && np) v.s0->Add(sargs, 8 * np);
+        g_jvInv = inv;
+        const int walk = v.s0->n;
+        JitSnapRef(*v.s0, *(const DWORD*)(inv + 0xC));  // this: object, or a byref for value-type methods
+        for (int i = 0; i < np && sargs; i++) JitSnapRef(*v.s0, *(const DWORD*)(sargs + 8 * i));
+        JitSnapGraph(*v.s0, walk);
+        if (v.s0->full) { v.active = false, C.jitLarge++; return JitNative(r, e); }
+        for (int i = 0; i < v.s0->n; i++) memcpy(v.s0->buf + v.s0->r[i].off, v.s0->r[i].at, v.s0->r[i].n);
+        return JitNative(r, e);
+    }
+    if (mine && v.phase == 2) {  // interpreted pass of a verified call
+        if (g_opInfo[e->orig < 0x1C1 ? e->orig : 0].kind == K_RET) {
+            u8 rb[64];
+            int rn = JitRetBytes(r, e->orig, (const unsigned short*)(uintptr_t)r->edi, rb);
+            v.s0->Take(*v.s2);
+            g_jvQuiet = !v.retried;
+            g_jn = v.nw;
+            bool ok = true;
+            DWORD at = 0;
+            if (rn != v.rn || !JitSameBytes(v.r1, rb, rn, &at)) ok = false, JitVLog(v, "return value", at);
+            // dead memory is restored but not compared: eval-stack slots at or above the ret's sp (EA's superinstructions skip
+            // the temporary stores their base sequences make, docs/130 §9.1) and the callee-frame space after the arena
+            const u8* arena = v.s0->r[0].at;
+            DWORD deadLo = r->esi - (DWORD)(uintptr_t)arena, deadHi = (DWORD)*(const unsigned short*)(rm + 0x3E) + *(const unsigned short*)(rm + 0x34);
+            if (deadLo > deadHi) deadLo = deadHi;
+            if (!JitSameBytes(v.s1->buf, v.s2->buf, deadLo, &at) ||
+                (deadHi < v.s0->r[0].n && !JitSameBytes(v.s1->buf + deadHi, v.s2->buf + deadHi, v.s0->r[0].n - deadHi, &at)))
+                ok = false, JitVLog(v, "region 0 (frame arena)", at);
+            for (int i = 1; ok && i < v.s0->n; i++)
+                if (i != v.calleeRegion && !JitSameBytes(v.s1->buf + v.s0->r[i].off, v.s2->buf + v.s0->r[i].off, v.s0->r[i].n, &at)) {
+                    ok = false;
+                    char what[160];
+                    const u8* ra = v.s0->r[i].at;
+                    const char* cls = "?";
+                    if (GcBase(ra) == ra && *(const DWORD*)ra >= 0x10000) {
+                        const u8* kl = *(const u8* const*)(uintptr_t)*(const DWORD*)ra;
+                        if (kl) cls = *(const char* const*)(kl + 0x34);
+                    }
+                    sprintf_s(what, "region %d (%lu bytes, class %.60s)", i, v.s0->r[i].n, cls ? cls : "?");
+                    JitVLog(v, what, at);
+                }
+            if (!ok && !v.retried) {
+                // second chance from the same entry state: a one-time effect of the first compiled pass that the restore
+                // cannot undo (class init, a transform, a lazily filled cache outside the graph) is then in place for both
+                // passes; a real compiler difference repeats
+                v.retried = true;
+                v.s0->Restore();
+                r->esi = v.sp0;
+                for (int i = 0; i < 6; i++) *(DWORD*)(uintptr_t)(r->ebp - 0x8 - 4 * i) = v.fr[i];
+                v.phase = 1;
+                return JitNative(r, JitFind((DWORD)(uintptr_t)code));
+            }
+            (ok ? C.jitVerified : C.jitMismatch)++;
+            v.active = false;
+            if (!ok) JitKill(*v.meth, r->edi);
+        }
+        return JitOrig(r, r->edi, e->orig);
+    }
+    return outer == 2 ? JitOrig(r, r->edi, e->orig) : JitNative(r, e);  // compiled pass, a callee inside one, or unverified
+}
+static __declspec(naked) void JitVerifyEnterStub() {  // eax = table entry, edi = ip
+    __asm {
+        sub esp, 4
+        pushad
+        mov ecx, esp
+        push 0
+        push eax
+        push ecx
+        call JitVerifySlow
+        add esp, 12
+        mov [esp + 32], eax
+        popad
+        ret
+    }
+}
+static __declspec(naked) void JitVerifyExitStub() {  // edi = ip of a compiled ret
+    __asm {
+        sub esp, 4
+        pushad
+        mov ecx, esp
+        push 1
+        push 0
+        push ecx
+        call JitVerifySlow
+        add esp, 12
+        mov [esp + 32], eax
+        popad
+        ret
     }
 }
 
@@ -807,6 +1201,20 @@ static bool JitAlloc() {
     return true;
 }
 static_assert(JIT_POS_N <= (int)(JIT_TAB_N * 3 / 4), "the ip table stays under 3/4 full");
+// verify only: GC_malloc_atomic -> GC_malloc (docs/57 §1, the host's JitAtomic), so a new pointer-free block's slack is the
+// same in both passes. Not with [MonoThread] GcLock: its detour wants these bytes (the array compare is then a heuristic).
+static void JitAtomic(const wchar_t* ini) {
+    static const u8 kAtomic[9] = {0x8B, 0x44, 0x24, 0x04, 0xB9, 0x00, 0x08, 0x00, 0x00};
+    const DWORD at = TS3A(0x00E4BDC0), to = TS3A(0x00E4BE30);
+    if (GetPrivateProfileIntW(L"MonoThread", L"GcLock", 0, ini) || !Matches((void*)(uintptr_t)at, kAtomic, sizeof(kAtomic))) {
+        Log("jit: GC_malloc_atomic left alone ([MonoThread] GcLock or other bytes): a new array's slack may read as a mismatch");
+        return;
+    }
+    u8 jmp[5] = {0xE9};
+    const LONG rel = (LONG)(to - (at + 5));
+    memcpy(jmp + 1, &rel, 4);
+    Write((void*)(uintptr_t)at, jmp, 5);
+}
 static void JitReadList(const wchar_t* ini) {
     wchar_t w[512] = L"";
     GetPrivateProfileStringW(L"MonoJit", L"List", L"", w, 512, ini);
@@ -815,13 +1223,13 @@ static void JitReadList(const wchar_t* ini) {
     for (char* t = strtok_s(g_jitUserBuf, ",", &ctx); t && g_jitUserN < 32; t = strtok_s(NULL, ",", &ctx)) g_jitUser[g_jitUserN++] = t;
 }
 
-// ts3native.ini [MonoJit] Enabled=1, Mode=1 compiled, Groups=<mask>, List=<names>. true = installed
+// ts3native.ini [MonoJit] Enabled=1, Mode=1 compiled | 2 verify, VerifyEvery=<n>, Groups=<mask>, List=<names>. true = installed
 // (keep the log). After every other code patch, before [AutShadow] (docs/527 §4.1), and only on the Steam 1.67 exe.
 static bool ApplyMonoJit(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"MonoJit", L"Enabled", 0, ini)) return false;
     Ts3nCounters& C = ts3native_counters;
     const int mode = GetPrivateProfileIntW(L"MonoJit", L"Mode", 1, ini);
-    if (mode != 1) { Log("SKIP mono jit: Mode=%d (1 compiled)", mode); return false; }
+    if (mode != 1 && mode != 2) { Log("SKIP mono jit: Mode=%d (1 compiled, 2 verify)", mode); return false; }
     const u8* base = (const u8*)GetModuleHandleW(NULL);
     const IMAGE_NT_HEADERS* nt = (const IMAGE_NT_HEADERS*)(base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
     if (nt->FileHeader.TimeDateStamp != JIT_PE_STAMP || nt->OptionalHeader.SizeOfImage != JIT_PE_SIZE) { Log("SKIP mono jit: not the Steam 1.67 exe"); return false; }
@@ -837,17 +1245,25 @@ static bool ApplyMonoJit(const wchar_t* ini) {
     const int templates = JitTemplates((unsigned)g_jitGroups);
     if (!templates) { Log("SKIP mono jit: no template matches EA's opcode names"); return false; }
     if (!JitAlloc()) { Log("SKIP mono jit: no address space for the region"); return false; }
+    if (mode == 2) g_jitV = (JitV*)VirtualAlloc(NULL, sizeof(JitV) * JIT_VD, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (mode == 2 && !g_jitV) { Log("SKIP mono jit: no memory for the verifier"); return false; }
     InitializeCriticalSection(&g_jitCs);
     JitReadList(ini);
     if (!IlpHook()) { Log("SKIP mono jit: the transform prologue differs (another owner of 0xE643B0)"); return false; }
     if (!SimLoopAdd(JitTick, "mono jit: jitSwitch and the sim thread")) { Log("SKIP mono jit: no Simulate iteration hook"); return false; }
     const DWORD ent = (DWORD)(uintptr_t)JitEnter;
     if (!Write(g_jitTableP + JIT_OP, &ent, 4)) { Log("FAIL mono jit: jump-table entry (err %lu)", GetLastError()); return false; }
+    if (mode == 2) {
+        const int every = GetPrivateProfileIntW(L"MonoJit", L"VerifyEvery", 16, ini);
+        g_jitEvery = every > 0 ? (DWORD)every : 1;
+        g_jitVerifyOn = 1;
+        JitAtomic(ini);
+    }
     g_jitMode = mode;
     g_jitPatched = true;
     C.jitSwitch = 1;
     C.jitOn = mode;
     g_ilpPost = JitPostPass;
-    Log("OK   mono jit (docs/527): Mode=%d, %d templates (Groups=%d), %d list rows%s, code region %d KB", mode, templates, g_jitGroups, g_jitRowN, g_jitUserN ? " narrowed by List=" : "", JIT_CODE_BYTES >> 10);
+    Log("OK   mono jit (docs/527): Mode=%d, %d templates (Groups=%d), %d list rows%s, VerifyEvery=%lu, code region %d KB", mode, templates, g_jitGroups, g_jitRowN, g_jitUserN ? " narrowed by List=" : "", g_jitEvery, JIT_CODE_BYTES >> 10);
     return true;
 }
