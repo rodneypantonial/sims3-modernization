@@ -26,7 +26,6 @@ export const ALWAYS_OFF: Record<string, string> = {
 export const RC_ZERO_KEYS: Record<string, string[]> = {
     MemDiag: ["Light"],
     RouteToObjRO: ["Tail"], IdleCheckRO: ["SiteC"],
-    UnseenTable: ["Enabled"],
     // addresses mapped by the table regen, never run on EA: mapped is not tested, so they stay off until their smoke
     FootstepRO: ["Enabled"], UnseenAnim: ["Enabled"], UnseenRootMotion: ["Mode"],
 };
