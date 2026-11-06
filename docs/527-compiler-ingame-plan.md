@@ -1,6 +1,7 @@
 # 527. The method compiler in the game: integration plan with the IL patcher hook (round 10 C6)
 
-Status: plan, 2026-11-02. Nothing here is built; every claim is tagged. Round 10, task C6: "in-game integration plan with
+Status: steps 1-4 run in game, 2026-11-06 (step 2 verify passed; step 3 A/B, short and long: no gain measurable; step 4 soak: one crash, cause open, §11) (§8, §9; `[MonoJit]`, off by default). The rest is the
+plan of 2026-11-02; every claim is tagged. Round 10, task C6: "in-game integration plan with
 #200: ts3native switch (off by default), in-game verify mode with a mismatch counter, A/B judged by script ms/s per arm
 (`arm-ms.ts`)". It supersedes rows S1 and S3 of docs/223 §7 with what rounds 8 to 10 built in monohost (docs/207 §10 to
 §16) and with the transform hook #200 / #204 put into ts3native (docs/506 §2, docs/526). Ledger: docs/51 §931.
@@ -129,3 +130,144 @@ Step 1 needs #200 / #204 merged (the detour it extends). Steps 2 to 4 are the us
 - Methods with clauses and the `throw`-out-of-callee path stay the verify blind spots named in §3.
 - A ts3fixes-side list or hash source (docs/223 §9 point 4): not needed; ts3native hashes the IL it reads at the hook.
 - UPDATE242 / simler90 cores: the hash guard covers them per method (their IL differs per method, the exe is the same).
+
+## 8. Step 1 as built (2026-11-06)
+
+- **Code**: the compiler core moved from `native/monohost/monohost-jit.cpp` to `native/ts3native/monojit.cpp`, shared by
+  both builds (monohost includes it with `MJ_MT mt::`). Same code generation [verified: the monohost selftest under
+  `MONOHOST_JIT=verify MONOHOST_MINTCALL=fast` before and after the move: 290 methods, 6,253 native ops, 1,142 exits,
+  205,680 bytes both; 2.40 M and 2.45 M verified calls, 0 mismatches both; the same 39 / 40, the one FAIL is `GM4-sweep`
+  "3 overriding types", in both builds and in the round 10 log, not the compiler].
+- **Changes to the core**, each a no-op in monohost: `JitEnter`'s fast path runs compiled code on `g_jitMainTid` only
+  (other threads: EA's handler of the original word, `jitOtherTid`); verify sampling (`VerifyEvery`, one fresh call in N
+  per method; `jitSampled`); a mismatch unpatches that method for the session (`JitUnpatchMeth`, also unpublishes its lazy
+  body); the code pool is `PAGE_EXECUTE_READ` and `PAGE_READWRITE` only inside `JitCompiled`; `JitSetup` shared.
+- **In game** (`MJ_GAME` part of monojit.cpp): a post-pass client `g_ilpPost` of ilpatch.cpp's transform detour
+  (`IlpInstallDetour`: whichever of `[IlPatch]` / `[MonoJit]` installs first); a listed method compiles on the sim thread
+  (the thread of the `SimLoopAdd` callback); one transformed elsewhere or before the first iteration is queued and
+  compiled at the end of the next iteration. The switch flips in the same callback.
+- **Gates at install**: the jump-table entry of `0x1A9` is EA's default handler `0xE596C2`; `0xE563B2` unpatched (no
+  TailWatch); in verify mode `GC_malloc_atomic 0xE4BDC0` unpatched (MonoThread P3 patches it too); the transform prologue;
+  the Simulate loop hook. Per method: ForceJIT off (`0xE5637D` = `0x75`), not compiled before, and with `HashGuard=1` an
+  IL hash in `kMjHash`.
+- **Differences from §2, §4**: counters v910, not v901 (`jitCalls` / `jitExits` dropped: the fast path counts nothing;
+  `jitHashMiss`, `jitSampled` added); the `--ab` switch is `monojit`; `kMjHash` is empty until the first run logs the
+  hashes (`HashGuard=0`), so `Enabled=1` with the default `HashGuard=1` compiles nothing yet; a fault inside the pool is
+  not named by the crash report: each "monojit: compiled" log line gives the method's code range instead.
+- **Tests**: `TestMonoJit` in selftest.exe (post-pass order, unpatch after a mismatch, install gates without the game).
+
+## 9. First in-game verify runs (2026-11-06)
+
+Local queue `jit-verify-local` (not committed), `Mode=2 VerifyEvery=16`, 10 min per save, the build of each run named.
+
+- **al253** (BP, `HashGuard=0`) [verified: run log]: 1,793 compiles in 5 min, then "tables full" and 541 refusals.
+  The game compiles each instantiation of a listed generic as its own runtime method; all of them share one IL hash.
+  Tables x4: ip table 2^18, methods 16,384, positions 2^20, code pool 16 MB. The run also had 2 mismatches, in
+  `List`1.Add` and `List`1.GrowIfNeeded`: region 3 (the list) at +4 (`_items`), the compiled pass's new array 0x30 or
+  more bytes above the interpreter's.
+- **Verifier fixes**, each found by the run before it. The mismatches were the verifier, not the compiled code:
+  1. Free Boehm blocks reached through stale words went into the entry snapshot. Their free-list links pulled the
+     free list in, so the compiled pass's new array counted as old (fix1, `JitLooksFree`).
+  2. Restoring memory that EA's lazy reclaim may free during the pass: the snapshot now skips objects with the free bit,
+     and unmarked objects in a block not stamped this cycle. It also abandons the call when `GC_gc_no` (`0x011F2F90`)
+     changed during the pass. Before: host verify crashed in 1 of 2 runs, AV writing `0x9C` at `0xE4C223` in
+     `GC_malloc_atomic`, after such a restore [inferred]. After: 3 of 3 clean.
+  3. al255's mismatch line showed the new array unkept: the new-object set was full (2,048 objects, 160 KB) of old
+     objects that dead frame words point at. The set now keeps only objects the pass can have allocated (unmarked, not
+     free, block stamped this cycle), read from the compared words only. A difference while the set is full is
+     abandoned, not counted [verified: al256 below, host 2.52-2.57 M verified calls, 0 mismatches, set full 0].
+- **al256** (`Direct=0`, `HashGuard=1`) [verified: native.json of each job]: PASS on BP, IP and SV.
+
+| Save | Methods compiled | Calls verified | Mismatches | Too large (compiled only) | Code KB | Other thread |
+|---|---|---|---|---|---|---|
+| BP | 2,625 | 1,267,846 | 0 | 3,796,915 | 1,939 | 0 |
+| IP | 2,629 | 1,179,245 | 0 | 3,733,848 | 1,942 | 0 |
+| SV | 2,533 | 1,419,724 | 0 | 3,932,645 | 1,879 | 0 |
+
+- **Coverage gap**: about 3 in 4 sampled calls reach more state than the snapshot holds. They run compiled, unchecked
+  (`jitLarge`). So 0 mismatches covers the quarter that fits.
+- IP and SV load a fourth `Array.Copy` body (45 bytes, sha256 `a395357028e6bcd9`), absent from al253's BP log. It is in
+  `kMjHash` from the al257 build on.
+- **al257** (`Direct=1`, build a8881117fbfa) [verified: native.json of each job]: PASS on BP, IP and SV.
+
+| Save | Methods compiled | Calls verified | Mismatches | Too large (compiled only) | Code KB | Other thread |
+|---|---|---|---|---|---|---|
+| BP | 2,607 | 1,297,292 | 0 | 3,571,435 | 6,274 | 0 |
+| IP | 2,606 | 1,140,309 | 0 | 3,373,724 | 6,261 | 0 |
+| SV | 2,560 | 1,400,284 | 0 | 3,604,108 | 6,166 | 0 |
+
+  `Direct=1` uses 3.2x the code (the lazy bodies). That is 6.3 MB of the 16 MB pool.
+
+## 10. First A/B (2026-11-06, al258 / al259)
+
+Local queue `jit-ab-local` (not committed): `Install=1 Mode=1 Direct=1 HashGuard=1`, build a8881117fbfa. `--ab monojit`
+with 2-min slices, off-first and on-first per save, 10 min, quiet machine (other CPU 1.3-1.9 %), `[AutShadow]` off.
+Every log has the `monojit: switch 1: N methods patched` / `switch 0` lines, so the on arm ran compiled code
+[verified]. Arm means come from each run's seconds.csv. "threaded - route" is the Sims' script time without the
+route plans they make inside it.
+
+| Run | script (arm-ms) on - off | threaded - route on - off |
+|---|---:|---:|
+| BP off-first | -0.3 | -4.8 |
+| BP on-first | -0.1 | +11.2 |
+| IP off-first | +0.4 | -71.9 |
+| IP on-first (rerun) | -0.0 | -27.3 |
+| SV off-first | -0.2 | +6.0 |
+| SV on-first | +1.2 | +0.7 |
+
+- **No gain measurable** [measured]. The median of the right column is about -2 ms/s; one run swings ±40 ms/s, so
+  this design cannot see a change under about 20 ms/s.
+- **The script column is the wrong number for this lane** [verified: seconds.csv header]. arm-ms's `script` is a
+  ~10 ms/s column. The Mono time the compiler touches is in `threaded` (~520 ms/s without route), so §5's "script is
+  the number" should read "threaded - route".
+- **What to expect** [inferred]. docs/207 §8.3 measured these methods 5-50 % faster offline. On the list's 41 ms/s
+  of sampler self time (monojit.cpp `kMjList`), that is about 4-8 ms/s in game: under this A/B's noise floor and
+  under docs/207 §8.5's 5 ms/s bar. The bar needs the next templates in docs/207 §16.3: `call` holds 36.2 ms/s,
+  `ldfld.vt` 12.9 and `callvirt` 7.3.
+- **One hang** in the first IP on-first run [measured: hang capture]. The sim thread stayed in route post pass 16
+  (`0x64C7C0`, samples at `0x64CF22`-`0x64CF55`) through TailUnlock's `TuS16`, from Route_PlanFromPoint on the
+  houseboat gangway path. No compiled code was on the sim stack (pool `0x06100000`-`0x07100000`). The rerun with the
+  same seed passed. Cause not known; it is not attributed to `[MonoJit]` and not ruled out.
+
+## 11. Long A/B and soak (2026-11-06, al260 / al261)
+
+Build b91e56a23772 (74e7132), `Mode=1 Direct=1 HashGuard=1`, quiet machine (other CPU 1.5 %, TS3W pinned every
+sample). Numbers are the Mono script time of hitch-ab.ts:517 (`taskObjects + threaded + oneShot + script - route -
+rtLock - rtOtherLock - rtJob`), per 1-min slice, on minus off.
+
+**Long A/B** (`--ab monojit`, 1-min slices, 60 min planned per save):
+
+| Save | Minutes (off / on slices) | Mono ms/s off | on | on - off | se | sim iterations/s on - off |
+|---|---|---:|---:|---:|---:|---:|
+| BP | 16 (8 / 9) | 532.8 | 581.8 | +49.0 | 68.7 | -30.9 (se 48.4) |
+| IP | 51 (26 / 26) | 746.9 | 681.3 | -65.6 | 79.7 | -0.0 (se 9.6) |
+| SV | 48 (24 / 25) | 538.9 | 544.6 | +5.7 | 25.6 | -4.3 (se 15.5) |
+
+- **No gain measurable** [measured]. The inverse-variance mean of the three saves is +4.6 ms/s (se 23), so the 95 %
+  range is about -41 to +50 ms/s. §10's 4-8 ms/s gain is inside it and so is no change; even 60 min per save cannot
+  resolve it, because the spread between 1-min slices (sd) is about 90-290 ms/s. The IP harness arm column gives -67.3 (paired slices
+  -69.8, se 73.2), the same as the table.
+- BP and SV stopped early on a career dialog the autopilot has no safe button for (BP: "The president of the studio
+  ...", Actor / Director; SV: "One of your coworkers just started a rumour ..."). The game paused and the fail-fast
+  guard stopped the job. Both are harness gaps, not `[MonoJit]`: the compiler was off in both slices. Their seconds.csv
+  has no arm column (the job ended before the tagging), so the arm of slice s is the `jitSwitch` of ab-native record
+  s+1; that rule gives the harness's number on IP.
+
+**Soak** (60 min compiled per save, `Enabled=1`, no switching):
+
+| Save | Result | jitMethods | code | jitFaults |
+|---|---|---:|---:|---:|
+| BP | **crash at 16 min**: exit `0xC0000409` | 2,784 | 6.7 MB | 0 |
+| IP | PASS, 63.6 min | 2,802 | 6.7 MB | 0 |
+| SV | PASS, 63.6 min | 2,718 | 6.5 MB | 0 |
+
+- **The BP crash** [measured: probe detach `process-terminated`, exit `0xC0000409`]: fail-fast (a /GS cookie check or
+  `abort`). No ts3native crash report and no Windows error event, since a fail-fast skips both. The harness logged it as
+  "unrequested mode exit: household Angelista -> none", one second before the process ended. It is the first
+  `0xC0000409` in every run the probe recorded. Cause not known. `[MonoJit]` is the first suspect, not proven: compiled
+  code writes the interpreter's frame on the native stack, and a write past it would trip exactly this check.
+- The many first-chance access violations in ApexRadiance.asi in these logs also occur in runs without `[MonoJit]`.
+
+**What this means** [inferred]. With the 11-method list the compiler is not worth shipping: its gain is under the
+in-game noise floor, and one soak crash is not explained. Next, if the lane goes on: a crash dump of a compiled soak
+(full dump on fail-fast), then the templates of docs/207 §16.3 to reach a measurable gain.
