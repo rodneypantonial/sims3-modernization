@@ -1,4 +1,4 @@
-// TestEaCrashFixes ([EaCrashFixes] ConformActor + ThumbPose + ThumbPoseBones + GeomBoneIndex + MintDivGuard, eafix.cpp, docs/67 §26.4 / §27.5 /
+// TestEaCrashFixes ([EaCrashFixes] ConformActor + ThumbPose + ThumbPoseBones + GeomBoneIndex + SimNoTexture + MintDivGuard, eafix.cpp, docs/67 §26.4 / §27.5 /
 // §28, docs/213 §8). Included by selftest.cpp.
 // Fake AnimationComponents, controllers and refcounted owners; the patched ask sequence and the after-evaluation stub run
 // for real on copies of the game's bytes.
@@ -157,6 +157,89 @@ static int MdtCase(const void* stub, DWORD a, DWORD b) {
     g_mdtEv[0] = a, g_mdtEv[2] = b, g_mdtKind = 0;
     MdtRun(stub, g_mdtEv + 4, 0x1000);
     return (int)g_mdtKind;
+}
+
+// SimNoTexture: SnStub runs with the game's stack slot [esp+74h] = the first texture; the targets are landing pads. The
+// flags of the stub's compare reach the game's `ja`, so the continue pad records "above".
+static DWORD g_sntSp, g_sntKind, g_sntAbove, g_sntEsi, g_sntEbp, g_sntEdi;
+static __declspec(naked) void SntBack() {
+    __asm {
+        mov g_sntKind, eax
+        mov g_sntEsi, esi
+        mov g_sntEbp, ebp
+        mov g_sntEdi, edi
+        mov esp, g_sntSp
+        pop ebp
+        pop edi
+        pop esi
+        pop ebx
+        ret
+    }
+}
+static __declspec(naked) void SntSkip() { __asm { mov eax, 1 } __asm { jmp SntBack } }
+static __declspec(naked) void SntCont() {
+    __asm {
+        seta al
+        movzx eax, al
+        mov g_sntAbove, eax
+        mov eax, 2
+        jmp SntBack
+    }
+}
+static __declspec(naked) void __cdecl SntRun(void* /*first*/, void* /*esi*/, void* /*ebp*/) {
+    __asm {
+        push ebx
+        push esi
+        push edi
+        push ebp
+        mov g_sntSp, esp
+        mov eax, [esp + 20]
+        mov esi, [esp + 24]
+        mov ebp, [esp + 28]
+        sub esp, 0x80
+        mov [esp + 0x74], eax
+        mov edi, 0x5A5A5A5A
+        jmp SnStub
+    }
+}
+static int SntCase(void* first, void* req, void* second) {
+    g_sntKind = 0, g_sntAbove = 9;
+    SntRun(first, req, second);
+    assert(g_sntEsi == (DWORD)(uintptr_t)req && g_sntEbp == (DWORD)(uintptr_t)second && g_sntEdi == 0x5A5A5A5A);
+    return (int)g_sntKind;
+}
+
+// SimNoTextureAtlas: SaStub runs with [esp+18h] = the first texture, esi = the builder, ebx = the second
+static DWORD g_satEdx;
+static __declspec(naked) void SatCont() {
+    __asm {
+        mov g_satEdx, edx
+        mov eax, 2
+        jmp SntBack
+    }
+}
+static __declspec(naked) void __cdecl SatRun(void* /*first*/, void* /*esi*/, void* /*ebx*/) {
+    __asm {
+        push ebx
+        push esi
+        push edi
+        push ebp
+        mov g_sntSp, esp
+        mov eax, [esp + 20]
+        mov esi, [esp + 24]
+        mov ebx, [esp + 28]
+        sub esp, 0x80
+        mov [esp + 0x18], eax
+        mov ebp, 0x5A5A5A5A
+        mov edi, 0x5A5A5A5A
+        jmp SaStub
+    }
+}
+static int SatCase(void* first, void* builder, void* second) {
+    g_sntKind = 0, g_satEdx = 0;
+    SatRun(first, builder, second);
+    assert(g_sntEsi == (DWORD)(uintptr_t)builder && g_sntEbp == 0x5A5A5A5A && g_sntEdi == 0x5A5A5A5A);
+    return (int)g_sntKind;
 }
 
 // GeomNoMaterial: GnStub runs with ebx = &part.mesh and esi = a fake builder; the two targets are landing pads
@@ -455,6 +538,44 @@ static void TestEaCrashFixes() {
     VirtualFree(ncode, 0, MEM_RELEASE);
     g_gnSkip = gn0[0], g_gnCont = gn0[1], g_gnGet = gn0[2], g_gnBad = 0;
 
+    // ---- SimNoTexture ----
+    const DWORD sn0[2] = {g_snCont, g_snSkip};
+    g_snCont = (DWORD)(uintptr_t)&SntCont, g_snSkip = (DWORD)(uintptr_t)&SntSkip, g_snBad = 0;
+    alignas(4) static u8 img[0x20], snReq[0x20];
+    *(DWORD*)(img + 0x14) = 0x400;
+    assert(SntCase(img, snReq, img) == 2 && g_sntAbove == 0 && g_snBad == 0);  // a normal texture: the game's `ja`, not taken
+    *(DWORD*)(img + 0x14) = 0x801;
+    assert(SntCase(img, snReq, NULL) == 2 && g_sntAbove == 1 && g_snBad == 0);  // too wide: the game's `ja`, taken
+    assert(SntCase(NULL, snReq, NULL) == 1 && g_snBad == 1);                    // missing, second missing too (the crash)
+    assert(SntCase(NULL, snReq, img) == 1 && g_snBad == 2);                     // missing, second present
+    u8* scode = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    memcpy(scode, kSnSite, sizeof(kSnSite));
+    scode[3] = 0x70;  // another frame layout
+    assert(!SnPatch(scode) && scode[0] == 0x8B);
+    scode[3] = 0x74;
+    assert(SnPatch(scode) && scode[0] == 0xE9 && (uintptr_t)scode + 5 + *(LONG*)(scode + 1) == (uintptr_t)&SnStub && scode[10] == 0x90);
+    assert(!SnPatch(scode));  // ours now
+    VirtualFree(scode, 0, MEM_RELEASE);
+    g_snCont = sn0[0], g_snSkip = sn0[1], g_snBad = 0;
+
+    // ---- SimNoTextureAtlas ----
+    const DWORD sa0[2] = {g_saCont, g_saSkip};
+    g_saCont = (DWORD)(uintptr_t)&SatCont, g_saSkip = (DWORD)(uintptr_t)&SntSkip, g_saBad = 0;
+    alignas(4) static u8 saBuilder[0x100];
+    *(DWORD*)(saBuilder + 0xA8) = 0x12345678;
+    assert(SatCase(img, saBuilder, img) == 2 && g_satEdx == 0x12345678 && g_saBad == 0);  // present: the game's load, the game's path
+    assert(SatCase(NULL, saBuilder, NULL) == 1 && g_saBad == 1);                          // missing, second missing too
+    assert(SatCase(NULL, saBuilder, img) == 1 && g_saBad == 2);                           // missing, second present
+    u8* sacode = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    memcpy(sacode, kSaSite, sizeof(kSaSite));
+    sacode[2] = 0xAC;  // another field
+    assert(!SaPatch(sacode) && sacode[0] == 0x8B);
+    sacode[2] = 0xA8;
+    assert(SaPatch(sacode) && sacode[0] == 0xE9 && (uintptr_t)sacode + 5 + *(LONG*)(sacode + 1) == (uintptr_t)&SaStub && sacode[5] == 0x90);
+    assert(!SaPatch(sacode));  // ours now
+    VirtualFree(sacode, 0, MEM_RELEASE);
+    g_saCont = sa0[0], g_saSkip = sa0[1], g_saBad = 0;
+
     // ---- MintDivGuard ----
     static_assert(offsetof(Ts3nCounters, mdOn) == 0x5520 && offsetof(Ts3nCounters, mdDivOverflow) == 0x5524 &&
                       offsetof(Ts3nCounters, mdRemMinus1) == 0x5528 && offsetof(Ts3nCounters, mdSpare) == 0x552C,
@@ -501,6 +622,8 @@ static void TestEaCrashFixes() {
            "GeomBoneIndex in-range bones unchanged, past-the-list indices answered 0, key printed, vtable slot patched once; "
            "GeomNoMaterial meshes with a material unchanged, no material skipped, other types and null meshes unchanged, "
            "site patched once; "
+           "SimNoTexture present texture on the game's compare, missing skipped with registers kept, site patched once; "
+           "SimNoTextureAtlas present texture on the game's load, missing skipped with registers kept, site patched once; "
            "MintDivGuard 18 normal div/rem cases on the game's path, INT_MIN / -1 to the overflow stub, INT_MIN %% -1 = 0, "
            "table patched once: ok\n");
 }

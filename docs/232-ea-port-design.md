@@ -879,3 +879,47 @@ The two manual items, 2026-11-06 on EA 1.69.47, build 3ba8870, one 6-min `Baseli
 - `[MonoFast]` (verified on file bytes and by the live install): `SKIP mintcall` on EA was no other hook. All five handlers are the same code, 0 instruction diffs once absolute operands are normalised; the bytes differ only in those operands, so the Steam hashes could not match. `mintcall.cpp` now holds EA hashes and asm literals behind `TS3A_TABLE`, with a `static_assert` against the table. `CallPath=1`: `OK   mintcall`, `mcReady` 3, no crash. `CallPath=0` installs nothing and is the rc default. Mode 2 was not run; no ms/s measured.
 
 Not checked: other `sub ecx,4; jmp` thunk rows in `ts3addr-ea169.h` may carry the same mapping risk; only these 11 were audited.
+
+### Light on EA (2026-11-06)
+
+An EA player's log had no `diag: mem` lines, so an 830 MB growth in 22 min could not be split. `RC_ZERO_KEYS` in `tools/ea-ini.ts` zeroed `[MemDiag] Light` because the correctness self-test failed on `eaDir` / `eaDirN` (Run 8i notes above). That key is gone, so the rc ini keeps `Light=1`.
+
+- Light runs no self-test [verified: `ApplyMemDiag`], so that failure never reaches a Light line.
+- The fields are not wrong: the free side moved exactly -8.00 MB / -1 block, and the misses are one foreign block on the alloc side [inferred]. The self-test stays as it is; a pause-the-sim version needs a game run.
+- `eaDir` and `eaDirN` keep their `?` mark: `g_mdGameVerified` is false.
+- EA runs 8e to 8k ran Light with no MemDiag fault, and `tools/memory-report.ts` reads a Run 8j log [verified].
+- New field `casN`: entries in the CAS compositor registry, for the growth drafts #284 / #285 show on Steam. EA offsets [verified]: the insert at `0x5EF81A` uses `+0x104`, the map count is its `+0xC` (`0x5EEE2F`), so `[0x1228750]+0x110`. Marked `?`.
+
+### Test build for player reports (2026-11-06, 0.36.152-test1)
+
+A second EA report (Apex 2.18.4, no crash): 1.3M AVs inside Apex, 92 GB decoded from 21 MB of mods, largest free block 1723 to 250 MB while free total fell far less. AllocSites stands down with Apex, so these lines assign ownership without hooks. All read-only, no behaviour change, no counters change.
+
+| Key | Lines | Cost |
+|---|---|---|
+| `[MemDiag] Blockers=1` | `diag: memblk`: top 5 free blocks, bounds of the two largest, top 8 allocations new or grown | inside the sample walk: a few compares per region, one pass over 64K slots, a few name lookups. Memory worker, every 5 min. 256 KB `.bss` |
+| `[Decompress] RepeatLog=1` | `decompress: repeats:` after each `decompress:` line | ~30-60 ns per decode [inferred from the instruction count; the selftest prints a measured figure]. 256 KB `.bss` |
+| always | `crash log:` `t=` uptime and `+N` per address since the last line; `exception` line `t=` | in the print only, not in XcptLog's fast path |
+
+Limits: repeat counts are a lower bound (a different resource can evict a slot) and "repeat" means same sizes and 24 sampled bytes [inferred same resource]. A private region has no owner name: `diag: memblk` gives size and neighbours only.
+
+**test2 (0.36.152-test2).** Three changes after the first player log on test1 (21 min, no crash): foreign AVs take no slot of the 16 (docs/172 §7); `[CrashReport] Enabled=1` in the test ini, because with the 16 gone and that filter off a late crash would have left no line (local text file only); `decompress: lru lower bound` after the repeats line, measure only: what a decoded-resource cache of 32-512 MB would have served. Each count is a lower bound: repeats advance the distance clock and an evicted slot counts as unique. A cache uses address space, so this sizes a possible worker-CPU gain, not an Error 12 fix. +256 KB `.bss` with RepeatLog=1.
+
+`ts3native-ea169-test.ini` (CI artifact) = the rc ini + `tools/ea-ini.ts` `TEST_SET`; `ea-ini --self-check` proves it differs only there. Counters layout and version field unchanged (v163), so v0.2.7's `ts3fixes.package` matches.
+
+Table regen note (2026-11-06): `tools/port-run.ts` takes the EA literals `MC_ASM_TABLE` and `MC_ASM_FORCEJIT` in `mintcall.cpp` for Steam addresses, which adds two false rows (`0x00E598D0` as a zero row, `0x00E563CD`) and would flag `mintcall.cpp`. They are deleted by hand after a regen, until the scan skips the `#ifdef TS3A_TABLE` block.
+
+### PR 293 live runs (2026-11-06, asi 0.36.168a, CI 42199751270)
+
+Bugfix branch `bugfix/ea169-port-crash-fixes`, commit 84e097c, asi `3495a3e5c282`, CI's rc ini, `Baseline-SV-Spring`, audio muted, correctness only.
+
+| Job | Config | Result |
+|---|---|---|
+| rp-off | `SimNoTextureRepro=1`, `SimNoTexture=0` | crash as designed: `exception C0000005 at 0x005EC891 (info 00000000 00000014)` at t=136 |
+| rp-on | `SimNoTextureRepro=1`, `SimNoTexture=1` | PASS, soak 3 min, real quit, 0 script errors, `ea fix: SimNoTexture #1` and later hit lines, 1636-1652 MB free |
+| soak | rc ini, 10 min, one real save | all game checks PASS: `save: end #1 result 0 after 8000 ms`, real quit, 0 script errors. Queue verdict FAIL only on a wrong job line: `decompress: lru lower bound` needs `RepeatLog=1`, which the rc ini keeps at 0 |
+| apex | rc ini + patched Apex 2.17.1, 10 min, one real save | PASS: `save: end #1 result 0 after 6890 ms`, real quit, 0 script errors |
+
+- OK/SKIP lines against `ea-group-all` (0.36.168): nothing lost, 0 SKIP. Three new OK lines: `SimNoTexture` and the two `idle check RO site C` lines, which left the zero list after that run. Apex run: the same 179 lines.
+- `no image` AV seen on both runs at one address per run, with its lines kept in the logs (Apex run: `0x04A27CC2`, region type 0x40000, thread start no image, `igc32.dll` on the stack).
+- First-chance AVs in our module at exit, after `diag: exit`, in every run with this build: registers show the SimService slot, so this is `casN` in MemDiag at exit, inside its `__try` [inferred from eax and the guarded reads]. The log goes on after them.
+- The sibling key `SimNoTextureAtlas` stayed off and did not run (docs/67 34.6).

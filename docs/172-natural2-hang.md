@@ -152,6 +152,8 @@ The cost: the slots are gone before the world loads, so a later TS3W fault gets 
 - Up to 8 such addresses are remembered. A repeat at a remembered address takes no slot and is only counted. The minute counters line prints the total and the count per address when the total has moved, for example `crash log: 100294 more AVs at logged addresses in other modules (not logged): 678F02E4 x… 678F0280 x…`.
 - TS3W faults, faults with `eip` outside any image (a wild call into the heap) and every other code are logged as before, up to the same 16.
 
+**Change (0.36.152-test2).** A player log (EA, Apex 2.18.4) had 9 foreign addresses: the ninth was not in the 8-entry table, so each hit took a slot until all 16 were gone at t=235 of 1291 s, and no later exception could get a line. Foreign AVs now have their own table of 32 lines and take no slot, so the 16 are left for the game's own faults, wild calls and other codes. Past the table they are only counted (`past the table N` on the minute line).
+
 Selftest: `TestCrashReport` checks the name for a kernel32 address, that a heap address is not named, that the second AV at an address takes no slot and is counted, and that a new address gets its line.
 
 **In game [verified, 3 sessions on the same install, Apex Radiance 2.17.1, CI builds of this change, 15-20 minutes each].** Each named address got one line, and the remaining slots stayed free. The minute line showed what the old cap had hidden:

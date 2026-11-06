@@ -1,6 +1,7 @@
 // EA app 1.69.47 ini variants from the shipped Steam ini (build.yml native-ea169; docs/232 §5 rows 6-7):
 //   ts3native-ea169.ini     minimal: every integer key 0 except the ALLOW / ALLOW_ON sections (env, space separated)
 //   ts3native-ea169-rc.ini  release candidate: shipped values kept for every section that is clean on EA, zeroed otherwise
+//   ts3native-ea169-test.ini  player test build: the rc ini plus TEST_SET
 // Clean = none of the section's source files (tools/ini-sections.json, plus the cpp files that include a flagged .h) has
 // a `// unresolved` row in ts3addr-ea169.h or a `// bytes-bad` row in ts3bytes-ea169.h, it is not on the always-off list, and
 // none of its dependencies (DEPENDS, from the "Needs ..." notes in ts3native.ini and the SKIP lines in the cpp files) is zeroed.
@@ -20,11 +21,9 @@ export const EA_ONLY = new Set(["EaDiag"]);
 export const ALWAYS_OFF: Record<string, string> = {
     EaDiag: "EA-only diagnostics, log only, minimal ini only", Verify: "bit-compares against Steam code",
 };
-// single keys the rc ini zeroes in a kept section: on in the Steam ini, not yet run on EA ([MemDiag] Light=1 acts with
-// Enabled=0; it stays off on EA, as before docs/238, until a test run turns it on)
+// single keys the rc ini zeroes in a kept section: on in the Steam ini, not yet run on EA
 // The other rows came with the merge of main (2026-11-06): on in the Steam ini, off on the port, never run on EA. Each leaves here after its EA smoke.
 export const RC_ZERO_KEYS: Record<string, string[]> = {
-    MemDiag: ["Light"],
     // addresses mapped by the table regen, never run on EA: mapped is not tested, so they stay off until their smoke
     UnseenRootMotion: ["Mode"],
 };
@@ -42,8 +41,11 @@ const unresolvedRows = (addrHdr: string) => [...addrHdr.matchAll(/^\/\/ unresolv
 export const keysOff = (addrHdr: string) => { const un = new Set(unresolvedRows(addrHdr).map((m) => parseInt(m[1], 16))); return new Set(Object.keys(KEY_ADDRS).filter((k) => KEY_ADDRS[k].some((a) => un.has(a)))); };
 // EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
 // ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
+// SimNoTexture: seen in a player crash, deterministic repro, the fix passes it (docs/67 s34.5).
 // ThreadStack.Skip: SimulatorThread_Proc, a runtime string the address table cannot rewrite; the Steam value left the EA sim thread capped.
-export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360" };
+export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360", "EaCrashFixes.SimNoTexture": "1" };
+// the player test build's settings on top of the rc ini (docs/232 "Test build"): read-only logging + the crash guard
+export const TEST_SET: Record<string, string> = { "MemDiag.Blockers": "1", "Decompress.RepeatLog": "1", "CrashReport.Enabled": "1" };
 // a file that only serves one key group of a section (GC: memexp.cpp reads SqrtHeapLimit, shipped 0) does not count for that section
 export const IGNORE_FILE: Record<string, string[]> = { GC: ["memexp.cpp"] };
 const RG = ["RouteGate", "RouteAsync"];
@@ -120,11 +122,16 @@ function selfCheck() {
     const st = Object.fromEntries(r.map((x) => [x.section, x.state]));
     ok(st.A === "zeroed" && st.B === "kept" && st.Verify === "zeroed" && st.E === "zeroed" && st.RouteGate === "zeroed" && st.AvoidRO === "zeroed" && st.GC === "kept", "plan " + JSON.stringify(st));
     ok(render(["[A]", "Enabled=1", "Path=x", "[B]", "Enabled=0"], (s) => s === "A", (s) => s === "B") === "[A]\r\nEnabled=0\r\nPath=x\r\n[B]\r\nEnabled=1", "render");
-    ok(render(["[MemDiag]", "Enabled=0", "Light=1", "[B]", "Light=1"], () => false, () => false, rcZeroKey) === "[MemDiag]\r\nEnabled=0\r\nLight=0\r\n[B]\r\nLight=1", "render rc key");
     ok(!["SteerRO", "FpRebuildLock", "Watchpoint", "RouteToObjRO", "MemDiag"].some((s) => ALWAYS_OFF[s]), "docs/238 sections allowed");
     ok(render(["[GC]", "Enabled=1", "BlackListCapKB=0", "[Z]", "BlackListCapKB=0"], () => false, () => false, undefined, EA_SET) === "[GC]\r\nEnabled=1\r\nBlackListCapKB=1024\r\n[Z]\r\nBlackListCapKB=0", "render set");
     ok(/^BlackListCapKB=1024\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini must carry BlackListCapKB=1024");
+    ok(/^SimNoTexture=1\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini turns SimNoTexture on");
     ok(/^Skip=0x76C360\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini exempts the EA sim thread");
+    const rc = render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET);
+    ok(/^Light=(\d)/m.exec(rc.slice(rc.indexOf("\r\n[MemDiag]\r\n")))?.[1] === "1", "EA rc ini keeps [MemDiag] Light=1");
+    const test = render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, { ...EA_SET, ...TEST_SET }).split("\r\n");
+    const base = rc.split("\r\n"), changed = test.filter((l, i) => l !== base[i]);
+    ok(test.length === base.length && [...changed].sort().join() === Object.entries(TEST_SET).map(([k, v]) => k.split(".")[1] + "=" + v).sort().join(), "test ini differs from rc only by TEST_SET: " + changed);
     console.log("ea-ini self-check: ok");
 }
 
@@ -146,6 +153,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         console.log(`minimal ini: on = ${allow.map((s) => "[" + s + "]").join(" ")}; ${bad.size} source files have unresolved or bytes-bad rows`);
         const plan = rcPlan(sections, enabled, map, bad), zeroed = new Set(plan.filter((r) => r.state === "zeroed").map((r) => r.section));
         writeFileSync(join(out, "ts3native-ea169-rc.ini"), render(ini, (s) => zeroed.has(s), () => false, (s, k) => rcZeroKey(s, k) || zeroKey(s, k), EA_SET));
+        writeFileSync(join(out, "ts3native-ea169-test.ini"), render(ini, (s) => zeroed.has(s), () => false, (s, k) => rcZeroKey(s, k) || zeroKey(s, k), { ...EA_SET, ...TEST_SET }));
         for (const r of plan) console.log(`rc [${r.section}] shipped Enabled=${r.shipped}: ${r.state}${r.state === "zeroed" ? " (" + r.reason + ")" : ""}`);
         console.log(`keys off for unresolved rows: ${[...off].join(" ") || "none"}`);
         console.log(`rc ini: ${plan.length - zeroed.size} sections kept as shipped (Enabled=1: ${plan.filter((r) => r.state === "kept" && r.shipped === "1").map((r) => r.section).join(" ")}), ${zeroed.size} zeroed`);

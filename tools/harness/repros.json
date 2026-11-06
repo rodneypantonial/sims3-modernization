@@ -53690,5 +53690,20 @@
       "match": "IMAGEGUARD REJECT"
     },
     "switches": []
+  },
+  {
+    "id": "ea-sim-no-texture",
+    "bug": "docs/67 §34 (crash Z, EA player + docs/05 vanilla Steam): SimService_Process 0x5EBC50 reads the first composite texture's width at 0x5EBE31 with no null check; the texture is missing when its create in state 9 failed",
+    "fix": "ts3native 0.36.152a [EaCrashFixes] SimNoTexture=1 (eafix.cpp, docs/67 §34.4): a missing texture takes EA's own path for a texture too wide",
+    "save": "Baseline-BP",
+    "note": "Verified on EA 1.69.47 (2026-11-06, docs/232 PR 293); not run on Steam. Set [EaCrashFixes] SimNoTextureRepro=1 in the ini (the first Sim build fails its texture create). Off arm SimNoTexture=0 must crash at 0x5EBE31 (EA 0x5EC891). On arm SimNoTexture=1 must reach the world.",
+    "expect": "off: AV read 0x14 at 0x5EBE31 at the first Sim build. on: no crash, 'ea fix: SimNoTexture #1' in ts3native.log, Sims drawn without their composite",
+    "steps": [],
+    "watch": {
+      "kind": "log",
+      "file": "ts3native.log",
+      "match": "ea fix: SimNoTexture"
+    },
+    "switches": []
   }
 ]
