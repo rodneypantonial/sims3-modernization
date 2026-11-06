@@ -2,6 +2,31 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
+## v0.2.9 (DRAFT, not released, no game test yet)
+
+Hotfix on top of v0.2.8, Steam and the EA app 1.69.47: same fixes, same switches.
+
+### Download
+
+- `ts3fixes.package`: new in this release, the same file for Steam and the EA app. Replace it together with the files below: the new routing behaviour needs both.
+- `ts3native-v0.2.9.zip` (Steam): `ts3native.asi` and `ts3native.ini`; replace both.
+- `ts3native-ea169-v0.2.9.zip` (EA app 1.69.47): `ts3native.asi` and `ts3native.ini`; replace both.
+- Both logs show `ts3native 0.36.168c`; the EA log also shows `release: v0.2.9 EA`.
+
+### Fixed
+
+- **Your Sims saying they can't get there on their own lot.** To stop long routes from freezing the game, v0.2.8 gave up on a route after a fraction of a second, and that also hit the Sims you are playing or looking at. Go Here, the toilet, the fridge or leaving for work could fail on a path that exists. Sims in your household and Sims you can see now get all the time they need. Sims you can't see keep the short limit, so a busy town stays smooth.
+- **Crash after the game ran out of memory on a long play session.** The game's script memory could keep growing while large free blocks sat unused, until nothing was left. It now reuses those blocks first.
+
+### Changed
+
+- **A very long route by a Sim you can see can pause the game for a moment.** That is the price of the fix above, and it is how the unmodded game behaves. A route that runs for 10 seconds is stopped, so a broken route can't hang the game. Both limits are in `ts3native.ini`: `KdExemptSeen` and `KdSeenCeilMs`.
+- **Better logs for route problems.** `ts3native.log` now says which route failed and why, so a bug report needs only the log. The lines stay small and limited in number.
+
+### Tested
+
+- Not tested in game yet.
+
 ## v0.2.8 (2026-11-06)
 
 One release for Steam and the EA app 1.69.47: same source, same fixes, same switches. It is bigger than a hotfix: besides the crash fixes it turns on newer routing changes on both versions. They were tested for stability, not for speed. Thanks to Dalexlol (GitHub `alexvixell35-stack`) for PRs #212 and #271 and the other fixes imported in #272.
