@@ -3,13 +3,14 @@
 // after userdiag.cpp (it reuses UdMemStat / UdMemWalk / UdMemSample / the memory worker; no second walk code).
 //   diag: mem #4 load ev=travel,world-switch priv=1851 wPriv=1830 wCom=2167 free=1646 big=1525? img=310? map=120 stkRes=140
 //     stkCom=9.1? miRes=320 miCom=210 eaDir=22.0? eaDirN=3? eaCom=612? eaRes=640? eaCoreN=46? rp=20.1 pl=96.0? sp=7.0? gcHeap=360? gcFree=151? gcN=812?
-//     rc=388? rcCold=14.2? rcBudget=200? rcN=41000? anim=4.1? rest=402? t=734   (t = seconds since the game started)
+//     rc=388? rcCold=14.2? rcBudget=200? rcN=41000? anim=4.1? rest=402? casN=29000? t=734   (t = seconds since the game started)
 // MB unless the key ends in N (count) or is gcN. "-" = not readable (no game, feature off). Suffix "?" = no validation has
 // passed for this field (read from a documented address, unproven), "!" = it failed this session's self-test; no suffix =
 // a self-test check passed (host selftest for walk / OS / routesnap fields, or this session's game self-test).
 // eaCom/eaRes/eaCoreN: EA GeneralAllocator cores (MemoryMan heap + the script heap when it is a separate object), committed /
 // reserved MB and count (docs/209 #96). rc is cache bytes, not 32-bit address space: under DXVK most texture data does not
 // sit in TS3W's address space (docs/40 §4-5), so rc falling does not mean free space rising by as much.
+// casN: entries in the CAS texture compositor registry (hash map at [0x11CE6A0]+0x104, count +0x110).
 // Validation in docs/191 "Goal: a correct memory measuring tool first".
 #include <initializer_list>
 
@@ -21,7 +22,7 @@ static const DWORD kMdSelfTestDelayMs = 30000;
 
 enum {
     MD_PRIV, MD_WPRIV, MD_WCOM, MD_FREE, MD_BIG, MD_IMG, MD_MAP, MD_STKRES, MD_STKCOM, MD_MIRES, MD_MICOM, MD_EADIR, MD_EADIRN,
-    MD_EACOM, MD_EARES, MD_EACOREN, MD_RP, MD_PL, MD_SP, MD_GCHEAP, MD_GCFREE, MD_GCN, MD_RC, MD_RCCOLD, MD_RCBUD, MD_RCN, MD_ANIM, MD_REST, MD_N
+    MD_EACOM, MD_EARES, MD_EACOREN, MD_RP, MD_PL, MD_SP, MD_GCHEAP, MD_GCFREE, MD_GCN, MD_RC, MD_RCCOLD, MD_RCBUD, MD_RCN, MD_ANIM, MD_REST, MD_CASN, MD_N
 };
 // check: 'H' = a check in the host selftest (selftest-all, every build) and in the game self-test, 'G' = game self-test
 // only (needs the EA heap), 0 = no check: unvalidated until docs/191's later modules add one.
@@ -31,7 +32,7 @@ static const MdDef kMd[MD_N] = {
     {"map", 0, 'H'},    {"stkRes", 0, 'H'}, {"stkCom", 0, 0},  {"miRes", 0, 'H'},   {"miCom", 0, 'H'}, {"eaDir", 0, 'G'},
     {"eaDirN", 1, 'G'}, {"eaCom", 0, 0},    {"eaRes", 0, 0},     {"eaCoreN", 1, 0}, {"rp", 0, 'H'},     {"pl", 0, 0},      {"sp", 0, 0},        {"gcHeap", 0, 0},  {"gcFree", 0, 0},
     {"gcN", 1, 0},      {"rc", 0, 0},       {"rcCold", 0, 0},  {"rcBudget", 0, 0},  {"rcN", 1, 0},     {"anim", 0, 0},
-    {"rest", 0, 0},
+    {"rest", 0, 0},     {"casN", 1, 0},
 };
 // 'G' fields count as validated in every session once mem-diag-verify.json passed on this build (set true then).
 static bool g_mdGameVerified = false;  // not const: no constant-condition warning
@@ -47,6 +48,8 @@ static const DWORD* g_mdGc[3] = {(const DWORD*)(uintptr_t)TS3A(0x012225A0), (con
 // I-130-7: a dedicated heap or the same object; the same object is counted once)
 static const u8* const* g_mdEaCoreSlot[2] = {(const u8* const*)(uintptr_t)TS3A(0x011CB864), (const u8* const*)(uintptr_t)TS3A(0x011D4BC8)};
 
+static const u8* const* g_mdCasSlot = (const u8* const*)(uintptr_t)TS3A(0x011CE6A0);  // SimService (+0x104 compositor registry)
+
 struct MdVals { double v[MD_N]; bool have[MD_N]; };
 
 static bool MdEaDirect(DWORD* bytes, DWORD* count) {  // heap +0x488 count / +0x48C bytes of direct-mapped blocks
@@ -61,6 +64,14 @@ static bool MdEaDirect(DWORD* bytes, DWORD* count) {  // heap +0x488 count / +0x
 // Cores (AddCore 0x4E4E30, exe bytes): a ring through core +0x18 (next) whose head node is heap +0x448 (first core =
 // [heap+0x460]); core +4 committed bytes, +8 reserved bytes. Read without the heap lock like eaDir: a core added or
 // trimmed mid-walk costs one sample's accuracy; a broken ring ends at the cap or the SEH guard (no field then).
+static bool MdCasCount(DWORD* n) {
+    __try {
+        const u8* svc = *g_mdCasSlot;
+        if (!svc) return false;
+        *n = *(const volatile DWORD*)(svc + 0x110);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
 static bool MdEaCores(double* com, double* res, DWORD* n) {
     __try {
         *com = *res = 0, *n = 0;
@@ -122,6 +133,8 @@ static void MdValues(const UdMemStat& s, u64 privUsage, MdVals& x) {
     if (MdEaCores(&ec, &er, &en)) set(MD_EACOM, ec * MB), set(MD_EARES, er * MB), set(MD_EACOREN, en);
     const Ts3nCounters& k = ts3native_counters;
     set(MD_RP, k.rpKB / 1024.0), set(MD_PL, k.plKB / 1024.0), set(MD_SP, k.spKB / 1024.0);
+    DWORD cas = 0;
+    if (MdCasCount(&cas)) set(MD_CASN, cas);
     if (MdGc(g)) set(MD_GCHEAP, g[0] * MB), set(MD_GCFREE, g[1] * MB), set(MD_GCN, g[2]);
     if (MdRc(r)) {
         set(MD_RC, r[0] * MB), set(MD_RCCOLD, r[1] * MB), set(MD_RCBUD, r[2] * MB), set(MD_RCN, r[3]);
@@ -493,6 +506,113 @@ static DWORD MdWorkerPoll() {
     return INFINITE;
 }
 
+// Blockers (0.36.152-test1, docs/232 "Test build"): who splits the address space, for reports where AllocSites stands down
+// (Apex Radiance). Runs inside the sample's own VirtualQuery walk, so it works with any allocator and needs no hook. Lines
+// after each diag: mem line (N = that line's number; KB for regions, MB elsewhere):
+//   diag: memblk #N free MB: <size> at <base>, ...                     the five largest free blocks
+//   diag: memblk #N gap 1|2 <MB> at <base>: below <region>; above <region>   who bounds the two largest
+//   diag: memblk #N grew: <alloc base> <type> <new|+MB> (res R com C) [file], ...   top 8 allocations new or larger since the last sample
+// region = <base> +<KB> KB private|mapped|image reserve|commit alloc <allocation base> [file]. Reads only.
+struct MbReg { DWORD base, size, alloc, type, state; };
+struct MbGap { DWORD base, size; MbReg lo, hi; };
+struct MbGrew { DWORD base, res, com, type; LONG delta; bool fresh; };
+static bool g_mbOn;
+static volatile LONG g_mbBusy;  // the walk's state below has one owner: a second sample at the same time skips these lines
+static MbGap g_mbTop[5];
+static MbGrew g_mbGrew[8];
+static MbReg g_mbLast;
+static int g_mbGaps, g_mbGrown;
+static DWORD g_mbBase, g_mbRes, g_mbCom, g_mbType, g_mbNext;
+static DWORD g_mbPrev[0x10000];  // bytes of the allocation based here at the last sample, by base >> 16 (64 KB granularity)
+
+static bool MbBegin() {
+    if (!g_mbOn || InterlockedCompareExchange(&g_mbBusy, 1, 0)) return false;
+    g_mbGaps = g_mbGrown = 0, g_mbBase = g_mbRes = g_mbCom = g_mbNext = 0, g_mbLast = {};
+    return true;
+}
+static void MbGroupEnd() {  // the walk is in address order: slots skipped since the last group are allocations now gone
+    if (!g_mbBase) return;
+    const DWORD i = g_mbBase >> 16;
+    for (; g_mbNext < i; g_mbNext++) g_mbPrev[g_mbNext] = 0;
+    g_mbNext = i + 1;
+    const LONG delta = (LONG)(g_mbRes - g_mbPrev[i]);
+    const bool fresh = !g_mbPrev[i];
+    g_mbPrev[i] = g_mbRes;
+    if (delta > 0) {
+        int at = g_mbGrown;
+        while (at > 0 && g_mbGrew[at - 1].delta < delta) at--;
+        if (at < 8) {
+            const int last = g_mbGrown < 8 ? g_mbGrown++ : 7;
+            for (int j = last; j > at; j--) g_mbGrew[j] = g_mbGrew[j - 1];
+            g_mbGrew[at] = {g_mbBase, g_mbRes, g_mbCom, g_mbType, delta, fresh};
+        }
+    }
+    g_mbBase = g_mbRes = g_mbCom = 0;
+}
+static void MbRegion(const MEMORY_BASIC_INFORMATION& m) {
+    const DWORD base = (DWORD)(uintptr_t)m.BaseAddress, size = (DWORD)m.RegionSize, alloc = (DWORD)(uintptr_t)m.AllocationBase;
+    if (m.State == MEM_FREE) {
+        MbGroupEnd();
+        int at = g_mbGaps;
+        while (at > 0 && g_mbTop[at - 1].size < size) at--;
+        if (at < 5) {
+            const int last = g_mbGaps < 5 ? g_mbGaps++ : 4;
+            for (int j = last; j > at; j--) g_mbTop[j] = g_mbTop[j - 1];
+            g_mbTop[at] = {base, size, g_mbLast, {}};
+        }
+        return;
+    }
+    if (alloc != g_mbBase) MbGroupEnd();
+    g_mbBase = alloc, g_mbRes += size, g_mbType = m.Type;
+    if (m.State == MEM_COMMIT) g_mbCom += size;
+    g_mbLast = {base, size, alloc, m.Type, m.State};
+    for (int i = 0; i < g_mbGaps; i++)
+        if (g_mbTop[i].base + g_mbTop[i].size == base) g_mbTop[i].hi = g_mbLast;
+}
+static void MbEnd() {
+    MbGroupEnd();
+    for (; g_mbNext < 0x10000; g_mbNext++) g_mbPrev[g_mbNext] = 0;
+}
+static const char* MbType(DWORD t) { return t == MEM_IMAGE ? "image" : t == MEM_MAPPED ? "mapped" : "private"; }
+static void MbFile(char (&out)[44], DWORD alloc, DWORD type) {  // " name" of a module or mapped file, last path part, UTF-8; "" when none
+    out[0] = 0;
+    wchar_t w[MAX_PATH];
+    if (type == MEM_PRIVATE || !K32GetMappedFileNameW(GetCurrentProcess(), (void*)(uintptr_t)alloc, w, MAX_PATH)) return;
+    const wchar_t* n = wcsrchr(w, L'\\');
+    out[0] = ' ';
+    if (!WideCharToMultiByte(CP_UTF8, 0, n ? n + 1 : w, -1, out + 1, sizeof(out) - 2, NULL, NULL)) out[sizeof(out) - 2] = 0;  // too long: cut
+}
+static int MbRegText(char* d, int room, const MbReg& r) {
+    if (!r.size) return sprintf_s(d, room, "nothing");
+    char f[44];
+    MbFile(f, r.alloc, r.type);
+    return sprintf_s(d, room, "0x%08lX +%lu KB %s %s alloc 0x%08lX%s", r.base, r.size >> 10, MbType(r.type), r.state == MEM_COMMIT ? "commit" : "reserve", r.alloc, f);
+}
+static void MbLog() {
+    const LONG n = g_mdN;
+    char l[1200];
+    int at = sprintf_s(l, "diag: memblk #%ld free MB:", n);
+    for (int i = 0; i < g_mbGaps; i++) at += sprintf_s(l + at, sizeof(l) - at, "%s %lu at 0x%08lX", i ? "," : "", g_mbTop[i].size >> 20, g_mbTop[i].base);
+    Log("%s", l);
+    for (int i = 0; i < 2 && i < g_mbGaps; i++) {
+        at = sprintf_s(l, "diag: memblk #%ld gap %d %lu MB at 0x%08lX: below ", n, i + 1, g_mbTop[i].size >> 20, g_mbTop[i].base);
+        at += MbRegText(l + at, sizeof(l) - at, g_mbTop[i].lo);
+        at += sprintf_s(l + at, sizeof(l) - at, "; above ");
+        MbRegText(l + at, sizeof(l) - at, g_mbTop[i].hi);
+        Log("%s", l);
+    }
+    at = sprintf_s(l, "diag: memblk #%ld grew:", n);
+    for (int i = 0; i < g_mbGrown; i++) {
+        const MbGrew& g = g_mbGrew[i];
+        char f[44], d[20] = "new";
+        MbFile(f, g.base, g.type);
+        if (!g.fresh) sprintf_s(d, "+%.1f", g.delta / 1048576.0);
+        at += sprintf_s(l + at, sizeof(l) - at, "%s 0x%08lX %s %s (res %.1f com %.1f)%s", i ? "," : "", g.base, MbType(g.type), d, g.res / 1048576.0, g.com / 1048576.0, f);
+    }
+    Log("%s", l);
+    InterlockedExchange(&g_mbBusy, 0);
+}
+
 // Light (0.36.79, docs/191 "Player memory lines", release default on): the same "diag: mem" / "diag: memsus" lines (numbers
 // only, reads only) at world load / travel arrival, save start / end, exit and every 5 min of play, without the self-test.
 // Enabled=1 = the full tool for correctness runs (SelfTest allowed); Enabled=0 Light=0 = off.
@@ -503,6 +623,7 @@ static void ApplyMemDiag(const wchar_t* ini) {
     g_mdOn = full || g_mdLight;
     g_mdSelfTest = full && GetPrivateProfileIntW(L"MemDiag", L"SelfTest", 0, ini) > 0 ? 1 : 0;
     g_msSelfTest = g_mdSelfTest;  // the managed suspect-counter self-test (ts3fixes MemSuspects.cs) runs in the same runs
+    g_mbOn = g_mdOn && GetPrivateProfileIntW(L"MemDiag", L"Blockers", 0, ini) > 0;
     if (g_mdOn) g_udMemPeriodMs = 5 * 60 * 1000;  // set before the memory worker starts (userdiag.cpp)
     if (g_mdOn) Log("mem diag %s (docs/191): diag: mem + memsus lines at each memory at line, every 5 min of play%s", g_mdLight ? "light" : "on",
                     g_mdSelfTest ? "; self-test 30 s after the first world load (correctness runs only: leaks 8 MB on purpose)" : "");

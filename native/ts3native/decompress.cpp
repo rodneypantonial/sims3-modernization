@@ -209,6 +209,43 @@ static int ThreadSlot(LONG tid) {
     return -1;
 }
 
+// [Decompress] RepeatLog (0.36.152-test1, docs/232 "Test build"): is the same resource decoded again and again? Direct-mapped
+// table of 64K 32-bit fingerprints, one lock-free exchange per call, no heap. Key = compressed size, output size, 24 sampled
+// input bytes. A repeat count is a lower bound: a different resource in the slot evicts the entry.
+static volatile LONG g_drTab[1 << 16];  // 256 KB .bss, touched only with RepeatLog=1
+static bool g_drOn;
+struct DrSum { LONG uN, rN; LONG64 uB, rB; };
+static DrSum g_dr, g_drLast;  // cumulative; at the last line
+
+// LRU sizing (0.36.152-test2, measure only, nothing is cached): would a decoded-resource cache of this size have served the repeat?
+// g_drAt = output KB clock at the slot's last decode; a repeat's distance is the KB decoded since then. Repeats advance the clock
+// too and an evicted slot counts as unique, so each hit count is a lower bound for a real LRU of that size.
+static const int kDrLruMB[] = {32, 64, 128, 256, 512};
+enum { DR_LRU = sizeof(kDrLruMB) / sizeof(kDrLruMB[0]) };
+static volatile LONG g_drAt[1 << 16], g_drClockKB;  // 256 KB .bss more, touched only with RepeatLog=1
+static volatile LONG g_drLruN[DR_LRU];
+static volatile LONG64 g_drLruB[DR_LRU];
+static void DrLruTally(LONG agoKB, DWORD out) {
+    for (int i = 0; i < DR_LRU; i++)
+        if (agoKB >= 0 && agoKB < kDrLruMB[i] * 1024) InterlockedIncrement(&g_drLruN[i]), InterlockedAdd64(&g_drLruB[i], out);
+}
+
+static bool DrRepeat(const u8* src, DWORD len, DWORD out) {
+    DWORD w[6] = {};
+    __try {  // len is the caller's claim: the decoder may stop before it, so a sample at its end can be past the buffer
+        if (len < 24) memcpy(w, src, len);
+        else memcpy(w, src, 8), memcpy(w + 2, src + len / 2 - 4, 8), memcpy(w + 4, src + len - 8, 8);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    DWORD a = len * 0x9E3779B1u ^ out, b = out * 0x85EBCA6Bu ^ len;
+    for (DWORD x : w) a = (a ^ x) * 0x9E3779B1u, b = ((b + x) * 0xC2B2AE35u) ^ (b >> 15);
+    const LONG fp = (LONG)(b | 1);  // 0 = empty slot
+    const DWORD slot = a >> 16;
+    const LONG now = InterlockedExchangeAdd(&g_drClockKB, (LONG)(out >> 10)), was = InterlockedExchange(&g_drAt[slot], now);
+    const bool rep = InterlockedExchange(&g_drTab[slot], fp) == fp;
+    if (rep) DrLruTally(now - was, out);
+    return rep;
+}
+
 static void LogDecompress() {
     const DecompressStats& c = g_dstat;
     const Ts3nCounters& k = ts3native_counters;
@@ -219,6 +256,16 @@ static void LogDecompress() {
     for (int i = 0; i < 8 && c.tid[i]; i++)
         Log("  thread %ld%s: calls %ld out %lld MB time %lld ms", c.tid[i], c.tid[i] == c.mainTid ? " (main)" : "", c.tcalls[i],
             c.tbytes[i] >> 20, c.tticks[i] * 1000 / f);
+    if (g_drOn) {
+        const DrSum d = g_dr;
+        Log("decompress: repeats: unique %ld calls %lld MB, repeat %ld calls %lld MB; since last line unique %ld calls %lld MB, repeat %ld calls %lld MB",
+            d.uN, d.uB >> 20, d.rN, d.rB >> 20, d.uN - g_drLast.uN, (d.uB - g_drLast.uB) >> 20, d.rN - g_drLast.rN, (d.rB - g_drLast.rB) >> 20);
+        g_drLast = d;
+        char by[DR_LRU * 40];
+        for (int i = 0, len = 0; i < DR_LRU; i++)
+            len += sprintf_s(by + len, sizeof(by) - len, " %d MB %ld calls %lld MB,", kDrLruMB[i], g_drLruN[i], g_drLruB[i] >> 20);
+        Log("decompress: lru lower bound, served of the repeats by size:%s total out %ld MB", by, g_drClockKB >> 10);
+    }
 }
 
 static int __cdecl RefpackHook(u8* dst, DWORD cap, const u8* src, DWORD len) {
@@ -246,6 +293,11 @@ static int __cdecl RefpackHook(u8* dst, DWORD cap, const u8* src, DWORD len) {
     const LONG64 f = g_dqpf.QuadPart ? g_dqpf.QuadPart : 1;
     InterlockedIncrement(&k.decompressCalls);
     if (!r) InterlockedIncrement(&k.decompressFails);
+    if (g_drOn && r > 0) {
+        const bool rep = DrRepeat(src, len, (DWORD)r);
+        InterlockedIncrement(rep ? &g_dr.rN : &g_dr.uN);
+        InterlockedAdd64(rep ? &g_dr.rB : &g_dr.uB, r);
+    }
     CeRec(CE_DECOMP, (DWORD)(uintptr_t)dst, r > 0 ? (DWORD)r : 0, cap);  // docs/186 §8
     k.decompressInMB = (LONG)(InterlockedAdd64(&c.inBytes, len) >> 20);
     k.decompressOutMB = (LONG)(InterlockedAdd64(&c.outBytes, r > 0 ? r : 0) >> 20);
@@ -298,6 +350,7 @@ static bool ApplyDecompress(const wchar_t* ini) {
     c.decompressMode = GetPrivateProfileIntW(L"Decompress", L"Mode", 1, ini) ? 1 : 0;
     c.decompressVerify = GetPrivateProfileIntW(L"Decompress", L"Verify", 0, ini) ? 1 : 0;
     g_dstat.mainTid = (LONG)GetCurrentThreadId();
+    g_drOn = GetPrivateProfileIntW(L"Decompress", L"RepeatLog", 0, ini) > 0;
     if (!PatchRefpackCall(REFPACK_CALL, REFPACK_CORE, (void*)RefpackHook)) return false;
     c.decompressReady = 1;
     u8 head[5];

@@ -53,6 +53,14 @@
 // live repro) [verified disassembly + emulation + one game session]. Fix: both jump-table entries point to stubs that
 // pass every other case to the game's handler. INT_MIN / -1 goes to the game's OverflowException stub 0xE57AA5 (the one the
 // *.ovf opcodes use; it records this instruction as the frame ip), as .NET throws. INT_MIN % -1 gives 0, the exact result.
+//
+// SimNoTexture (0.36.152a, docs/67 §34, crash Z). SimService_Process 0x5EBC50 (request state 11) looks up the request's two
+// composite textures in the builder's table (key 0x1F/4 and 0x1F/8) and reads the first one's width at 0x5EBE31 with no null
+// check; the second is checked. The texture is missing when its create in state 9 failed (call 0x5CFB7C -> 0x619C80 returned
+// false; that path stores nothing) [verified disassembly]. 0x5EBE38 `ja 0x5EBED4` is EA's own path for a texture too wide
+// to composite, and the no-recipe paths reach the same target with a null first result. Fix: the load and compare (0x5EBE2D)
+// become a jump to SnStub, which takes that path for a missing texture. Nothing after it reads the first result: the mark
+// 0x5CEA60 ignores its pointer argument and finds no table entry. The Sim gets no composite from this build.
 
 static const DWORD CA_ASK_SITES[3] = {TS3A(0x0084EABD), TS3A(0x00849588), TS3A(0x00853521)};
 // mov ecx,[eax+1Ch]; mov edx,[ecx]; push eax; mov eax,[edx+10h]; call eax   (eax = controller)
@@ -577,6 +585,74 @@ static bool ApplyMintDivGuard(const wchar_t* ini) {
     return true;  // keep the log open for the hit lines
 }
 
+// ---- SimNoTexture ----
+static const DWORD SN_SITE = TS3A(0x005EBE2D), SN_CONT = TS3A(0x005EBE38), SN_SKIP = TS3A(0x005EBED4);  // load + cmp, the `ja`, its target
+static const DWORD SN_CREATE_SITE = TS3A(0x005CFB7C), SN_CREATE = TS3A(0x00619C80);  // state 9's texture create (thiscall, 6 args, bool)
+static const u8 kSnSite[11] = {0x8B, 0x54, 0x24, 0x74, 0x81, 0x7A, 0x14, 0x00, 0x08, 0x00, 0x00};  // mov edx,[esp+74h]; cmp dword [edx+14h],800h
+static DWORD g_snCont = SN_CONT, g_snSkip = SN_SKIP;  // stub targets (selftest swaps them)
+static volatile LONG g_snBad;
+
+static void __stdcall SnHit(const u8* req, DWORD second) {
+    const LONG n = InterlockedIncrement(&g_snBad);
+    if (n > 8) return;
+    MEMORYSTATUSEX m = {sizeof(m)};
+    GlobalMemoryStatusEx(&m);  // the create failure is inferred to be memory: this number is the evidence
+    Log("ea fix: SimNoTexture #%ld: request %p (size tier %lu, second texture %s): first texture missing, composite skipped; "
+        "%lu MB address space free", n, req, *(const DWORD*)(req + 8), second ? "present" : "missing", (DWORD)(m.ullAvailVirtual >> 20));
+}
+
+// In place of the 11 bytes at 0x5EBE2D, by jump: esi = the request, ebp = the second texture. edx and the flags are dead at
+// the skip target (0x5EBED4 cmp ebp,ebx); on the game's path the flags reach the `ja` through the jmp.
+static __declspec(naked) void SnStub() {
+    __asm {
+        mov edx, [esp + 0x74]
+        test edx, edx
+        je miss
+        cmp dword ptr [edx + 0x14], 0x800
+        jmp dword ptr [g_snCont]
+    miss:
+        pushad
+        push ebp
+        push esi
+        call SnHit
+        popad
+        jmp dword ptr [g_snSkip]
+    }
+}
+
+static bool SnPatch(u8* site) {
+    if (!Matches(site, kSnSite, sizeof(kSnSite))) return false;
+    u8 b[11] = {0xE9, 0, 0, 0, 0, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+    *(LONG*)(b + 1) = (LONG)((uintptr_t)&SnStub - ((uintptr_t)site + 5));
+    return Write(site, b, sizeof(b));  // DllMain: no Sim is built yet
+}
+
+// Repro (test key, independent of the guard, so the off arm crashes): every Nth create in state 9 answers false after the
+// game's call; the caller then releases the good texture as it does on a real failure.
+typedef bool(__fastcall* SnCreateFn)(void* img, void*, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD);
+static SnCreateFn g_snCreate = (SnCreateFn)(uintptr_t)SN_CREATE;
+static LONG g_snEvery, g_snCreates;
+static bool __fastcall SnCreateRepro(void* img, void*, DWORD a, DWORD b, DWORD c, DWORD d, DWORD e, DWORD f) {
+    const bool ok = g_snCreate(img, NULL, a, b, c, d, e, f);
+    return ok && InterlockedIncrement(&g_snCreates) % g_snEvery != 0;
+}
+
+static bool ApplySimNoTexture(const wchar_t* ini) {
+    g_snEvery = (LONG)GetPrivateProfileIntW(L"EaCrashFixes", L"SimNoTextureRepro", 0, ini);
+    if (g_snEvery > 0) {
+        if (FpCallOk(SN_CREATE_SITE, SN_CREATE) && FpRedirect(SN_CREATE_SITE, (const void*)&SnCreateRepro))
+            Log("OK   ea fix: SimNoTextureRepro (TEST KEY): every create number %ld of a Sim composite texture fails", g_snEvery);
+        else Log("SKIP ea fix: SimNoTextureRepro: call at 0x%08X differs: not installed", SN_CREATE_SITE);
+    }
+    if (!GetPrivateProfileIntW(L"EaCrashFixes", L"SimNoTexture", 0, ini)) return g_snEvery > 0;
+    if (!SnPatch((u8*)(uintptr_t)SN_SITE)) {
+        Log("SKIP ea fix: SimNoTexture: bytes at 0x%08X differ: not installed", SN_SITE);
+        return g_snEvery > 0;
+    }
+    Log("OK   ea fix: SimNoTexture (docs/67 §34): a Sim request whose composite texture is missing skips the composite");
+    return true;  // keep the log open for the hit lines
+}
+
 static bool ApplyEaCrashFixes(const wchar_t* ini) {
     bool keep = ApplyConformActor(ini);
     ApplyThumbPose(ini);
@@ -584,5 +660,6 @@ static bool ApplyEaCrashFixes(const wchar_t* ini) {
     keep = ApplyGeomBoneIndex(ini) || keep;
     keep = ApplyGeomNoMaterial(ini) || keep;
     keep = ApplyMintDivGuard(ini) || keep;
+    keep = ApplySimNoTexture(ini) || keep;
     return keep;
 }

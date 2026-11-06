@@ -27,7 +27,7 @@ import { parseLog, type Sample } from './mem-report.ts';
 export const METRICS: { key: string; label: string; count?: boolean }[] = [
   { key: 'wCom', label: 'commit' }, { key: 'priv', label: 'private' }, { key: 'big', label: 'largest free' },
   { key: 'rc', label: 'resource cache' }, { key: 'gcHeap', label: 'Mono heap' }, { key: 'eaDir', label: 'EA direct blocks' },
-  { key: 'eaCom', label: 'EA heap cores committed' }, { key: 'eaRes', label: 'EA heap cores reserved' },
+  { key: 'casN', label: 'CAS compositor registry', count: true }, { key: 'eaCom', label: 'EA heap cores committed' }, { key: 'eaRes', label: 'EA heap cores reserved' },
   { key: 'rest', label: 'unattributed' },
   ...['cc', 'ppc', 'etRef', 'gsc', 'mapv', 'wq', 'wpl', 'ogs', 'smh'].map((key) => ({ key, label: `handlers ${key}`, count: true })),
   { key: 'alive', label: 'destroyed but alive', count: true },

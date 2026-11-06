@@ -1786,7 +1786,7 @@ const asiPath = (j: Job) => (j.asi === 'tested' ? TESTED_ASI : resolve(ROOT, j.a
 const SRC_VERSION = /#define TS3NATIVE_VERSION "([^"]+)"/.exec(readFileSync(join(ROOT, 'native', 'ts3native', 'ts3native.cpp'), 'utf8'))?.[1];
 const staleAsi = (j: Job) => {
   if (j.asi !== 'tested' || !existsSync(TESTED_ASI)) return '';
-  const v = /ts3native (\d+\.\d+\.\d+) %04d/.exec(readFileSync(TESTED_ASI).toString('latin1'))?.[1];
+  const v = /ts3native (\S+) %04d/.exec(readFileSync(TESTED_ASI).toString('latin1'))?.[1];
   return v === SRC_VERSION ? '' : `tested build is ts3native ${v ?? '?'}, source is ${SRC_VERSION}: rebuild with native/ts3native/build.cmd`;
 };
 const saveOf = (j: Job) => j.save ?? (j.run.menuMemory ? 'menu' : REPROS.find(r => r.id === j.run.repro)?.save);

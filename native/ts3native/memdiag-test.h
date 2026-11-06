@@ -65,6 +65,9 @@ static void TestMemDiag() {
     static const u8* heapP = heap;
     static const u8* mgrP = mgr;
     static const u8* nullP = NULL;
+    static u8 svc[0x114];
+    static const u8* svcP = svc;
+    *(DWORD*)(svc + 0x110) = 29000;
     static const DWORD zero[3] = {};
     *(DWORD*)(heap + 0x488) = 3, *(DWORD*)(heap + 0x48C) = 22u << 20;
     // two cores in the ring headed at heap +0x448 (first at +0x460, next at core +0x18): 100+12 MB committed, 128+16 reserved
@@ -79,8 +82,9 @@ static void TestMemDiag() {
     const u8* const* savedEa = g_mdEaHeapSlot;
     const u8* const* savedCore[2] = {g_mdEaCoreSlot[0], g_mdEaCoreSlot[1]};
     const u8* const* savedRc = g_mdRcMgrSlot;
+    const u8* const* savedCas = g_mdCasSlot;
     const DWORD* savedGc[3] = {g_mdGc[0], g_mdGc[1], g_mdGc[2]};
-    g_mdEaHeapSlot = &heapP, g_mdRcMgrSlot = &mgrP;
+    g_mdEaHeapSlot = &heapP, g_mdRcMgrSlot = &mgrP, g_mdCasSlot = &svcP;
     g_mdEaCoreSlot[0] = g_mdEaCoreSlot[1] = &heapP;  // same object twice: counted once
     for (int i = 0; i < 3; i++) g_mdGc[i] = &gc[i];
     Ts3nCounters& k = ts3native_counters;
@@ -93,15 +97,17 @@ static void TestMemDiag() {
     MdValues(s, 1851ull << 20, x);
     assert(x.have[MD_EADIR] && x.v[MD_EADIR] == 22 && x.v[MD_EADIRN] == 3 && x.v[MD_GCHEAP] == 360 && x.v[MD_GCN] == 812);
     assert(x.v[MD_RC] == 388 && x.v[MD_RCCOLD] == 14 && x.v[MD_RCBUD] == 200 && x.v[MD_RCN] == 41000 && x.v[MD_ANIM] == 4);
+    assert(x.v[MD_CASN] == 29000);
     assert(x.v[MD_EACOM] == 112 && x.v[MD_EARES] == 144 && x.v[MD_EACOREN] == 2);
     assert(fabs(x.v[MD_REST] - (1851 - 360 - 22 - 112 - 210 - x.v[MD_RP] - 96 - 7 - 9)) < 1e-6);
     *(DWORD*)mgr = 0x12345678;  // not the manager's vtable: no rc fields
     g_mdEaHeapSlot = &nullP;    // heap not created yet
     g_mdEaCoreSlot[0] = g_mdEaCoreSlot[1] = &nullP;
     g_mdGc[0] = NULL;           // unreadable: SEH, no gc fields
+    g_mdCasSlot = &nullP;       // no service yet
     MdValues(s, 1851ull << 20, x);
-    assert(!x.have[MD_RC] && !x.have[MD_ANIM] && !x.have[MD_EADIR] && !x.have[MD_EACOM] && !x.have[MD_GCHEAP] && x.have[MD_PRIV]);
-    *(DWORD*)mgr = 0xFFE250, g_mdEaHeapSlot = &heapP, g_mdGc[0] = &gc[0];
+    assert(!x.have[MD_CASN] && !x.have[MD_RC] && !x.have[MD_ANIM] && !x.have[MD_EADIR] && !x.have[MD_EACOM] && !x.have[MD_GCHEAP] && x.have[MD_PRIV]);
+    *(DWORD*)mgr = 0xFFE250, g_mdEaHeapSlot = &heapP, g_mdGc[0] = &gc[0], g_mdCasSlot = &svcP;
     g_mdEaCoreSlot[0] = g_mdEaCoreSlot[1] = &heapP;
 
     // log capture: the line, marks, legend once
@@ -120,7 +126,7 @@ static void TestMemDiag() {
     UdtLog(buf, sizeof(buf), h);
     const char* L = strstr(buf, "diag: mem #1 load ev=travel,world-switch priv=1851 wPriv=1830 wCom=2167 free=1646 big=1525? img=0.0? map=0.0 ");
     assert(L && strstr(L, " eaDir=22.0? eaDirN=3? eaCom=112? eaRes=144? eaCoreN=2? rp=") && strstr(L, " pl=96.0? sp=7.0? gcHeap=360? gcFree=151? gcN=812? rc=388? rcCold=14.0? "));
-    assert(strstr(L, " rcBudget=200? rcN=41000? anim=4.0? rest=") && strstr(buf, "diag: mem #2 periodic priv=1851 "));
+    assert(strstr(L, " rcBudget=200? rcN=41000? anim=4.0? rest=") && strstr(L, " casN=29000? t=") && strstr(buf, "diag: mem #2 periodic priv=1851 "));
     const char* T = strstr(L, " t=");
     assert(T && T < strchr(L, '\r') && strchr(L, '\r') - T <= 12);  // seconds since start, last field
     for (const char* e = L; *e != '\n'; e++) assert(e - L < 640);
@@ -199,7 +205,59 @@ static void TestMemDiag() {
     assert(strstr(buf, "diag: mem selftest leak 8 x 1 MB wPriv +8.") && strstr(buf, "diag: mem selftest cross-check: OS private "));
     assert(g_mdPass & (1 << MD_STKRES) && !g_mdFail);
 
+    // Blockers: a fake walk, then a second one with one allocation grown and one gone
+    typedef MEMORY_BASIC_INFORMATION Mbi;
+    auto reg = [](DWORD b, DWORD n, DWORD al, DWORD ty, DWORD st) {
+        Mbi m = {};
+        m.BaseAddress = (void*)(uintptr_t)b, m.RegionSize = n, m.AllocationBase = (void*)(uintptr_t)al, m.Type = ty, m.State = st;
+        return m;
+    };
+    g_mbOn = true;
+    assert(MbBegin() && !MbBegin());  // one owner
+    MbRegion(reg(0x10000, 0x10000, 0x10000, MEM_PRIVATE, MEM_COMMIT));
+    MbRegion(reg(0x20000, 0x100000, 0, 0, MEM_FREE));
+    MbRegion(reg(0x120000, 0x10000, 0x120000, MEM_IMAGE, MEM_COMMIT));
+    MbRegion(reg(0x130000, 0x20000, 0x130000, MEM_PRIVATE, MEM_COMMIT));
+    MbRegion(reg(0x150000, 0x10000, 0x130000, MEM_PRIVATE, MEM_RESERVE));
+    MbRegion(reg(0x160000, 0x200000, 0, 0, MEM_FREE));
+    MbRegion(reg(0x360000, 0x10000, 0x360000, MEM_MAPPED, MEM_COMMIT));
+    MbEnd();
+    assert(g_mbGaps == 2 && g_mbTop[0].size == 0x200000 && g_mbTop[0].lo.base == 0x150000 && g_mbTop[0].hi.base == 0x360000);
+    assert(g_mbTop[1].size == 0x100000 && g_mbTop[1].lo.base == 0x10000 && g_mbTop[1].hi.alloc == 0x120000 && g_mbTop[1].hi.type == MEM_IMAGE);
+    assert(g_mbGrown == 4 && g_mbGrew[0].base == 0x130000 && g_mbGrew[0].res == 0x30000 && g_mbGrew[0].com == 0x20000 && g_mbGrew[0].fresh);
+    MbLog();
+    UdtLog(buf, sizeof(buf), h);
+    assert(strstr(buf, "free MB: 2 at 0x00160000, 1 at 0x00020000") && strstr(buf, "below 0x00150000 +64 KB private reserve alloc 0x00130000; above 0x00360000 +64 KB mapped commit"));
+    assert(strstr(buf, "grew: 0x00130000 private new (res 0.2 com 0.1)"));
+    assert(MbBegin());
+    MbRegion(reg(0x120000, 0x10000, 0x120000, MEM_IMAGE, MEM_COMMIT));
+    MbRegion(reg(0x130000, 0x30000, 0x130000, MEM_PRIVATE, MEM_COMMIT));
+    MbRegion(reg(0x160000, 0x10000, 0x130000, MEM_PRIVATE, MEM_COMMIT));
+    MbRegion(reg(0x360000, 0x10000, 0x360000, MEM_MAPPED, MEM_COMMIT));
+    MbEnd();
+    assert(g_mbGrown == 1 && g_mbGrew[0].delta == 0x10000 && !g_mbGrew[0].fresh && g_mbPrev[1] == 0 && g_mbPrev[0x12] == 0x10000);
+    MbLog();
+    g_mbOn = false, memset(g_mbPrev, 0, sizeof(g_mbPrev));
+    assert(!MbBegin());
+    // decompress repeats: same input repeats, other sizes or bytes do not, short inputs work; the cost printed for the record
+    u8 drIn[64];
+    for (int i = 0; i < 64; i++) drIn[i] = (u8)(i * 7);
+    assert(!DrRepeat(drIn, 64, 1000) && DrRepeat(drIn, 64, 1000));
+    assert(!DrRepeat(drIn, 64, 1001) && !DrRepeat(drIn, 63, 1000));
+    drIn[32] ^= 1;
+    assert(!DrRepeat(drIn, 64, 1000));
+    assert(!DrRepeat(drIn, 3, 9) && DrRepeat(drIn, 3, 9));
+    assert(!DrRepeat(NULL, 64, 7));  // unreadable input: never a repeat, no fault
+    LARGE_INTEGER t0, t1, qf;
+    QueryPerformanceFrequency(&qf);
+    QueryPerformanceCounter(&t0);
+    for (DWORD i = 0; i < 1u << 20; i++) DrRepeat(drIn, 64, i);
+    QueryPerformanceCounter(&t1);
+    printf("decompress repeat key: %.1f ns per call\n", (t1.QuadPart - t0.QuadPart) * 1e9 / qf.QuadPart / (1u << 20));
+    memset((void*)g_drTab, 0, sizeof(g_drTab));
+
     g_mdOn = wasOn, g_mdLegend = 0, g_mdPass = g_mdFail = 0;
+    g_mdCasSlot = savedCas;
     g_mdEaHeapSlot = savedEa, g_mdRcMgrSlot = savedRc;
     g_mdEaCoreSlot[0] = savedCore[0], g_mdEaCoreSlot[1] = savedCore[1];
     for (int i = 0; i < 3; i++) g_mdGc[i] = savedGc[i];
