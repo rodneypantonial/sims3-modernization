@@ -27,7 +27,6 @@ export const RC_ZERO_KEYS: Record<string, string[]> = {
     MemDiag: ["Light"], ThreadStack: ["Enabled"],
     RouteToObjRO: ["Tail"], IdleCheckRO: ["SiteC"],
     UnseenTable: ["Enabled"],
-    EaCrashFixes: ["ThumbPose", "GeomBoneIndex", "ThumbPoseBones", "LotGridMiss"],
     // addresses mapped by the table regen, never run on EA: mapped is not tested, so they stay off until their smoke
     FootstepRO: ["Enabled"], UnseenAnim: ["Enabled"], UnseenRootMotion: ["Mode"],
 };
