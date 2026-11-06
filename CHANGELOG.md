@@ -15,6 +15,7 @@ Two fixes for bugs in the game itself, both by Dalexlol (GitHub `alexvixell35-st
 ### Fixed
 
 - **Error 12 on every save of an Isla Paradiso world.** A lot with no world grid point at its centre (a lot made in Edit Town, or a save started on another version of the world) never finished its routing setup, and that made every save of the world fail. Such a lot now finishes its setup the way the game does for a lot with nothing to connect. Thanks to Dalexlol.
+- **Walking Sims no longer wait on the routing lock for steering checks** (`[SteerRO]` is now on in `ts3native.ini`, Steam only).
 - **Sim thumbnail render reading past the end of a pose.** When a Sim's thumbnail was drawn with a pose that had fewer bones than the Sim, the game read memory past the pose. That pose is now skipped, as the game already does for a model with no pose. This is aimed at one crash seen in old saves; that it stops that crash is not proven yet. Thanks to Dalexlol.
 
 ## v0.2.7 (2026-11-05)
