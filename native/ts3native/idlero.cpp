@@ -241,17 +241,17 @@ static int IcLoopOne(const u8* obj, const u8* f) {
     if (!sv) return IcDoubt(1, obj);
     int kind;
     switch (sv[3]) {  // interface slot +0xC: sub ecx, 4, then a constant getter
-    case 0x006262F0: kind = 1; break;
-    case 0x0074BB10: kind = 2; break;
-    case 0x00624EC0: kind = 3; break;
-    case 0x00624E10: kind = 4; break;
-    case 0x00624E60: kind = 5; break;
-    case 0x006250A0: kind = 6; break;
-    case 0x00620E00: kind = 7; break;
-    case 0x00624E50: kind = 8; break;
-    case 0x00624E00: kind = 9; break;  // 0xFEBA74 (2026-11-04: all 24 logged doubts of the first shadow)
-    case 0x00620E50: kind = 0xA; break;
-    case 0x00624EB0: kind = 0xB; break;
+    case TS3A(0x006262F0): kind = 1; break;
+    case TS3A(0x0074BB10): kind = 2; break;
+    case TS3A(0x00624EC0): kind = 3; break;
+    case TS3A(0x00624E10): kind = 4; break;
+    case TS3A(0x00624E60): kind = 5; break;
+    case TS3A(0x006250A0): kind = 6; break;
+    case TS3A(0x00620E00): kind = 7; break;
+    case TS3A(0x00624E50): kind = 8; break;
+    case TS3A(0x00624E00): kind = 9; break;  // 0xFEBA74 (2026-11-04: all 24 logged doubts of the first shadow)
+    case TS3A(0x00620E50): kind = 0xA; break;
+    case TS3A(0x00624EB0): kind = 0xB; break;
     default: return IcDoubt(2, obj);
     }
     if (kind == 5) {  // 0x7559B8

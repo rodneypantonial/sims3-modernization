@@ -208,19 +208,58 @@ static int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; 
 // report and no WER event (2026-10-17 bp-d-async). C++ exceptions (0xE06D7363) count for 2 lines at most.
 // docs/172 §7: an AV in another DLL's code is logged once per address, with "module+offset" (Apex Radiance's 14 or more
 // handled AVs at 1-2 addresses before the world loads took every slot, so a later TS3W crash had no line); repeats are counted.
-static volatile LONG g_xcptN, g_xcptCpp, g_xcptOtherN, g_xcptOtherHits[8];
-static DWORD g_selfLo, g_selfHi, g_xcptOther[8];
-// "name+0xoffset" when a is in a loaded image other than TS3W.exe (base 0x400000) and this module. No loader lock.
+// Foreign AVs have their own table and take no slot of the 16: a ninth Apex address burned every slot left (player log, EA,
+// t=235 of 1291 s), so a later game fault got no line. Past the table they are only counted. Code outside every image counts as
+// foreign too (0x04297CC2 on EA: 6 hits took 6 slots), with a "no image:" pair of lines naming who owns the memory.
+enum { XCPT_OTHER = 32 };
+static volatile LONG g_xcptN, g_xcptCpp, g_xcptOtherN, g_xcptOtherHits[XCPT_OTHER], g_xcptOtherOver;
+static DWORD g_selfLo, g_selfHi, g_xcptOther[XCPT_OTHER];
+// "name+0xoffset" when a is in a loaded image other than TS3W.exe (base 0x400000) and this module; "no image" when it is committed
+// memory outside every image. out NULL: only the answer, no name lookup. No loader lock.
 static bool XcptOtherModule(DWORD a, char* out, int cap) {
     MEMORY_BASIC_INFORMATION mbi;
-    if (!VirtualQuery((const void*)(uintptr_t)a, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || mbi.Type != MEM_IMAGE) return false;
+    if (!VirtualQuery((const void*)(uintptr_t)a, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) return false;
     const DWORD base = (DWORD)(uintptr_t)mbi.AllocationBase;
     if (base == 0x00400000 || base == g_selfLo) return false;
+    if (!out) return true;
+    if (mbi.Type != MEM_IMAGE) return strcpy_s(out, cap, "no image"), true;
     wchar_t w[MAX_PATH];
     if (!K32GetMappedFileNameW(GetCurrentProcess(), mbi.AllocationBase, w, MAX_PATH)) wcscpy_s(w, L"?");
     const wchar_t* s = wcsrchr(w, L'\\');
     sprintf_s(out, cap, "%ls+0x%lX", s ? s + 1 : w, a - base);
     return true;
+}
+// who owns code outside every image: the region, a mapped file if any, its first bytes, the thread's start address and the images
+// on its stack. Reads only, once per address (XcptLog), never decides what happens to the exception.
+static void XcptNoImage(const CONTEXT* c) {
+    MEMORY_BASIC_INFORMATION m = {}, st = {};
+    const void* const eip = (const void*)(uintptr_t)c->Eip;
+    if (!VirtualQuery(eip, &m, sizeof(m))) return;
+    wchar_t file[MAX_PATH];
+    if (!K32GetMappedFileNameW(GetCurrentProcess(), (void*)eip, file, MAX_PATH)) wcscpy_s(file, L"-");
+    char bytes[16 * 3 + 1] = "-", start[MAX_PATH + 32] = "", imgs[512] = "";
+    if (!(m.Protect & (PAGE_NOACCESS | PAGE_GUARD))) __try {
+        for (int i = 0; i < 16; i++) sprintf_s(bytes + i * 3, sizeof(bytes) - i * 3, "%02X ", ((const u8*)eip)[i]);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { strcpy_s(bytes, "unreadable"); }
+    Log("  no image: region 0x%p size %lu alloc 0x%p type 0x%lX protect 0x%lX alloc protect 0x%lX file %ls bytes %s", m.BaseAddress,
+        (DWORD)m.RegionSize, m.AllocationBase, m.Type, m.Protect, m.AllocationProtect, file, bytes);
+    typedef LONG(WINAPI* QueryThread)(HANDLE, int, void*, ULONG, ULONG*);
+    const QueryThread q = (QueryThread)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread");
+    DWORD tstart = 0;
+    if (q) q(GetCurrentThread(), 9, &tstart, sizeof(tstart), NULL);  // 9 = ThreadQuerySetWin32StartAddress
+    if (tstart && !XcptOtherModule(tstart, start, sizeof(start))) start[0] = 0;
+    // up to 8 foreign image addresses on the stack, inside its committed region so the read cannot fault
+    if (VirtualQuery((const void*)(uintptr_t)c->Esp, &st, sizeof(st)) && st.State == MEM_COMMIT && !(st.Protect & (PAGE_NOACCESS | PAGE_GUARD))) {
+        const DWORD* w = (const DWORD*)(uintptr_t)c->Esp;
+        const DWORD* const end = (const DWORD*)((const u8*)st.BaseAddress + st.RegionSize);
+        for (int i = 0, n = 0, len = 0; i < 1024 && w + i < end && n < 8; i++) {
+            char name[MAX_PATH + 16];
+            MEMORY_BASIC_INFORMATION v;
+            if (!VirtualQuery((const void*)(uintptr_t)w[i], &v, sizeof(v)) || v.Type != MEM_IMAGE || !(v.Protect & 0xF0)) continue;  // 0xF0 = PAGE_EXECUTE*
+            if (XcptOtherModule(w[i], name, sizeof(name)) && len < (int)sizeof(imgs) - MAX_PATH - 20) len += sprintf_s(imgs + len, sizeof(imgs) - len, " %s", name), n++;
+        }
+    }
+    Log("  no image: thread start 0x%08lX %s; other images on the stack:%s", tstart, start, imgs);
 }
 // up to `max` code addresses (game .text or this module) in the first 512 stack words, as " %08lX" each
 static void XcptRefs(const CONTEXT* c, char* refs, int cap, int max) {
@@ -285,15 +324,15 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     if ((code == EXCEPTION_ACCESS_VIOLATION || XcptWild(code)) && !(e->ContextRecord->Eip >= g_selfLo && e->ContextRecord->Eip < g_selfHi)) CfOnFault(e);
     const CONTEXT* c = e->ContextRecord;
     if (code == EXCEPTION_ACCESS_VIOLATION)  // docs/172 §7: another module's address already logged
-        for (LONG i = 0, n = g_xcptOtherN < 8 ? g_xcptOtherN : 8; i < n; i++)
+        for (LONG i = 0, n = g_xcptOtherN < XCPT_OTHER ? g_xcptOtherN : XCPT_OTHER; i < n; i++)
             if (g_xcptOther[i] == c->Eip) return InterlockedIncrement(&g_xcptOtherHits[i]), EXCEPTION_CONTINUE_SEARCH;
-    if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
     char refs[128], mod[MAX_PATH + 16] = "", in[MAX_PATH + 24] = "";
-    if (code == EXCEPTION_ACCESS_VIOLATION && XcptOtherModule(c->Eip, mod, sizeof(mod))) {
+    if (code == EXCEPTION_ACCESS_VIOLATION && XcptOtherModule(c->Eip, g_xcptOtherN < XCPT_OTHER ? mod : NULL, sizeof(mod))) {
         const LONG k = InterlockedIncrement(&g_xcptOtherN);
-        if (k <= 8) g_xcptOther[k - 1] = c->Eip;
+        if (k > XCPT_OTHER) return InterlockedIncrement(&g_xcptOtherOver), EXCEPTION_CONTINUE_SEARCH;
+        g_xcptOther[k - 1] = c->Eip;
         sprintf_s(in, " (%s)", mod);
-    }
+    } else if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
     XcptRefs(c, refs, sizeof(refs), 8);
     Log("exception %08lX at 0x%08lX%s (info %08lX %08lX) thread %lu eip %08lX esp %08lX; stack code refs:%s", code,
         (DWORD)(uintptr_t)r->ExceptionAddress, in, r->NumberParameters > 0 ? (DWORD)r->ExceptionInformation[0] : 0,
@@ -301,6 +340,7 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     // docs/67 §15: every register (the 2026-10-25 crash pair logged only eip / esp), for the crash's own exceptions too
     Log("  registers eax %08lX ebx %08lX ecx %08lX edx %08lX esi %08lX edi %08lX ebp %08lX esp %08lX eip %08lX efl %08lX", c->Eax,
         c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp, c->Eip, c->EFlags);
+    if (!strcmp(mod, "no image")) XcptNoImage(c);
     if (code == EXCEPTION_ACCESS_VIOLATION || XcptWild(code)) P5cRelMatch(c);
     if (code == EXCEPTION_ACCESS_VIOLATION || XcptWild(code)) AsCrashLine();
     if ((code == EXCEPTION_ACCESS_VIOLATION || XcptWild(code)) && (c->Eip < TS3A(0x00401000) || c->Eip >= TS3A(0x00F95000))) AaDrainFaultDump(c);
@@ -322,7 +362,7 @@ static void InstallXcptLog(const wchar_t* ini) {
     const IMAGE_NT_HEADERS* nt = self ? (const IMAGE_NT_HEADERS*)((const u8*)self + ((const IMAGE_DOS_HEADER*)self)->e_lfanew) : NULL;
     g_selfLo = (DWORD)(uintptr_t)self;
     g_selfHi = nt ? g_selfLo + nt->OptionalHeader.SizeOfImage : g_selfLo;
-    if (AddVectoredExceptionHandler(1, XcptLog)) Log("crash log: first 16 first-chance exceptions, an AV in another module once per address (module 0x%08lX-0x%08lX)", g_selfLo, g_selfHi);
+    if (AddVectoredExceptionHandler(1, XcptLog)) Log("crash log: first 16 first-chance exceptions, an AV in another module once per address, up to %d addresses, none takes a slot (module 0x%08lX-0x%08lX)", XCPT_OTHER, g_selfLo, g_selfHi);
 }
 
 static void ApplyGc(const wchar_t* ini) {
@@ -2805,11 +2845,11 @@ static void MaybeLogCounters(ULONGLONG now) {
         Log("route plans: off %ld (fails %ld) on %ld (fails %ld) hostCalls %ld", c.planOffCalls, c.planOffFails, c.planOnCalls, c.planOnFails, c.hostCalls);
     static LONG xcptSkipLogged;  // docs/172 §7: repeats per logged address, only when the total moved
     LONG xcptSkip = 0;
-    char xcptBy[8 * 24] = "";
-    for (int i = 0, n = g_xcptOtherN < 8 ? g_xcptOtherN : 8, len = 0; i < n; i++)
+    char xcptBy[XCPT_OTHER * 24] = "";
+    for (int i = 0, n = g_xcptOtherN < XCPT_OTHER ? g_xcptOtherN : XCPT_OTHER, len = 0; i < n; i++)
         xcptSkip += g_xcptOtherHits[i], len += sprintf_s(xcptBy + len, sizeof(xcptBy) - len, " %08lX x%ld", g_xcptOther[i], g_xcptOtherHits[i]);
     if (xcptSkip != xcptSkipLogged)
-        Log("crash log: %ld more AVs at logged addresses in other modules (not logged):%s", xcptSkipLogged = xcptSkip, xcptBy);
+        Log("crash log: %ld more AVs at logged addresses in other modules (not logged):%s; past the table %ld", xcptSkipLogged = xcptSkip, xcptBy, g_xcptOtherOver);
 }
 
 static LARGE_INTEGER g_qpf;

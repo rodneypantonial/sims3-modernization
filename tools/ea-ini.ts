@@ -24,10 +24,9 @@ export const ALWAYS_OFF: Record<string, string> = {
 // Enabled=0; it stays off on EA, as before docs/238, until a test run turns it on)
 // The other rows came with the merge of main (2026-11-06): on in the Steam ini, off on the port, never run on EA. Each leaves here after its EA smoke.
 export const RC_ZERO_KEYS: Record<string, string[]> = {
-    MemDiag: ["Light"], ThreadStack: ["Enabled"], SteerRO: ["Enabled"], LotFrontDoorRO: ["Enabled"], ObstructedRO: ["Enabled"], AvoidRO: ["Enabled"],
-    RouteToObjRO: ["Enabled"], PlacementRO: ["Enabled"], GoalValidRO: ["Enabled"], IdleCheckRO: ["Enabled"], SlotEnabledRO: ["Enabled"], Gate0RO: ["Enabled"],
-    UnseenTable: ["Enabled"], RouteAsync: ["H2", "TailUnlock", "ReplanDedupe"], Discourage: ["DeferFootprint2", "DestroyPark", "DestroyParkDx"],
-    EaCrashFixes: ["ThumbPose", "GeomBoneIndex"],
+    MemDiag: ["Light"],
+    // addresses mapped by the table regen, never run on EA: mapped is not tested, so they stay off until their smoke
+    UnseenRootMotion: ["Mode"],
 };
 const rcZeroKey = (sec: string, key: string) => (RC_ZERO_KEYS[sec] ?? []).includes(key);
 // One key of a section that is clean otherwise: its unresolved rows zero that key on EA instead of flagging the whole file (eafix.cpp, wastar.cpp,
@@ -43,7 +42,8 @@ const unresolvedRows = (addrHdr: string) => [...addrHdr.matchAll(/^\/\/ unresolv
 export const keysOff = (addrHdr: string) => { const un = new Set(unresolvedRows(addrHdr).map((m) => parseInt(m[1], 16))); return new Set(Object.keys(KEY_ADDRS).filter((k) => KEY_ADDRS[k].some((a) => un.has(a)))); };
 // EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
 // ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
-export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024" };
+// ThreadStack.Skip: SimulatorThread_Proc, a runtime string the address table cannot rewrite; the Steam value left the EA sim thread capped.
+export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360" };
 // a file that only serves one key group of a section (GC: memexp.cpp reads SqrtHeapLimit, shipped 0) does not count for that section
 export const IGNORE_FILE: Record<string, string[]> = { GC: ["memexp.cpp"] };
 const RG = ["RouteGate", "RouteAsync"];
@@ -92,7 +92,8 @@ function render(lines: string[], zero: (sec: string) => boolean, force: (sec: st
         if (force(sec) && /^Enabled=/.test(l)) return "Enabled=1";
         const k = /^(\w+)=-?\d+\s*$/.exec(l);
         if (k && (zero(sec) || zeroKey(sec, k[1]))) return k[1] + "=0";
-        return k && set[sec + "." + k[1]] !== undefined ? k[1] + "=" + set[sec + "." + k[1]] : l;
+        const v = k ?? /^(\w+)=0x[0-9A-Fa-f]+\s*$/.exec(l);  // a hex value is an address: settable, never zeroed
+        return v && set[sec + "." + v[1]] !== undefined ? v[1] + "=" + set[sec + "." + v[1]] : l;
     }).join("\r\n");
 }
 
@@ -123,6 +124,7 @@ function selfCheck() {
     ok(!["SteerRO", "FpRebuildLock", "Watchpoint", "RouteToObjRO", "MemDiag"].some((s) => ALWAYS_OFF[s]), "docs/238 sections allowed");
     ok(render(["[GC]", "Enabled=1", "BlackListCapKB=0", "[Z]", "BlackListCapKB=0"], () => false, () => false, undefined, EA_SET) === "[GC]\r\nEnabled=1\r\nBlackListCapKB=1024\r\n[Z]\r\nBlackListCapKB=0", "render set");
     ok(/^BlackListCapKB=1024\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini must carry BlackListCapKB=1024");
+    ok(/^Skip=0x76C360\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini exempts the EA sim thread");
     console.log("ea-ini self-check: ok");
 }
 

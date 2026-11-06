@@ -186,20 +186,26 @@ static void TestCrashReport() {
         char m[MAX_PATH + 16];
         assert(XcptOtherModule(k32, m, sizeof(m)) && !_stricmp(m, "kernel32.dll+0x10"));
         void* const heap = malloc(64);
-        assert(!XcptOtherModule((DWORD)(uintptr_t)heap, m, sizeof(m)));  // not an image: logged every time, as before
-        free(heap);
+        assert(XcptOtherModule((DWORD)(uintptr_t)heap, m, sizeof(m)) && !strcmp(m, "no image"));  // committed, outside every image
         static DWORD stack[64];
         CONTEXT cx = {};
         cx.Eip = k32, cx.Esp = cx.Ebp = (DWORD)(uintptr_t)(stack + 32);
         EXCEPTION_RECORD er = {};
         er.ExceptionCode = EXCEPTION_ACCESS_VIOLATION, er.ExceptionAddress = (void*)(uintptr_t)k32, er.NumberParameters = 2;
         EXCEPTION_POINTERS xp = {&er, &cx};
+        cx.Eip = (DWORD)(uintptr_t)heap, XcptNoImage(&cx), cx.Eip = k32;  // reads only, runs on the region's own limits
+        free(heap);
         const LONG n0 = g_xcptN, other0 = g_xcptOtherN;
         assert(n0 <= 13 && other0 <= 6);
-        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 + 1 && g_xcptOtherN == other0 + 1 && g_xcptOther[other0] == k32);
-        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 + 1 && g_xcptOtherHits[other0] == 1);  // repeat: counted only
+        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 && g_xcptOtherN == other0 + 1 && g_xcptOther[other0] == k32);
+        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 && g_xcptOtherHits[other0] == 1);  // repeat: counted only
         cx.Eip = k32 + 4, er.ExceptionAddress = (void*)(uintptr_t)(k32 + 4);
-        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 + 2 && g_xcptOtherN == other0 + 2);  // another address: a line
+        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 && g_xcptOtherN == other0 + 2);  // another address: a line, no slot
+        g_xcptOtherN = XCPT_OTHER;  // table full: counted past it, still no slot (a ninth Apex address burned them all)
+        const LONG over0 = g_xcptOtherOver;
+        cx.Eip = k32 + 8, er.ExceptionAddress = (void*)(uintptr_t)(k32 + 8);
+        assert(XcptLog(&xp) == EXCEPTION_CONTINUE_SEARCH && g_xcptN == n0 && g_xcptOtherOver == over0 + 1);
+        g_xcptOtherOver = over0;
         g_xcptN = n0, g_xcptOtherN = other0, g_xcptOtherHits[other0] = g_xcptOtherHits[other0 + 1] = 0;
     }
     puts("crash report ok");
