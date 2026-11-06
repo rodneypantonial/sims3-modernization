@@ -14,7 +14,7 @@
 #include <psapi.h>  // K32GetMappedFileNameW (XcptOtherModule)
 #include "ts3addr.h"  // TS3A(x): TS3W.exe addresses by Steam 1.67 value (tools/addr-codemod.ts)
 
-#define TS3NATIVE_VERSION "0.36.168a"
+#define TS3NATIVE_VERSION "0.36.168b"
 
 typedef unsigned char u8;
 
@@ -5116,6 +5116,9 @@ static void Run(HMODULE self) {
     SYSTEMTIME st;
     GetLocalTime(&st);
     Log("ts3native " TS3NATIVE_VERSION " %04d-%02d-%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+#ifdef TS3A_TABLE
+    Log("release: v0.2.8 EA");  // own line: log parsers read the header version as digits
+#endif
     GetModuleFileNameW(NULL, exe, MAX_PATH);
     HMODULE base = GetModuleHandleW(NULL);
     const wchar_t* name = wcsrchr(exe, L'\\');
