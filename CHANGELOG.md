@@ -4,19 +4,27 @@ Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub r
 
 ## v0.2.8 (2026-11-06)
 
-Two fixes for bugs in the game itself, both by Dalexlol (GitHub `alexvixell35-stack`). Everything else is the same as v0.2.7.
+Three changes: two fixes for bugs in the game itself, both by Dalexlol (GitHub `alexvixell35-stack`, PRs #212 and #271), and walking Sims no longer held up by route work. Apart from these three, everything is the same as v0.2.7.
 
 ### Download
 
 - `ts3fixes.package`: unchanged from v0.2.6.
 - `ts3native-v0.2.8.zip` (Steam): `ts3native.asi` and `ts3native.ini`; replace both.
-- EA app 1.69.47: no new build in this release, these two fixes are Steam only for now. Keep `ts3native-ea169-v0.2.7.zip`.
+- `ts3native-ea169-v0.2.8.zip` (EA app 1.69.47): TO-FILL EA facts.
 
 ### Fixed
 
 - **Error 12 on every save of an Isla Paradiso world.** A lot with no world grid point at its centre (a lot made in Edit Town, or a save started on another version of the world) never finished its routing setup, and that made every save of the world fail. Such a lot now finishes its setup the way the game does for a lot with nothing to connect. Thanks to Dalexlol.
-- **Walking Sims no longer wait on the routing lock for steering checks** (`[SteerRO]` is now on in `ts3native.ini`, Steam only).
+- **Walking Sims now almost never wait on route work.** A walking Sim's check for what is ahead used to wait while the game worked out another Sim's route. That check now reads a safe copy of the routing data instead. Tested on three worlds (Bridgeport, Sunset Valley, Isla Paradiso), no crash.
 - **Sim thumbnail render reading past the end of a pose.** When a Sim's thumbnail was drawn with a pose that had fewer bones than the Sim, the game read memory past the pose. That pose is now skipped, as the game already does for a model with no pose. This is aimed at one crash seen in old saves; that it stops that crash is not proven yet. Thanks to Dalexlol.
+
+### EA app build
+
+TO-FILL EA facts.
+
+### Known
+
+- This release was checked for crashes, not timed. Hitches on Isla Paradiso were not measured.
 
 ## v0.2.7 (2026-11-05)
 
