@@ -217,6 +217,19 @@ static bool g_drOn;
 struct DrSum { LONG uN, rN; LONG64 uB, rB; };
 static DrSum g_dr, g_drLast;  // cumulative; at the last line
 
+// LRU sizing (0.36.152-test2, measure only, nothing is cached): would a decoded-resource cache of this size have served the repeat?
+// g_drAt = output KB clock at the slot's last decode; a repeat's distance is the KB decoded since then. Repeats advance the clock
+// too and an evicted slot counts as unique, so each hit count is a lower bound for a real LRU of that size.
+static const int kDrLruMB[] = {32, 64, 128, 256, 512};
+enum { DR_LRU = sizeof(kDrLruMB) / sizeof(kDrLruMB[0]) };
+static volatile LONG g_drAt[1 << 16], g_drClockKB;  // 256 KB .bss more, touched only with RepeatLog=1
+static volatile LONG g_drLruN[DR_LRU];
+static volatile LONG64 g_drLruB[DR_LRU];
+static void DrLruTally(LONG agoKB, DWORD out) {
+    for (int i = 0; i < DR_LRU; i++)
+        if (agoKB >= 0 && agoKB < kDrLruMB[i] * 1024) InterlockedIncrement(&g_drLruN[i]), InterlockedAdd64(&g_drLruB[i], out);
+}
+
 static bool DrRepeat(const u8* src, DWORD len, DWORD out) {
     DWORD w[6] = {};
     __try {  // len is the caller's claim: the decoder may stop before it, so a sample at its end can be past the buffer
@@ -226,7 +239,11 @@ static bool DrRepeat(const u8* src, DWORD len, DWORD out) {
     DWORD a = len * 0x9E3779B1u ^ out, b = out * 0x85EBCA6Bu ^ len;
     for (DWORD x : w) a = (a ^ x) * 0x9E3779B1u, b = ((b + x) * 0xC2B2AE35u) ^ (b >> 15);
     const LONG fp = (LONG)(b | 1);  // 0 = empty slot
-    return InterlockedExchange(&g_drTab[a >> 16], fp) == fp;
+    const DWORD slot = a >> 16;
+    const LONG now = InterlockedExchangeAdd(&g_drClockKB, (LONG)(out >> 10)), was = InterlockedExchange(&g_drAt[slot], now);
+    const bool rep = InterlockedExchange(&g_drTab[slot], fp) == fp;
+    if (rep) DrLruTally(now - was, out);
+    return rep;
 }
 
 static void LogDecompress() {
@@ -244,6 +261,10 @@ static void LogDecompress() {
         Log("decompress: repeats: unique %ld calls %lld MB, repeat %ld calls %lld MB; since last line unique %ld calls %lld MB, repeat %ld calls %lld MB",
             d.uN, d.uB >> 20, d.rN, d.rB >> 20, d.uN - g_drLast.uN, (d.uB - g_drLast.uB) >> 20, d.rN - g_drLast.rN, (d.rB - g_drLast.rB) >> 20);
         g_drLast = d;
+        char by[DR_LRU * 40];
+        for (int i = 0, len = 0; i < DR_LRU; i++)
+            len += sprintf_s(by + len, sizeof(by) - len, " %d MB %ld calls %lld MB,", kDrLruMB[i], g_drLruN[i], g_drLruB[i] >> 20);
+        Log("decompress: lru lower bound, served of the repeats by size:%s total out %ld MB", by, g_drClockKB >> 10);
     }
 }
 
