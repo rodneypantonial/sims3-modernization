@@ -124,7 +124,7 @@ function loadAsm(path: string, name: string): Asm {
   asm.mvid = buf.subarray(asm.guidOff + (mod[2] - 1) * 16, asm.guidOff + mod[2] * 16).toString('hex');
   return asm;
 }
-function rva(asm: Asm, r: number): number {
+export function rva(asm: Asm, r: number): number {
   for (const s of asm.sections) if (r >= s.va && r < s.va + s.size) return r - s.va + s.raw;
   throw new Error(`${asm.name}: rva 0x${r.toString(16)} outside sections`);
 }

@@ -1,0 +1,172 @@
+{
+  "note": "jit-verify: [MonoJit] (docs/527 §3, ts3native 0.36.169, counters v908, asi game-copy/ts3native.asi.jit1) correctness in game: every listed method runs compiled, one call in 16 per method runs a second time in EA's interpreter from the restored state, and every live word must match. Correctness only, no timing. Direct=0: compiled-to-compiled frames do not exist in this build. [MonoFast] CallPath stays at the ini's 0, so these jobs use EA's call path. Pass per job: no crash, 0 watchdog lines, ScriptError count as the job's baseline, jitOn 2, jitMethods >= the compilable count of the list (read the 'jit: ... refused' lines: a generic body refused for its hash is a finding, not a pass), jitVerified > 100000, jitMismatch 0 (any mismatch: the method is off for the session and named in 'jit verify MISMATCH' lines; triage before anything else), jitFaults 0. Read jitLarge, jitAbandoned, jitOtherTid as coverage. The log says when GC_malloc_atomic was left alone ([MonoThread] GcLock): then a new array's slack can read as a mismatch. The last job runs the same verify under [AutShadow] Mode R (docs/527 §4.4). Run: node tools/harness/queue.ts tools/harness/queues/jit-verify.json --no-smoke",
+  "jobs": [
+    {
+      "id": "bp-jit-verify",
+      "note": "BP Spring 10 min, seed 12345, the queue defaults of mintcall-verify + [MonoJit] Mode=2. Pass: see the queue note.",
+      "asi": "game-copy/ts3native.asi.jit1",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 908,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "MonoJit.Enabled": 1,
+        "MonoJit.Mode": 2,
+        "MonoJit.VerifyEvery": 16,
+        "MonoJit.Direct": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-jit-verify",
+      "note": "IP Spring 10 min, as bp-jit-verify. Pass: see the queue note.",
+      "asi": "game-copy/ts3native.asi.jit1",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 908,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "MonoJit.Enabled": 1,
+        "MonoJit.Mode": 2,
+        "MonoJit.VerifyEvery": 16,
+        "MonoJit.Direct": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-jit-verify",
+      "note": "SV Spring 10 min, as bp-jit-verify. Pass: see the queue note.",
+      "asi": "game-copy/ts3native.asi.jit1",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 908,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "MonoJit.Enabled": 1,
+        "MonoJit.Mode": 2,
+        "MonoJit.VerifyEvery": 16,
+        "MonoJit.Direct": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-jit-autshadow-r",
+      "note": "[MonoJit] Mode=2 under [AutShadow] Mode R: mono-cost13's bp-autshadow-r keys with the ts3fixes package mc13. Pass: the queue note and mono-cost13's gates (A1-A3 = 0); jitOtherTid > 0 shows the worker reached compiled words and took EA's.",
+      "asi": "game-copy/ts3native.asi.jit1",
+      "fixesPackage": "game-copy/ts3fixes.package.mc13",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 908,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1,
+        "AutShadow.WindowWaitUs": 5000,
+        "AutShadow.ColdIc": 1,
+        "AutShadow.CutLean": 2,
+        "AutShadow.TierMs": 1500,
+        "AutShadow.ListAudit": 1,
+        "AutShadow.TierClassMs": 1000,
+        "AutShadow.RowHot": 200,
+        "AutShadow.RunSkip": 1,
+        "AutShadow.FreshEvery": 8,
+        "AutShadow.KeepPartial": 1,
+        "MonoJit.Enabled": 1,
+        "MonoJit.Mode": 2,
+        "MonoJit.VerifyEvery": 16,
+        "MonoJit.Direct": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}
