@@ -24,8 +24,8 @@ export const ALWAYS_OFF: Record<string, string> = {
 // Enabled=0; it stays off on EA, as before docs/238, until a test run turns it on)
 // The other rows came with the merge of main (2026-11-06): on in the Steam ini, off on the port, never run on EA. Each leaves here after its EA smoke.
 export const RC_ZERO_KEYS: Record<string, string[]> = {
-    MemDiag: ["Light"], ThreadStack: ["Enabled"], SteerRO: ["Enabled"], LotFrontDoorRO: ["Enabled"], ObstructedRO: ["Enabled"], AvoidRO: ["Enabled"],
-    RouteToObjRO: ["Enabled", "Tail"], PlacementRO: ["Enabled"], GoalValidRO: ["Enabled"], IdleCheckRO: ["Enabled", "SiteC"], SlotEnabledRO: ["Enabled"], Gate0RO: ["Enabled"],
+    MemDiag: ["Light"], ThreadStack: ["Enabled"],
+    RouteToObjRO: ["Tail"], IdleCheckRO: ["SiteC"],
     UnseenTable: ["Enabled"], RouteAsync: ["H2", "TailUnlock", "ReplanDedupe"], Discourage: ["DeferFootprint2", "DestroyPark", "DestroyParkDx"],
     EaCrashFixes: ["ThumbPose", "GeomBoneIndex", "ThumbPoseBones", "LotGridMiss"],
     // addresses mapped by the table regen, never run on EA: mapped is not tested, so they stay off until their smoke
