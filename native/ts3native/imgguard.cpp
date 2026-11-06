@@ -1,4 +1,4 @@
-// [ImageGuard] (counters v160 ig*, docs/232 Run 8c/8d): size check on the raster buffer of EA's image decode. Default OFF.
+// [ImageGuard] (counters v908 ig*, docs/232 Run 8c/8d): size check on the raster buffer of EA's image decode. Default OFF.
 // Included by ts3native.cpp after savewrite.cpp (PatchCalls).
 //
 // EA's image codec layer (codecs in a registered list: JPEG 2, PNG 4, BMP 5, TGA 6, GIF 7, DDS 0x1F; format 0x32 = probe

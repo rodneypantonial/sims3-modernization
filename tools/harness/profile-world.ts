@@ -78,7 +78,8 @@ import { checkHitchTasks, parseHitchTasks } from './hitch-tasks.ts';
 import { checkTag, parseRule } from './frame-lead.ts';
 import { isSetup, runLoop, runStep, stopLine, untilUnlocked, withRule } from './repro-loop.ts';
 import { loadStory } from './story-fuzzer.ts';
-import { counterSwitches, nativeNames, nativeValues } from './native-switches.ts';
+import { abFixesClash, counterSwitches, nativeModeFields, nativeNames, nativeValues } from './native-switches.ts';
+import { addArmColumns } from './arm-ms.ts';
 import { leadInCut, sliceFrames } from './session-reuse.ts';
 import { reproSave } from './repro-save.ts';
 import { focusGame, giveFocusBack } from './focus-game.ts';
@@ -174,7 +175,7 @@ const fixesPrev: Record<string, boolean> = {};
 let fixesRestored = !fixesNames.length;
 const restoreFixes = async () => { if (fixesRestored) return; fixesRestored = true; await ag('patches', fixesPrev); };
 if (fixesNames.length) {
-  const both = fixesNames.filter(n => values.ab?.split(',').includes(n) || (fixesOff.includes(n) && fixesOn.includes(n)));
+  const both = abFixesClash(values.ab ? values.ab.split(',') : [], fixesOn, fixesOff);
   if (both.length) throw new Error(`--fixes-off / --fixes-on / --ab name ${both.join(',')} twice`);
   const before = await ag('patches');
   const unknown = fixesNames.filter(n => typeof before.result?.[n] !== 'boolean'); // native / counter switches and typos are not patches switches
@@ -257,6 +258,10 @@ const clockGuard = (async () => {
     // which modal holds the clock (title, buttons) and whether a world switch is under way (story-smoke 2026-10-23)
     const pd = await ag('pending_dialogs').catch(() => null), gs = await ag('game_state').catch(() => null);
     console.log(`${stamp()} at the trip: dialog ${JSON.stringify(pd?.ok ? pd.result : pd?.error).slice(0, 400)}; sub_state ${gs?.result?.sub_state ?? '?'}, world ${gs?.result?.load_file ?? '?'}`);
+    // what the autopilot did meanwhile: a dialog answered in a loop shows here (2026-11-03: a wish dialog under the age-up dialog,
+    // 210 answers in 60 s, seen only in the upkeep log)
+    const ap = await ag('autopilot').catch(() => null), cl: string[] = ap?.result?.cleared ?? [];
+    console.log(`${stamp()} at the trip: autopilot ${ap?.ok ? `${cl.length} answers since the last upkeep${cl.length ? ` (last: ${cl[cl.length - 1].slice(0, 120)})` : ''}, blocked ${ap.result.blocked ?? 'none'}${ap.result.restarted ? ', restarted (task had stopped)' : ''}` : ap?.error}`);
     prof?.kill();
     await restoreFixes();
     process.exit(1);
@@ -393,7 +398,9 @@ const vresDone = vresOn ? (async () => {
 const abNames = values.ab ? values.ab.split(',') : [];
 const slices: { from: number; on: boolean }[] = [];
 // a rerun with the same tag must not append to the last run's snapshots (wait-ab read run 1 twice, 2026-10-20)
-if (abNames.length) { writeFileSync(`${pre}-ab-native.jsonl`, ''); writeFileSync(`${pre}-ab-fixes.jsonl`, ''); }
+// ... nor leave the last run's slice table: a run stopped before its end writes none, and wait-ab.ts paired the old table with
+// the new (cut) snapshots (2026-11-03, noise stops)
+if (abNames.length) { writeFileSync(`${pre}-ab-native.jsonl`, ''); writeFileSync(`${pre}-ab-fixes.jsonl`, ''); rmSync(`${pre}-ab.json`, { force: true }); }
 // ts3native switch tables (nativeNames, counterSwitches, nativeValues: native_set repro steps and --ab): native-switches.ts,
 // shared with session-reuse.ts, which puts them back between jobs that share one game load (docs/170 §2)
 async function nativeSet(args: Record<string, unknown>): Promise<{ ok: boolean; result?: unknown; error?: string }> {
@@ -424,12 +431,27 @@ const toggler = (async () => {
     // ts3fixes counters too (2026-10-22: the spreads pair had no proof the nightly passes ran inside counted slices)
     await ag('patches').then(r => appendFileSync(`${pre}-ab-fixes.jsonl`, JSON.stringify({ i, s: (Date.now() - t0) / 1000, c: numericFields(r.result) }) + '\n')).catch(() => {});
     const patchNames = abNames.filter(n => !nativeNames.includes(n) && !(n in counterSwitches));
-    if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
-    for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);
-    for (const n of abNames.filter(n => n in counterSwitches))
-      await get(`nativeexport?name=ts3native_counters&offset=${counterSwitches[n]}&value=${on ? 1 : 0}`);
+    // per-slice read-back (2026-11-02: early gates must not test an --ab switch, it alternates per slice): a switch that did not
+    // take stops the run with FAIL (the 'native_set: ... did not stick' text is what queue.ts smokeProblems looks for)
+    const bad: string[] = [], want = on ? 1 : 0;
+    if (patchNames.length) {
+      const r = await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
+      for (const n of patchNames) if (r.result?.[n] !== on) bad.push(`${n}=${on} did not stick (reads ${r.result?.[n]})`);
+    }
+    for (const n of abNames.filter(n => nativeNames.includes(n))) {
+      const v = Number((await get(`native?${n}=${want}`))?.[nativeModeFields[n]]);
+      if (v !== want) bad.push(`${n}=${want} did not stick (reads ${v})`);
+    }
+    for (const n of abNames.filter(n => n in counterSwitches)) {
+      const w = await get(`nativeexport?name=ts3native_counters&offset=${counterSwitches[n]}&value=${want}`);
+      if (w?.value !== want) bad.push(`${n}=${want} did not stick (reads ${w?.value})`);
+    }
+    if (bad.length) {
+      console.log(`${stamp()} FAIL: --ab slice ${i} read-back: native_set: ${bad.join('; ')}`);
+      await restoreFixes(); process.exit(1);
+    }
     slices.push({ from: (Date.now() - t0) / 1000, on, ...(i === 0 && { warmup: true }) });
-    console.log(`${stamp()} ${abNames.join(',')} ${on ? 'on' : 'off'}`);
+    console.log(`${stamp()} ${abNames.join(',')} ${on ? 'on' : 'off'} (read back)`);
   }
 })();
 const reproFail = async (why: string) => {
@@ -447,7 +469,8 @@ const reproStep = async (s: any) => {
   let r = await call();
   if (s.cmd === 'set_speed') r = await untilUnlocked(call, r, { sleep, now: Date.now, log: l => console.log(`${stamp()} ${l}`),
     dialog: async () => JSON.stringify((await ag('pending_dialogs').catch(() => null))?.result ?? null).slice(0, 300) });
-  console.log(`${stamp()} repro ${values.repro} step ${s.cmd}${s.note ? ` [${s.note}]` : ''}${isSetup(s) ? ' (setup)' : ''}: ${JSON.stringify(r).slice(0, 200)}`);
+  // an async_log reply is the record of what the sim thread did (a method touch's outcome, docs/526 section 8): logged whole
+  console.log(`${stamp()} repro ${values.repro} step ${s.cmd}${s.note ? ` [${s.note}]` : ''}${isSetup(s) ? ' (setup)' : ''}: ${JSON.stringify(r).slice(0, s.cmd === 'async_log' ? 4000 : 200)}`);
   appendFileSync(`${pre}-repro.jsonl`, JSON.stringify({ t: stamp(), cmd: s.cmd, args: s.args, note: s.note, r }) + '\n'); // full result: the log line is cut
   stepAnswers.push({ cmd: s.tally ?? s.cmd, r }); // "tally": count this step under its own name in stepsRequire (per-arm visits)
   // fail fast, as repro.ts: a failed setup step means the rest of the run measures nothing (2026-10-19 bp-ab-wildflowertask
@@ -596,7 +619,13 @@ if (hitchTasks.length) {
   console.log(`${stamp()} ${fails.length ? `FAIL: hitch tasks: ${fails.join('; ')}` : `PASS: hitch tasks ${hitchTasks.map((r, i) => `${r} (${counts[i]})`).join(', ')}`}`);
   if (fails.length) process.exitCode = 1;
 }
-if (abNames.length) { writeFileSync(`${pre}-ab.json`,JSON.stringify({ names: abNames, slices }, null, 1)); await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
+if (abNames.length) { writeFileSync(`${pre}-ab.json`,JSON.stringify({ names: abNames, t0, slices }, null, 1)); /* t0: profile start (epoch ms), to join <tag>-machine.jsonl */ await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
+// per-arm ms/s (arm-ms.ts): slice + arm columns on the seconds rows (arm 1 on, 0 off, -1 not counted)
+if (slices.length && (abNames.length || reproLoop)) {
+  const sf = `${pre}-${secs}-seconds.csv`;
+  try { writeFileSync(sf, addArmColumns(readFileSync(sf, 'utf8'), reproLoop ? slices.map(sl => ({ ...sl, loop: true })) : slices)); }
+  catch (e: any) { console.log(`${stamp()} arm columns not added to ${sf}: ${e.message}`); }
+}
 if (reproLoop && slices.length) { // the last firing's end snapshot, then the arm slices (loop: hitch-ab keeps every firing slice whole)
   await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i: slices.length, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
   writeFileSync(`${pre}-ab.json`, JSON.stringify({ names: [`loop:${values.repro}`], loop: true, slices }, null, 1));

@@ -356,7 +356,7 @@ export function bytesTable(rows: BytesRow[], o: Pe, src = "patch-bytes-check"): 
 
 // eadiag.cpp is excluded: its addresses are EA 1.69.47 ones (no Steam meaning), so a Steam or port check of them is noise
 export function sourceTexts(): [string, string][] {
-    return readdirSync(SRC).filter((f) => /\.(cpp|h)$/.test(f) && !/test/.test(f) && f !== "eadiag.cpp").sort().map((f) => [f, readFileSync(join(SRC, f), "utf8").replace(/\bTS3A\((0x[0-9A-Fa-f]+u?)\)/g, "$1")]);
+    return readdirSync(SRC).filter((f) => /\.(cpp|h)$/.test(f) && !/test|ilpatch-specs/.test(f) && f !== "eadiag.cpp").sort().map((f) => [f, readFileSync(join(SRC, f), "utf8").replace(/\bTS3A\((0x[0-9A-Fa-f]+u?)\)/g, "$1")]);
 }
 
 function report(res: Res[], unresolved: string[], unchecked: number[], patched: number, out: string, all: boolean, what: string) {

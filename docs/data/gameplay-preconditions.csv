@@ -87,10 +87,15 @@ fresh_world,FreshWorld,MainMenu;Live,New Game with a premade household,natural,n
 crowd_do,RareHandlers,Live,none: one pie-menu click per Sim; 30-50 Sims queue one interaction on one object in one tick,stress,spawn_sims Sims (and the household),handler + R-VOL-1,live
 crowd_go,RareHandlers,Live,none: one Go Here per click; 30-50 Sims to one point in one tick,stress,spawn_sims Sims (and the household),handler + R-VOL-1,live
 crowd_visit_lot,RareHandlers,Live,none: one Visit Lot per Sim; 30-50 townies start the same lot trip in one tick,stress,spawn_sims Sims,handler + R-VOL-1,live
+compat_visit,ReproHandlers,Live,lot pie menu: Visit or a mod's Visit With (picker: one Sim along),natural,active Sim; mod installed,handler + docs/TESTING.md compat evidence,live
+compat_visit_status,ReproHandlers,Live,none (read only),harness,compat_visit first,handler,none
+sim_gone_watch,ReproHandlers,Live,none (harness listener and read),harness,on:true inside the world,handler,none
 kill_sim,RareHandlers,Live,none (no vanilla kill command; MasterController-style),cheat,template death role (docs/171 §12),handler + R-LIFE-6,live
 zombies,RareHandlers,Live,none: full-moon zombies come from the game's 20% roll per night (Supernatural),stress,EP Supernatural,handler + R-EP-2,live
 spawn_traffic,RareHandlers,Live,none (more cars than the game spawns),stress,,handler,live
 unseen_snapback,RareHandlers,Live,none (probe),stress,,handler,live
+map_view,RareHandlers,Live,map-view button (CameraModel.ToggleMapView),natural,,handler,live
+focus_sim,RareHandlers,Live,Sim portrait click (HudModel.MoveCameraToSim),natural,,handler,live
 unseen_water_check,RareHandlers,Live,none (probe),harness,,handler,live
 unseen_horse_ride,RareHandlers,Live,riding a horse off-screen,natural,EP Pets; horse in the household,handler,live
 unseen_water_watch,RareHandlers,Live,none (probe),harness,,handler,live
@@ -115,6 +120,7 @@ ride,RareVehicleHandlers,Live,Ride horse,natural,EP Pets; Teen+ rider; horse lik
 reflect_get,ReflectHandlers,Any,none (read),harness,,handler,none
 reflect_set,ReflectHandlers,Any,none (raw field write),cheat,,handler,none
 reflect_call,ReflectHandlers,Any,none (raw script call),cheat,a raw call can do anything: label the repro by what the path does,handler,none
+method_touch,ReflectHandlers,Any,none (calls a method once with an uninitialized receiver so Mono transforms it; the body throws at once),harness,,handler,none
 reflect_members,ReflectHandlers,Any,none (read),harness,,handler,none
 reflect_find_types,ReflectHandlers,Any,none (read),harness,,handler,none
 place_sim,ReproHandlers,Live,none: teleport (testingcheats / MasterController),cheat,,handler,live

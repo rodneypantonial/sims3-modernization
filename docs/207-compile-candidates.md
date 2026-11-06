@@ -324,6 +324,55 @@ Findings:
 
 Fixtures: **not built.** This machine has no C++ compiler and the CI does not build `native/monohost`, so nothing could be run, and an unrun fixture would only move the debugging to the next person. The recipe per method is the `fixture` column. For the top 5: rows 2 and 4 (no IC) are JitBench cases on objects from constructors plus `FieldInfo.SetValue`; rows 1, 3 and 5 also need a concrete `GameObject` subclass, and rows 3 and 5 need an M2 answer code that reads the guid table from a static field of the test assembly.
 
+### 9.1 Fixtures built: they compile, they have not run (2026-11-02, round 8 B6; they ran: §9.2)
+
+`native/monohost/JitAccessors.cs` (hand-written, C# 2) builds the objects each accessor reads and calls it once for an
+input index; `tools/jit-corpus.ts` wraps the 17 fixtures in corpus cases named `Acc <method>` (cases 158-174 of the 175),
+so the value or the exception is hashed interpreted twice and compiled once like every other case (§10), and `--env` adds
+the 17 methods to the compile list (`kJitList` itself is unchanged: the game's default list does not grow). `build.cmd`
+now references the game's `ScriptCore.dll`, `Sims3GameplaySystems.dll` and `UI.dll` copies for it.
+
+How the objects are made [verified: the fixture compiles with csc against the game's assemblies, `MonoHostTest.dll`
+209 KB]: real constructors only (this mscorlib has no `GetUninitializedObject`): `FxObject : GameObject` (the base
+constructor sets one delegate), `FxLot : Lot` (its constructor makes a `CommodityInteractionMap`), `FxRouting :
+RoutingComponent`, three `ObjectComponent` subclasses whose `BaseType` is their own type, `FxProxy : IScriptProxy` that
+answers only its `ObjectId`; private fields (`mObjComponents`, `mLotCurrent`, `mSimFlags`, `mSim`, `mCommercialSubType`,
+`mLotType`, the clock's three statics, `LotManager.sActiveLot`, a route list's `_size`) are set by reflection and the
+statics put back in `finally`. `GameObject.GetComponent<C>` is private, so the fixture calls it through
+`MethodInfo.Invoke` (the compiled entry is the method's own; the caller does not matter) and rethrows the inner exception.
+
+| # | Accessor (§9 table) | Fixture, inputs | What the cases cover |
+|---|---|---|---|
+| 1 | `GameObject.GetComponent` | `GetComponentCase` 4 | found A, found B, absent C, no list |
+| 2 | `InteractionObjectPair.Equals` | `IopEqualsCase` 7 | same pair, other target, other definition (two of `Sim`'s `Singleton` definitions by reflection), a string, null, itself, a null definition (the NullReference path) |
+| 3 | `GameObject.GetObject` | `GetObjectCase` 3 | the invalid guid (no simulator call), two guids through `Simulator.GetProxy` (the host's proxy IC answers) |
+| 4 | `SimClock.ElapsedTimeInMinutes` | `ElapsedMinutesCase` 35 | 7 tick counts x 5 `lastTime` values incl. NaN; result and the written `ref` packed in one long |
+| 5 | `GameObject.get_Parent` | `ParentCase` 2 | no proxy (invalid id), a proxy with id 5: `Slots.GetParentId` then `GetObject` |
+| 6 | `ScriptObject.get_ObjectId` | `ObjectIdCase` 2 | no proxy -> `InvalidObjectGuid`; a proxy -> 77 |
+| 7 | `GameObject.get_LotCurrent` | `LotCurrentCase` 2 | `mLotCurrent` null, a `FxLot` |
+| 8 | `Household.Members.GetActorsOfType` | `ActorsOfTypeCase` 5 | two human descriptions and a dog, masks human / animal / none / teen; case 2 gives the adult a `Sim` object |
+| 9 | `RoutingComponent.get_IsRouting` | `IsRoutingCase` 4 | route list size 0-3 |
+| 10 | `Lot.get_CommercialLotSubType` | `LotSubTypeCase` 6 | 0, 1, 5, 9, 100, -1 through `GetOutwardFacingLotSubType` |
+| 12 | `ListSorted<T>.GetEnumerator` | `ListSortedCase` 4 | empty, 3 unsorted, 3 equal, the int limits |
+| 14 | `DesireCurve.GetYFromX` | `DesireCurveCase` 12 | a 4-point curve with a vertical step: below, on, between, above the points, NaN, +-inf; the empty curve (its own catch) |
+| 15 | `Sim.get_SimDescription` | `SimDescriptionCase` 2 | null, a description |
+| 16 | `Lot.get_ShouldSimulate` | `ShouldSimulateCase` 4 | active lot yes / no x residential / commercial |
+| 17 | `SimDescription.get_Age` | `AgeCase` 5 | adult, teen+male, child+female+human, none, all bits |
+| 18 | `Corners.get_Item` | `CornersCase` 5 | the four corners of a rectangle, then index 4 (IndexOutOfRange) |
+| 19 | `Household.EveryHumanSimDescription` | `EveryHumanCase` 2 | an empty household list, a null one (NullReference) |
+
+Left out (L class, §9): 11 `WeatherManager.UpdateCloudiness` (319 bytes of IL over 33 closure methods and the weather
+statics) and 13 `Autonomy.get_IsSufficientlyOnScreenForHighLODSimulation` (two ICs, 59 closure methods). Both need a
+weather / camera state the fixture would have to invent.
+
+Not run: no C++ toolchain here, so `monohost.exe` is not built (as §9 said on 2026-10-31). What the first run tells:
+`build.cmd`, then the §10 command line with `MONOHOST_JITLIST=$(node tools/jit-corpus.ts --env)` and
+`MONOHOST_JITCORPUS_FROM=158`; `node tools/jit-corpus.ts --report out\monohost.exe.log` must show 0 differ over the 17,
+and the trail lines say which fixtures throw on both arms. Two constructors are the known risks there: `new Sim()`
+(cases 8/2 and 15; `Sim`'s static state) and `new FxLot()` (cases 7/1, 10, 16; the lot map). A fixture that throws the
+same exception on both arms is still a passing differential case, but not a test of the accessor: replace the
+constructor then. Ledger §921.
+
 ## 10. Differential corpus: compiled vs interpreted, bit for bit (2026-10-31)
 
 Round 6, task B4. Goal: every case that P0 compiles must give the same results and the same exceptions as EA's interpreter.
@@ -557,3 +606,406 @@ Not explained yet: `JitInl` (three interface calls per element, inlining off) to
 - `callvirt` with a class guard (12.1: those sites miss under 1%). Each site gets a cell with (class, lazy body), filled from the inline cache on the normal path.
 - `con.call` (`0xEB` [op, class, method]) skips the class word and then is a plain `call` (docs/213 §1 row 3, verified), so a lazy site can treat it as `call` with the method in word 2. The callee is a value-type method: `this` is a pointer, as in `JitKL.CallStruct`.
 - The gameplay accessors need the world image (docs/123 M3) before their edges can be measured.
+
+### 12.7 v2 as built (2026-11-02, round 8 B4; `MONOHOST_JITLAZY=1` still covers it, off by default) [verified: host corpus + bench]
+
+Three of the four 12.6 items, in `monohost-jit.cpp` (nothing in the game, the §12.1 world image is still missing for the fourth):
+
+1. **Lazy chains.** A lazy body may make lazy calls. A method keeps its lazy body when every position is native, `ret` /
+   `ret.void`, or a call site the compiler makes lazily (`JitLazySite`: the same filter the emitter applies). The block gets a
+   word `B_LVL` (36; the block is 40 bytes): 1 at a site in a normal body, the caller's level + 1 at a site in a lazy body.
+   A lazy site in a lazy body adds its own level to EA's depth test (the slot `depth + pending + 1` must hold a
+   `MonoInvocation`: the slots fill in order, docs/139 §8.1, so the ones between are there too) and writes its own vt cursor
+   (`ebx` + eval offset + eval size: its frame does not exist) as the return-slot word. `JitLazyMat` walks the blocks
+   (each lazy body pushes nothing of its own, so the outer block sits right above the return address into the outer lazy
+   body), writes the frames outermost first, each with the frame just written as its caller and the inner block's saved
+   `ebx` as its arena base, and drops every native call of the chain (`ecx` bytes from `JitLazyMatC`).
+2. **Class-guarded `callvirt`.** A `callvirt` of a virtual method (the declared method's `0x40` flag) gets a `JitGuardSite`.
+   The site tests the receiver (not null, a vtable, not the remoting class, not a value type), compares its class with EA's
+   inline-cache class and takes the cache's target. When the target is not the site's method yet, `JitGuardFill` (pushad,
+   one C call) looks its lazy body and frame sizes up once; a target that is not transformed yet is asked again at the next
+   call (EA's call transforms it meanwhile), one with no lazy body leaves `entry` NULL and the site bails until the cache
+   changes or the target compiles (the publish step refills). The frame sizes, `rm` and entry are read from the site at run
+   time; the argument count and the return kind come from the declared method (the signature is shared). A polymorphic
+   site misses the class compare and takes the normal exit, as EA's cache would miss.
+3. **`con.call`.** `0xEB` is a direct site with the method in word 2 and a 3-word return ip (docs/213 §1 row 3); the callee is
+   a value-type method, so `this` is the pointer on the eval stack, as `JitKL.CallStruct` already used it.
+
+Also: `JitPreTransform` transforms `con.call` callees too, and the bench now subtracts the empty loop's cost divided by the
+case's own step (the per-64 cases had a whole 20 ns taken off and printed negative times).
+
+**Gate.** The corpus has 9 more cases (`JitKL` chains: `CallChain`, `CallChainInst` with a null receiver in the middle frame,
+`CallChainArr` with `IndexOutOfRangeException` two lazy frames down and `CatchChain`, `DeepChain` at depth 30 / 70;
+`JitKV` guarded `callvirt`: base and derived class, null, a polymorphic site, `DivideByZeroException` in a guarded callee,
+a guarded callee making a guarded call; `JitKL.CallCon`: a constrained call on a value type in a generic method), 167 in all
+[measured 2026-11-02, the game test ran on the same machine]:
+
+| Run | Cases that differ | Per-call verifier | Lazy |
+|---|---|---|---|
+| verify, lazy on | 1 (`JitKO.S1AF`, §10 "stack-trace text only", as with lazy off) | 71,593 ok, 0 mismatches, 1,856 abandoned (exception) | 208 lazy bodies, 744 sites (91 guarded, 8 filled); 103,329 exits wrote 103,445 frames (116 wrote a chain of two) |
+| verify, lazy off | 1 (the same) | 71,595 ok, 0 mismatches, 1,857 abandoned | - |
+| `on`, count mode, corpus | - | - | 116,722 lazy calls: 26,163 from a lazy body, 30,686 through a guard |
+
+`JitKL.EqT` compiles with its `con.call` as a lazy site (5 native positions of 11; the other 6 are `stinarg.vt`, `ldarg.vt`,
+`vtresult` and the two `ret`). The verify-mode bench checksums (29 cases) are equal to the interpreter's in both arms.
+
+**Speed** [measured, noisy: best of 15, the game ran beside it; ns per iteration with the case's own loop overhead off]:
+
+| Case | Interpreted | Compiled, lazy off | Compiled, lazy on |
+|---|---:|---:|---:|
+| `JitLz` (two direct lazy calls per iteration, §12.4) | 56.9 | 38.4 | 18.8 |
+| `JitLzChain` (`LzMid`, a lazy body that makes `JitLz`'s two calls: three lazy calls per iteration) | 72.7 | 59.5 | 27.3 |
+| `JitLzVirt` (one class-guarded `callvirt` of `LzSq.Area` per iteration) | 30.3 | 20.5 | 9.4 |
+| `MintBench(3000)`, ms | 275.0 / 261.4 | 225.7 (-13.7%) | 223.5 (-18.7%; the two interpreter arms differ by 5%, the compiled ones by 1%) |
+
+A chained or guarded lazy call saves what a direct one did, about 11 ns per call. `MintBench` does not move: its
+class-guarded edges (§12.1, 25% of the calls: `Dictionary.GetPrev` -> `IEquatableOfTEqualityComparer<T>.Equals` ->
+`T.Equals` by `con.call`) are guarded sites now, but their targets take and return value types through `stinarg.vt`,
+`ldarg.vt` and `vtresult`, which exit, so they have no lazy body and the sites bail (8 of 91 guard sites were ever filled).
+The next step for that 25% is value-type argument and result templates, the same kind of work as B2's floats, not more
+call-site machinery.
+
+**Limits.** A guard site is filled once per target change; a target compiled after the fill is picked up only by the publish
+refill. The Satb worker never runs lazy code in a span (docs/507 §c: every entry bails at `JitEnter`, and lazy bodies are
+reached only from compiled code). `JitLazyMatC` walks at most 64 pending frames; the depth test keeps a chain below EA's
+record limit anyway. Verify mode runs lazy bodies unverified, as v1 did (their calls count as "inside a verified caller").
+Ledger: docs/51 §925.
+
+## 13. Round 10 C2: store, static, float-field, array, string, divide and switch templates (2026-11-02)
+
+Round 10, task C2. Goal: the opcode table's generatable rows and cheap hand rows that P0 still exited on. Host only
+(monohost, `MONOHOST_JIT`); nothing runs in the game yet. Commits a2258bb (part 1) and bcc2360 (part 2) on
+`feat/jit-stores`.
+
+### 13.1 Templates
+
+- **Part 1 (24 templates):** `ldfld.r4/.r8`, `stfld.r4/.r8`, `ldflda`, `ldsfld`, `ldsfld.i4/.o`, `ldsflda`, `stsfld`,
+  `ldelem.r4/.r8`, `stelem.i/.i1/.i2/.i4/.i8/.r4/.r8/.ref`, `stobj` (primitive and reference), `cknull`, `strlen`,
+  `getchr`. `stsfld`, `stobj` and `stelem.ref` emit the Satb barrier (docs/507 §c). `cpobj` is not in EA's mint set.
+- **Part 2 (4 opcodes):** `div.un.i4` / `rem.un.i4` (a zero divisor takes the out-of-line slow exit, where EA's handler
+  throws); `rem.r8` (`fld x; fld y; call _CIfmod`, EA's own handler body at `0xE55C65`); `switch` (`cmp eax, n; jae next;
+  jmp dword [eax*4 + table]`, the table holding the native labels as absolute addresses, which is sound because the code
+  pool is at its final address when a method is emitted; more than 1024 cases stays an exit).
+- `MONOHOST_JITC2=<mask>` keeps only some groups: 1 float fields and `ldflda`, 2 statics, 4 arrays, 8 `stobj`, 16
+  `cknull` / `strlen` / `getchr`, 32 the divides and `rem.r8`, 64 `switch`; default 127.
+- `docs/data/jit-opcode-table.csv` regenerated: covered 177 -> 181 (`tools/jit-opcode-table.ts --check` passes).
+
+### 13.2 Checks [measured, host, 2026-11-02]
+
+- Verify corpus (§10 command, `MONOHOST_JITCORPUS=1`): 188 cases, 0 differ, 0 unstable; per-call verify 31,043 ok,
+  0 mismatches, 1,145 abandoned by exception. `JitK.DivUnI4` / `RemUnI4` 462 ok each, `JitK.RemR8` 1,156 ok, `JitK.Sw` /
+  `SwSparse` 22 ok each.
+- Count mode (§11): `Dictionary`2.GetPrev` (the §12.7 25% edge) had one opcode exit, `rem.un.i4`, 132 per 132 calls;
+  it is a slow site now, taken 0 times. The 22 `switch` exits of `JitK.Sw` / `SwSparse` are gone. The run's opcode exits
+  went from 196.98 M to 195.70 M over 566 compiled methods (bench loops dominate both numbers).
+- **A green verify run does not show that a template ran.** The first part-2 build left the mask default at 31, so
+  groups 32 and 64 were off, and the verify run was still 0 mismatches with `rem.un.i4` exiting as before. Verify counts
+  calls whose results agree; only count mode's `jitexit` rows show which opcodes still exit. Both are needed for a
+  template claim.
+
+### 13.3 Left
+
+- `brfalse.r8` (long) must stay an exit (EA's handler mis-decodes it, docs/524 §4); `stobj.vt` and `ldfld.vt` need
+  value-type moves the compiler does not have; the other hand rows are the handler-shaped ones of docs/524.
+- In the count run the opcode exits by count are `ldarg.r4` 70.3 M, `ret` 36.5 M, `stinarg.r4` 31.5 M, `call` 17.0 M,
+  `ceq.r8` 15.4 M, `blt.r8.s` 7.8 M (corpus and bench weights, not the game's). Float argument moves and float compares
+  and branches are the next template group; `ret` / `call` are the §12 lazy-frame work.
+- Ledger: docs/51 §926.
+
+## 14. Round 10 C4: exceptions, stack walks and the worker thread through compiled frames (2026-11-02)
+
+Round 10, task C4. Host only (monohost, `MONOHOST_JIT=verify`, `MONOHOST_JITCORPUS=1`). Three questions: does an
+exception raised in or under a compiled frame unwind as the interpreter's does (`finally`, a `catch` in a middle frame, a
+rethrow, a throw inside `finally`); does a stack trace or a stack walk taken through compiled frames name the same frames;
+and what happens when a compiled method is entered on the M5 offload worker thread.
+
+### 14.1 Corpus kernels (`JitKX`, `tools/jit-corpus.ts`)
+
+| Case | Shape |
+|---|---|
+| `JitKX.FinallyMid` | `Mid` (a `try/finally` around `Thrower`, the finally writes `s_log`) under a catch; `Thrower` throws `InvalidOperationException` for 0 and divides by `a - 1` (a `DivideByZeroException` for 1) |
+| `JitKX.CatchMid` | `MidCatch` catches the divide in the middle frame and returns 7 |
+| `JitKX.Rethrow` | the inner catch counts and rethrows (`throw;`), the outer catch reads the count |
+| `JitKX.ThrowInFinally` | the finally of the inner try throws `ArgumentException` while an exception is in flight |
+| `JitKX.TraceNames` | `e.StackTrace` of the exception caught above `Mid`, hashed by frame name |
+| `JitKX.EnvTrace` | a `System.Diagnostics.StackTrace` walk from a lazy middle frame, hashed by frame name (`Environment.StackTrace` is not in EA's mscorlib) |
+| `JitKX.Escape` | the exception leaves the case's `Run` (the corpus marks the hash with the escape bit) |
+| `JitKX.DeepCatch` | 6 recursive frames under a catch, `e.StackTrace` hashed |
+
+The name hashes stop at the last `JitKX` frame: the frames above differ by caller (the corpus driver on the main thread,
+the worker job's entry on the worker). Six cases after `JitKL.CallCon`.
+
+### 14.2 The worker pass (`JitCorpusWorkerPass`, `monohost-jit.cpp`; `HostTest.JitCorpusWorker(int)`)
+
+`JitEnter` compares the thread id with the main thread's and, on another thread, runs EA's handler for the original opcode
+(`JitOrig` / `JitNative`); `g_jitOtherTid` counts those entries. The pass runs from `M5` while the worker is idle (state 2,
+before `M5-stop`; the corpus proper runs after the worker stopped): each case compiled on the main thread first (that is
+where it gets compiled), then interpreted for the reference, then as `WorkerJob("JitCorpusWorker", c)` on the worker; the
+worker's hash must be the interpreted one. A case whose exception leaves `Run` is skipped (the worker's job entry drops it),
+as is one whose compiled hash already differs. `MONOHOST_JITCORPUS_WORKER=0` skips the pass.
+
+### 14.3 Results [measured, host, 2026-11-02]
+
+- Corpus: 194 cases, 0 differ, 0 unstable; per-call verify ok 31,676, 0 mismatches, 1,473 abandoned by exception. The
+  six `JitKX` cases give the interpreter's hashes: the finally runs once, the middle catch returns, the rethrow keeps the
+  count, the throw in finally replaces the exception in flight, and the trace names agree frame for frame.
+- Worker pass: 131 cases, 0 differ; skipped 63 escaping, 0 compiled differs; 34,894 other-thread entries, so every entry
+  of a compiled method on the worker took EA's handler and no compiled code ran there. `M5-stop` passes after it (stop
+  fails 0, worker exceptions 0).
+- The per-call verify cannot cover a call that ends by exception: `FinallyMid` 3, `Mid` 5, `Rethrow` 2, `ThrowInFinally`
+  2, `TraceNames` 2, `DeepCatch` 1 unverified calls; `Thrower` 2 ok and 3 inside a verified caller, `Names` 3 ok. The
+  clause methods' agreement rests on the corpus hash of the case, which sees the end result of the unwind.
+
+### 14.4 Left
+
+- Compiled code never runs on the worker by construction (the thread check), which is the safe answer for the offload
+  thread; running it there needs the compiler's per-thread state (the exit frames, the verify slots) made per thread.
+- The per-call verify of a call that ends by exception; the in-game run of any of this.
+- Ledger: docs/51 §927.
+
+## 15. Round 10 C1: the guarded `callvirt` chain compiled end to end (2026-11-02)
+
+Round 10, task C1 ("guarded callvirt fast path: monomorphic inline cache / devirtualization for class-guarded calls").
+The call-site machinery was #203's (§12.7: a class guard on EA's inline cache, a `JitGuardSite` filled once per target
+change). What kept `MintBench`'s 25% of guarded edges interpreted was the targets: `Dictionary.GetPrev` ->
+`IEquatableOfTEqualityComparer<T>.Equals` -> `T.Equals` by `con.call` had no lazy bodies. Host only, off by default
+(`MONOHOST_JITLAZY=1` for the lazy part, the templates under `MONOHOST_JIT`), nothing in the game.
+
+### 15.1 What was in the way, and what changed
+
+1. **The value-type moves** (`stinarg.vt`, `ldarg.vt`, `ldloc.vt`, `stloc.vt`, `starg.vt`, `dup.vt`, `vtresult`): the
+   struct instantiations' bodies exited on them (§12.7). Hand templates now, EA's handlers ported (`0xE5877F`,
+   `0xE58517`, `0xE588A9`, `0xE589BA` with the store tail `0xE56C21`, `0xE5866A`, `0xE5473A`, `0xE545B0`): the copy goes
+   through EA's CRT `memcpy` thunk (`0xF7E8A6`), `vtresult`'s move through its `memmove` import (`[0xF95684]`), sizes
+   round up to 8 on the cursor and not in the copy, `vtresult` skips the move when the result is already at the new cursor
+   and repoints the slot only then (docs/213 §3 row 6). In a lazy body there is no interpreter frame word for the vt
+   cursor, so the call block got one (`B_VT`, block 44 bytes): the site starts it at the callee's vt area (`JitGuardSite`
+   carries `wVt` for a guarded target), the body's moves advance it, a site in the body writes it as the return-slot word,
+   and `JitLazyMat` copies it into `[ebp-0xC]` when the frame is written.
+2. **`ceq.i8`** had no template: `UInt64.Equals` exited on it 4.66 M times per bench run (count mode), so its lazy body
+   wrote two frames on every call. Template: xor the halves, or, `sete`.
+3. **The `con.call` callee was never pre-transformed.** `JitPreTransform` left virtual callees to their guard sites, and
+   an interface implementation such as `UInt64.Equals(ulong)` is `virtual final` in metadata; a `con.call` target is
+   static, so it is transformed like a non-virtual one now. Before, the `con.call` site in `Equals<ulong>` compiled as an
+   exit (4.66 M per run) and the body, with an exit in it, had no lazy form, so GetPrev's guard site never filled.
+4. `MONOHOST_JITC2` group 128 = the C1 templates (default 255); corpus kernels `JitKT` (`JitTPt` 12 bytes, `JitTBig` 20:
+   locals, arguments, a struct-returning call with `vtresult`, a chained assignment's `dup.vt`), 3 cases after
+   `JitKL.CallCon`; `docs/data/jit-opcode-table.csv` covered 181 -> 189.
+
+### 15.2 Checks [measured, host, 2026-11-02; the game was running beside these]
+
+- Corpus, lazy on and off: 197 cases, 0 differ, 0 unstable; per-call verify ok 31,686, 0 mismatches, 1,502 abandoned by
+  exception; the worker pass (§14) 137 cases, 0 differ. The four `JitKT` cases and the struct-key dictionaries hash as
+  the interpreter's; `JitKT.Take` (`stinarg.vt`, `ldarg.vt`, `stloc.vt`, `starg.vt`) compiles with a lazy body.
+- Lazy: 303 lazy bodies, 934 sites, 165 guarded, 26 filled (§12.7: 208, 744, 91, 8). Count mode: 2,035,978 lazy
+  calls (991,062 from a lazy body, 980,267 through a guard); before items 2 and 3: 100,977 (26,830 / 9,552).
+- The hot chain's exits (count mode, per run): `Equals<ulong>` `con.call` 4,662,546 -> 0, `UInt64.Equals` `ceq.i8`
+  4,662,546 -> 0; the value-type moves exit nowhere. What still exits among the `.vt` rows: `ldfld.vt` (12,066, a hand
+  row), `stfld.vt`, `ldelem.any.vt` / `stelem.any.vt`, and `ret.vt` in a non-lazy body (`K_RET` exits as `ret` does).
+
+### 15.3 Speed (one run each, `MONOHOST_JITREPS=9`, noisy: the two interpreter arms of `MintBench` ranged 284 to 302 ms)
+
+| Case | Interp | Lazy off | Lazy on, C1 templates off | Lazy on |
+|---|---:|---:|---:|---:|
+| `Dictionary<ulong,int>.TryGetValue` (256-entry collision chain, GetPrev loop, `UInt64.Equals`), ns | 10,441 | 8,858 (1.17x) | 11,688 (0.90x) | **3,931 (2.66x)** |
+| `Dictionary<int,Shape>.TryGetValue`, ns | 151 | 142 | 131 | 129 |
+| `MintBench(3000)`, ms | 286 | 248 (-17.9%) | 240 (-15.4%) | 232 (-19.0%) |
+
+The ulong case is the guarded chain itself and the clean signal; `MintBench` moved for the first time since §12.4 but by
+less than its noise. The "C1 templates off" arm (`MONOHOST_JITC2=127`, item 3 kept) is slower than lazy off: the lazy
+body of `UInt64.Equals` exits at `ceq.i8` on every call and `JitLazyMat` writes two frames each time, so **a lazy body
+whose hot path exits costs more than EA's call**; the eligibility rule (no exit at all, §12.3) is right to be strict.
+
+### 15.4 Left
+
+- `stfld.vt` (0.000 ms/s behind it, docs/data/jit-opcode-table.csv), `cgt.i8` / `clt.i8` and their unsigned forms
+  (signed 64-bit compares need the two-step high / low compare), `ret.vt` in a non-lazy body.
+- The `ObjectGuid` dictionary case did not move (0.98x): its chain goes through `ObjectGuid.Equals(object)` with a box.
+- In-game: nothing; C6's plan. Ledger: docs/51 §928.
+
+### 15.5 The value-type field loads `ldfld.vt` and `ldsfld.vt` (2026-11-02, evening)
+
+Two more moves, the ones §16.3 ranked first after `call`: `ldfld.vt` (12.9 ms/s behind it, `Dictionary.GetPrev`) and
+`ldsfld.vt` (4.7 ms/s, `ObjectGuid.InvalidObjectGuid` in `GameObject.GetObject` and `ScriptObject.get_ObjectId`).
+Both are EA's handler shape with the §15.1 pieces [verified: handlers `0xE567B3`, `0xE56EAE`, tail `0xE545DB`]:
+
+| Template | EA's handler | What the template emits |
+|---|---|---|
+| `K_LDFLDVT` (`ldfld.vt`, 4 words: offset, size) | null check, the slot's object pointer becomes the cursor, `memcpy(cursor, obj + offset, size)`, cursor += align8(size) | the same; the null check is the exit (EA's handler throws), `esi` unchanged |
+| `K_LDSFLDVT` (`ldsfld.vt`, 4 words: item, size) | class resolve, class-init check, special-static check, `[esi] = cursor`, copy from the class's statics + offset, cursor += align8, `esi += 8` | the §15.1 static-field resolution (vtable, offset, special-static refusal at compile time), `classInitExit`, the copy |
+
+`stfld.vt` stays an exit: 0.000 ms/s behind it. The compiled store would also need the Satb barrier over the struct's
+bytes, which the width-coded `satb()` does not emit.
+
+Checks [measured, host, 2026-11-02 19:11, the saveslim matrix running beside them]: corpus 198 cases (one new,
+`JitKTF`: a class with a 12-byte and a 20-byte struct field, a static struct with a `.cctor`, a null receiver), 0
+differ on lazy on and off; per-call verify 31,728 ok, 0 mismatch, 1,519 abandoned. Count mode, lazy: `ldfld.vt` exits
+12,086 -> 0 (the 3 left are `JitKTF.Null(null)`'s designed null exits), `ldsfld.vt` 11 -> 0. `tools/jit-hot.ts` rerun
+on that count log: `GetPrev`'s next exit is `callvirt` (0.2 per execution), `GetObject`'s `call` (0.6), `get_ObjectId`'s
+`callvirt` (0.3): the three rows stay "template first", none passes the 0.1 exits-per-execution bar yet, so the compile
+list is unchanged (10 methods, 26 ms/s; 22 held back). The held-back totals move to `call` 39.2 ms/s in 10 methods and
+`callvirt` 21.9 in 5 (§16.3 had 36.2 / 9 and 7.3 / 3). `docs/data/jit-opcode-table.csv`: `0x048` and `0x069` move from `hand` to `covered`
+(191 covered). Ledger I-928-6.
+
+### 15.6 `con.callvirt` on a reference type (2026-11-02, late evening)
+
+What held `GetPrev` back after §15.5 was not in `GetPrev` itself. Its guarded `callvirt` calls
+`IEquatableOfTEqualityComparer`1.Equals` / `GetHashCode`, whose bodies make a `con.callvirt` (a constrained call on `T`).
+`con.callvirt` had no template, so those bodies had no lazy form and `GetPrev`'s guard site bailed every time.
+
+EA's callvirt handler `0xE549EB` serves `con.callvirt` too [verified: disassembly]. The constrained class is word 3 and
+the method word 4 (width 5; callvirt is 4). A struct class (`0xE52160`: byval type `VALUETYPE` and not an enum, or a
+generic instance of a struct) is copied to the vt stack. Every other type goes through `stackval_from_data`
+(`0xE521A0`), which for a reference type stores `*ptr` in the receiver slot; then the common callvirt path runs.
+
+The site (lazy frames only, `EmitLazyCall`): when the class is a reference type, decided at compile time from its type
+byte (string, class, array, object, szarray, or a generic instance of a class), it is the §12 callvirt site with one
+more step: `this = *ptr` after a null check of the pointer, and the dereferenced receiver written to its slot at commit,
+as EA's handler leaves it. A null behind the pointer, a struct class and every guard miss exit to EA's handler with the
+slot untouched. The count-mode edge census covers the new sites.
+
+Checks [measured, host, 2026-11-02 23:14, the compaction verify queue running beside them]: corpus 199 cases (one new,
+`JitKCV`: `IEquatable<T>.Equals` and `Object.GetHashCode` through generic methods instantiated with a class, the class
+flipping on every call for the second, a null behind the pointer), 0 differ on lazy on and off; per-call verify 32,062
+ok (lazy) and 32,063 (no lazy), 0 mismatch. Count mode, lazy, `con.callvirt` exits by method:
+
+| Method | Before | After | What is left |
+|---|---:|---:|---|
+| `IEquatableOfTEqualityComparer`1.GetHashCode` | 18,264 | 5,996 | all at the `string` instance: `String.GetHashCode` is not compiled, so the guard has no lazy body to call |
+| `IEquatableOfTEqualityComparer`1.Equals` | 9,531 | 11 | `String.Equals`, the same |
+| `DefaultComparer.Equals` | 1,138 | 1,094 | `Object.Equals` and `Type.Equals` (not compiled) and the `UInt64` instance (a struct: stays an exit) |
+| `DefaultComparer.GetHashCode` | 49 | 18 | the same kinds |
+
+`tools/jit-hot.ts` rerun on that count log: `Dictionary`2.GetPrev` (rank 1, 12.93 ms/s) passes the rule now, 195 exits in
+134,061 executions (0.0015 per execution; it was "template first: callvirt", 0.2). The compile list grows from 10
+methods and 26 ms/s to 11 and 38.9 ms/s; held back by `callvirt` drops to 9.0 ms/s in 4 methods (21.9 in 5).
+`DefaultComparer.Equals` (2.8 ms/s) is still held by `con.callvirt`, 1.4 per execution, for the reasons in the table;
+its struct instances use `con.boxcallvirt` (`0xEE`, box then callvirt), a separate opcode. `con.callvirt` stays a `hand`
+row in `docs/data/jit-opcode-table.csv`, as `callvirt` does: both compile as lazy call sites, not P0 templates.
+Two limits: a guard bail inside a lazy body goes straight to `JitLazyMat` and is not counted per site, so the sites'
+own exit counts cover only calls into a normal body; and `String.GetHashCode` / `String.Equals` are the next callees
+to put on the list (§16.4), not a template. Ledger I-928-7.
+
+### 9.2 The fixtures run: 17 of 17 accessors compiled, 0 differ (2026-11-02, round 10 C5)
+
+Round 10, task C5: run the B6 fixtures with the CI's `monohost.exe` and keep them as a regression set. Host only.
+
+**Regression set.** The accessor cases are the corpus's last 17 (`node tools/jit-corpus.ts --index "Acc "` prints the
+first index: 180 at C5, 182 since §15.5 and §15.6 added a case each). The check, from `native/monohost/out` after `build.cmd` (or with the `monohost` artifact of the
+CI's `monohost` workflow copied over `monohost.exe`; `MonoHostTest.dll` is built locally, the CI has no game assemblies):
+
+```
+MONOHOST_JIT=verify MONOHOST_MINTCALL=fast MONOHOST_JITLAZY=1 MONOHOST_JITCORPUS=1 MONOHOST_DIVGUARD=1 \
+MONOHOST_JITCORPUS_FROM=$(node tools/jit-corpus.ts --index "Acc ") MONOHOST_JITCORPUS_TRAIL=1 \
+MONOHOST_JITLIST=$(node tools/jit-corpus.ts --env | sed 's/^MONOHOST_JITLIST=//') monohost.exe <TS3W.exe copy> <assemblies> selftest <hostdata>
+```
+
+Pass = `jit corpus: <N> cases, 0 differ, 0 unstable` (197 at C5, 199 since §15.6) with `MISMATCH 0`, 17 `jit verify <accessor>` rows with `mismatch 0`,
+and the three trail lines below unchanged. The full corpus (no `FROM`) is the wider check; both run in 40 s.
+
+**What the first runs found.** The fixtures compile and hash equal on every arm, but the first trail run (the new
+`MONOHOST_JITCORPUS_TRAIL=1`, every case's interpreted exception trail, not only a mismatch's) showed 9 of the 17 cases
+ending on an exception that escaped the case body, and the verify rows showed what that cost: `GetActorsOfType` and
+`SimDescription.get_Age` never ran, `Sim.get_SimDescription` ran neither input, `GetObject`, `get_Parent` and
+`get_LotCurrent` ran their first input only. Two findings:
+
+1. **An exception thrown by a `throw` leaves the case's `catch` in monohost** (the EA fault handlers' exceptions, div by
+   zero and the `.ovf` arithmetic, are caught). The corpus knew (§10's escape bit, `JitKX.Escape`, the newarr note in
+   §10's results); 60 of the 197 cases end that way, on both arms alike, so the differential holds, but a fixture's
+   designed exception ends its input loop. The three that remain are each the case's last input, by design:
+   `InteractionObjectPair.Equals` input 6 (the null definition), `Corners.get_Item` input 4, `EveryHumanSimDescription`
+   input 1; every other input ran. A corpus trail now names an escaped exception (type, message, inner) instead of
+   `(trail run threw)`.
+2. **Three internal calls were stubs, not answers.** §9 and §9.1 assumed the host's proxy IC answers; `IcStub` throws
+   `NotImplementedException("monohost stub: ...")` for `Simulator_GetTaskImpl` (`GetObject` inputs 1-2),
+   `Slots_GetParentIdImpl` (`get_Parent` and `get_LotCurrent` input 1) and `GameUtils_GetWorldName` (every
+   `new SimDescription()` and `new Sim()`: `GetActorsOfType`, `get_SimDescription`, `get_Age`). The corpus now answers
+   those three with a typed zero (no task, no parent, a null world name) for its own duration and puts the allow-list back
+   after, so the M1.3 sweep's counts do not move. `new Sim()` and `new FxLot()` (§9.1's two risks) construct.
+
+**Result [measured, host, 2026-11-02, CI `monohost.exe` of 54e0814 for the full corpus, the local build of this change
+for the accessor range]:** 197 cases, 0 differ, 0 unstable, lazy on and off; per-call verify `MISMATCH 0`; the 17 verify
+rows: `GetComponent` 2+1+1 (three instantiations), `InteractionObjectPair.Equals` 6, `GetObject` 3 unverified (clauses) +
+8 inside a verified caller, `ElapsedTimeInMinutes` 35 unverified (clauses), `get_Parent` 2, `get_ObjectId` 2 + 8,
+`get_LotCurrent` 2, `GetActorsOfType` 5 unverified (clauses), `get_IsRouting` 4, `get_CommercialLotSubType` 6,
+`ListSorted.GetEnumerator` 4, `DesireCurve.GetYFromX` 12 unverified (clauses), `get_SimDescription` 2,
+`get_ShouldSimulate` 4, `get_Age` 12 (5 inputs plus the 7 `Desc` calls of `GetActorsOfType` and `get_SimDescription`),
+`Corners.get_Item` 4, `EveryHumanSimDescription` 2 unverified (clauses). "Unverified (clauses)" means the per-call
+verifier does not compare a method with clauses word for word; its result still hashes equal on all arms.
+
+Not done: 11 `UpdateCloudiness` and 13 `get_IsSufficientlyOnScreenForHighLODSimulation` (§9.1, L class) stay out. The
+regression set is a command, not a CI job: the CI runner has no game files. Ledger §929.
+
+## 16. Round 10 C3: hot-method selection and the compile threshold (2026-11-02)
+
+Round 10, task C3: which game script methods are hot in real play, and the threshold for compiling one. Static plus host
+count mode, nothing in the game. Tool: `node tools/jit-hot.ts [--count <monohost.exe.log>] [--threshold 1.0] [--write]`,
+table `docs/data/jit-hot.csv` (one row per sampled method; the rows below are its 2026-11-02 state).
+
+### 16.1 The rule
+
+A method joins the in-game compile list when all three hold:
+
+1. **Hot in play**: mean self time over the sampled worlds at or above the threshold (§16.2), from
+   `docs/data/compile-candidates.csv` (§1 to §3: the sampler of the v0.2.x builds, two 10-minute runs per world). A new
+   sampler run, ours or a contributor's, goes through `tools/compile-candidates.ts --run <world>=<managed.jsonl>` first and
+   reaches the table by the same file; no contributor data has arrived yet, so the three worlds of §1 are the input today.
+2. **Never yields**: class N from the call-graph index (D, a delegate path, with the Invoke target named; Y and `?` stay
+   interpreted, §4 and §5).
+3. **Runs compiled when compiled**: in a count-mode run of the host (`MONOHOST_JITCOUNT=1` over the corpus and the bench),
+   the body leaves through at most 0.1 exits per execution, not counting `ret*` (the normal end of a non-lazy body, one per
+   execution; executions = max(entries from the interpreter, `ret` exits), since a lazy call into a body is not an entry).
+   A body whose hot path exits costs more than EA's call (§15.3, the "templates off" arm), so such a method waits for the
+   template its top exit names. The corpus has to reach the method for this count to exist; the B6 fixtures (§9.2) are
+   what gives the gameplay accessors one.
+
+Call counts do not exist in play (the sampler sees stacks, not calls), so the rule is self time, not calls, and the exit
+rate comes from the host's inputs, not the game's.
+
+### 16.2 The threshold
+
+Sampled self time: 177.3 ms/s over 125 methods; never-yielding 123.2 ms/s over 66 (the §6 share, after the index's
+over-approximation). One sample is about 0.4 ms/s, and a row carries ±20-40% Poisson error at 10-80 hits (§3), so a
+cut below about 1 ms/s (some 7 hits over three worlds) selects on noise. The cuts [measured, `jit-hot.ts`]:
+
+| Threshold | Methods | ms/s (share of N) | Held back by an exit today |
+|---|---:|---:|---:|
+| 2.0 ms/s | 19 | 86.3 (70%) | 15, 69.3 ms/s |
+| **1.0 ms/s** | 32 | 105.1 (85%) | 22, 79.1 ms/s |
+| 0.5 ms/s | 52 | 117.6 (96%) | 22, 79.1 ms/s |
+
+**1.0 ms/s** is the cut: 85% of the never-yielding time in 32 methods, every row above two worlds and 7 hits; the next
+20 methods add 12 ms/s with rows of 3-6 hits each. The number that matters is the last column: at every cut, most of the
+selected time is held back by the exit rule, not by the threshold. The 10 that pass all three rules today (26 ms/s):
+`RuntimeTypeHandle.get_Value` 7.4, `Dictionary.GetSlot` 3.5, `Array.Copy` 3.1 (not in the host list yet), `CASUtils.CASAGSAvailabilityFlagsFromCASAgeGenderFlags`
+3.0, `List.Add` 1.8, `List.get_Item` 1.8, `List.GrowIfNeeded` 1.6, `ObjectGuid.op_Inequality` 1.5, `Slots.GetParentId` 1.2
+and `Vector3..ctor` 1.0 (both new).
+
+### 16.3 What holds the rest back, by exit (the next templates, ranked by the time they unlock)
+
+| Top exit | ms/s held | Methods | What it is |
+|---|---:|---:|---|
+| `call` | 36.2 | 9 | a callee the compiler does not enter: runtime internal calls (`Enum.Equals` 9.8, `Type.GetTypeFromHandle` 2.8, `Enum.GetHashCode` 1.4: §5's helpers inside self time), BCL callees not on the list (`Enumerator.MoveNext` / `get_Current` 11.2 together, `Array.Resize` 4.8), and the accessors' callees (`ElapsedTimeInMinutes` 9 exits per execution, `GetActorsOfType` 11) |
+| `ldfld.vt` | 12.9 | 1 | `Dictionary.GetPrev`: the struct field read, a hand row (§15.4). Templated the same evening (§15.5): the next exit is `callvirt`, 0.2 per execution; with `con.callvirt` (§15.6) `GetPrev` passes the rule |
+| `callvirt` | 7.3 | 3 | `GameObject.GetComponent` 4.5 (5 per execution), `get_LotCurrent`, and an unguarded site |
+| `ldsfld.vt` | 4.7 | 2 | `GameObject.GetObject`, `ScriptObject.get_ObjectId`: `ObjectGuid.InvalidObjectGuid`. Templated (§15.5): the next exits are `call` 0.6 and `callvirt` 0.3 per execution |
+| `initobj` | 4.6 | 1 | `Dictionary.TryGetValue`'s `default(TValue)` |
+| `isinst` | 3.7 | 1 | `InteractionObjectPair.Equals` |
+| `con.callvirt`, `newobj`, `con.call`, `shr.un.i8`, `ldarg.r4` | 9.7 | 5 | one method each (`DefaultComparer.Equals`, `List.GetEnumerator`, `IEquatableOfTEqualityComparer.GetHashCode`, `UInt64.GetHashCode`, `Single.IsNaN`) |
+
+Two of the host list's own entries are net negative by this measure and should leave it until their template exists:
+`Single.IsNaN` (4.1 exits per execution on `ldarg.r4`; 8.7 M calls in the bench, 77 M exits) and `Math.Min` (the same
+pattern, 85 M exits; not in the sampled top rows). The `call` row is the one a template cannot fix alone: a runtime
+internal call needs a direct-call template (the icall's address is static), and a BCL callee needs to be on the list and
+pass the rule itself; `Enumerator.MoveNext` / `get_Current` (11.2 ms/s) are the first to chase.
+
+### 16.4 Reading the table and the limits
+
+- `host_executions` / `host_exits` / `top_exit` come from one count-mode run of the current tree (the corpus plus the bench);
+  a method the corpus does not reach has empty columns and the verdict `compile` on the sampler alone.
+- The sampler's names have no parameter list and print nested types without the outer type (§5), so a key such as
+  `Enumerator.MoveNext` or `.ctor` merges overloads and types; `Vector3..ctor` is the sampler's frame, not one overload.
+- 25 sampled methods are `?` (mods, ts3fixes, unmatched frames: 20 ms/s) and 34 are Y (34 ms/s): outside the rule.
+- The threshold is a cut on the ranking, applied once per release when the list is built, not a counter in the game: the
+  game has no call counts, and a per-call counter at the transform hook would cost on every call (C6's plan keeps the list
+  static). Ledger §930.

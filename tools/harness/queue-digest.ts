@@ -59,10 +59,10 @@ export function digest(rows: any[], jobs: Map<string, any>, ctx: Ctx): { lines: 
     const id = String(row.job), job = jobs.get(String(row.rerunOf ?? row.job));
     if (!job && jobs.size) review.push(`${id}: not in the queue file`);
     const h = row.profileTag ? ctx.hitch(row.profileTag) : null, v = classify(row, h && typeof h !== 'string' ? h.invalid : null);
-    if (v.v !== 'PASS') failed.push(v.v === 'VOID' ? `${id} void` : id);
+    if (v.v !== 'PASS') failed.push(v.v === 'VOID' ? `${id} void` : v.v === 'N/A' ? `${id} n/a` : id); // N/A (docs/236 Round 9): not a pass, named apart
     if (v.v === 'VOID') review.push(`${id}: VOID, rerun`);
     const timing = row.timing === 'invalid' ? `, timing invalid (${clip(String(row.timingWhy ?? '?'), 60)})` : '';
-    L.push(`${id}${row.machine && row.machine !== 'main' ? ` [${row.machine}]` : ''}: ${v.v}, ${row.minutes ?? '?'} min from ${hhmm(row.time)}${timing}${v.v !== 'PASS' && v.why ? `; ${clip(v.why.replace(/FAIL:\s*/g, ''), 200)}` : ''}`);
+    L.push(`${id}${row.machineTag ? ` [${row.machineTag}]` : ''}: ${v.v}, ${row.minutes ?? '?'} min from ${hhmm(row.time)}${timing}${v.v !== 'PASS' && v.why ? `; ${clip(v.why.replace(/FAIL:\s*/g, ''), 200)}` : ''}`);
     if (job) {
       const extra = Object.keys(job).filter(k => /require|forbid|max$/i.test(k) && !RULES.includes(k));
       if (extra.length) review.push(`${id}: rule fields not read: ${extra.join(', ')}`);

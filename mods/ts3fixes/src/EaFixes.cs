@@ -69,7 +69,7 @@ namespace Ts3Fixes
         static void ApplyEaFixes()
         {
             Patch(typeof(Service), "RemovePreferredSim", typeof(PreferredServiceHook), "RemoveHook", "RemoveOrig");
-            Patch(typeof(Service), "FindSimForAssignment", typeof(PreferredServiceHook), "FindHook", "FindOrig");
+            // v0.2.6: not patched. The swap drops the virtual flag, so a callvirt naming Service.FindSimForAssignment skips every override (docs/67 §33).
             Patch(typeof(SocialWorkerChildAbuseSituation.RouteToLot), "Init", typeof(SwAbuseHook), "InitHook", "InitOrig");
             Patch(typeof(SocialWorkerAdoptionSituation.RouteToLot), "Init", typeof(SwAdoptHook), "InitHook", "InitOrig");
             Patch(typeof(SocialWorkerPetAdoptionSituation.RouteToLot), "Init", typeof(SwPetAdoptHook), "InitHook", "InitOrig");
@@ -90,14 +90,14 @@ namespace Ts3Fixes
             Patch(typeof(Sim), "SwitchToOutfitWithoutSpin", new Type[] { typeof(OutfitCategories), typeof(SimOutfit), typeof(int) }, typeof(OutfitClearHook), "InstantHook", "InstantOrig");
             Patch(typeof(Sim), "DoOutfitDelayedSwap", typeof(OutfitClearHook), "DoneHook", "DoneOrig");
             Patch(typeof(CASUtils), "RegisterCallback", typeof(SwapCbHook), "RegisterHook", "RegisterOrig");
+            Patch(typeof(Sim), "SwitchToOutfitDelayed", new Type[] { typeof(OutfitCategories), typeof(CASUtils.SwapReadyCallback) }, typeof(AgeUpSwapHook), "SwapHook", "SwapOrig");
             Patch(typeof(BakeSaleTable), "get_GetSeller", typeof(BakeSaleHook), "GetSellerHook", "GetSellerOrig");
             Patch(typeof(BakeSaleTable), "get_HasSeller", typeof(BakeSaleHook), "HasSellerHook", "HasSellerOrig");
             Patch(typeof(BakeSaleTable), "OnStartup", typeof(BakeSaleHook), "StartupHook", "StartupOrig");
             Patch(typeof(Sims3.Gameplay.Skills.Cooking), "IsMenuMaven", typeof(MenuMavenHook), "IsHook", "IsOrig");
             Patch(typeof(Services), "get_AllServices", typeof(NullServiceHook), "GetHook", "GetOrig");
             Patch(typeof(Services), "PostWorldLoadStartup", typeof(NullServiceHook), "StartupHook", "StartupOrig");
-            Patch(typeof(RabbitHole), "AnimateDoorOpen", typeof(RabbitHoleDoorHook), "OpenHook", "OpenOrig");
-            Patch(typeof(RabbitHole), "AnimateDoorClose", typeof(RabbitHoleDoorHook), "CloseHook", "CloseOrig");
+            // v0.2.6: not patched. The swap drops the virtual flag, so a callvirt naming RabbitHole.AnimateDoorOpen/Close skips every override (docs/67 §33).
             Patch(typeof(Sims3.Gameplay.Utilities.GreetingCardTakePhotoHelper), "SimDoneWithPhoto", typeof(PhotoSessionHook), "SimDoneHook", "SimDoneOrig");
             Patch(typeof(Sims3.Gameplay.Utilities.GreetingCardTakePhotoHelper), "SimMadeItInside", typeof(PhotoSessionHook), "MadeInsideHook", "MadeInsideOrig");
             Patch(typeof(Sims3.Gameplay.Objects.EggHuntController), "IsValidEggPosition", typeof(EggSpotHook), "ValidHook", "ValidOrig");
@@ -109,6 +109,10 @@ namespace Ts3Fixes
             Patch(typeof(SocialComponent), "ScoreSocialsOnSims", Type.EmptyTypes, typeof(ConvTurnHook), "ScoreHook", "ScoreOrig");
             Patch(typeof(Sims3.Gameplay.Objects.Vehicles.NpcDriversManager), "CreateNpcDriver", new Type[] { typeof(Sims3.Gameplay.Objects.Vehicles.NpcDriversManager.NpcDrivers) }, typeof(NpcDriverPoolHook), "CreateHook", "CreateOrig");
             Patch(typeof(Sims3.Gameplay.Objects.Book), "StopUsingBook", typeof(BookCarryHook), "StopHook", "StopOrig");
+            Patch(typeof(AgingState), "PreInstantiateSim", new Type[] { typeof(ResourceKey).MakeByRefType() }, typeof(AgeUpAbortHook), "PreHook", "PreOrig");
+            Patch(typeof(GameObject), "SetRewardGiver", typeof(RewardGiverHook), "GiverHook", "GiverOrig");  // RewardGiver.cs, docs/525
+            Patch(typeof(OnlineDatingManager), "SimHasProfile", typeof(DatingProfileHook), "HasHook", "HasOrig");  // DatingProfile.cs, docs/528
+            Patch(typeof(Sims3.Gameplay.Careers.Career), "LeaveJob", new Type[] { typeof(bool), typeof(Sims3.Gameplay.Careers.Career.LeaveJobReason) }, typeof(LeaveJobDisposeHook), "LeaveHook", "LeaveOrig");  // LeaveJobDispose.cs, docs/529
         }
 
         // ---- ageupkeepoutfits (#100) ----

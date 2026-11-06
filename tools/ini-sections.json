@@ -1,5 +1,12 @@
 {
  "_how": "ini section -> native/ts3native/*.cpp files that name it as L\"<Section>\" (GetPrivateProfile* reads). Built by the one-liner in the comment of build.yml job native-ea169 step \"EA ini\"; rebuild after adding a section or moving its reader. build.yml refuses an EA allowlist section whose file has a `// unresolved` row in ts3addr-ea169.h.",
+ "SaveSlim": ["saveslim.cpp"],
+ "FootstepRO": ["fsro.cpp"],
+ "UnseenAnim": ["unseenanim.cpp"],
+ "UnseenRootMotion": ["unseenrm.cpp"],
+ "UnseenTable": ["unseentable.cpp"],
+ "UnseenCost": ["unseencost.cpp"],
+ "IlPatch": ["ilpatch.cpp"],
  "GC": ["memexp.cpp","ts3native.cpp","gcgrow.cpp"],
  "Compat": ["apex.cpp"],
  "ThreadStack": ["threadstack.cpp"],

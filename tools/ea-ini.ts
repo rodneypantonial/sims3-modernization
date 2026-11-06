@@ -22,8 +22,25 @@ export const ALWAYS_OFF: Record<string, string> = {
 };
 // single keys the rc ini zeroes in a kept section: on in the Steam ini, not yet run on EA ([MemDiag] Light=1 acts with
 // Enabled=0; it stays off on EA, as before docs/238, until a test run turns it on)
-export const RC_ZERO_KEYS: Record<string, string[]> = { MemDiag: ["Light"] };
+// The other rows came with the merge of main (2026-11-06): on in the Steam ini, off on the port, never run on EA. Each leaves here after its EA smoke.
+export const RC_ZERO_KEYS: Record<string, string[]> = {
+    MemDiag: ["Light"], ThreadStack: ["Enabled"], SteerRO: ["Enabled"], LotFrontDoorRO: ["Enabled"], ObstructedRO: ["Enabled"], AvoidRO: ["Enabled"],
+    RouteToObjRO: ["Enabled"], PlacementRO: ["Enabled"], GoalValidRO: ["Enabled"], IdleCheckRO: ["Enabled"], SlotEnabledRO: ["Enabled"], Gate0RO: ["Enabled"],
+    UnseenTable: ["Enabled"], RouteAsync: ["H2", "TailUnlock", "ReplanDedupe"], Discourage: ["DeferFootprint2", "DestroyPark", "DestroyParkDx"],
+    EaCrashFixes: ["ThumbPose", "GeomBoneIndex"],
+};
 const rcZeroKey = (sec: string, key: string) => (RC_ZERO_KEYS[sec] ?? []).includes(key);
+// One key of a section that is clean otherwise: its unresolved rows zero that key on EA instead of flagging the whole file (eafix.cpp, wastar.cpp,
+// rtoro.cpp and idlero.cpp hold other, working features). The key comes back by itself once port-run resolves its addresses.
+export const KEY_ADDRS: Record<string, number[]> = {
+    "EaCrashFixes.ThumbPoseBones": [0x00D5B708, 0x00D5B768, 0x00D5B7A1, 0x00FC2D30], "EaCrashFixes.LotGridMiss": [0x0082B608, 0x0082B7F4],
+    "RouteToObjRO.Tail": [0x00686A90, 0x0082A780, 0x01003D7C],
+    "IdleCheckRO.SiteC": [0x00620D20, 0x00624F70, 0x00652470, 0x0075598B, 0x00755A12, 0x00755A6D, 0x00755A82, 0x00755A97],
+};
+const keyed = new Set(Object.values(KEY_ADDRS).flat());
+const unresolvedRows = (addrHdr: string) => [...addrHdr.matchAll(/^\/\/ unresolved: (\S+) \S+ (?:native\/ts3native\/)?([\w-]+\.(?:cpp|h))/gm)];
+// "Section.Key" of every key with an unresolved address
+export const keysOff = (addrHdr: string) => { const un = new Set(unresolvedRows(addrHdr).map((m) => parseInt(m[1], 16))); return new Set(Object.keys(KEY_ADDRS).filter((k) => KEY_ADDRS[k].some((a) => un.has(a)))); };
 // EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
 // ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
 export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024" };
@@ -44,7 +61,7 @@ export type Row = { section: string; shipped: string; state: "kept" | "zeroed"; 
 export function badFiles(addrHdr: string, bytesHdr: string, includes: Map<string, string[]>): Map<string, string> {
     const bad = new Map<string, string>();
     const add = (f: string, why: string) => { for (const g of [f, ...(includes.get(f) ?? [])]) if (!bad.has(g)) bad.set(g, why); };
-    for (const m of addrHdr.matchAll(/^\/\/ unresolved: \S+ \S+ (?:native\/ts3native\/)?([\w-]+\.(?:cpp|h))/gm)) add(m[1], "unresolved row");
+    for (const m of unresolvedRows(addrHdr)) if (!keyed.has(parseInt(m[1], 16))) add(m[2], "unresolved row");
     for (const m of bytesHdr.matchAll(/^\/\/ bytes-bad: (\S+) \S+ ([\w-]+\.(?:cpp|h))/gm)) add(m[2], "bytes " + m[1]);
     return bad;
 }
@@ -87,14 +104,16 @@ function load() {
     const includes = new Map<string, string[]>();
     for (const f of readdirSync(SRC).filter((f) => f.endsWith(".cpp"))) for (const m of readFileSync(join(SRC, f), "utf8").matchAll(/^#include "([\w-]+\.h)"/gm)) includes.set(m[1], [...(includes.get(m[1]) ?? []), f]);
     const map = JSON.parse(readFileSync(join(repo, "tools", "ini-sections.json"), "utf8"));
-    const bad = badFiles(readFileSync(join(SRC, "ts3addr-ea169.h"), "utf8"), readFileSync(join(SRC, "ts3bytes-ea169.h"), "utf8"), includes);
-    return { ini, sections, enabled, map, bad };
+    const addrHdr = readFileSync(join(SRC, "ts3addr-ea169.h"), "utf8"), bad = badFiles(addrHdr, readFileSync(join(SRC, "ts3bytes-ea169.h"), "utf8"), includes);
+    return { ini, sections, enabled, map, bad, off: keysOff(addrHdr) };
 }
 
 function selfCheck() {
     const ok = (c: boolean, w: string) => { if (!c) { console.error("ea-ini self-check FAILED: " + w); process.exit(1); } };
     const bad = badFiles("// unresolved: 0x00000001 missing native/ts3native/a.cpp:3\n// unresolved: 0x2 xref-none native/ts3native/h.h:1\n", "// bytes-bad: mismatch 0x3 b.cpp:9\n", new Map([["h.h", ["c.cpp"]]]));
     ok([...bad.keys()].sort().join() === "a.cpp,b.cpp,c.cpp,h.h", "badFiles " + [...bad.keys()]);
+    const kh = "// unresolved: 0x0082B608 no-ea-evidence native/ts3native/wastar.cpp:197\n";
+    ok(badFiles(kh, "", new Map()).size === 0 && [...keysOff(kh)].join() === "EaCrashFixes.LotGridMiss" && keysOff("").size === 0, "keyed row");
     const map = { A: ["a.cpp"], B: ["ok.cpp"], E: ["b.cpp", "ok.cpp"], RouteGate: ["ok.cpp"], RouteAsync: ["a.cpp"], AvoidRO: ["ok.cpp"], GC: ["memexp.cpp", "ok.cpp"] };
     const r = rcPlan(["A", "B", "Verify", "E", "RouteGate", "RouteAsync", "AvoidRO", "GC"], { A: "1", B: "1" }, map, new Map([...bad, ["memexp.cpp", "unresolved row"]]));
     const st = Object.fromEntries(r.map((x) => [x.section, x.state]));
@@ -111,7 +130,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     const { values: v } = parseArgs({ options: { out: { type: "string" }, md: { type: "string" }, "self-check": { type: "boolean" } } });
     if (v["self-check"]) selfCheck();
     else {
-        const { ini, sections, enabled, map, bad } = load();
+        const { ini, sections, enabled, map, bad, off } = load();
+        const zeroKey = (s: string, k: string) => off.has(s + "." + k);
         const on = (process.env.ALLOW_ON ?? "").split(" ").filter(Boolean), allow = (process.env.ALLOW ?? "").split(" ").filter(Boolean).concat(on);
         for (const s of allow) {
             if (!map[s]) throw new Error(`[${s}] is not in tools/ini-sections.json`);
@@ -120,11 +140,12 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         }
         const out = v.out ?? join(SRC, "out-ea169");
         mkdirSync(out, { recursive: true });
-        writeFileSync(join(out, "ts3native-ea169.ini"), render(ini, (s) => !allow.includes(s), (s) => on.includes(s), undefined, EA_SET));
+        writeFileSync(join(out, "ts3native-ea169.ini"), render(ini, (s) => !allow.includes(s), (s) => on.includes(s), zeroKey, EA_SET));
         console.log(`minimal ini: on = ${allow.map((s) => "[" + s + "]").join(" ")}; ${bad.size} source files have unresolved or bytes-bad rows`);
         const plan = rcPlan(sections, enabled, map, bad), zeroed = new Set(plan.filter((r) => r.state === "zeroed").map((r) => r.section));
-        writeFileSync(join(out, "ts3native-ea169-rc.ini"), render(ini, (s) => zeroed.has(s), () => false, rcZeroKey, EA_SET));
+        writeFileSync(join(out, "ts3native-ea169-rc.ini"), render(ini, (s) => zeroed.has(s), () => false, (s, k) => rcZeroKey(s, k) || zeroKey(s, k), EA_SET));
         for (const r of plan) console.log(`rc [${r.section}] shipped Enabled=${r.shipped}: ${r.state}${r.state === "zeroed" ? " (" + r.reason + ")" : ""}`);
+        console.log(`keys off for unresolved rows: ${[...off].join(" ") || "none"}`);
         console.log(`rc ini: ${plan.length - zeroed.size} sections kept as shipped (Enabled=1: ${plan.filter((r) => r.state === "kept" && r.shipped === "1").map((r) => r.section).join(" ")}), ${zeroed.size} zeroed`);
         if (v.md) writeFileSync(v.md, "| section | shipped Enabled | rc state | reason |\n|---|---|---|---|\n" + plan.map((r) => `| [${r.section}] | ${r.shipped} | ${r.state} | ${r.reason} |`).join("\n") + "\n");
     }

@@ -10,7 +10,7 @@
 // bytes, thread, the return address and the first 3 TS3W code addresses above it on the stack (heuristic: stale values
 // possible), and the thread's script frames (interpreter, FbStackText). The first 50 expansions, then every one asking
 // >= 64 MB, 500 lines at most. Growth not through these calls (between two of ours) is counted as gwUnseenKB.
-// ts3native_counters.gwMode (+0x5B04, --ab gcgrowlog) 0 stops the lines; the counters keep counting.
+// ts3native_counters.gwMode (+0x5AE8, --ab gcgrowlog) 0 stops the lines; the counters keep counting.
 // Round 2 (Run 8l launch 1: a ~3.8 MB string of Simulator_LoadXmlAsString refused with 331 MB of large blocks free):
 // - "gcgrow why:" per expansion, the inputs of GC_allochblk_nth 0xE49320's refusal of a bigger free block [verified
 //   disassembly, Steam]: taken only when !GC_use_entire_heap [0x11F2D98] && !GC_dont_gc && heap - large free >=
