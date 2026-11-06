@@ -105,7 +105,16 @@ static void TestGcGrowLog() {
     assert(!g_gcStrict && k.gcStrictN == 0 && k.gcLenientN == 0 && k.gcSwitchSec == 0);
     GcCapWindow(false, "test");  // already lenient: no-op
     assert(!g_gcStrict && k.gcLenientN == 0);
-    g_gcCapBytes = 0;
+    // streak guard: the 3rd expansion with no collection lets the punt take the request, a collection arms it again
+    gcNo++, bl = 1u << 20;
+    assert(GwRunSite(0x2000, 206) == 1 && GwRunSite(0x2000, 206) == 1 && k.gcExpandStreak == 2 && bl == 1u << 20);
+    assert(GwRunSite(0x2000, 206) == 1 && k.gcExpandStreak == 3 && bl == 0x3000);
+    gcNo++, bl = 1u << 20;
+    assert(GwRunSite(0x2000, 206) == 1 && k.gcExpandStreak == 1 && bl == 1u << 20);
+    g_gcCapBytes = 0;  // no cap, no guard
+    gcNo++;
+    for (int i = 0; i < 3; i++) GwRunSite(0x2000, 206);
+    assert(k.gcExpandStreak == 3 && bl == 1u << 20);
     g_mx = saved, g_gwb = savedB, g_gwLargeFree = GW_LARGE_FREE, g_gwExpand = (GwExpandFn)(uintptr_t)GW_EXPAND, g_gwLastHeap = 0;
     g_gwXmlOrig = NULL, g_gwRingN = 0, g_gwCrossed = false, g_gwXmlLines = 0, g_gwStreakGc = 0xFFFFFFFF;
     memset(&k.gwMode, 0, sizeof(LONG) * 18);
