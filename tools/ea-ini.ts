@@ -25,9 +25,11 @@ export const ALWAYS_OFF: Record<string, string> = {
 // The other rows came with the merge of main (2026-11-06): on in the Steam ini, off on the port, never run on EA. Each leaves here after its EA smoke.
 export const RC_ZERO_KEYS: Record<string, string[]> = {
     MemDiag: ["Light"], ThreadStack: ["Enabled"], SteerRO: ["Enabled"], LotFrontDoorRO: ["Enabled"], ObstructedRO: ["Enabled"], AvoidRO: ["Enabled"],
-    RouteToObjRO: ["Enabled"], PlacementRO: ["Enabled"], GoalValidRO: ["Enabled"], IdleCheckRO: ["Enabled"], SlotEnabledRO: ["Enabled"], Gate0RO: ["Enabled"],
+    RouteToObjRO: ["Enabled", "Tail"], PlacementRO: ["Enabled"], GoalValidRO: ["Enabled"], IdleCheckRO: ["Enabled", "SiteC"], SlotEnabledRO: ["Enabled"], Gate0RO: ["Enabled"],
     UnseenTable: ["Enabled"], RouteAsync: ["H2", "TailUnlock", "ReplanDedupe"], Discourage: ["DeferFootprint2", "DestroyPark", "DestroyParkDx"],
-    EaCrashFixes: ["ThumbPose", "GeomBoneIndex"],
+    EaCrashFixes: ["ThumbPose", "GeomBoneIndex", "ThumbPoseBones", "LotGridMiss"],
+    // addresses mapped by the table regen, never run on EA: mapped is not tested, so they stay off until their smoke
+    FootstepRO: ["Enabled"], UnseenAnim: ["Enabled"], UnseenRootMotion: ["Mode"],
 };
 const rcZeroKey = (sec: string, key: string) => (RC_ZERO_KEYS[sec] ?? []).includes(key);
 // One key of a section that is clean otherwise: its unresolved rows zero that key on EA instead of flagging the whole file (eafix.cpp, wastar.cpp,
