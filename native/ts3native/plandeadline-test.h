@@ -431,9 +431,42 @@ static void TestPlanDeadline() {
         assert(KdJobBegin(&s) == 250000 && !t_kdExemptUs);
         s.kdScope = 0, s.uf = 1;
         assert(KdJobBegin(&s) == 250000);
-        assert(KdJobBegin(&f) == 200000 && KdJobBegin(&a) == 200000);
+        assert(KdJobBegin(&f) == 0 && KdJobBegin(&a) == 0);  // docs/249: unknown = household, whatever the kind
         f.kdScope = a.kdScope = 1, p.kdScope = 1;
-        assert(KdJobBegin(&f) == 0 && KdJobBegin(&a) == 0 && KdJobBegin(&p) == 180000);
+        assert(KdJobBegin(&f) == 0 && KdJobBegin(&a) == 0 && KdJobBegin(&p) == 0);
+        f.kdScope = a.kdScope = 2, p.kdScope = 2;
+        assert(KdJobBegin(&f) == 200000 && KdJobBegin(&a) == 200000 && KdJobBegin(&p) == 180000);
+        f.kdScope = a.kdScope = p.kdScope = 0;
+        {
+            const LONG n0 = g_kdScopeN;
+            g_kdScopeN = 0;  // old package: no answer ever, every cut as v0.2.8
+            assert(KdJobBegin(&f) == 200000 && !t_kdExemptUs && !KdSyncCeilUs(0x1234));
+            g_kdScopeN = n0;
+        }
+        // KindDeadlines off: FbJobCapMs and the probe's PlanDeadlineMs keep to the same rule; an own job stays as it was
+        {
+            const LONG md0 = k.kdMode, fm0 = k.fbjcMode, fc0 = k.fbjcCapUs, pu0 = k.pdUs;
+            k.kdMode = 0, k.fbjcMode = 1, k.fbjcCapUs = 300000, k.pdUs = 300000, g_kdCeilUs = 10000000;
+            AsyncJob pj = {};
+            pj.probe = 1;
+            assert(KdJobBegin(&f) == 10000000 && t_kdExemptUs == 300000 && KdJobBegin(&pj) == 10000000);
+            f.kdScope = pj.kdScope = 2;
+            assert(KdJobBegin(&f) == -1 && KdJobBegin(&pj) == -1);
+            f.kdScope = 0;
+            AsyncJob own = {};
+            assert(KdJobBegin(&own) == -1);
+            k.kdMode = md0, k.fbjcMode = fm0, k.fbjcCapUs = fc0, k.pdUs = pu0, g_kdCeilUs = 0;
+        }
+        // ReplanDedupe's scope
+        KdScopeSet(0x25000009, 2);
+        t_kdJobScope = 0;
+        assert(KdKnownUnseen(0x25000009) && !KdKnownUnseen(0x25000008));
+        KdScopeSet(0x25000009, 1);
+        assert(!KdKnownUnseen(0x25000009));
+        t_kdJobScope = 2;
+        assert(KdKnownUnseen(0x25000008));
+        t_kdJobScope = 0;
+        KdScopeClear(0x25000009);
         KdScopeSet(0x25000009, 1);
         assert(KdScopeTake(0x25000008) == 0 && KdScopeTake(0x25000009) == 0);  // another route's START used it up
         KdScopeSet(0x25000009, 2);

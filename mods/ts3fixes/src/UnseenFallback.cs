@@ -764,8 +764,10 @@ namespace Ts3Fixes
                 IScriptProxy proxy = Follower;
                 Sim sim = proxy != null ? proxy.Target as Sim : null;
                 bool ownCheck = sStuckIn || sInOwnCheck || sInRoutableCheck || sUfInLeg;
-                int why = sim == null || ownCheck ? 0 : UfWhy(sim);
-                DiagSend(why != 0 ? 10 : 11, Handle);  // docs/197 §7 [RouteAsync] KdExemptSeen: this route's scope for its START or sync plan; every plan, these switches or not
+                Sim who = sim;  // docs/249: a vehicle by its driver, no driver = unseen (traffic, NPC boats); a pet or a stuck check by its Sim
+                if (who == null) { Vehicle v = proxy != null ? proxy.Target as Vehicle : null; who = v != null ? v.Driver : null; }
+                int why = who != null ? SafeUfWhy(who) : 0;
+                DiagSend(why != 0 ? 10 : 11, Handle);  // docs/197 §7 [RouteAsync] KdExemptSeen: this route's scope for its START or sync plan; first thing in every plan, these switches or not
                 if (!pre && !leave && !ShortcutOn("unseenfbplan")) return false;
                 // never: stuck-check probes (phase B), our own route checks, IsPointInLotSafelyRoutable, non-Sims, pets, D-leave's own leg
                 if (sim == null || ownCheck || sim.SimDescription == null || sim.SimDescription.IsPet)

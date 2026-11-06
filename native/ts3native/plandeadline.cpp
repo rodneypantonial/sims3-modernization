@@ -93,20 +93,20 @@ static SRWLOCK g_kdLock = SRWLOCK_INIT;
 static __declspec(thread) bool t_kdUncut;  // this job runs uncut because of its follower's backoff
 // docs/197 §7 [RouteAsync] KdExemptSeen: a job of a Sim the player can see never gets a KindDeadlines cut (player report 2026-11-07:
 // 6 of 12 active-Sim no-paths followed a cut). Scope = UfWhy: ts3fixes sends the answer per route right before START (UserDiag ops
-// 10 seen, 11 unseen or not a Sim or ts3fixes' own check, 12 plan over, lo = route handle). Unknown (no answer) = exempt for own jobs, cut as
-// before for foreign ones. The probe kind and an unseen-marked job keep theirs. Exempt jobs and sync plans get KdSeenCeilMs instead (a
+// 10 seen, 11 unseen or not a Sim or ts3fixes' own check, 12 plan over, lo = route handle). Unknown (no answer) = household (docs/249),
+// every kind; only a route known unseen or marked keeps its cuts. Exempt jobs and sync plans get KdSeenCeilMs instead (a
 // job with no deadline holds +0x918 as long as it runs, a sync plan freezes the sim thread).
 static int g_kdExempt;
 static LONG g_kdCeilUs, g_kdExN, g_kdWouldCut, g_kdExMaxUs, g_kdCeilCut;  // no counter fields: the hotfix keeps the v0.2.8 layout
 static __declspec(thread) LONG t_kdExemptUs;  // this job is exempt: the deadline it would have had
-static bool KdExempt(const AsyncJob* j, int kind) {
-    if (!g_kdExempt || kind == KD_PROBE || j->uf || j->kdScope == 2) return false;
-    return !j->fb && !j->af ? true : j->kdScope == 1;
+static __declspec(thread) LONG t_kdJobScope;  // worker: the running job's scope, 2 = unseen
+static bool KdExempt(const AsyncJob* j) {
+    return g_kdExempt && g_kdScopeN && !j->uf && j->kdScope != 2;  // docs/249: cut only a route known unseen; no answer ever = old package: as v0.2.8
 }
 static DWORD g_kdScopeH;
 static LONG g_kdScope;
 // sim thread (UdTextMsg): this route's scope, good for its next START only
-static void KdScopeSet(DWORD handle, LONG scope) { g_kdScopeH = handle, g_kdScope = scope; }
+static void KdScopeSet(DWORD handle, LONG scope) { g_kdScopeH = handle, g_kdScope = scope, g_kdScopeN++; }
 static LONG KdScopeTake(DWORD handle) {
     const LONG s = handle && g_kdScopeH == handle ? g_kdScope : 0;
     g_kdScopeH = 0;
@@ -117,17 +117,22 @@ static __declspec(thread) bool t_kdSeen;  // this sync plan's scope was known (l
 // sim thread: the ceiling of this sync plan, 0 = its usual caps. handle 0 = non-IC plan: the plan ts3fixes is running. Unknown = exempt
 static LONG KdSyncCeilUs(DWORD handle) {
     const Ts3nCounters& k = ts3native_counters;
-    if (!g_kdExempt || k.pdMode != 1 || t_pd.open) return 0;
+    if (!g_kdExempt || !g_kdScopeN || k.pdMode != 1 || t_pd.open) return 0;
     const LONG s = g_kdScopeH && (!handle || g_kdScopeH == handle) ? g_kdScope : 0;
     if (s == 2) return 0;
     t_kdSeen = s == 1;
     return g_kdCeilUs;
 }
+// ReplanDedupe's repeat after footprint writes (docs/249): not proven exact, so only for a route known unseen
+static bool KdKnownUnseen(DWORD handle) {
+    if (!g_kdExempt || !g_kdScopeN) return true;
+    return t_kdJobScope ? t_kdJobScope == 2 : g_kdScopeH == handle && g_kdScope == 2;
+}
 
 static void ReadKindDeadlines(const wchar_t* ini) {
     Ts3nCounters& k = ts3native_counters;
     g_kdIni = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KindDeadlines", 0, ini), 0, 1);
-    g_kdExempt = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdExemptSeen", 0, ini), 0, 1);
+    g_kdExempt = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdExemptSeen", 1, ini), 0, 1);
     g_kdCeilUs = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdSeenCeilMs", 10000, ini), 1000, 60000) * 1000;
     for (int i = 0; i < KD_N; i++) {
         const int ms = GetPrivateProfileIntW(L"RouteAsync", kKdIniKey[i], kKdDefMs[i], ini);
@@ -176,8 +181,16 @@ static KdRow* KdFind(u64 id, bool add) {
 // worker, before the job's IC: its deadline in us (0 = uncut), -1 = KindDeadlines off (the old rules apply)
 static LONG KdJobBegin(const AsyncJob* j) {
     Ts3nCounters& k = ts3native_counters;
-    t_kdKind = 0, t_kdUncut = false, t_kdExemptUs = 0;
-    if (k.kdMode != 1 || !k.kdReady) return -1;
+    t_kdKind = 0, t_kdUncut = false, t_kdExemptUs = 0, t_kdJobScope = j->uf ? 2 : j->kdScope;
+    static LONG noScope;
+    if (g_kdExempt && !g_kdScopeN && !InterlockedExchange(&noScope, 1)) Log("route seen exempt: no scope answer from ts3fixes (old package?), every route cut as in v0.2.8");
+    if (k.kdMode != 1 || !k.kdReady) {  // docs/249: FbJobCapMs and the probe's PlanDeadlineMs (KindDeadlines off): the same rule
+        const LONG old = j->fb && k.fbjcMode == 1 ? k.fbjcCapUs : j->probe && !j->fb ? k.pdUs : 0;
+        if (!old || !KdExempt(j)) return -1;
+        InterlockedIncrement(&g_kdExN);
+        t_kdExemptUs = old;
+        return g_kdCeilUs;
+    }
     const int kind = KdKind(j);
     t_kdKind = kind + 1;
     if (kind != KD_PROBE && j->sc) {  // a stuck-check round without the probe mark: the last one, the only one that resets
@@ -186,7 +199,7 @@ static LONG KdJobBegin(const AsyncJob* j) {
     }
     LONG us = k.kdUs[kind];
     if (!us) return 0;
-    if (KdExempt(j, kind)) {
+    if (KdExempt(j)) {
         InterlockedIncrement(&g_kdExN);
         t_kdExemptUs = us;
         return g_kdCeilUs;
@@ -373,7 +386,7 @@ static void KdLogCounters() {
         "after a cut ok %ld fail %ld (uncut ok %ld), stuck checks %ld; stuck-check last round exempt %ld",
         c.kdMode, b, c.kdLateMaxUs / 1000, c.kdCutOk, c.kdBackoff[0], c.kdBackoff[1], c.kdAfterOk, c.kdAfterFail, c.kdUncutOk,
         c.kdAfterStuckCheck, c.kdExemptSc);
-    Log("route seen exempt: mode %d plans %ld would cut %ld max %ld ms ceiling cuts %ld", g_kdExempt, g_kdExN, g_kdWouldCut, g_kdExMaxUs / 1000, g_kdCeilCut);
+    Log("route seen exempt: mode %d plans %ld would cut %ld max %ld ms ceiling cuts %ld, scope answers %ld, repeats planned %ld, anim held %ld", g_kdExempt, g_kdExN, g_kdWouldCut, g_kdExMaxUs / 1000, g_kdCeilCut, g_kdScopeN, g_kdRdHeld, g_kdAaHeld);
 }
 
 static void ReadPlanDeadline(const wchar_t* ini) {

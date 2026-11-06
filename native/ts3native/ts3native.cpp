@@ -3042,6 +3042,7 @@ static volatile DWORD g_pdWkTid;
 // last round): its nested Route_PlanLocked opens no session either; t_pdScH: IcCollect's Plan IC follows a refused START
 // whose stuck-check tag had no probe mark (t_pdScH = its route handle, read once by SyncIc)
 static __declspec(thread) bool t_pdNoCut;
+static LONG g_kdScopeN, g_kdRdHeld, g_kdAaHeld;  // docs/249: scope answers (0 = old package), repeats planned, anim held
 static __declspec(thread) LONG t_kdCeil;  // docs/197 §7: this sync IC runs under KdSeenCeilMs: the cap it replaces (us), -1 = none; SyncCapMs off inside
 static __declspec(thread) DWORD t_pdScH;
 static DWORD g_scSyncH;  // route handle of the last own START with a stuck-check tag and no probe mark (sim thread only)

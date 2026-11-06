@@ -15,7 +15,9 @@ Hotfix on top of v0.2.8, Steam and the EA app 1.69.47: same fixes, same switches
 
 ### Fixed
 
-- **Your Sims saying they can't get there on their own lot.** To stop long routes from freezing the game, v0.2.8 gave up on a route after a fraction of a second, and that also hit the Sims you are playing or looking at. Go Here, the toilet, the fridge or leaving for work could fail on a path that exists. Sims in your household and Sims you can see now get all the time they need. Sims you can't see keep the short limit, so a busy town stays smooth.
+- **Your Sims saying they can't get there on their own lot.** To stop long routes from freezing the game, v0.2.8 gave up on a route after a fraction of a second, and that also hit the Sims you are playing or looking at. Go Here, the toilet, the fridge or leaving for work could fail on a path that exists. Sims in your household, their pets and their cars, and Sims you can see, now get all the time they need. Sims you can't see keep the short limit, so a busy town stays smooth.
+- **Your Sims being reset after repeated route failures.** The game's route watchdog no longer resets anyone in your household.
+- **Off-screen household Sims skipping animation updates.** They always animate at the full rate now.
 - **Crash after the game ran out of memory on a long play session.** The game's script memory could keep growing while large free blocks sat unused, until nothing was left. It now reuses those blocks first.
 
 ### Changed
