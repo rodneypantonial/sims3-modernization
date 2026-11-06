@@ -26,7 +26,7 @@ export const ALWAYS_OFF: Record<string, string> = {
 export const RC_ZERO_KEYS: Record<string, string[]> = {
     MemDiag: ["Light"], ThreadStack: ["Enabled"],
     RouteToObjRO: ["Tail"], IdleCheckRO: ["SiteC"],
-    UnseenTable: ["Enabled"], RouteAsync: ["H2", "TailUnlock", "ReplanDedupe"], Discourage: ["DeferFootprint2", "DestroyPark", "DestroyParkDx"],
+    UnseenTable: ["Enabled"], Discourage: ["DeferFootprint2", "DestroyPark", "DestroyParkDx"],
     EaCrashFixes: ["ThumbPose", "GeomBoneIndex", "ThumbPoseBones", "LotGridMiss"],
     // addresses mapped by the table regen, never run on EA: mapped is not tested, so they stay off until their smoke
     FootstepRO: ["Enabled"], UnseenAnim: ["Enabled"], UnseenRootMotion: ["Mode"],
