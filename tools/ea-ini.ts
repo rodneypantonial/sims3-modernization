@@ -93,7 +93,8 @@ function render(lines: string[], zero: (sec: string) => boolean, force: (sec: st
         if (force(sec) && /^Enabled=/.test(l)) return "Enabled=1";
         const k = /^(\w+)=-?\d+\s*$/.exec(l);
         if (k && (zero(sec) || zeroKey(sec, k[1]))) return k[1] + "=0";
-        return k && set[sec + "." + k[1]] !== undefined ? k[1] + "=" + set[sec + "." + k[1]] : l;
+        const v = k ?? /^(\w+)=0x[0-9A-Fa-f]+\s*$/.exec(l);  // a hex value is an address: settable, never zeroed
+        return v && set[sec + "." + v[1]] !== undefined ? v[1] + "=" + set[sec + "." + v[1]] : l;
     }).join("\r\n");
 }
 
