@@ -671,7 +671,8 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
         case 3: case 4: case 5: return MsOp((hi >> 16) & 0xFF);
         case 6: return PlAnswer();  // played.cpp: store ready / household played (docs/14 section 8.6)
         case 7: return CpOp(lo);    // compaction.cpp: [Compaction] verdict and steps (docs/204)
-        case 8: case 9: KdScopeSet(lo, ((hi >> 16) & 0xFF) == 8 ? 1 : 2); return 1;  // docs/197 §7: UfWhy of route lo, before its START
+        case 10: case 11: KdScopeSet(lo, ((hi >> 16) & 0xFF) == 10 ? 1 : 2); return 1;  // docs/197 §7: UfWhy of route lo, before its START or sync plan
+        case 12: KdScopeClear(lo); return 1;  // docs/197 §7: route lo's plan is over
         case 0: g_udTxtN = 0; return 1;
         case 1:
             for (int i = 0; i < 4; i++) {

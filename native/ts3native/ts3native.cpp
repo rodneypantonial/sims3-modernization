@@ -14,7 +14,7 @@
 #include <psapi.h>  // K32GetMappedFileNameW (XcptOtherModule)
 #include "ts3addr.h"  // TS3A(x): TS3W.exe addresses by Steam 1.67 value (tools/addr-codemod.ts)
 
-#define TS3NATIVE_VERSION "0.36.168c-test1"
+#define TS3NATIVE_VERSION "0.36.168c"
 
 typedef unsigned char u8;
 
@@ -3042,6 +3042,7 @@ static volatile DWORD g_pdWkTid;
 // last round): its nested Route_PlanLocked opens no session either; t_pdScH: IcCollect's Plan IC follows a refused START
 // whose stuck-check tag had no probe mark (t_pdScH = its route handle, read once by SyncIc)
 static __declspec(thread) bool t_pdNoCut;
+static __declspec(thread) LONG t_kdCeil;  // docs/197 §7: this sync IC runs under KdSeenCeilMs: the cap it replaces (us), -1 = none; SyncCapMs off inside
 static __declspec(thread) DWORD t_pdScH;
 static DWORD g_scSyncH;  // route handle of the last own START with a stuck-check tag and no probe mark (sim thread only)
 // docs/202 (unseenfb.cpp): t_ufSess = this sync IC runs an UnseenFallback session (PdSkip cuts it with pdMode 0 too);
@@ -3662,6 +3663,7 @@ static void KdJobEnd(const AsyncJob* j, bool capped, LONG us, LONGLONG end, LONG
 static u64 KdFollower(DWORD handle);  // sim thread, at START
 static u64 RfGoal(DWORD handle);      // sim thread, at START: destinations hash for routefail retry
 static LONG KdScopeTake(DWORD handle);
+static void KdScopeSet(DWORD handle, LONG scope);
 static void RfJobNote(const AsyncJob* j, bool capped, LONG us, const JobSplit& s, LONG capUs, int cutMask);
 static void KdStuckMark(DWORD handle);
 static LONG ScProbeUs();              // the stuck-check probe's deadline: KindDeadlines' probe kind, else PlanDeadlineMs
@@ -4277,6 +4279,7 @@ static bool SypIcWants();  // syncphases.cpp (docs/164): [RouteJobPhases] SyncPl
 static u8* SypIcRun(int kind, u8* out, DWORD handle, const float* pt, int why, const char* entry, const void* ret);
 // docs/164 §7 (plandeadline.cpp): the deadline of this IC by reason (0 = none, < 0 = exempt incl. nested plans, §7.8) and its session
 static LONG PdIcUs(int why, bool scLast);
+static LONG KdSyncCeilUs(DWORD handle);
 static void PdIcBegin(LONG us, int kind, int why, const char* entry, DWORD handle);
 static void PdIcEnd(const u8* out);
 static u8* SyncIc0(int kind, u8* out, DWORD handle, const float* pt, int why, const char* entry, const void* ret, LONG dlUs);
@@ -4301,6 +4304,15 @@ static u8* SyncIc(int kind, u8* out, DWORD handle, const float* pt, int why, con
             return r;
         }
     }
+    const LONG ceil = !uf && g_pdOn ? KdSyncCeilUs(handle) : 0;  // docs/197 §7: replaces pd, its exemption and SyncCapMs
+    if (ceil) {
+        const Ts3nCounters& k = ts3native_counters;
+        const LONG outer = t_kdCeil;
+        t_kdCeil = pd > 0 ? pd : k.asyncMode == 1 && k.fbCapUs ? k.fbCapUs : -1;
+        u8* r = SyncIc0(kind, out, handle, pt, why, entry, ret, ceil);
+        t_kdCeil = outer;
+        return r;
+    }
     if (pd >= 0) return SyncIc0(kind, out, handle, pt, why, entry, ret, pd);
     const bool noCut0 = t_pdNoCut;  // exempt (< 0): no session here, none for its nested Route_PlanLocked (PdPlanBegin)
     t_pdNoCut = true;
@@ -4310,7 +4322,7 @@ static u8* SyncIc(int kind, u8* out, DWORD handle, const float* pt, int why, con
 }
 static u8* SyncIc0(int kind, u8* out, DWORD handle, const float* pt, int why, const char* entry, const void* ret, LONG dlUs) {
     Ts3nCounters& k = ts3native_counters;
-    const LONG cap = k.asyncMode == 1 ? k.fbCapUs : 0;
+    const LONG cap = k.asyncMode == 1 && !t_kdCeil ? k.fbCapUs : 0;
     if (!kind && !cap && !dlUs && !g_fmOn && (!k.rfbLogMs || k.asyncMode != 1)) return g_icPlanOrig(out, handle);
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
@@ -4363,6 +4375,7 @@ static u8* IcCollect(int kind, u8* out, DWORD handle, const float* pt, const voi
         g_scSyncH = 0;
     }
     AsyncJob* j = GetCurrentThreadId() == g_async.owner ? JobFor(handle) : NULL;
+    if (j && j->kdScope) KdScopeSet(handle, j->kdScope);  // docs/197 §7: START took it; a job given back plans sync below
     // no job for this route: plan as asked (its Route_PlanLocked waits for a running job first: Lock_Acquire pump)
     if (!j) {
         if (collect && kind) ArTrip(&k.arOrphan, "armed collect without a job", kind, -1, handle, ret);
@@ -5136,7 +5149,7 @@ static void Run(HMODULE self) {
     Log("ts3native " TS3NATIVE_VERSION " %04d-%02d-%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     if (!strncmp(priorLog, "ts3native ", 10)) Log("prior log: %s", priorLog);
 #ifdef TS3A_TABLE
-    Log("release: v0.2.8 EA");  // own line: log parsers read the header version as digits
+    Log("release: v0.2.9 EA");  // own line: log parsers read the header version as digits
 #endif
     GetModuleFileNameW(NULL, exe, MAX_PATH);
     HMODULE base = GetModuleHandleW(NULL);

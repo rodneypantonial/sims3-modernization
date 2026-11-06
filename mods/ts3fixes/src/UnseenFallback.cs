@@ -737,7 +737,7 @@ namespace Ts3Fixes
                             default: r = ReplanFromPointAsync(p); break;
                         }
                 }
-                finally { sUfPlanDepth.Exit(task); }
+                finally { sUfPlanDepth.Exit(task); DiagSend(12, Handle); }  // docs/197 §7: this plan's scope ends here
                 UrLearn ln;
                 if (sUrLearn.Count > 0 && sUrLearn.TryGetValue(this, out ln))  // §3.9.7 (C): this plan's result is the lesson
                 {
@@ -761,15 +761,16 @@ namespace Ts3Fixes
                 r = default(RoutePlanResult);
                 bool pre = kind == 0 && (ShortcutOn("unseenfbpre") || ShortcutOn("unseenfbarrive") || ShortcutOn("unseenroute"));
                 bool leave = kind == 0 && ShortcutOn("unseenfbleave");
-                if (!pre && !leave && !ShortcutOn("unseenfbplan")) return false;
                 IScriptProxy proxy = Follower;
                 Sim sim = proxy != null ? proxy.Target as Sim : null;
+                bool ownCheck = sStuckIn || sInOwnCheck || sInRoutableCheck || sUfInLeg;
+                int why = sim == null || ownCheck ? 0 : UfWhy(sim);
+                DiagSend(why != 0 ? 10 : 11, Handle);  // docs/197 §7 [RouteAsync] KdExemptSeen: this route's scope for its START or sync plan; every plan, these switches or not
+                if (!pre && !leave && !ShortcutOn("unseenfbplan")) return false;
                 // never: stuck-check probes (phase B), our own route checks, IsPointInLotSafelyRoutable, non-Sims, pets, D-leave's own leg
-                if (sim == null || sStuckIn || sInOwnCheck || sInRoutableCheck || sUfInLeg || sim.SimDescription == null || sim.SimDescription.IsPet)
+                if (sim == null || ownCheck || sim.SimDescription == null || sim.SimDescription.IsPet)
                     return false;
                 int[] c = PatchCounters();
-                int why = UfWhy(sim);
-                DiagSend(why != 0 ? 8 : 9, Handle);  // docs/197 §7 [RouteAsync] KdExemptSeen: this route's scope for its START
                 sUfLastWhy = why; sUfLastSim = sim;
                 if (why != 0 && sUrPlaced.Count > 0 && sUrPlaced.ContainsKey(sim.ObjectId.Value) && UrRepairSim(sim)) sUrPlaced.Remove(sim.ObjectId.Value);  // §3.9.7 (D)
                 if (why != 0)

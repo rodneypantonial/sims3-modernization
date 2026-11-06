@@ -243,6 +243,51 @@ static void TestPlanDeadline() {
         assert(k.pdCutSc == 1 && !t_pd.open);
         k.pdCutSc = 0, k.pdExemptSc = 0;
     }
+    // 9c. docs/197 §7: a seen or unknown Sim's sync plan runs under the ceiling (no pd cap, no SyncCapMs, also where pd exempts it); unseen keeps both
+    {
+        static int mode;
+        g_icPlanOrig = [](u8* o, DWORD) -> u8* {
+            *(DWORD*)o = 1;
+            if (mode == 2) {
+                assert(!t_kdCeil && t_fbCapUs == 900000 && t_pd.open && !t_pd.ceil);
+                return o;
+            }
+            assert(t_pd.open && t_pd.ceil && !t_fbCapUs && t_pd.wouldUs == 2000);
+            if (mode == 1) Sleep(5);
+            if (mode == 3) t_pd.dl = 1, *(DWORD*)o = 16;
+            return o;
+        };
+        const LONG s0 = k.pdSessions[0], s1 = k.pdSessions[1], h0 = k.pdHit, hu0 = k.pdHitUs, l0 = k.pdLines, m0 = k.pdLateMaxUs, am = k.asyncMode, cap0 = k.fbCapUs;
+        g_kdExempt = 1, g_kdCeilUs = 8000000, k.asyncMode = 1, k.fbCapUs = 900000;
+        mode = 0;
+        KdScopeSet(0x1234, 1);
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out && !t_kdCeil && !t_pd.open && t_kdSeen && !g_kdCeilCut);
+        KdScopeClear(0x1234);  // no answer: unknown = exempt
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out && !t_kdSeen && g_kdExN == 2);
+        mode = 1;
+        KdScopeSet(0x1234, 1);
+        k.pdUs = 2000;
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_FOREIGN, "nojob", NULL) == out && g_kdWouldCut == 1 && g_kdExMaxUs >= 2000);
+        mode = 3;  // the ceiling still cuts, loudly
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out && g_kdCeilCut == 1);
+        mode = 2;
+        KdScopeSet(0x1234, 2);
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out);
+        KdScopeSet(0x1235, 2);  // the plan ts3fixes runs, for a non-IC plan; another route's IC does not read it
+        assert(!KdSyncCeilUs(0) && KdSyncCeilUs(0x1234) == 8000000);
+        KdScopeClear(0x1234);  // not the pending route: stays
+        assert(!KdSyncCeilUs(0));
+        KdScopeSet(0x1235, 1);
+        assert(PdPlanBegin() && t_pd.ceil && t_pd.wouldUs == 2000 && t_pd.handle == 0x1235 && t_pd.dl - t_pd.t0 > g_qpf.QuadPart);
+        PdPlanEnd(1);
+        KdScopeClear(0x1235);
+        assert(!g_kdScopeH);
+        g_kdExempt = 0, g_kdCeilUs = 0, g_kdCeilCut = g_kdWouldCut = g_kdExMaxUs = g_kdExN = 0;
+        k.asyncMode = am, k.fbCapUs = cap0;
+        k.pdSessions[0] = s0, k.pdSessions[1] = s1, k.pdHit = h0, k.pdHitUs = hu0, k.pdLines = l0, k.pdLateMaxUs = m0;
+        t_kdSeen = false;
+        g_icPlanOrig = PdtIc;
+    }
     // 10. FailMemo on the sync Plan IC (ReplanDedupe's fakes): observe, then serve a failed repeat; a worker-side CallIc (no
     //     t_fmSync) never goes through it
     u8* const* rmSlot = g_orRmSlot;
