@@ -41,10 +41,11 @@ const unresolvedRows = (addrHdr: string) => [...addrHdr.matchAll(/^\/\/ unresolv
 export const keysOff = (addrHdr: string) => { const un = new Set(unresolvedRows(addrHdr).map((m) => parseInt(m[1], 16))); return new Set(Object.keys(KEY_ADDRS).filter((k) => KEY_ADDRS[k].some((a) => un.has(a)))); };
 // EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
 // ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
+// SimNoTexture: seen in a player crash, deterministic repro, the fix passes it (docs/67 s34.5).
 // ThreadStack.Skip: SimulatorThread_Proc, a runtime string the address table cannot rewrite; the Steam value left the EA sim thread capped.
-export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360" };
+export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360", "EaCrashFixes.SimNoTexture": "1" };
 // the player test build's settings on top of the rc ini (docs/232 "Test build"): read-only logging + the crash guard
-export const TEST_SET: Record<string, string> = { "MemDiag.Blockers": "1", "Decompress.RepeatLog": "1", "EaCrashFixes.SimNoTexture": "1", "CrashReport.Enabled": "1" };
+export const TEST_SET: Record<string, string> = { "MemDiag.Blockers": "1", "Decompress.RepeatLog": "1", "CrashReport.Enabled": "1" };
 // a file that only serves one key group of a section (GC: memexp.cpp reads SqrtHeapLimit, shipped 0) does not count for that section
 export const IGNORE_FILE: Record<string, string[]> = { GC: ["memexp.cpp"] };
 const RG = ["RouteGate", "RouteAsync"];
@@ -124,6 +125,7 @@ function selfCheck() {
     ok(!["SteerRO", "FpRebuildLock", "Watchpoint", "RouteToObjRO", "MemDiag"].some((s) => ALWAYS_OFF[s]), "docs/238 sections allowed");
     ok(render(["[GC]", "Enabled=1", "BlackListCapKB=0", "[Z]", "BlackListCapKB=0"], () => false, () => false, undefined, EA_SET) === "[GC]\r\nEnabled=1\r\nBlackListCapKB=1024\r\n[Z]\r\nBlackListCapKB=0", "render set");
     ok(/^BlackListCapKB=1024\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini must carry BlackListCapKB=1024");
+    ok(/^SimNoTexture=1\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini turns SimNoTexture on");
     ok(/^Skip=0x76C360\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini exempts the EA sim thread");
     const rc = render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET);
     ok(/^Light=(\d)/m.exec(rc.slice(rc.indexOf("\r\n[MemDiag]\r\n")))?.[1] === "1", "EA rc ini keeps [MemDiag] Light=1");

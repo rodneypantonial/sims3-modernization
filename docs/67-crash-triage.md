@@ -1387,11 +1387,11 @@ play. Local queue (the save is the player's).
 
 Sim outfit requests walk a state machine in the SimService update (`[request+0x190]`, dispatcher EA `0x5F1D90`). Sites in §34.1 and §34.4 are given for both exes; EA = Steam + 0xA60 in this function. Everything in §34.2 and §34.3 is EA 1.69; the Steam exe has the same bytes at the fault site.
 
-### 31.1 Fault [verified: report + disassembly of both exes]
+### 34.1 Fault [verified: report + disassembly of both exes]
 
 AV read 0x14 at EA `0x5EC891` = Steam `0x5EBE31`, `SimService_Process` (EA `0x5EC6B0`, Steam `0x5EBC50`) +0x1E1: `cmp dword ptr [edx+14h],800h`. edx is the result of lookup `0x5CEC60` (EA `0x5CFFA0`) for key `0x1F/4` on the builder `[request+0x20]`. The Image's +0x14 is its width. Largest free block at the crash: 32 MB. EA checks the second lookup (`0x1F/8`, ebp) for null and not the first.
 
-### 31.2 Who fills the table, and why the lookup is null
+### 34.2 Who fills the table, and why the lookup is null
 
 | State | What it does | Evidence |
 |---|---|---|
@@ -1404,7 +1404,7 @@ AV read 0x14 at EA `0x5EC891` = Steam `0x5EBE31`, `SimService_Process` (EA `0x5E
 
 Why the create failed: **[inferred]**, the player's largest free block was 32 MB and create makes a D3D texture. Not proven: the log has no create result. The hit line prints free address space to test this.
 
-### 31.3 What the skip does
+### 34.3 What the skip does
 
 Every later use of the two results in `SimService_Process` [verified]:
 
@@ -1425,7 +1425,7 @@ One narrow case stays [inferred]: a node with a null value that gets marked done
 
 Not covered: the sibling `0x5E15F0` (EA) makes the same two lookups and reads the first at `0x5E16FA` after its own composite start, with no null check. Different owner class, no crash report yet.
 
-### 31.4 Fix: `[EaCrashFixes] SimNoTexture` (0.36.152a, eafix.cpp, no counters, off by default; ledger docs/51 §426)
+### 34.4 Fix: `[EaCrashFixes] SimNoTexture` (0.36.152a, eafix.cpp, no counters; off in the Steam ini, on in the EA rc ini; ledger docs/51 §426)
 
 The 11 bytes at `0x5EBE2D` (EA `0x5EC88D`; `mov edx,[esp+74h]; cmp dword ptr [edx+14h],800h`, bytes checked) become a jump to `SnStub`. It reloads edx, and for null calls `SnHit` (one "ea fix: SimNoTexture" line for each of the first 8, under pushad) and jumps to `0x5EBED4`; otherwise it runs the compare and returns to the `ja` at `0x5EBE38`, flags intact. Register liveness: edx and flags are dead at `0x5EBED4` [verified disassembly]; `reg-liveness.py` does not analyse mid-function stubs, which own every register.
 
@@ -1433,6 +1433,8 @@ Existing-fix check 2026-11-06: no fix found. Web search (EA forums, Steam, MTS):
 
 Selftest (`eafix-test.h`): normal width, too wide, missing with and without the second texture, foreign bytes, patch once.
 
-### 31.5 Repro
+### 34.5 Repro
 
-`SimNoTextureRepro=N` (test key, off): the call at `0x5CFB7C` (EA `0x5D0D7C`) answers false for every Nth create, after the game's real create, so the caller takes its real failure path. Off arm (`SimNoTexture=0`) must crash at `0x5EBE31`; on arm must run and log hit lines. `tools/harness/repros.json` `ea-sim-no-texture`. **Not run yet.** Rare-crash rule (`docs/23`, 2026-11-01): seen in play twice, so the key can ship on once this repro passes.
+`SimNoTextureRepro=N` (test key, off): the call at `0x5CFB7C` (EA `0x5D0D7C`) answers false for every Nth create, after the game's real create, so the caller takes its real failure path. Off arm (`SimNoTexture=0`) must crash at `0x5EBE31`; on arm must run and log hit lines. `tools/harness/repros.json` `ea-sim-no-texture`. Run on EA with the player test build: off crashes at EA `0x5EC891`, on runs clean; rerun on the rc build, see docs/232. Rare-crash rule (`docs/23`, 2026-11-01): seen in play twice, so the key can ship on once this repro passes.
+
+EA rc ini: `SimNoTexture=1` through `EA_SET` in `tools/ea-ini.ts` (rule `docs/23`: seen in a player crash, deterministic repro, the fix passes it). It is on no zero list.
