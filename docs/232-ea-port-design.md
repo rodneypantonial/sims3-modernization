@@ -886,4 +886,6 @@ A second EA report (Apex 2.18.4, no crash): 1.3M AVs inside Apex, 92 GB decoded 
 
 Limits: repeat counts are a lower bound (a different resource can evict a slot) and "repeat" means same sizes and 24 sampled bytes [inferred same resource]. A private region has no owner name: `diag: memblk` gives size and neighbours only.
 
+**test2 (0.36.152-test2).** Three changes after the first player log on test1 (21 min, no crash): foreign AVs take no slot of the 16 (docs/172 §7); `[CrashReport] Enabled=1` in the test ini, because with the 16 gone and that filter off a late crash would have left no line (local text file only); `decompress: lru lower bound` after the repeats line, measure only: what a decoded-resource cache of 32-512 MB would have served. Each count is a lower bound: repeats advance the distance clock and an evicted slot counts as unique. A cache uses address space, so this sizes a possible worker-CPU gain, not an Error 12 fix. +256 KB `.bss` with RepeatLog=1.
+
 `ts3native-ea169-test.ini` (CI artifact) = the rc ini + `tools/ea-ini.ts` `TEST_SET`; `ea-ini --self-check` proves it differs only there. Counters layout and version field unchanged (v163), so v0.2.7's `ts3fixes.package` matches.

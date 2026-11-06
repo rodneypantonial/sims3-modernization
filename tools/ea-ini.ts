@@ -25,7 +25,7 @@ export const ALWAYS_OFF: Record<string, string> = {
 // ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
 export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024" };
 // the player test build's settings on top of the rc ini (docs/232 "Test build"): read-only logging + the crash guard
-export const TEST_SET: Record<string, string> = { "MemDiag.Blockers": "1", "Decompress.RepeatLog": "1", "EaCrashFixes.SimNoTexture": "1" };
+export const TEST_SET: Record<string, string> = { "MemDiag.Blockers": "1", "Decompress.RepeatLog": "1", "EaCrashFixes.SimNoTexture": "1", "CrashReport.Enabled": "1" };
 // a file that only serves one key group of a section (GC: memexp.cpp reads SqrtHeapLimit, shipped 0) does not count for that section
 export const IGNORE_FILE: Record<string, string[]> = { GC: ["memexp.cpp"] };
 const RG = ["RouteGate", "RouteAsync"];
@@ -106,7 +106,7 @@ function selfCheck() {
     ok(/^Light=(\d)/m.exec(rc.slice(rc.indexOf("\r\n[MemDiag]\r\n")))?.[1] === "1", "EA rc ini keeps [MemDiag] Light=1");
     const test = render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, { ...EA_SET, ...TEST_SET }).split("\r\n");
     const base = rc.split("\r\n"), changed = test.filter((l, i) => l !== base[i]);
-    ok(test.length === base.length && changed.join() === Object.entries(TEST_SET).map(([k, v]) => k.split(".")[1] + "=" + v).sort((a, b) => test.indexOf(a) - test.indexOf(b)).join(), "test ini differs from rc only by TEST_SET: " + changed);
+    ok(test.length === base.length && [...changed].sort().join() === Object.entries(TEST_SET).map(([k, v]) => k.split(".")[1] + "=" + v).sort().join(), "test ini differs from rc only by TEST_SET: " + changed);
     console.log("ea-ini self-check: ok");
 }
 
