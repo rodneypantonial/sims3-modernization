@@ -27,7 +27,7 @@ One release for Steam and the EA app 1.69.47: same source, same fixes, same swit
 
 ### Tested
 
-- Steam: TO-FILL smoke.
+- Steam: tested 11-06 on one machine: 10 minute runs on Isla Paradiso (twice), Bridgeport and Sunset Valley, and three saves on Isla Paradiso. No crash, no hang.
 - EA app: tested 11-06 on the EA app 1.69.47, on one machine with an Intel integrated GPU and a small mod set: the texture crash repro with the fix off and on, a 10 minute run with a save and a clean quit, and 10 minutes with a patched Apex Radiance 2.17.1.
 
 ### Known
