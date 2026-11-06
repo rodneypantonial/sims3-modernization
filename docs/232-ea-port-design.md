@@ -907,3 +907,19 @@ Limits: repeat counts are a lower bound (a different resource can evict a slot) 
 `ts3native-ea169-test.ini` (CI artifact) = the rc ini + `tools/ea-ini.ts` `TEST_SET`; `ea-ini --self-check` proves it differs only there. Counters layout and version field unchanged (v163), so v0.2.7's `ts3fixes.package` matches.
 
 Table regen note (2026-11-06): `tools/port-run.ts` takes the EA literals `MC_ASM_TABLE` and `MC_ASM_FORCEJIT` in `mintcall.cpp` for Steam addresses, which adds two false rows (`0x00E598D0` as a zero row, `0x00E563CD`) and would flag `mintcall.cpp`. They are deleted by hand after a regen, until the scan skips the `#ifdef TS3A_TABLE` block.
+
+### PR 293 live runs (2026-11-06, asi 0.36.168a, CI 42199751270)
+
+Bugfix branch `bugfix/ea169-port-crash-fixes`, commit 84e097c, asi `3495a3e5c282`, CI's rc ini, `Baseline-SV-Spring`, audio muted, correctness only.
+
+| Job | Config | Result |
+|---|---|---|
+| rp-off | `SimNoTextureRepro=1`, `SimNoTexture=0` | crash as designed: `exception C0000005 at 0x005EC891 (info 00000000 00000014)` at t=136 |
+| rp-on | `SimNoTextureRepro=1`, `SimNoTexture=1` | PASS, soak 3 min, real quit, 0 script errors, `ea fix: SimNoTexture #1` and later hit lines, 1636-1652 MB free |
+| soak | rc ini, 10 min, one real save | all game checks PASS: `save: end #1 result 0 after 8000 ms`, real quit, 0 script errors. Queue verdict FAIL only on a wrong job line: `decompress: lru lower bound` needs `RepeatLog=1`, which the rc ini keeps at 0 |
+| apex | rc ini + patched Apex 2.17.1, 10 min, one real save | PASS: `save: end #1 result 0 after 6890 ms`, real quit, 0 script errors |
+
+- OK/SKIP lines against `ea-group-all` (0.36.168): nothing lost, 0 SKIP. Three new OK lines: `SimNoTexture` and the two `idle check RO site C` lines, which left the zero list after that run. Apex run: the same 179 lines.
+- `no image` AV seen on both runs at one address per run, with its lines kept in the logs (Apex run: `0x04A27CC2`, region type 0x40000, thread start no image, `igc32.dll` on the stack).
+- First-chance AVs in our module at exit, after `diag: exit`, in every run with this build: registers show the SimService slot, so this is `casN` in MemDiag at exit, inside its `__try` [inferred from eax and the guarded reads]. The log goes on after them.
+- The sibling key `SimNoTextureAtlas` stayed off and did not run (docs/67 34.6).
