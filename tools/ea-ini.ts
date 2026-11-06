@@ -25,7 +25,6 @@ export const ALWAYS_OFF: Record<string, string> = {
 // The other rows came with the merge of main (2026-11-06): on in the Steam ini, off on the port, never run on EA. Each leaves here after its EA smoke.
 export const RC_ZERO_KEYS: Record<string, string[]> = {
     MemDiag: ["Light"],
-    IdleCheckRO: ["SiteC"],
     // addresses mapped by the table regen, never run on EA: mapped is not tested, so they stay off until their smoke
     UnseenRootMotion: ["Mode"],
 };
