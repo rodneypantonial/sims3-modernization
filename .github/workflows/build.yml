@@ -5,7 +5,7 @@ name: build
 
 on:
   push:
-    branches: [main, ea169-port, ea169-bytes]
+    branches: [main, ea169-port, ea169-bytes, hotfix/v0.2.10-ea169]
     tags: ['v*']
   pull_request:
 
