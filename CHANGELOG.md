@@ -2,18 +2,15 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
-## v0.2.9
+## v0.2.9 (2026-11-07)
 
-<!-- If EA smoke isn't passed at publish: drop the EA zip line and say EA app build follows later -->
-
-Hotfix on top of v0.2.8, Steam and the EA app 1.69.47: same fixes, same switches.
+Hotfix on top of v0.2.8, Steam only. The EA app build follows after its smoke test.
 
 ### Download
 
-- `ts3fixes.package`: new in this release, the same file for Steam and the EA app. Replace it together with the files below: the new routing behaviour needs both.
+- `ts3fixes.package`: new in this release. Replace it together with the files below: the new routing behaviour needs both.
 - `ts3native-v0.2.9.zip` (Steam): `ts3native.asi` and `ts3native.ini`; replace both.
-- `ts3native-ea169-v0.2.9.zip` (EA app 1.69.47): `ts3native.asi` and `ts3native.ini`; replace both.
-- Both logs show `ts3native 0.36.168c`; the EA log also shows `release: v0.2.9 EA`.
+- The log shows `ts3native 0.36.168c`.
 
 ### Fixed
 
