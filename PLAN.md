@@ -4,7 +4,7 @@ Approved 2026-10-10. Rewritten 2026-10-12 with everything found so far (read thi
 
 Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (stuck Sims, routing, sim-thread work; load times are fine), then fewer crashes (Error 12 / out of address space) and room for heavy CC. Rodney wants every avenue tried. Workflow: online prior art → reverse engineering → rank big wins → build, one change at a time, measured with the harness.
 
-**Hotfix candidate on v0.2.9 (2026-11-07, built and self-tested, NOT RUN).** LostRemovalFix and the count-only GhostSweep census from `bugfix/fp2-lost-removal`; details in that branch's docs/89 §16, §17.
+**v0.2.10 hotfix prep (2026-11-07, asi v0210c built and self-tested, NOT RUN on this pair; not published).** LostRemovalFix=1 and GhostSweep=2 (cleanup at load, ini only, the asi has mode 2); docs/89 §16, §17, docs/release-notes/v0.2.10-dev.md.
 
 **Long-term goal: offload the sim thread (Rodney, 2026-10-14).** Move everything that can safely leave the game's single busy core (the sim thread) to other cores, so longer saves, more objects and more Sims scale instead of hitting that one core's limit. This needs a major architecture redesign and is a multi-step, long-term track (roadmap: docs/23 #17). Acceptance rule for offload changes: a change that moves measurable work off the sim thread is accepted even with no speed gain today, or a loss of up to ~2% in sim iterations/s, as long as it is stable (no crashes, no new stuck Sims, same results). Measure it as sim-thread ms/s moved off (route ms/s, stage ms/s), not only iterations/s. Losses over ~2% need a plan to win them back.
 

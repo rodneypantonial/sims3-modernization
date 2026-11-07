@@ -400,3 +400,52 @@ So §14.3 is wrong on two points: the owner is the **only** Sim that sees its pr
 3. **Owner's next sync plan** in the window would miss the turn helper (the animal may turn on the spot); async plans would see it (START drain).
 
 **If `pfAddFlush` shows up** (I-89-14-5, read from `sv-private-fp-loop`): the cheap option is an order-only Add (queue it only when the object already has a queued record, so the flush stops waiting for the job), accepting point 2 for the owner's own cost map. About 1-2 h + 1 game run. Not built. Ledger docs/51 §320.
+
+## 16. LostRemovalFix: a queued UpdateObjectLot always reaches the lot map (2026-11-07, offline; no game run)
+
+Player report 2026-11-07 (v0.2.8): oven and fridge plans fail with result 16, candidates 1/1/0, for household Sims too, forever. The earlier view that the object was lost to EA is wrong; the deferral lost EA's removal.
+
+**Vanilla's chain [verified disassembly].** An object leaving a lot or the world fires object event `0xA`: owner vtable `+0x3C` (`0xACE060` lot at `0xACE07A`, `0xAA8FF0` world at `0xAA8FFC`) before `0xC70150` clears the owner, and `0xB6E19C` on a lot change. The handler registered at `0x94908F` is `0x946F70`; it calls `RoutingWorld_UpdateObjectLot 0x82D280` at `0x946F99`. `0x82D280` reads the lot with `0x8297C0` and calls `0x82C120`, then `0x82B450`, then `LotRouting_RemoveObjectFootprints 0x635700`, all under `+0x918`. It only removes: §12's "re-home" is wrong, the tail of `0x82C120` is portals (`0x6399E0`). Event 9 re-inserts through `0x946160`: `0x82D280` at `0x9462C9`, then `0x833680` at `0x9462D4`, or `0x833680` alone at `0x94630A`.
+
+**Paths [verified disassembly, a also from logs].**
+
+| Path | What happens | Evidence |
+|---|---|---|
+| a. Object gone | A job runs, `0x798D40` queues event `0xA`, kind 2 record queued; `DestroyById` parks under DestroyParkDx; the drain finds no object and drops the record | `b02e08a4` log: "drop: 16 ms ago, UpdateObjectLot, id B60B00F51D00F4C0, object gone" |
+| b. Lot move during a job | `0x833680` is not deferred: it inserts on the new lot when the job ends, then the queued record reads the new lot and removes that fresh insert. The old lot keeps its copy. The same-lot sequence loses a live object's fresh footprint | static; `0xAB466E`, the other event 9 firer, not read |
+| c. DestroyPark, no records | `DestroyById` fires owner `+0x3C` at `0x93947E` itself, after `P5cPark`, independent of DestroyParkDx; the record meets a gone object at the erase `0x9394A4` | static |
+| d. DestroyParkDx=1 | Enabler of a: with `dxMode` 0 a queued record keeps the wait and D-X applies it while the object is in the hash (the owner is cleared: lot 0, all lots, removal works) | static, default on since `056fd225` |
+
+DeadSweep covers Remove, usf disable and pf removes only, not kind 2 records [verified in code].
+
+**Any object.** Paths a and c hit every object destroyed with a job running, not only a region's DynamicSlot. `stove-wall-repeat` on the diag2 build caught a `SocialJigOnePerson` in play: `Fridge_CleanOutBadFood` result 16, 1/1/0, blocker object `0x38B400F51D68B5A0` with no object, footprint #0, type 1, bounds on the fridge slot [measured]. Jigs are made and destroyed often. The fix sits in the shared kind 2 path, so it covers them; the repro has a `jig` target.
+
+**Fix, `[Discourage] LostRemovalFix=1` (default on, 0 = the old rules; hotfix branch: counters appended at +0x5C54 with no layout version bump, switch `fp2lrMode` +0x5C54; master: counters v172, +0x5DE8, `--ab lostremoval`).**
+
+1. `Fp2Hook` records the lot of the call (`0x8297C0`), as `0x82D280` would read it.
+2. `DiscApplyOne` calls `0x82C120` with id and that lot, object alive or gone. That is vanilla's body: lock-key map branch, world lot to 0, portals, `world+0x994`. It takes no object. Only the private key removal at `0x82B551` needs one (`0x82A0C0` skips NULL at `0x82A0D8`), so a gone object's hit sweeps that key as the pf branch does. A reused id stays dropped.
+3. `0x833680`'s two call sites go through `UofSite`: an object with such a record gets its records applied first, under the same job wait and `+0x918` the insert takes next. Nothing new waits.
+
+**Limits.** Inside a job callback or with `+0x918` held the flush cannot run (`fp2lrOrderMiss`, expected 0): the late remove then takes the insert. A queued Add of the object stays queued past the flush, since an Add may fire `World_FireEvent 0x11` (also `fp2lrOrderMiss`).
+
+**Counters.** `fp2lrApplied`, `fp2lrGone`, `fp2lrGoneHit` (footprints that would have stayed), `fp2lrMoved`, `fp2lrFlush`, `fp2lrFlushUs`, `fp2lrOrderMiss`, and `fp2lrLost`, fix off only: a dropped gone record with a map entry, or an apply on another lot than the call's. `diag: mem` lines carry `fpLost`, `fpLoad` and `fpSaved`, no walk, so a player's old save A/B shows them over time (queue `footprint-ghost-oldsave.json`).
+
+**Offline.** Selftest `TestFp2LostRemoval`: paths a, b, c and the gate, each against a small lot-map model of vanilla's order, off arm reproduces the bug; order misses; the flush keeps other objects' records.
+
+**Repro `footprint-ghost`** (built, not run): the worker holds a job at its start (`[Discourage] GhostTest=1`, ops 20-29 on the 0x87 channel, never in the shipped ini), the region's Cleanup falls inside it, then a plan to the slot. Stove, oven (same region, from 1 m), fridge, a jig on the fridge slot; arms by op 27 in one load, N = 10. Why a job is needed: `routediag-result16` fails on the v0.2.9 pair because its diag probes keep a job live at Cleanup, and passes on the master run that had none. Same code, same ini on this path [verified diff, log parks]; the hold makes both pairs fail alike.
+
+## 17. GhostSweep: dead object footprints at world load (2026-11-07, offline; no game run)
+
+Saves made with the old rules can carry the ghosts: `LotLevel_SaveFootprints` writes every entry (docs/25) [persistence inferred until `footprint-ghost-save` runs]. `[Discourage] GhostSweep`: 0 off, 1 count only (code default when the key is missing), 2 remove (v0.2.10 ini).
+
+**One pass, inside the load screen.** From the ts3fixes `world:` line (`OnWorldLoadFinished`, all lots loaded, docs/38), sim thread, no job, under `+0x918`. Never in play. A live census would need a per-tick node budget, a walk by bucket index, and the recheck at removal `FpgRemove` already has. Time logged (`fpgUs`).
+
+**"No object" is not a ghost test.** A clean Baseline has 86,954 of 126,787 entries without an object [measured, diag2], mostly non-object ids such as `0000000002E31605` (class `0xFEBA98`) and `00001179038B0C05` (class `0xFEBF90`). The signature, all of it:
+
+- Object-shaped key: low nibble 0 [observed on every object id so far, fails safe], high part set. `0x7CFA30` keys have bit 0 set [verified].
+- Class `0xFEB848`, built by `0x80C780` in `UpdateObjectFootprintCore 0x8321F0`, which `AddDiscourageFootprint` reaches at `0x834810` [verified]; footprint id equals the key; type byte `+0x35` = 1 (the caught jig ghost: type 1 [measured]).
+- FME Q set, id not parked, no object.
+
+Whether this is tight is a measurement, not yet made: the class a made ghost has is [inferred] (`0x8321F0` also builds `0xFEBBC0`). The census logs each object-shaped key without an object that fails the signature, by class. Bar for mode 2 as first set: a made ghost is found, a clean Baseline counts ~0 or each hit is explained. v0.2.10 ships mode 2 by Rodney's call, ahead of that bar: read the `footprint-ghost-save` and census results before publishing; if the two cannot be separated, the ini goes back to 1. A failed read keeps the entry. No save format change, no mod data in saves.
+
+**Repros.** `footprint-ghost-save`: ghost with the fix off, save, reload count only, reload remove, save, reload. `footprint-ghost-census`: three clean Baselines. Queue `footprint-ghost.json`.
