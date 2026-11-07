@@ -1212,6 +1212,32 @@ static void TestFallback() {
         WaitReady(kH1);
         assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid);
         Cancel(kH1);
+        // J_PEND audit: household and unknown scope park, known unseen queues; CANCEL frees; a world closing and a Plan without READY plan here
+        g_discDraining = true;
+        rec = DiscRec{};
+        rec.fp2 = 2;
+        g_discCount = 1;
+        KdScopeSet(kH1, 1);
+        assert(Start(kH1) && JobFor(kH1)->state == J_PEND && JobFor(kH1)->rf == 1);
+        Cancel(kH1);
+        assert(!JobFor(kH1));
+        KdScopeSet(kH1, 2);
+        assert(Start(kH1) && JobFor(kH1)->rf == 0 && JobFor(kH1)->state != J_PEND);
+        WaitReady(kH1);
+        assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid);
+        Cancel(kH1);
+        KdScopeClear(kH1);  // ts3fixes op 12: the IC kept the scope for a sync plan
+        assert(Start(kH1) && JobFor(kH1)->rf == 1);
+        g_discCount = 0;
+        k.rtClosing = 1;
+        assert(Ready(kH1) && !JobFor(kH1) && g_rfbHandle == kH1 && g_rfbWhy == RFB_M1 + 2);
+        k.rtClosing = 0;
+        assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me);
+        g_discCount = 1;
+        assert(Start(kH1) && JobFor(kH1)->rf == 1);
+        assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && !JobFor(kH1));
+        g_discDraining = false;
+        g_discCount = 0;
         g_discDraining = true;
         g_discCount = 1;
         rec = DiscRec{};
@@ -1236,6 +1262,7 @@ static void TestFallback() {
         g_rfMode = 0;
         g_rfParked = g_rfCapped = g_rfTicksMax = 0;
         k.fbRetryParked = parked0;
+        k.fbRetryGaveUp = gaveUp0;
         k.fbRetryMode = 1;
         p[0x10E] = 1;
         g_fbAcq = FbBusyAcquire;
@@ -5513,6 +5540,25 @@ static void TestFp2LostRemoval() {
     assert(FpgOp(23, G + 0x100) == 1 && FpgOp(25, 0) == 0);
     assert(FpgOp(23, G) == 1 && FpgOp(26, 0) == 1 && g_lrRemoves == 2);
     assert(FpgOp(27, 0) == 1 && k.fp2lrMode == 0 && FpgOp(27, 1) == 1 && k.fp2lrMode == 1);
+#ifdef TS3N_RFTEST
+    {   // docs/89 §18 ops: the switch, the parked / capped answers, the hold's end on a later job only
+        assert(FpgOp(30, 1) == 1 && g_rfMode == 1 && FpgOp(30, 0) == 1 && g_rfMode == 0);
+        assert(FpgOp(32, 0) == (g_rfParked > 0) && FpgOp(33, 0) == (g_rfCapped > 0) && FpgOp(34, 0) == 1);
+        AsyncJob& q = g_jobs[kJobs - 1];
+        const LONG st = q.state;
+        const DWORD sq = q.seq;
+        q.state = J_QUEUED;
+        q.seq = g_jobSeq;  // queued before op 31: does not end the hold
+        assert(!FpgNextJobWaits() && FpgOp(31, 0) == 1 && !FpgNextJobWaits());
+        q.seq = g_jobSeq + 1;
+        assert(FpgNextJobWaits());
+        q.state = J_PEND;
+        q.seq = g_jobSeq;
+        assert(FpgNextJobWaits() && FpgOp(22, 0) == 1 && !FpgNextJobWaits());
+        q.state = st;
+        q.seq = sq;
+    }
+#endif
     assert(FpgOp(20, 2000) == 1 && FpgOp(21, 0) == 0);
     const HANDLE hold = CreateThread(NULL, 0, LrHoldThread, NULL, 0, NULL);
     while (!FpgOp(21, 0)) Sleep(1);

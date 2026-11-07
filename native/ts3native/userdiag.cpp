@@ -674,7 +674,11 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
         case 7: return CpOp(lo);    // compaction.cpp: [Compaction] verdict and steps (docs/204)
         case 10: case 11: KdScopeSet(lo, ((hi >> 16) & 0xFF) == 10 ? 1 : 2); return 1;  // docs/197 §7: UfWhy of route lo, before its START or sync plan
         case 12: KdScopeClear(lo); return 1;  // docs/197 §7: route lo's plan is over
-        case 20: case 21: case 22: case 23: case 24: case 25: case 26: case 27: case 28: case 29: return FpgOp((hi >> 16) & 0xFF, lo);  // discourage.cpp, [Discourage] GhostTest
+        case 20: case 21: case 22: case 23: case 24: case 25: case 26: case 27: case 28: case 29:
+#ifdef TS3N_RFTEST
+        case 30: case 31: case 32: case 33: case 34:  // docs/89 §18 repro footprint-window
+#endif
+            return FpgOp((hi >> 16) & 0xFF, lo);  // discourage.cpp, [Discourage] GhostTest
         case 0: g_udTxtN = 0; return 1;
         case 1:
             for (int i = 0; i < 4; i++) {

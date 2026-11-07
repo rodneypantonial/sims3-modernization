@@ -931,13 +931,30 @@ static void FpgCensus(int loadNo) {
 // LostRemovalFix switch, 28 a census pass now (load screen rule waived: test only), 29 lo = GhostSweep mode for the next load.
 static volatile LONG g_fpgHoldMs, g_fpgHolding;
 static DWORD g_fpgId[2];
+#ifdef TS3N_RFTEST
+// docs/89 §18, test builds only (/DTS3N_RFTEST, build v0210d): 30 lo = RemovalFirst switch, 31 the held job ends once a later START
+// is queued or parked (the plan after a Cleanup cannot release the hold itself: it blocks), 32 any START parked, 33 any tick cap hit,
+// 34 the "footprint removal first" log line now.
+static volatile LONG g_fpgUntil;
+static DWORD g_fpgAfterSeq;
+static bool FpgNextJobWaits() {
+    if (!g_fpgUntil) return false;
+    for (int i = 0; i < kJobs; i++) {
+        const LONG s = g_jobs[i].state;
+        if (s == J_PEND || (s == J_QUEUED && (LONG)(g_jobs[i].seq - g_fpgAfterSeq) > 0)) return true;
+    }
+    return false;
+}
+#else
+static bool FpgNextJobWaits() { return false; }
+#endif
 static void FpgHoldPoint() {
     const LONG ms = g_fpgTest ? InterlockedExchange(&g_fpgHoldMs, 0) : 0;
     if (!ms) return;
     InterlockedIncrement(&ts3native_counters.fpgHeld);
     const DWORD t0 = GetTickCount();
     InterlockedExchange(&g_fpgHolding, 1);
-    while (g_fpgHolding && GetTickCount() - t0 < (DWORD)ms) Sleep(1);  // bounded: a sim wait inside the hold cannot hang
+    while (g_fpgHolding && GetTickCount() - t0 < (DWORD)ms && !FpgNextJobWaits()) Sleep(1);  // bounded: a sim wait inside the hold cannot hang
     InterlockedExchange(&g_fpgHolding, 0);
 }
 static u8 FpgOp(int op, DWORD v) {
@@ -946,7 +963,13 @@ static u8 FpgOp(int op, DWORD v) {
     switch (op) {
         case 20: InterlockedExchange(&g_fpgHoldMs, (LONG)(v < 3000 ? v : 3000)); return 1;
         case 21: return g_fpgHolding != 0;
-        case 22: InterlockedExchange(&g_fpgHoldMs, 0); InterlockedExchange(&g_fpgHolding, 0); return 1;
+        case 22:
+#ifdef TS3N_RFTEST
+            InterlockedExchange(&g_fpgUntil, 0);
+#endif
+            InterlockedExchange(&g_fpgHoldMs, 0);
+            InterlockedExchange(&g_fpgHolding, 0);
+            return 1;
         case 23: g_fpgId[0] = v; return 1;
         case 24: g_fpgId[1] = v; return 1;
         case 25:
@@ -965,6 +988,13 @@ static u8 FpgOp(int op, DWORD v) {
             RgOffSimDrop();
             return ok;
         }
+#ifdef TS3N_RFTEST
+        case 30: g_rfMode = v ? 1 : 0; return 1;
+        case 31: g_fpgAfterSeq = g_jobSeq; InterlockedExchange(&g_fpgUntil, 1); return 1;
+        case 32: return g_rfParked > 0;
+        case 33: return g_rfCapped > 0;
+        case 34: DiscRfLog(); return 1;
+#endif
         case 27: if (ts3native_counters.fp2lrReady) ts3native_counters.fp2lrMode = v ? 1 : 0; return 1;
         case 28: FpgCensus(-1); return 1;
         case 29: ts3native_counters.fpgMode = v < 2 ? (LONG)v : 2; return 1;
