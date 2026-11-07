@@ -2,7 +2,9 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
-## v0.2.9 (DRAFT, not released, no game test yet)
+## v0.2.9
+
+<!-- If EA smoke isn't passed at publish: drop the EA zip line and say EA app build follows later -->
 
 Hotfix on top of v0.2.8, Steam and the EA app 1.69.47: same fixes, same switches.
 
@@ -18,6 +20,7 @@ Hotfix on top of v0.2.8, Steam and the EA app 1.69.47: same fixes, same switches
 - **Your Sims saying they can't get there on their own lot.** To stop long routes from freezing the game, v0.2.8 gave up on a route after a fraction of a second, and that also hit the Sims you are playing or looking at. Go Here, the toilet, the fridge or leaving for work could fail on a path that exists. Sims in your household, their pets and their cars, and Sims you can see, now get all the time they need. Sims you can't see keep the short limit, so a busy town stays smooth.
 - **Your Sims being reset after repeated route failures.** The game's route watchdog no longer resets anyone in your household.
 - **Off-screen household Sims skipping animation updates.** They always animate at the full rate now.
+- **Off-screen household animation fix now works in the default setup.** It no longer needs an extra setting to be switched on.
 - **Crash after the game ran out of memory on a long play session.** The game's script memory could keep growing while large free blocks sat unused, until nothing was left. It now reuses those blocks first.
 
 ### Changed
@@ -27,7 +30,13 @@ Hotfix on top of v0.2.8, Steam and the EA app 1.69.47: same fixes, same switches
 
 ### Tested
 
-- Not tested in game yet.
+- Steam smoke test: 3 of 3 passed (Base Game, Island Paradise and Sunset Valley worlds, about 7 minutes each, no crash; log shows `ts3native 0.36.168c`).
+- The household route-cut and animation-hold proofs ran on the development build with the same fixes, in repro runs: 0 route cuts on household or visible Sims with the fix on, and the held-animation table works.
+- `selftest-all`: 196 passed.
+
+### Known issues
+
+- A stove placed behind a wall can leave a Sim with no path to it. One player report; the cause is not found yet, we are investigating.
 
 ## v0.2.8 (2026-11-06)
 
