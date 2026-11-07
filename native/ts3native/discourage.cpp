@@ -337,6 +337,40 @@ static void DiscPoll() {
     DiscDrain(GetTickCount() - g_disc[g_discHead].t >= kDiscMaxAgeMs);
 }
 
+// RemovalFirst (docs/89 §18, [Discourage] RemovalFirst=1, 0 = off; no counter fields, the hotfix keeps the layout; log line
+// "footprint removal first"): a START that finds a removal queued (a job runs, so DiscPoll left it) would plan past it: the worker
+// takes the next job at once and nothing drains between two jobs. A removal a Sim's own script made just before (a region's
+// Cleanup, then the next route) then blocks that plan: result 16, a walk-around, the household Sim leaves the stove. AsyncStart
+// parks such a START (J_PEND, READY ticks; the sim thread does not wait) until DiscPoll has applied it: at the first poll with
+// no job, or at kDiscMaxAgeMs by the wait that poll does anyway. Sims known unseen keep today's behaviour. usf and kind 1 records
+// do not count: they refill every tick in a crowd and only move a footprint. shortcut: a refused START's sync plan is not
+// covered ([Discourage] PlanDrain=1 would, not verified live); use it if household sync plans show this shape.
+static int g_rfMode;
+static LONG g_rfParked, g_rfCapped, g_rfTicksMax;
+static bool DiscRemovalQueued() {
+    for (int i = 0; i < g_discCount; i++) {
+        const DiscRec& r = g_disc[(g_discHead + i) % kDiscCap];
+        if (r.fp2 == 2 || r.pf || (!r.usf && !r.fp2 && !r.add)) return true;
+    }
+    return false;
+}
+static bool DiscRfStart() {
+    if (g_rfMode != 1 || !DiscRemovalQueued()) return false;
+    g_rfParked++;
+    return true;
+}
+// one READY tick of such a START (DiscPoll ran just before): true = wait; false = go on, at the tick cap with the removal queued
+static bool DiscRfWait(LONG ticks, LONG cap) {
+    const bool queued = DiscRemovalQueued();
+    if (queued && ticks < cap) return true;
+    if (queued) g_rfCapped++;
+    if (ticks > g_rfTicksMax) g_rfTicksMax = ticks;
+    return false;
+}
+static void DiscRfLog() {
+    if (g_rfMode || g_rfParked) Log("footprint removal first: mode %d parked %ld capped %ld max ticks %ld", g_rfMode, g_rfParked, g_rfCapped, g_rfTicksMax);
+}
+
 // PlanDrain (docs/89 §13; counters v107, [Discourage] PlanDrain=1, runtime switch sdMode, --ab plandrain): before a sim-thread
 // sync plan (PlanLockedBody, after the original's early outs) every deferred record is applied, so the plan sees the world it
 // would see with DeferFootprint=0. Skipped (today's defer-on behaviour) inside a job callback (WaitAsyncDone would wait for the
@@ -981,6 +1015,8 @@ static void InstallDiscourage(const wchar_t* ini) {
     InstallFootprintDefer(ini);
     InstallFootprintDefer2(ini);
     InstallPrivateFpDefer(ini);
+    g_rfMode = Clamp(GetPrivateProfileIntW(L"Discourage", L"RemovalFirst", 1, ini), 0, 1);
+    Log("footprint removal first: RemovalFirst=%d (docs/89 §18)", g_rfMode);
     ts3native_counters.fpgMode = Clamp(GetPrivateProfileIntW(L"Discourage", L"GhostSweep", 1, ini), 0, 2);
     g_fpgTest = GetPrivateProfileIntW(L"Discourage", L"GhostTest", 0, ini) != 0;
     Log("ghost census at world load: GhostSweep=%ld (0 off, 1 count only, 2 remove)%s", ts3native_counters.fpgMode, g_fpgTest ? ", GhostTest ops on" : "");

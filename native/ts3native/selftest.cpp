@@ -1190,6 +1190,56 @@ static void TestFallback() {
     assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid);
     Cancel(kH1);
     assert(k.fbPendApplied == 2);  // never applied twice
+    // RemovalFirst (docs/89 §18), M1Retry off as shipped: a queued removal parks a route not known unseen, the tick waits while it
+    // is queued, then the job queues; other records and the switch keep today's START; the tick cap goes on
+    {
+        p[0x10E] = 0;
+        k.fbRetryMode = 0;
+        g_rfMode = 1;
+        g_fbAcq = FakeLockAcquire;
+        const LONG q0 = k.asyncStarted, parked0 = k.fbRetryParked, gaveUp0 = k.fbRetryGaveUp;
+        g_discDraining = true;  // keeps DiscPoll from draining the fake record, as a running job does
+        g_discHead = 0;
+        DiscRec& rec = g_disc[0];
+        rec = DiscRec{};
+        rec.fp2 = 2;
+        g_discCount = 1;
+        assert(Start(kH1) && JobFor(kH1)->state == J_PEND && JobFor(kH1)->rf == 1 && k.asyncStarted == q0 && g_rfParked == 1);
+        assert(!Ready(kH1) && JobFor(kH1)->state == J_PEND && JobFor(kH1)->pend == 1);
+        g_discCount = 0;  // applied by DiscPoll
+        g_discDraining = false;
+        assert(!Ready(kH1) && k.asyncStarted == q0 + 1 && k.fbRetryGaveUp == gaveUp0);
+        WaitReady(kH1);
+        assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid);
+        Cancel(kH1);
+        g_discDraining = true;
+        g_discCount = 1;
+        rec = DiscRec{};
+        rec.usf = true;  // a moved footprint does not park
+        assert(!DiscRfStart());
+        rec = DiscRec{};
+        rec.fp2 = 1;
+        assert(!DiscRfStart());
+        rec = DiscRec{};
+        rec.add = true;
+        assert(!DiscRfStart());
+        rec = DiscRec{};  // a plain Remove
+        assert(DiscRemovalQueued());
+        rec.pf = true;
+        assert(DiscRemovalQueued());
+        g_rfMode = 0;
+        assert(!DiscRfStart());
+        g_rfMode = 1;
+        assert(DiscRfWait(kFbRetryTicks - 1, kFbRetryTicks) && !DiscRfWait(kFbRetryTicks, kFbRetryTicks) && g_rfCapped == 1);
+        g_discCount = 0;
+        g_discDraining = false;
+        g_rfMode = 0;
+        g_rfParked = g_rfCapped = g_rfTicksMax = 0;
+        k.fbRetryParked = parked0;
+        k.fbRetryMode = 1;
+        p[0x10E] = 1;
+        g_fbAcq = FbBusyAcquire;
+    }
     // the tick cap: READY gives up, the plan runs here with reason M1Pending, nothing applied
     p[0x10E] = 1;
     g_fbAcq = FbBusyAcquire;

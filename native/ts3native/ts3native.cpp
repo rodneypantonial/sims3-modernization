@@ -2795,6 +2795,7 @@ static void AtLogCounters();   // arenatail.cpp: [ArenaGuard] TailPad, [GcRootCh
 static void UfcLogCounters();  // unseenfbc.cpp (docs/202 §3.4)
 static void LscLogCounters();  // lotsincos.cpp
 
+static void DiscRfLog();  // discourage.cpp (docs/89 §18)
 static void MaybeLogCounters(ULONGLONG now) {
     LONG64 next = g_nextLog;
     if ((LONG64)now < next || InterlockedCompareExchange64(&g_nextLog, (LONG64)now + 60000, next) != next) return;
@@ -2821,6 +2822,7 @@ static void MaybeLogCounters(ULONGLONG now) {
         Log("footprint defer 2: mode %ld deferred %ld/%ld applied %ld/%ld dropped %ld/%ld dup %ld pass %ld forced %ld fullPass %ld ageMax %ld ms applyInJob %ld",
             c.fp2Mode, c.fp2Deferred[0], c.fp2Deferred[1], c.fp2Applied[0], c.fp2Applied[1], c.fp2Dropped[0], c.fp2Dropped[1],
             c.fp2Dup, c.fp2Pass, c.fp2Forced, c.fp2FullPass, c.fp2AgeMaxMs, c.fp2ApplyInJob);
+    DiscRfLog();  // docs/89 §18
     if (c.pfReady)  // docs/89 §14 private footprint remove
         Log("private footprint defer: mode %ld calls %ld inJob %ld deferred %ld applied %ld swept %ld dropped %ld dup %ld pass %ld addFlush %ld fullPass %ld applyInJob %ld",
             c.pfMode, c.pfCalls, c.pfInJob, c.pfDeferred, c.pfApplied, c.pfSwept, c.pfDropped, c.pfDup, c.pfPass, c.pfAddFlush,
@@ -3185,6 +3187,7 @@ struct AsyncJob {
     LONG p6Borrow;     // P6 (docs/94 §24): 1 = the Mode=2 cut was borrowed from an earlier START (ShareCuts)
     LONGLONG p6T0, p6CutQpc;  // P6 phase split (§24.7): QPC at an armed Route.Plan START and at its cut (0 = none)
     LONG pend;        // docs/134 §2.6: READY ticks this J_PEND slot has waited
+    LONG rf;          // docs/89 §18: parked by RemovalFirst, not by M1 (FbRetry)
     LONG probe;       // docs/163 §10: 1 = a stuck-check probe (PROBE mark on this route right before its own START)
     LONG sc;          // docs/163 §10.1: stuck-check tag of an own START (ScTagText), 0 = no mark
     u64 kdId;         // docs/197: the route's follower (route +0x40/+0x44) read at START with KindDeadlines on, 0 = unknown
@@ -4084,6 +4087,8 @@ static GetOptionFn g_getOptOrig;
 static LockAcquireFn g_lockOrig;
 static bool RtM1Allows(void** lock, int* why = NULL);  // rtsites.cpp; *why = the refusal's asyncRefusedM1 index
 static void DiscPoll();               // discourage.cpp
+static bool DiscRfStart();            // discourage.cpp (docs/89 §18 RemovalFirst)
+static bool DiscRfWait(LONG ticks, LONG cap);
 static DWORD g_collect;  // handle whose READY said "done": the owner's next IC_Route_Plan for it takes the stored result
 
 // docs/183: one sim-thread wait for a job, by site (always counted; a wait that found no job is not one). yieldable = the wait
@@ -4543,6 +4548,9 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL, bool fo
     j->kdScope = KdScopeTake(handle);
     j->uf = UfTake(handle) ? 1 : 0;  // docs/202: the MARK is used up by the job it marks (a refused START leaves it to the sync IC)
     j->ufCut = 0;
+    // docs/89 §18: a route not known unseen (household, unknown scope) does not plan past a queued removal; READY queues it
+    j->rf = !park && j->kdScope != 2 && !j->uf && DiscRfStart();
+    if (j->rf) park = true;
     if (park) {  // the slot is this route's; READY (FbRetry) queues it once the pending updates are applied
         g_async.owner = GetCurrentThreadId();
         j->handle = handle;
@@ -4605,7 +4613,12 @@ static bool FbRetry(AsyncJob* j) {
     int m1 = 0, why = -1;
     Max(&k.fbRetryTicksMax, ++j->pend);
     j->doneTick = GetTickCount();
-    if (k.fbMode != 1 || k.fbRetryMode != 1) why = RFB_M1 + 3;  // switched off while parked
+    const bool rf = j->rf != 0;
+    if (rf) {
+        if (DiscRfWait(j->pend, kFbRetryTicks)) return true;
+        j->rf = 0;
+    }
+    if (!rf && (k.fbMode != 1 || k.fbRetryMode != 1)) why = RFB_M1 + 3;  // switched off while parked
     else if (AsyncLosRoute(h)) why = RFB_LOS;
     else if (!RtM1Allows(&lock, &m1)) {
         if (m1 != 3) why = RFB_M1 + m1;
