@@ -653,6 +653,7 @@ static void UdWorldLoad() {  // sim thread, from the ts3fixes "world:" line
     sprintf_s(ev, "world load #%ld", n);
     GcCapWindow(true, ev);  // gcgrow.cpp: [GC] BlackListCapKB strict while the world plays
     InterlockedIncrement(&g_utbWorlds);  // unseentable.cpp: a new [UnseenTable] generation at the next ask
+    FpgCensus((int)n);  // discourage.cpp: one pass inside the load screen (docs/89 §17)
 }
 
 // ts3fixes text channel (UserDiag.cs): Route.GetOption2 with optHi = 0x87000000 | op << 16, 4 ASCII bytes in optLo.
@@ -673,6 +674,7 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
         case 7: return CpOp(lo);    // compaction.cpp: [Compaction] verdict and steps (docs/204)
         case 10: case 11: KdScopeSet(lo, ((hi >> 16) & 0xFF) == 10 ? 1 : 2); return 1;  // docs/197 §7: UfWhy of route lo, before its START or sync plan
         case 12: KdScopeClear(lo); return 1;  // docs/197 §7: route lo's plan is over
+        case 20: case 21: case 22: case 23: case 24: case 25: case 26: case 27: case 28: case 29: return FpgOp((hi >> 16) & 0xFF, lo);  // discourage.cpp, [Discourage] GhostTest
         case 0: g_udTxtN = 0; return 1;
         case 1:
             for (int i = 0; i < 4; i++) {

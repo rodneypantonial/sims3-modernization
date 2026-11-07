@@ -168,6 +168,13 @@ static void MdFormat(char* out, size_t cap, LONG n, const char* tag, const char*
         const int w = _snprintf_s(out + at, cap - at, _TRUNCATE, " %s=%s%s", kMd[i].key, num, m == '?' ? "?" : m == '!' ? "!" : "");
         at = w < 0 ? -1 : at + w;  // shortcut: a truncated line (not reachable at today's field count) stops at the cut
     }
+    // docs/89 §16: no walk, so it can ride on every line: removals lost so far (fix off), ghosts the load's census left in the map, removals
+    // the fix saved. LostRemovalFix on/off in one load shows on the same lines.
+    const Ts3nCounters& fp = ts3native_counters;
+    if (at > 0 && (fp.fp2lrReady || fp.fpgCensus)) {
+        const int w = _snprintf_s(out + at, cap - at, _TRUNCATE, " fpLost=%ld fpLoad=%ld fpSaved=%ld", fp.fp2lrLost, fp.fpgMode == 1 ? fp.fpgGhosts : 0L, fp.fp2lrGoneHit);
+        at = w < 0 ? -1 : at + w;
+    }
     if (at > 0) _snprintf_s(out + at, cap - at, _TRUNCATE, " t=%lu", secs);
 }
 

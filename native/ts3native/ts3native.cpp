@@ -14,7 +14,7 @@
 #include <psapi.h>  // K32GetMappedFileNameW (XcptOtherModule)
 #include "ts3addr.h"  // TS3A(x): TS3W.exe addresses by Steam 1.67 value (tools/addr-codemod.ts)
 
-#define TS3NATIVE_VERSION "0.36.168c"
+#define TS3NATIVE_VERSION "0.36.168d"
 
 typedef unsigned char u8;
 
@@ -2679,6 +2679,27 @@ struct Ts3nCounters {
     LONG igOverflow;                   // +0x5C44, negative inputs or a 32-bit wrap of (bpp / 8) * h * w: the decode returned failure
     LONG igMaxMB;                      // +0x5C48, largest size seen at or above LogMB, MB (0x7FFFFFFF after a wrap)
     LONG igSpare[2];                   // +0x5C4C
+    // hotfix block (docs/89 §16, master v172 at +0x5DE8): [Discourage] LostRemovalFix, GhostSweep. No version bump: 912 readers stop before it
+    volatile LONG fp2lrMode;               // +0x5C54, switch [Discourage] LostRemovalFix: 1 = an UpdateObjectLot record keeps the lot of the call and always reaches the lot map (docs/89 §16)
+    volatile LONG fp2lrReady;              // +0x5C58, installed (the 0x833680 order sites are patched)
+    volatile LONG fp2lrApplied;            // +0x5C5C, records applied through 0x82C120 with the object alive
+    volatile LONG fp2lrGone;               // +0x5C60, records applied through 0x82C120 with the object gone (the removal old builds lost)
+    volatile LONG fp2lrGoneHit;            // +0x5C64, of them 0x82C120 removed something: footprints that would have stayed as ghosts
+    volatile LONG fp2lrMoved;              // +0x5C68, applied with the object alive on another lot than at the call
+    volatile LONG fp2lrFlush;              // +0x5C6C, 0x833680 of an object with such a record: applied first
+    volatile LONG fp2lrFlushUs;            // +0x5C70, job wait of those flushes, us (the call waits anyway at its +0x918)
+    volatile LONG fp2lrOrderMiss;          // +0x5C74, no flush possible (job callback, +0x918 held): the insert runs first; expected 0
+    volatile LONG fpgMode;                  // +0x5C78, [Discourage] GhostSweep: 0 off, 1 census count only, 2 remove (load screen only)
+    volatile LONG fpgCensus;                // +0x5C7C, census passes
+    volatile LONG fpgEntries;               // +0x5C80, last pass: map entries read
+    volatile LONG fpgObjFp;                 // +0x5C84, last pass: entries with an object-shaped key
+    volatile LONG fpgGhosts;                // +0x5C88, last pass: ghost ids (the whole signature, docs/89 §17)
+    volatile LONG fpgRemoved;               // +0x5C8C, ids removed, all passes
+    volatile LONG fp2lrLost;               // +0x5C90, LostRemovalFix off: removals lost now, one ghost or stale copy each (fpLost on diag: mem lines)
+    volatile LONG fpgKeptRead;              // +0x5C94, entries kept because a read failed, all passes
+    volatile LONG fpgOther;                 // +0x5C98, last pass: object-shaped keys without an object outside the signature, kept
+    volatile LONG fpgUs;                    // +0x5C9C, last pass, us
+    volatile LONG fpgHeld;                  // +0x5CA0, [Discourage] GhostTest: jobs held by the repro
 };
 extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {908,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -3317,6 +3338,7 @@ static __declspec(thread) bool t_tuOpen;
 static void TuTrip(int where);
 static void P4LiveBegin(AsyncJob* j);  // p4.cpp: the worker captures this job's Route_PlanLocked
 static void P4LiveEnd(AsyncJob* j);    // copies what the shadow needs before J_DONE
+static void FpgHoldPoint();              // discourage.cpp: [Discourage] GhostTest, a test hold at the job's start
 static void P4Shadow();                // after J_DONE: the clone run, compare, record
 static void P4ShadowIdle();            // nothing queued: a parked shadow (p4.cpp, 0.34.1)
 static void P4OnStart(AsyncJob* j);    // sim, START: sampling and the clone cut
@@ -3735,6 +3757,7 @@ static void ServeAsync() {
             continue;
         }
         G0wStarted(h, inPass);
+        FpgHoldPoint();
         CeRec(CE_JOB_START, j->handle, (DWORD)j->kind, (DWORD)(uintptr_t)j->lock);
         const unsigned short cw = GetX87();
         const unsigned int csr = _mm_getcsr();
@@ -5020,12 +5043,12 @@ static_assert(offsetof(Ts3nCounters, aoReady) == 0x56D0 && offsetof(Ts3nCounters
 static_assert(offsetof(Ts3nCounters, rmReady) == 0x5830 && offsetof(Ts3nCounters, rmK) == 0x5840 && offsetof(Ts3nCounters, rmTailN) == 0x5890 &&
               offsetof(Ts3nCounters, rmZoneN) == 0x58C0 && offsetof(Ts3nCounters, rmDeltaN) == 0x5900 &&
               offsetof(Ts3nCounters, rmSlFallback) == 0x5928 && offsetof(Ts3nCounters, rmSpare) == 0x5944 &&
-              sizeof(Ts3nCounters) == 5909 * 4, "v151 layout (docs/registry.md)");
+              sizeof(Ts3nCounters) == 5929 * 4, "v151 layout (docs/registry.md)");
 static_assert(offsetof(Ts3nCounters, utbRowCalc) == 0x5950 && offsetof(Ts3nCounters, utbForced) == 0x5960, "v152 layout (docs/registry.md)");
-static_assert(offsetof(Ts3nCounters, rmSlIns) == 0x5964 && offsetof(Ts3nCounters, rmSlCandFull) == 0x5980 && sizeof(Ts3nCounters) == 5909 * 4,
+static_assert(offsetof(Ts3nCounters, rmSlIns) == 0x5964 && offsetof(Ts3nCounters, rmSlCandFull) == 0x5980 && sizeof(Ts3nCounters) == 5929 * 4,
               "v153 layout (docs/registry.md)");
 static_assert(offsetof(Ts3nCounters, gwMode) == 0x5AE8 && offsetof(Ts3nCounters, gwXmlMaxKB) == 0x5B0C && offsetof(Ts3nCounters, gcCapKB) == 0x5B10 &&
-                  offsetof(Ts3nCounters, gcExpandStreakMax) == 0x5B20 && offsetof(Ts3nCounters, gcSwitchSec) == 0x5B2C && sizeof(Ts3nCounters) == 5909 * 4,
+                  offsetof(Ts3nCounters, gcExpandStreakMax) == 0x5B20 && offsetof(Ts3nCounters, gcSwitchSec) == 0x5B2C && sizeof(Ts3nCounters) == 5929 * 4,
               "v161 + v162 + v163 layout (docs/registry.md)");
 static_assert(offsetof(Ts3nCounters, fsReady) == 0x5B30 && offsetof(Ts3nCounters, fsMode) == 0x5B34 && offsetof(Ts3nCounters, fsNearDiff) == 0x5B74,
               "v901 [FootstepRO] layout");
@@ -5039,7 +5062,7 @@ static_assert(offsetof(Ts3nCounters, icJumpMode) == 0x5C0C && offsetof(Ts3nCount
               "v906 [IdleCheckRO] SiteCLoopJump layout");
 static_assert(offsetof(Ts3nCounters, ilpOn) == 0x5C14 && offsetof(Ts3nCounters, ilpFaults) == 0x5C30, "v907 [IlPatch] layout");
 static_assert(offsetof(Ts3nCounters, igReady) == 0x5C34 && offsetof(Ts3nCounters, igMaxMB) == 0x5C48 && offsetof(Ts3nCounters, igSpare) == 0x5C4C &&
-              sizeof(Ts3nCounters) == 5909 * 4, "v908 [ImageGuard] layout (docs/registry.md)");
+              sizeof(Ts3nCounters) == 5929 * 4, "v908 [ImageGuard] layout (docs/registry.md)");
 #include "ilpatch.cpp"    // docs/506 §2, docs/526: [IlPatch] mid-method core fixes at the IL transform (before autshadow.cpp: satb.cpp's cold site 0 is its client)
 #include "autshadow.cpp"
 #include "gcroots.cpp"  // docs/67 §22.4: Crash S task-rooting line + [GcRootCheck] (after autshadow.cpp: autledger's g_lgCtx; memexp.cpp: g_mx)
