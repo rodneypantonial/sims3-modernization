@@ -97,35 +97,36 @@ static __declspec(thread) bool t_kdUncut;  // this job runs uncut because of its
 // every kind; only a route known unseen or marked keeps its cuts. Exempt jobs and sync plans get KdSeenCeilMs instead (a
 // job with no deadline holds +0x918 as long as it runs, a sync plan freezes the sim thread).
 static int g_kdExempt;
-static LONG g_kdCeilUs, g_kdExN, g_kdWouldCut, g_kdExMaxUs, g_kdCeilCut;  // no counter fields: the hotfix keeps the v0.2.8 layout
+static LONG g_kdCeilUs, g_kdNpcCeilUs, g_kdExMaxUs;  // scope 3 (op 13) = a seen NPC, ceiling KdSeenNpcCeilMs; counters in the tail block (EA test branch)
+static LONG KdCeilUs(LONG scope) { return scope == 3 ? g_kdNpcCeilUs : g_kdCeilUs; }
 static __declspec(thread) LONG t_kdExemptUs;  // this job is exempt: the deadline it would have had
 static __declspec(thread) LONG t_kdJobScope;  // worker: the running job's scope, 2 = unseen
 static bool KdExempt(const AsyncJob* j) {
-    return g_kdExempt && g_kdScopeN && !j->uf && j->kdScope != 2;  // docs/249: cut only a route known unseen; no answer ever = old package: as v0.2.8
+    return g_kdExempt && ts3native_counters.kdScopeN && !j->uf && j->kdScope != 2;  // docs/249: cut only a route known unseen; no answer ever = old package: as v0.2.8
 }
 static DWORD g_kdScopeH;
 static LONG g_kdScope;
 // sim thread (UdTextMsg): this route's scope, good for its next START only
-static void KdScopeSet(DWORD handle, LONG scope) { g_kdScopeH = handle, g_kdScope = scope, g_kdScopeN++; }
+static void KdScopeSet(DWORD handle, LONG scope) { g_kdScopeH = handle, g_kdScope = scope, ts3native_counters.kdScopeN++; }
 static LONG KdScopeTake(DWORD handle) {
     const LONG s = handle && g_kdScopeH == handle ? g_kdScope : 0;
     g_kdScopeH = 0;
     return s;
 }
 static void KdScopeClear(DWORD handle) { if (g_kdScopeH == handle) g_kdScopeH = 0; }  // the plan is over: not an answer for a later plan
-static __declspec(thread) bool t_kdSeen;  // this sync plan's scope was known (log only)
+static __declspec(thread) bool t_kdSeen, t_kdNpc;  // this sync plan's scope was known (log only); it is a seen NPC's
 // sim thread: the ceiling of this sync plan, 0 = its usual caps. handle 0 = non-IC plan: the plan ts3fixes is running. Unknown = exempt
 static LONG KdSyncCeilUs(DWORD handle) {
     const Ts3nCounters& k = ts3native_counters;
-    if (!g_kdExempt || !g_kdScopeN || k.pdMode != 1 || t_pd.open) return 0;
+    if (!g_kdExempt || !ts3native_counters.kdScopeN || k.pdMode != 1 || t_pd.open) return 0;
     const LONG s = g_kdScopeH && (!handle || g_kdScopeH == handle) ? g_kdScope : 0;
     if (s == 2) return 0;
-    t_kdSeen = s == 1;
-    return g_kdCeilUs;
+    t_kdSeen = s != 0, t_kdNpc = s == 3;
+    return KdCeilUs(s);
 }
 // ReplanDedupe's repeat after footprint writes (docs/249): not proven exact, so only for a route known unseen
 static bool KdKnownUnseen(DWORD handle) {
-    if (!g_kdExempt || !g_kdScopeN) return true;
+    if (!g_kdExempt || !ts3native_counters.kdScopeN) return true;
     return t_kdJobScope ? t_kdJobScope == 2 : g_kdScopeH == handle && g_kdScope == 2;
 }
 
@@ -134,6 +135,7 @@ static void ReadKindDeadlines(const wchar_t* ini) {
     g_kdIni = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KindDeadlines", 0, ini), 0, 1);
     g_kdExempt = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdExemptSeen", 1, ini), 0, 1);
     g_kdCeilUs = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdSeenCeilMs", 10000, ini), 1000, 60000) * 1000;
+    g_kdNpcCeilUs = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdSeenNpcCeilMs", 2000, ini), 1000, 60000) * 1000;
     for (int i = 0; i < KD_N; i++) {
         const int ms = GetPrivateProfileIntW(L"RouteAsync", kKdIniKey[i], kKdDefMs[i], ini);
         k.kdUs[i] = ms > 0 ? Clamp(ms, 50, 60000) * 1000 : 0;
@@ -142,7 +144,7 @@ static void ReadKindDeadlines(const wchar_t* ini) {
         Log("route async: KindDeadlines=1 own Plan %ld Replan %ld PlanFromPoint %ld ReplanFromPosition %ld, A10 foreign %ld, foreign "
             "Plan %ld, probe %ld ms", k.kdUs[0] / 1000, k.kdUs[1] / 1000, k.kdUs[2] / 1000, k.kdUs[3] / 1000, k.kdUs[4] / 1000,
             k.kdUs[5] / 1000, k.kdUs[6] / 1000);
-    Log("route async: KdExemptSeen=%d KdSeenCeilMs=%ld", g_kdExempt, g_kdCeilUs / 1000);
+    Log("route async: KdExemptSeen=%d KdSeenCeilMs=%ld KdSeenNpcCeilMs=%ld", g_kdExempt, g_kdCeilUs / 1000, g_kdNpcCeilUs / 1000);
 }
 static void KdInstalled() {  // after PdInstallAt: world A* through the cost stubs, cell A* and water through the entry stubs
     Ts3nCounters& k = ts3native_counters;
@@ -183,13 +185,13 @@ static LONG KdJobBegin(const AsyncJob* j) {
     Ts3nCounters& k = ts3native_counters;
     t_kdKind = 0, t_kdUncut = false, t_kdExemptUs = 0, t_kdJobScope = j->uf ? 2 : j->kdScope;
     static LONG noScope;
-    if (g_kdExempt && !g_kdScopeN && !InterlockedExchange(&noScope, 1)) Log("route seen exempt: no scope answer from ts3fixes (old package?), every route cut as in v0.2.8");
+    if (g_kdExempt && !ts3native_counters.kdScopeN && !InterlockedExchange(&noScope, 1)) Log("route seen exempt: no scope answer from ts3fixes (old package?), every route cut as in v0.2.8");
     if (k.kdMode != 1 || !k.kdReady) {  // docs/249: FbJobCapMs and the probe's PlanDeadlineMs (KindDeadlines off): the same rule
         const LONG old = j->fb && k.fbjcMode == 1 ? k.fbjcCapUs : j->probe && !j->fb ? k.pdUs : 0;
         if (!old || !KdExempt(j)) return -1;
-        InterlockedIncrement(&g_kdExN);
+        InterlockedIncrement(&ts3native_counters.kdExempt);
         t_kdExemptUs = old;
-        return g_kdCeilUs;
+        return KdCeilUs(j->kdScope);
     }
     const int kind = KdKind(j);
     t_kdKind = kind + 1;
@@ -200,9 +202,9 @@ static LONG KdJobBegin(const AsyncJob* j) {
     LONG us = k.kdUs[kind];
     if (!us) return 0;
     if (KdExempt(j)) {
-        InterlockedIncrement(&g_kdExN);
+        InterlockedIncrement(&ts3native_counters.kdExempt);
         t_kdExemptUs = us;
-        return g_kdCeilUs;
+        return KdCeilUs(j->kdScope);
     }
     LONG level = 0;
     if (kind != KD_PROBE && j->kdId) {
@@ -234,6 +236,7 @@ static void KdJobEnd(const AsyncJob* j, bool capped, LONG us, LONGLONG end, LONG
     if (us >= 300000) InterlockedIncrement(&k.kdLong[kind]);
     if (capped) {
         InterlockedIncrement(&k.kdCut[kind]);
+        InterlockedIncrement(t_kdJobScope == 2 ? &k.kdCutUnseen : t_kdJobScope == 1 ? &k.kdCutSeen : t_kdJobScope == 3 ? &k.kdCutNpc : &k.kdCutUnk);
         if (ok) InterlockedIncrement(&k.kdCutOk);
         const LONGLONG late = dl && end > dl ? (end - dl) * 1000000 / g_qpf.QuadPart : 0;
         Max(&k.kdLateMaxUs, late > 0x7FFFFFFF ? 0x7FFFFFFF : (LONG)late);
@@ -332,12 +335,13 @@ static void RfJobNote(const AsyncJob* j, bool capped, LONG us, const JobSplit& s
     RfText(r, t, sizeof(t));
     if (t_kdExemptUs) Max(&g_kdExMaxUs, us);
     if (t_kdExemptUs && us >= t_kdExemptUs) {
-        InterlockedIncrement(&g_kdWouldCut);
+        InterlockedIncrement(&ts3native_counters.kdWouldCut);
         Log("kd exempt: would cut route %08lX%s", r.h, t);  // the job's length is the hitch cost
     }
     if (t_kdExemptUs && capped) {
-        InterlockedIncrement(&g_kdCeilCut);
-        Log("KD CEILING CUT: route %08lX%s", r.h, t);
+        InterlockedIncrement(&ts3native_counters.kdCeilCut);
+        if (j->kdScope == 3) InterlockedIncrement(&ts3native_counters.kdCeilNpc);
+        Log("KD %sCEILING CUT: route %08lX%s", j->kdScope == 3 ? "NPC " : "", r.h, t);
     }
     if ((r.res != 1 || capped) && RfLineOk(unseen)) Log("routefail job: route %08lX%s", r.h, t);
     if (t_rfRetry.on) {
@@ -386,7 +390,7 @@ static void KdLogCounters() {
         "after a cut ok %ld fail %ld (uncut ok %ld), stuck checks %ld; stuck-check last round exempt %ld",
         c.kdMode, b, c.kdLateMaxUs / 1000, c.kdCutOk, c.kdBackoff[0], c.kdBackoff[1], c.kdAfterOk, c.kdAfterFail, c.kdUncutOk,
         c.kdAfterStuckCheck, c.kdExemptSc);
-    Log("route seen exempt: mode %d plans %ld would cut %ld max %ld ms ceiling cuts %ld, scope answers %ld, repeats planned %ld, anim held %ld", g_kdExempt, g_kdExN, g_kdWouldCut, g_kdExMaxUs / 1000, g_kdCeilCut, g_kdScopeN, g_kdRdHeld, g_kdAaHeld);
+    Log("route seen exempt: mode %d plans %ld would cut %ld max %ld ms ceiling cuts %ld, scope answers %ld, repeats planned %ld, anim held %ld", g_kdExempt, ts3native_counters.kdExempt, ts3native_counters.kdWouldCut, g_kdExMaxUs / 1000, ts3native_counters.kdCeilCut, ts3native_counters.kdScopeN, g_kdRdHeld, g_kdAaHeld);
 }
 
 static void ReadPlanDeadline(const wchar_t* ini) {
@@ -426,18 +430,19 @@ static void PdOpen(int entry, LONG us) {
 // docs/197 §7, a sync plan under the ceiling ended: what its old cap would have done, and the loud line at the ceiling
 static void KdCeilClose(const PdSess& s, LONGLONG now, bool ok) {
     const LONG us = (LONG)((now - s.t0) * 1000000 / g_qpf.QuadPart);
-    InterlockedIncrement(&g_kdExN);
+    InterlockedIncrement(&ts3native_counters.kdExempt);
     Max(&g_kdExMaxUs, us);
     const char* res = ok ? "succeeded" : "failed";
-    const char* scope = t_kdSeen ? "seen" : "scope unknown";
+    const char* scope = t_kdNpc ? "seen NPC" : t_kdSeen ? "seen" : "scope unknown";
     if (s.wouldUs > 0 && us >= s.wouldUs) {
-        InterlockedIncrement(&g_kdWouldCut);
+        InterlockedIncrement(&ts3native_counters.kdWouldCut);
         Log("kd exempt: would cut sync route %08lX, %ld ms %s, cap %ld ms, entry %s, %s", s.handle, us / 1000, res, s.wouldUs / 1000, s.ent, scope);
     }
     if (now < s.dl) return;
-    InterlockedIncrement(&g_kdCeilCut);
+    InterlockedIncrement(&ts3native_counters.kdCeilCut);
+    if (t_kdNpc) InterlockedIncrement(&ts3native_counters.kdCeilNpc);
     Log("KD CEILING CUT: sync route %08lX follower %016I64X, %ld ms %s, ceiling %ld ms, entry %s, %s; world A* capped %ld, cell skipped %ld, water skipped %ld", s.handle,
-        KdFollower(s.handle), us / 1000, res, g_kdCeilUs / 1000, s.ent, scope, s.capped, s.skip[0], s.skip[1]);
+        KdFollower(s.handle), us / 1000, res, KdCeilUs(t_kdNpc ? 3 : 0) / 1000, s.ent, scope, s.capped, s.skip[0], s.skip[1]);
 }
 
 // ok = the plan's own result: succeeded

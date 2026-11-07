@@ -261,15 +261,15 @@ static void TestPlanDeadline() {
         g_kdExempt = 1, g_kdCeilUs = 8000000, k.asyncMode = 1, k.fbCapUs = 900000;
         mode = 0;
         KdScopeSet(0x1234, 1);
-        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out && !t_kdCeil && !t_pd.open && t_kdSeen && !g_kdCeilCut);
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out && !t_kdCeil && !t_pd.open && t_kdSeen && !ts3native_counters.kdCeilCut);
         KdScopeClear(0x1234);  // no answer: unknown = exempt
-        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out && !t_kdSeen && g_kdExN == 2);
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out && !t_kdSeen && ts3native_counters.kdExempt == 2);
         mode = 1;
         KdScopeSet(0x1234, 1);
         k.pdUs = 2000;
-        assert(SyncIc(0, out, 0x1234, NULL, RFB_FOREIGN, "nojob", NULL) == out && g_kdWouldCut == 1 && g_kdExMaxUs >= 2000);
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_FOREIGN, "nojob", NULL) == out && ts3native_counters.kdWouldCut == 1 && g_kdExMaxUs >= 2000);
         mode = 3;  // the ceiling still cuts, loudly
-        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out && g_kdCeilCut == 1);
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out && ts3native_counters.kdCeilCut == 1);
         mode = 2;
         KdScopeSet(0x1234, 2);
         assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out);
@@ -282,7 +282,7 @@ static void TestPlanDeadline() {
         PdPlanEnd(1);
         KdScopeClear(0x1235);
         assert(!g_kdScopeH);
-        g_kdExempt = 0, g_kdCeilUs = 0, g_kdCeilCut = g_kdWouldCut = g_kdExMaxUs = g_kdExN = 0;
+        g_kdExempt = 0, g_kdCeilUs = 0, ts3native_counters.kdCeilCut = ts3native_counters.kdWouldCut = g_kdExMaxUs = ts3native_counters.kdExempt = 0;
         k.asyncMode = am, k.fbCapUs = cap0;
         k.pdSessions[0] = s0, k.pdSessions[1] = s1, k.pdHit = h0, k.pdHitUs = hu0, k.pdLines = l0, k.pdLateMaxUs = m0;
         t_kdSeen = false;
@@ -438,10 +438,11 @@ static void TestPlanDeadline() {
         assert(KdJobBegin(&f) == 200000 && KdJobBegin(&a) == 200000 && KdJobBegin(&p) == 180000);
         f.kdScope = a.kdScope = p.kdScope = 0;
         {
-            const LONG n0 = g_kdScopeN;
-            g_kdScopeN = 0;  // old package: no answer ever, every cut as v0.2.8
+            assert(KdCeilUs(3) == g_kdNpcCeilUs && KdCeilUs(1) == g_kdCeilUs && KdCeilUs(0) == g_kdCeilUs);  // scope 3 = seen NPC
+            const LONG n0 = ts3native_counters.kdScopeN;
+            ts3native_counters.kdScopeN = 0;  // old package: no answer ever, every cut as v0.2.8
             assert(KdJobBegin(&f) == 200000 && !t_kdExemptUs && !KdSyncCeilUs(0x1234));
-            g_kdScopeN = n0;
+            ts3native_counters.kdScopeN = n0;
         }
         // KindDeadlines off: FbJobCapMs and the probe's PlanDeadlineMs keep to the same rule; an own job stays as it was
         {

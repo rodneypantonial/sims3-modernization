@@ -673,6 +673,7 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
         case 6: return PlAnswer();  // played.cpp: store ready / household played (docs/14 section 8.6)
         case 7: return CpOp(lo);    // compaction.cpp: [Compaction] verdict and steps (docs/204)
         case 10: case 11: KdScopeSet(lo, ((hi >> 16) & 0xFF) == 10 ? 1 : 2); return 1;  // docs/197 §7: UfWhy of route lo, before its START or sync plan
+        case 13: KdScopeSet(lo, 3); return 1;  // docs/197 §7: a seen NPC (KdSeenNpcCeilMs); an old package never sends it
         case 12: KdScopeClear(lo); return 1;  // docs/197 §7: route lo's plan is over
         case 20: case 21: case 22: case 23: case 24: case 25: case 26: case 27: case 28: case 29:
 #ifdef TS3N_RFTEST

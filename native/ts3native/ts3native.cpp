@@ -15,9 +15,9 @@
 #include "ts3addr.h"  // TS3A(x): TS3W.exe addresses by Steam 1.67 value (tools/addr-codemod.ts)
 
 #ifdef TS3N_RFTEST
-#define TS3NATIVE_VERSION "0.36.168e-rftest1"  // docs/89 §18: repro ops 30-34, never a release
+#define TS3NATIVE_VERSION "0.36.168e-goalhh1-rftest1"  // docs/89 §18: repro ops 30-34, never a release
 #else
-#define TS3NATIVE_VERSION "0.36.168e"
+#define TS3NATIVE_VERSION "0.36.168e-goalhh1"
 #endif
 
 typedef unsigned char u8;
@@ -2704,6 +2704,9 @@ struct Ts3nCounters {
     volatile LONG fpgOther;                 // +0x5C98, last pass: object-shaped keys without an object outside the signature, kept
     volatile LONG fpgUs;                    // +0x5C9C, last pass, us
     volatile LONG fpgHeld;                  // +0x5CA0, [Discourage] GhostTest: jobs held by the repro
+    // EA test block (ea169-goalhh, never released): docs/197 §7 kd counters of master at the hotfix tail. No version bump
+    LONG kdExempt, kdWouldCut, kdCeilCut, kdScopeN;  // +0x5CA4
+    LONG kdCutUnk, kdCutSeen, kdCutUnseen, kdCutNpc, kdCeilNpc;  // +0x5CB4, KindDeadlines cuts by scope; cuts at the NPC ceiling
 };
 extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {908,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -3069,7 +3072,7 @@ static volatile DWORD g_pdWkTid;
 // last round): its nested Route_PlanLocked opens no session either; t_pdScH: IcCollect's Plan IC follows a refused START
 // whose stuck-check tag had no probe mark (t_pdScH = its route handle, read once by SyncIc)
 static __declspec(thread) bool t_pdNoCut;
-static LONG g_kdScopeN, g_kdRdHeld, g_kdAaHeld;  // docs/249: scope answers (0 = old package), repeats planned, anim held
+static LONG g_kdRdHeld, g_kdAaHeld;  // docs/249: scope answers (0 = old package), repeats planned, anim held
 static __declspec(thread) LONG t_kdCeil;  // docs/197 §7: this sync IC runs under KdSeenCeilMs: the cap it replaces (us), -1 = none; SyncCapMs off inside
 static __declspec(thread) DWORD t_pdScH;
 static DWORD g_scSyncH;  // route handle of the last own START with a stuck-check tag and no probe mark (sim thread only)
