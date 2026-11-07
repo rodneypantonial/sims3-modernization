@@ -24,8 +24,8 @@ Hotfix on top of v0.2.9, Steam only. The stove and fridge bug below was ours, an
 
 - The stove, oven, fridge repro ran on the development build with the same fix: with the fix off, 29 of 40 tries left a blocker and the route failed; with it on, 0 of 40.
 - The walk-off repro ran on a test build with the same fix: with the fix off, 14 of 14 tries failed; with it on, 0 of 16.
-- **TODO Rodney, before publish: add the smoke test result of this exact build (v0210e).**
-- **TODO Rodney, before publish: add the stove repeat result.**
+- Smoke test of this exact build: Bridgeport world, 5 minutes, no crash, no hang.
+- Repeat test on this build: 25 stove cycles in a row, 18 full bakes, no crash, no blocker left behind.
 - `selftest-all`: 191 passed, 5 skipped (they need game files).
 
 ## v0.2.9 (2026-11-07)
