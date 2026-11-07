@@ -134,7 +134,7 @@ namespace Ts3Agent
             bool ok = sWaterStranded.Count == 0 && sWaterMaxEngaged >= minE && sWaterMaxMounted >= minM && sWaterSamples > 0;
             r["check_ok"] = ok;
             if (a.Bool("require", false) && !ok)
-                throw new McpException(sWaterStranded.Count > 0 ? "unseen_water_watch: " + sWaterStranded.Count + " stranded sample(s): " + StrandedSummary(3)
+                throw new McpException(sWaterStranded.Count > 0 ? "unseen_water_watch: " + sWaterStranded.Count + " stranded sample(s): " + StrandedSummary()
                     : "unseen_water_watch: not exercised (max engaged " + sWaterMaxEngaged + " < " + minE + " or max mounted " + sWaterMaxMounted + " < " + minM + ", samples " + sWaterSamples + ")");
             return r;
         }
@@ -156,15 +156,28 @@ namespace Ts3Agent
             }
         }
 
-        // first n stranded samples as "name depth/above-sea interaction lot", so a failed check names its Sims in the log
-        static string StrandedSummary(int n)
+        // every stranded Sim once, with its sample count and first sample as "name xN depth/above-sea interaction lot terrain moved", so the failed
+        // check's row names all of them (the first 3 samples named 2 Sims of 8 on EA ip-uboat-repro 2026-11-08: one Sim repeats per sample)
+        static string StrandedSummary()
         {
             List<string> parts = new List<string>();
-            for (int i = 0; i < sWaterStranded.Count && i < n; i++)
+            Dictionary<string, int> seen = new Dictionary<string, int>();
+            List<string> order = new List<string>();
+            Dictionary<string, Dictionary<string, object>> first = new Dictionary<string, Dictionary<string, object>>();
+            foreach (object x in sWaterStranded)
             {
-                Dictionary<string, object> o = sWaterStranded[i] as Dictionary<string, object>;
+                Dictionary<string, object> o = x as Dictionary<string, object>;
                 if (o == null) continue;
-                parts.Add(o["name"] + " depth " + o["depth_m"] + " m, " + o["y_above_sea_m"] + " m above sea, '" + o["interaction"] + "', lot " + (o["lot"] ?? "none")
+                string name = o["name"] as string ?? "?";
+                int k;
+                if (seen.TryGetValue(name, out k)) { seen[name] = k + 1; continue; }
+                seen[name] = 1; order.Add(name); first[name] = o;
+            }
+            parts.Add(order.Count + " Sim(s)");
+            foreach (string name in order)
+            {
+                Dictionary<string, object> o = first[name];
+                parts.Add(name + " x" + seen[name] + " depth " + o["depth_m"] + " m, " + o["y_above_sea_m"] + " m above sea, '" + o["interaction"] + "', lot " + (o["lot"] ?? "none")
                     + ", terrain " + o["terrain"] + ", moved " + (o["moved"] ?? "none"));
             }
             return string.Join("; ", parts.ToArray());
