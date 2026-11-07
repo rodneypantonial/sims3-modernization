@@ -17,11 +17,11 @@ Hotfix on top of v0.2.9, Steam only. The stove and fridge bug below was ours, an
 ### Fixed
 
 - **Stoves and fridges that can no longer be used.** Since v0.2.8, an object removed or moved while a background route was running could leave an invisible blocker behind where it stood. Your Sims, and every other Sim, could then fail for good to reach the stove, oven or fridge next to it. Blockers no longer stay behind. Report and fix: Blastorix (Discord).
-- **Leftover blockers in your save are removed when it loads.** A cleanup on the load screen removes invisible blockers that v0.2.8 or v0.2.9 left in a save, so a kitchen that is already blocked works again. **TODO Rodney, before publish: keep this line only if `footprint-ghost-save` proves the blockers stay in saves and the cleanup removes them. Otherwise replace it with a neutral line.**
+- **Kitchens that are already blocked.** Blockers left by v0.2.8 or v0.2.9 clear when you reload your save. If a stove or fridge is still blocked after a reload, please report it with your `ts3native.log`.
 
 ### Tested
 
-- The stove, oven, fridge repro ran on the development build with the same fix: with the fix off, 27 of 30 tries with a route running left a blocker and the Sim's route failed; with it on, 0 of 31.
+- The stove, oven, fridge repro ran on the development build with the same fix: with the fix off, 28 of 30 tries with a route running left a blocker and the route failed; with it on, 0 of 31.
 - **TODO Rodney, before publish: add the smoke test result of this exact build; it has not run in game yet.**
 - `selftest-all`: 191 passed, 5 skipped (they need game files).
 

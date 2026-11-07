@@ -436,7 +436,7 @@ DeadSweep covers Remove, usf disable and pf removes only, not kind 2 records [ve
 
 ## 17. GhostSweep: dead object footprints at world load (2026-11-07, offline; no game run)
 
-Saves made with the old rules can carry the ghosts: `LotLevel_SaveFootprints` writes every entry (docs/25) [persistence inferred until `footprint-ghost-save` runs]. `[Discourage] GhostSweep`: 0 off, 1 count only (code default when the key is missing), 2 remove (v0.2.10 ini).
+A ghost is saved in the `.nhd` (`LotLevel_SaveFootprints` writes every entry, docs/25), re-added on load, and removed by EA's pass `0x639B40` at world-load end, which drops entries with no object, on a normal load. It survives only if a lot's routing load fails partway [verified disassembly; lot failure rate unmeasured]. `footprint-ghost-save`: the made ghost was gone after save and reload, and the census counted 0 ghost ids on all 4 loads, so GhostSweep has work only after such a failed lot load. `[Discourage] GhostSweep`: 0 off, 1 count only (code default when the key is missing), 2 remove (v0.2.10 ini).
 
 **One pass, inside the load screen.** From the ts3fixes `world:` line (`OnWorldLoadFinished`, all lots loaded, docs/38), sim thread, no job, under `+0x918`. Never in play. A live census would need a per-tick node budget, a walk by bucket index, and the recheck at removal `FpgRemove` already has. Time logged (`fpgUs`).
 
@@ -446,6 +446,6 @@ Saves made with the old rules can carry the ghosts: `LotLevel_SaveFootprints` wr
 - Class `0xFEB848`, built by `0x80C780` in `UpdateObjectFootprintCore 0x8321F0`, which `AddDiscourageFootprint` reaches at `0x834810` [verified]; footprint id equals the key; type byte `+0x35` = 1 (the caught jig ghost: type 1 [measured]).
 - FME Q set, id not parked, no object.
 
-Whether this is tight is a measurement, not yet made: the class a made ghost has is [inferred] (`0x8321F0` also builds `0xFEBBC0`). The census logs each object-shaped key without an object that fails the signature, by class. Bar for mode 2 as first set: a made ghost is found, a clean Baseline counts ~0 or each hit is explained. v0.2.10 ships mode 2 by Rodney's call, ahead of that bar: read the `footprint-ghost-save` and census results before publishing; if the two cannot be separated, the ini goes back to 1. A failed read keeps the entry. No save format change, no mod data in saves.
+Whether this is tight is a measurement, not yet made: the class a made ghost has is [inferred] (`0x8321F0` also builds `0xFEBBC0`). The census logs each object-shaped key without an object that fails the signature, by class. Bar for mode 2 as first set: a made ghost is found, a clean Baseline counts ~0 or each hit is explained. v0.2.10 ships mode 2 by Rodney's call, ahead of that bar: no made ghost reached the census, so the removal has run only in selftest. If the two cannot be separated, the ini goes back to 1. A failed read keeps the entry. No save format change, no mod data in saves.
 
 **Repros.** `footprint-ghost-save`: ghost with the fix off, save, reload count only, reload remove, save, reload. `footprint-ghost-census`: three clean Baselines. Queue `footprint-ghost.json`.

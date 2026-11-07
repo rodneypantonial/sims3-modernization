@@ -5786,3 +5786,9 @@ mono-cost11 (BP run + rerun, IP run + rerun, all exact, `listMissed` 0): I-393-1
 | I-426-1 | 67 §34.2 | The texture create in state 9 failed because the address space was nearly full | largest free 32 MB at the crash; docs/05 60 MB free on vanilla; the create path makes a D3D texture | the "ea fix: SimNoTexture" line prints free address space | hits at low free space only | hits with plenty free | inferred |
 | I-426-2 | 67 §34.3 | A Sim whose composite was skipped draws without its skin or outfit texture until its next rebuild | `0x5D0040` sets no material texture for a null lookup | `ea-sim-no-texture` on arm, screenshot | as described | Sim looks normal, or another fault | inferred |
 | I-426-3 | 67 §34.3 | Sim requests pass state 9 before state 11, so no null-value node is marked done | dispatcher `0x5F1D90` and state writes; `0x5D0970` erases unflagged nodes | `ea-sim-no-texture` on arm with many builds | no fault at `0x5EEA0C` | fault at `0x5EEA0C` | inferred |
+
+## 447. Lost footprint removals and the load census (2026-11-07, docs/89 §16, §17)
+
+| Id | Doc | Claim | How to check | Repro | If wrong | Counter | Status |
+|---|---|---|---|---|---|---|---|
+| I-89-447-4 | 89 §17 | A ghost is saved in the `.nhd`, re-added on load, and removed by `0x639B40` on a normal load; it survives only if a lot's routing load fails partway | disassembly `LotLevel_SaveFootprints`, `0x639B40`; made ghost gone after save and reload | `footprint-ghost-save` | blocked kitchens survive a normal reload | `fpLoad` | verified disassembly; lot failure rate unmeasured |
