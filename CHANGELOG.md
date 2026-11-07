@@ -4,13 +4,14 @@ Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub r
 
 ## v0.2.9 (2026-11-07)
 
-Hotfix on top of v0.2.8, Steam only. The EA app build follows after its smoke test.
+Hotfix on top of v0.2.8, Steam and the EA app 1.69.47: same fixes, same switches.
 
 ### Download
 
-- `ts3fixes.package`: new in this release. Replace it together with the files below: the new routing behaviour needs both.
+- `ts3fixes.package`: new in this release, the same file for Steam and the EA app. Replace it together with the files below: the new routing behaviour needs both.
 - `ts3native-v0.2.9.zip` (Steam): `ts3native.asi` and `ts3native.ini`; replace both.
-- The log shows `ts3native 0.36.168c`.
+- `ts3native-ea169-v0.2.9.zip` (EA app 1.69.47): `ts3native.asi` and `ts3native.ini`; replace both.
+- Both logs show `ts3native 0.36.168c`; the EA log also shows `release: v0.2.9 EA`.
 
 ### Fixed
 
@@ -29,6 +30,7 @@ Hotfix on top of v0.2.8, Steam only. The EA app build follows after its smoke te
 
 - Steam smoke test: 3 of 3 passed (Base Game, Island Paradise and Sunset Valley worlds, about 7 minutes each, no crash; log shows `ts3native 0.36.168c`).
 - The household route-cut and animation-hold proofs ran on the development build with the same fixes, in repro runs: 0 route cuts on household or visible Sims with the fix on, and the held-animation table works.
+- EA app smoke test: 3 of 3 passed, no crash. No timing numbers for the EA app.
 - `selftest-all`: 196 passed.
 
 ### Known issues
