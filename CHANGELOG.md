@@ -2,15 +2,39 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
-## v0.2.9 (2026-11-07)
+## v0.2.10 (2026-11-07)
 
-Hotfix on top of v0.2.8, Steam only. The EA app build follows after its smoke test.
+Hotfix on top of v0.2.9, Steam only. The stove and fridge bug below was ours, and this fix is Blastorix's (Discord): he reported it and his test logs found the cause.
+
+**EA app:** there is no EA app build of this release yet. The EA app builds of v0.2.8 and v0.2.9 use the same routing settings, so expect the same problem there until an EA app build follows. We have not reproduced it on the EA app. Stay on v0.2.9 for now.
 
 ### Download
 
-- `ts3fixes.package`: new in this release. Replace it together with the files below: the new routing behaviour needs both.
+- `ts3native-v0.2.10.zip` (Steam): `ts3native.asi` and `ts3native.ini`; replace both.
+- `ts3fixes.package`: the same file as v0.2.9. If you have that one, keep it.
+- The log shows `ts3native 0.36.168d`.
+
+### Fixed
+
+- **Stoves and fridges that can no longer be used.** Since v0.2.8, an object removed or moved while a background route was running could leave an invisible blocker behind where it stood. Your Sims, and every other Sim, could then fail for good to reach the stove, oven or fridge next to it. Blockers no longer stay behind. Report and fix: Blastorix (Discord).
+- **Leftover blockers in your save are removed when it loads.** A cleanup on the load screen removes invisible blockers that v0.2.8 or v0.2.9 left in a save, so a kitchen that is already blocked works again. **TODO Rodney, before publish: keep this line only if `footprint-ghost-save` proves the blockers stay in saves and the cleanup removes them. Otherwise replace it with a neutral line.**
+
+### Tested
+
+- The stove, oven, fridge repro ran on the development build with the same fix: with the fix off, 27 of 30 tries with a route running left a blocker and the Sim's route failed; with it on, 0 of 31.
+- **TODO Rodney, before publish: add the smoke test result of this exact build; it has not run in game yet.**
+- `selftest-all`: 191 passed, 5 skipped (they need game files).
+
+## v0.2.9 (2026-11-07)
+
+Hotfix on top of v0.2.8, Steam and the EA app 1.69.47: same fixes, same switches.
+
+### Download
+
+- `ts3fixes.package`: new in this release, the same file for Steam and the EA app. Replace it together with the files below: the new routing behaviour needs both.
 - `ts3native-v0.2.9.zip` (Steam): `ts3native.asi` and `ts3native.ini`; replace both.
-- The log shows `ts3native 0.36.168c`.
+- `ts3native-ea169-v0.2.9.zip` (EA app 1.69.47): `ts3native.asi` and `ts3native.ini`; replace both.
+- Both logs show `ts3native 0.36.168c`; the EA log also shows `release: v0.2.9 EA`.
 
 ### Fixed
 
@@ -29,6 +53,7 @@ Hotfix on top of v0.2.8, Steam only. The EA app build follows after its smoke te
 
 - Steam smoke test: 3 of 3 passed (Base Game, Island Paradise and Sunset Valley worlds, about 7 minutes each, no crash; log shows `ts3native 0.36.168c`).
 - The household route-cut and animation-hold proofs ran on the development build with the same fixes, in repro runs: 0 route cuts on household or visible Sims with the fix on, and the held-animation table works.
+- EA app smoke test: 3 of 3 passed, no crash. No timing numbers for the EA app.
 - `selftest-all`: 196 passed.
 
 ### Known issues
