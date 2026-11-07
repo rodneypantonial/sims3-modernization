@@ -450,7 +450,7 @@ Whether this is tight is a measurement, not yet made: the class a made ghost has
 
 **Repros.** `footprint-ghost-save`: ghost with the fix off, save, reload count only, reload remove, save, reload. `footprint-ghost-census`: three clean Baselines. Queue `footprint-ghost.json`.
 
-## 18. RemovalFirst: a route does not plan past a queued removal (2026-11-07, offline; no game run)
+## 18. RemovalFirst: a route does not plan past a queued removal (2026-11-07)
 
 Player report on v0.2.10 (0.36.168d, LostRemovalFix=1, census 0 ghosts): baking, household Sim Wayne at the stove; `BakingDish_CookInOven` plan from the stand spot failed once (result 16, 1/1/0, job 0 ms, 200 ms from START), EA's retry (60 candidates) walked him 22.9 m outside, the next click worked.
 
@@ -462,8 +462,8 @@ Player report on v0.2.10 (0.36.168d, LostRemovalFix=1, census 0 ghosts): baking,
 
 **Limit.** A refused START's sync plan (57 refused, 2206 started in that log) can still plan past a removal; `PlanDrain=1` would cover it (§13, no live verify yet).
 
-**Offline.** Selftest in the M1Retry block: park, tick wait, job queued, record kinds, switch, tick cap, CANCEL, world closing, Plan without READY, scope 1 parks and scope 2 queues. **Live: not run.**
+**Offline.** Selftest in the M1Retry block: park, tick wait, job queued, record kinds, switch, tick cap, CANCEL, world closing, Plan without READY, scope 1 parks and scope 2 queues. **Live:** `footprint-window` on v0210d: fix off, 14 window fails in 14 held tries; fix on, 0 in 16; parked 42, capped 0.
 
-**Repro `footprint-window`** (built, not run; queue `footprint-window.json`, build v0210d). `footprint-ghost` cannot show this: it sleeps 30 ticks after Cleanup, so its plan comes after the drain. Here `Route.Plan` follows Cleanup with no sleep, on a route that already has its destination, and op 31 ends the hold once that START is queued or parked. Ops 30-34 exist only with `/DTS3N_RFTEST`: the release build has no extra op, and its hold loop calls a stub. N = 10 per arm, stove and oven.
+**Repro `footprint-window`** (queue `footprint-window.json`, build v0210d). `footprint-ghost` cannot show this: it sleeps 30 ticks after Cleanup, so its plan comes after the drain. Here `Route.Plan` follows Cleanup with no sleep, on a route that already has its destination, and op 31 ends the hold once that START is queued or parked. Ops 30-34 exist only with `/DTS3N_RFTEST`: the release build has no extra op, and its hold loop calls a stub. N = 10 per arm, stove and oven.
 
 **J_PEND audit [verified code, selftest].** M1Retry is off in the shipped ini, so RemovalFirst is what makes this path live. Household (scope 1) and unknown (scope 0) park, known unseen (scope 2) and marked routes do not. CANCEL: `DropJob` frees the slot. Plan without READY: the C# poll cap is 1000 ticks against 30 here, and the IC branch plans sync. World closing: READY gives up with M1Closing, sync plan. No READY at all (task gone, unload): the worker never sees `J_PEND`, `AsyncBusy` and waits ignore it, the slot stays until a START needs it (5 s old), a repeat of the handle is dropped or planned sync. A parked job holds no lock or reference. Scope after a give-up: the sync plan counts as unknown, so as household.
