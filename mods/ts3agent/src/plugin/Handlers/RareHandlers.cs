@@ -90,11 +90,16 @@ namespace Ts3Agent
         // for Sims out of view (more than 100 m from the camera and its target, not on screen): the most at once in a
         // vehicle or boat (Parent set, not a horse), in water deeper than 0.5 m (swimming or routing), and mounted on a horse
         // (Parent is a horse Sim); and every "stranded" sample (in water deeper than 0.5 m, no vehicle, not routing, not in a
-        // swim / boat / taxi interaction). {result, require} throws unless no Sim was stranded and the maxima reached
+        // swim / boat / taxi interaction). "In water" needs the game's terrain type at the point (WaterRule): a dry lot below
+        // sea level is not water. Each sample also reads ts3fixes' moved map (ts3fixes.moved: name -> last shortcut move) and
+        // keeps every new or changed entry with the sample it was first seen in ("moves"), so a stranded Sim is matched to its
+        // move without game memory; a stranded sample carries its Sim's move ("moved", null = no shortcut moved it).
+        // {result, require} throws unless no Sim was stranded and the maxima reached
         // min_engaged (vehicle + water) and min_mounted: a run where nobody rode or swam unseen proves nothing and fails
         // as "not exercised".
         static int sWaterGen, sWaterSamples, sWaterMaxEngaged, sWaterMaxVehicle, sWaterMaxWater, sWaterMaxMounted;
-        static List<object> sWaterStranded = new List<object>();
+        static List<object> sWaterStranded = new List<object>(), sWaterMoves = new List<object>();
+        static Dictionary<string, string> sWaterMoved = new Dictionary<string, string>();
         static object UnseenWaterWatch(Args a)
         {
             RequireLive();
@@ -104,6 +109,8 @@ namespace Ts3Agent
                 int gen = ++sWaterGen;
                 sWaterSamples = sWaterMaxEngaged = sWaterMaxVehicle = sWaterMaxWater = sWaterMaxMounted = 0;
                 sWaterStranded = new List<object>();
+                sWaterMoves = new List<object>();
+                sWaterMoved = new Dictionary<string, string>();
                 Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate
                 {
                     while (gen == sWaterGen)
@@ -122,6 +129,7 @@ namespace Ts3Agent
             r["max_in_water"] = sWaterMaxWater;
             r["max_mounted"] = sWaterMaxMounted;
             r["stranded"] = sWaterStranded;
+            r["moves"] = sWaterMoves;
             int minE = (int)a.Long("min_engaged", 0), minM = (int)a.Long("min_mounted", 0);
             bool ok = sWaterStranded.Count == 0 && sWaterMaxEngaged >= minE && sWaterMaxMounted >= minM && sWaterSamples > 0;
             r["check_ok"] = ok;
@@ -129,6 +137,23 @@ namespace Ts3Agent
                 throw new McpException(sWaterStranded.Count > 0 ? "unseen_water_watch: " + sWaterStranded.Count + " stranded sample(s): " + StrandedSummary(3)
                     : "unseen_water_watch: not exercised (max engaged " + sWaterMaxEngaged + " < " + minE + " or max mounted " + sWaterMaxMounted + " < " + minM + ", samples " + sWaterSamples + ")");
             return r;
+        }
+
+        // new or changed ts3fixes.moved entries, each with the sample it was first seen in (at most 500)
+        static void WaterMoves()
+        {
+            Dictionary<string, object> d = AppDomain.CurrentDomain.GetData("ts3fixes.moved") as Dictionary<string, object>;
+            if (d == null) return;
+            foreach (KeyValuePair<string, object> e in d)
+            {
+                string v = e.Value as string, old;
+                if (v == null || sWaterMoved.TryGetValue(e.Key, out old) && old == v) continue;
+                sWaterMoved[e.Key] = v;
+                if (sWaterMoves.Count >= 500) continue;
+                Dictionary<string, object> m = Util.Obj();
+                m["name"] = e.Key; m["move"] = v; m["sample"] = sWaterSamples;
+                sWaterMoves.Add(m);
+            }
         }
 
         // first n stranded samples as "name depth/above-sea interaction lot", so a failed check names its Sims in the log
@@ -139,7 +164,8 @@ namespace Ts3Agent
             {
                 Dictionary<string, object> o = sWaterStranded[i] as Dictionary<string, object>;
                 if (o == null) continue;
-                parts.Add(o["name"] + " depth " + o["depth_m"] + " m, " + o["y_above_sea_m"] + " m above sea, '" + o["interaction"] + "', lot " + (o["lot"] ?? "none"));
+                parts.Add(o["name"] + " depth " + o["depth_m"] + " m, " + o["y_above_sea_m"] + " m above sea, '" + o["interaction"] + "', lot " + (o["lot"] ?? "none")
+                    + ", terrain " + o["terrain"] + ", moved " + (o["moved"] ?? "none"));
             }
             return string.Join("; ", parts.ToArray());
         }
@@ -147,6 +173,7 @@ namespace Ts3Agent
         static void WaterSample()
         {
             float sea = World.GetSeaLevel();
+            WaterMoves();
             Vector3 cam = CameraController.GetPosition(), tgt = CameraController.GetTarget();
             int vehicle = 0, water = 0, mounted = 0;
             foreach (Sim s in SpawnedInWorld())
@@ -162,11 +189,9 @@ namespace Ts3Agent
                     || inter.IndexOf("Taxi", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Ocean", StringComparison.OrdinalIgnoreCase) >= 0
                     || inter.IndexOf("Dive", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Snorkel", StringComparison.OrdinalIgnoreCase) >= 0
                     || inter.IndexOf("Scuba", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Mermaid", StringComparison.OrdinalIgnoreCase) >= 0;
-                // a Sim more than 0.3 m above the sea surface stands on something (houseboat deck, dock, pier, bridge), not in the water
-                bool aboveWater = p.y > sea + 0.3f;
                 if (horse != null && horse.IsHorse) mounted++;
                 else if (parent != null) vehicle++;
-                else if (depth > 0.5f && !aboveWater)
+                else if (WaterRule.InWater(depth, p.y - sea, (int)World.GetTerrainType(p)))  // also: 0.3 m above the surface stands on a deck, dock, pier or bridge
                 {
                     if (routing || swimOrBoat) water++;
                     else
@@ -176,6 +201,9 @@ namespace Ts3Agent
                         o["depth_m"] = Math.Round(depth, 2); o["interaction"] = inter;
                         o["y_above_sea_m"] = Math.Round(p.y - sea, 2);
                         o["lot"] = s.LotCurrent != null ? s.LotCurrent.Name : null;
+                        o["terrain"] = (int)World.GetTerrainType(p);
+                        string mv;
+                        o["moved"] = sWaterMoved.TryGetValue(s.FullName, out mv) ? mv : null;
                         if (sWaterStranded.Count < 50) sWaterStranded.Add(o);
                     }
                 }
@@ -252,7 +280,8 @@ namespace Ts3Agent
                 Dictionary<string, object> o = Util.Obj();
                 Vector3 p = s.Position;
                 float depth = sea - World.GetTerrainHeight(p.x, p.z);
-                bool water = depth > 0.5f;
+                int terrain = (int)World.GetTerrainType(p);
+                bool water = WaterRule.InWater(depth, p.y - sea, terrain);  // a dry lot below sea level is not water
                 object parent = s.Parent;
                 bool routing = s.SimRoutingComponent != null && s.SimRoutingComponent.IsRouting;
                 string inter = s.CurrentInteraction != null ? s.CurrentInteraction.GetType().Name : null;
@@ -262,6 +291,7 @@ namespace Ts3Agent
                 o["name"] = s.FullName;
                 o["x"] = Math.Round(p.x, 1); o["z"] = Math.Round(p.z, 1);
                 o["water_depth_m"] = Math.Round(depth, 2);
+                o["terrain"] = terrain;
                 o["parent"] = parent != null ? parent.GetType().Name : null;
                 o["routing"] = routing;
                 o["interaction"] = inter;

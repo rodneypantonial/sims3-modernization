@@ -83,6 +83,7 @@ const LOCAL_ONLY: Record<string, { why: string; needs?: string }> = {
   'tools/selftest/routesrc/run.ts': CSC,
   'tools/selftest/savercount/run.ts': CSC,
   'tools/selftest/screenfit/run.ts': CSC,
+  'tools/selftest/waterrule/run.ts': CSC,
   'tools/selftest/seasonimposter/run.ts': CSC,
   'tools/selftest/compaction/run.ts': CSC,
   'tools/selftest/deadrefs/run.ts': CSC,
