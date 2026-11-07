@@ -5321,6 +5321,23 @@ static u8 __fastcall LrLotRemove(void*, void*, DWORD lotLo, DWORD lotHi, DWORD i
 }
 static DWORD WINAPI LrHoldThread(void*) { FpgHoldPoint(); return 0; }
 
+// the check before the LostRemovalFix patch: both callees must be direct calls inside UpdateObjectLot, else the fix stays off
+static void TestUolCalls() {
+    u8* const page = (u8*)VirtualAlloc(NULL, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    assert(page);
+    const DWORD fn = (DWORD)(uintptr_t)page, site = fn + 0x30, target = 0x8297C0;
+    u8* const p = (u8*)(uintptr_t)site;
+    p[0] = 0xE8;
+    *(LONG*)(p + 1) = (LONG)(target - (site + 5));
+    assert(UolCalls(fn, target));
+    assert(!UolCalls(fn, target + 0x10));  // a wrong row
+    p[0] = 0xE9;
+    assert(!UolCalls(fn, target));  // a jmp is no call
+    VirtualFree(page, 0, MEM_RELEASE);
+    assert(!UolCalls(fn, target));  // unreadable
+    printf("UolCalls: wrong row, jmp and unreadable code leave the lost removal fix off\n");
+}
+
 static void TestFp2LostRemoval() {
     static_assert(offsetof(Ts3nCounters, fp2lrMode) == 0x5C54 && offsetof(Ts3nCounters, fp2lrOrderMiss) == 0x5C74 &&
                   offsetof(Ts3nCounters, fpgMode) == 0x5C78 && offsetof(Ts3nCounters, fpgHeld) == 0x5CA0 &&
@@ -14128,6 +14145,7 @@ int main() {
     TestFootprintDefer();
     TestFootprintDefer2();
     TestFp2LostRemoval();
+    TestUolCalls();
     TestPrivateFpDefer();
     TestPlanDrain();
     TestDestroyPark();

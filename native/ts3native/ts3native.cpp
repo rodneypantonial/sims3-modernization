@@ -5190,7 +5190,7 @@ static void Run(HMODULE self) {
     Log("ts3native " TS3NATIVE_VERSION " %04d-%02d-%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     if (!strncmp(priorLog, "ts3native ", 10)) Log("prior log: %s", priorLog);
 #ifdef TS3A_TABLE
-    Log("release: v0.2.9 EA");  // own line: log parsers read the header version as digits
+    Log("release: v0.2.10 EA");  // own line: log parsers read the header version as digits
 #endif
     GetModuleFileNameW(NULL, exe, MAX_PATH);
     HMODULE base = GetModuleHandleW(NULL);

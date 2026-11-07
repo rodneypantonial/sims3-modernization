@@ -763,6 +763,17 @@ static void InstallPrivateFpDefer(const wchar_t* ini) {
     Log("OK   private footprint deferral (IC RemovePrivateFootprint 0x75465E -> 0x82A0C0; docs/89 §14)");
 }
 
+// past the detour's bytes, inside UpdateObjectLot: a direct call to the target
+static bool UolCalls(DWORD fn, DWORD target) {
+    const DWORD from = fn + 0x10, to = fn + 0x50;
+    if (!Readable((const void*)(uintptr_t)from, to - from + 5)) return false;
+    for (DWORD a = from; a < to; a++) {
+        const u8* p = (const u8*)(uintptr_t)a;
+        if (p[0] == 0xE8 && (DWORD)(a + 5 + *(const LONG*)(p + 1)) == target) return true;
+    }
+    return false;
+}
+
 static void InstallFootprintDefer2(const wchar_t* ini) {
     Ts3nCounters& k = ts3native_counters;
     const int v = GetPrivateProfileIntW(L"Discourage", L"DeferFootprint2", 0, ini);  // 2 = installed, switch off (order rule only)
@@ -777,6 +788,12 @@ static void InstallFootprintDefer2(const wchar_t* ini) {
     k.fp2Mode = v == 2 ? 0 : 1;
     Log("OK   footprint deferral phase 2 (0x8334A0 FromTool, 0x82D280 UpdateObjectLot; docs/89 §12; mode %ld)", k.fp2Mode);
     if (!GetPrivateProfileIntW(L"Discourage", L"LostRemovalFix", 1, ini)) { Log("lost removal fix off (LostRemovalFix=0)"); return; }
+    // no byte check covers g_uolCore and g_objLot, so a wrong table row on another build must stop here: UpdateObjectLot calls both
+    // [verified 0x82D2B0, 0x82D2BE]
+    if (!UolCalls(UOL_FN, (DWORD)(uintptr_t)g_objLot) || !UolCalls(UOL_FN, (DWORD)(uintptr_t)g_uolCore)) {
+        Log("FAIL lost removal fix: UpdateObjectLot at 0x%08X does not call 0x%08X and 0x%08X, fix off", UOL_FN, (DWORD)(uintptr_t)g_objLot, (DWORD)(uintptr_t)g_uolCore);
+        return;
+    }
     static const CallSite kUof[] = {{UOF_SITE1, UOF_FN, (void*)UofSite}, {UOF_SITE2, UOF_FN, (void*)UofSite}};
     if (!PatchCalls("0x833680 order sites (docs/89 §16)", kUof, 2)) { Log("FAIL lost removal fix: order sites"); return; }
     k.fp2lrReady = 1;
