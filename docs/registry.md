@@ -210,6 +210,7 @@ Source of truth: the comment block above `PatchCounters()` in `mods/ts3fixes/src
 | 854-861 | feature/scope-gap-counters (UnseenFallback.cs, `fixes-854`) | `scopegap_*`: driverless_ownable, driverless_notownable, driverless_hh_occupant, driverless_nonvehicle, viewer_only_plans, viewer_only_ge250, viewer_only_ms, driverless_total |
 | 862-865 | bugfix/goal-household-exempt (UnseenFallback.cs `UfGoalWhy`, docs/197 §7, `fixes-862`) | `goalhh_*`: lot (route goal on the household lot), target (queue head targets a household Sim), wanted (a household Sim's current interaction targets this NPC), check_failed (the check threw, exempt) |
 | 866 | `RouteFailLog.cs` `RflPlan` | built 2026-11-07 (issue #304): plans of active-household Sims through the four plan hooks, the denominator of fails per plan (agent `routefaillog_household_plans`, `kd-household-ab.ts`) |
+| 2066 | reserved (unseenboat-goal-water, `fixes-2066`) | unseenboat: trips refused because the goal (or the UfNearGoal spot) is in the water (sea, pond, pool) |
 | **867+** | next free | reserve here  |
 
 Adding slots: raise the array size in **both** `Fixes.cs` (`PatchCounters`, `new int[122]`) and `PatchHandlers.cs` (`?? new int[122]`), extend the `Fixes.cs` comment block, and read the new slots in `PatchHandlers.cs` behind `if (c.Length > N)` so an older mod build still answers.

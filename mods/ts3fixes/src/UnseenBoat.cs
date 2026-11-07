@@ -132,9 +132,13 @@ namespace Ts3Fixes
                 lw = UfRelaxedLotWhy(goal, "goal", true);
                 if (lw != null) return UbNo(c, 847, lw);  // a resort or dive lot: exact
                 if (leave && UbStreetSide(goal, ref place)) return null;
+                // goal or its near spot in the water by the game's terrain type: UfOutdoorGround's height test passes the sea surface, and the placement
+                // stranded townies in the sea (EA ip-uboat-repro 2026-11-08, Port Pyre: terrain 2, moved by "unseenboat route goal"). Exact trip, own slot
+                if (UbCore.InWater((int)World.GetTerrainType(dest))) return UbNo(c, 2066, "goal in the water");
                 if (!UfOutdoorGround(dest)) return UbNo(c, 847, "goal indoors, raised or in the water");
                 RouteProfile prof = ProfileOf(sim);
                 if (!prof.Ok || !(IsPointRoutable(dest) || UfNearGoal(dest, start, out place))) return UbNo(c, 840, "goal not routable");
+                if (UbCore.InWater((int)World.GetTerrainType(place))) return UbNo(c, 2066, "goal in the water");
                 bool street = goal == null || goal.IsWorldLot;
                 bool? gv = street ? true : UfVerdict(sim, goal, prof, dest);
                 return gv == true || (gv == null && goal.IsCommunityLot) ? null : UbNo(c, 847, "goal verdict");
@@ -156,7 +160,7 @@ namespace Ts3Fixes
                 if (goal == null || goal.IsWorldLot) return false;
                 Vector3 e = goal.EntryPoint();
                 e.y = World.GetTerrainHeight(e.x, e.z);
-                if ((World.GetTerrainType(e) & (TerrainType.WorldSea | TerrainType.WorldPond | TerrainType.LotPool | TerrainType.LotPond)) != 0 || !UfOutdoorGround(e) || !IsPointRoutable(e) || !UfGoalUnseen(e)) return false;
+                if (UbCore.InWater((int)World.GetTerrainType(e)) || !UfOutdoorGround(e) || !IsPointRoutable(e) || !UfGoalUnseen(e)) return false;
                 place = e;
                 return true;
             }

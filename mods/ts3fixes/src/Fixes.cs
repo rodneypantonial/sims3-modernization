@@ -308,6 +308,7 @@ namespace Ts3Fixes
         // [2061] fireworksfizzle (FireworksFizzle.cs, issue #166 build 23, docs/533): fireworks watchers finished on a fizzle without EA's LaunchFailure state request.
         // [2062-2064] petpoolorphan (PetPoolOrphan.cs, issue #166 build 52, docs/534): pets dropped from a pool with no household and no family links disposed / left (a Sim in the world) / Dispose threw.
         // [2065] reltablesapart (RelTablesApart.cs, issue #166 build 14, docs/535): relationship pairs whose two tables had come apart, rejoined with the other side's relationship.
+        // [2066] unseenboat goal in the water (UnseenBoat.cs UbGate, docs/248): trips kept exact because the goal or its UfNearGoal spot is sea, pond or pool by terrain type.
         // [758-759] asyncjigsync (AsyncJigSync.cs, RouteBackoff.cs AsyncEligible, docs/240): own plans kept sync while the Sim's interaction holds an unplaced SocialJig / of those with the jig only in the linked interaction.
         // [763-768] autofft2 (AutOffload.cs, docs/208 §9.1): items, A0, A2, A4, A5, exceptions
         // [769-776] autofflot (AutOffload.cs, docs/208 §9.2): items, A0, A2, A4, A5, exceptions, dry checks, dry equal

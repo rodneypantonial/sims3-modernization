@@ -249,6 +249,8 @@ static class UnseenFbTest
         Check(UbCore.LeaveWhy(true, false, false, false) == null && UbCore.LeaveWhy(false, false, false, false) == "no houseboat" && UbCore.LeaveWhy(true, true, false, false) == "boat moving"
             && UbCore.LeaveWhy(true, false, true, false) == "driver" && UbCore.LeaveWhy(true, false, false, true) == "start:household lot", "boat: leaving: a moving boat, its driver and the player's boat are refused by name");
         Check(UbCore.LeaveReason(true, "seen") == "houseboat start: seen" && UbCore.LeaveReason(false, "seen") == "seen", "boat: houseboat starts have their own reason rows");
+        Check(UbCore.InWater(2) && UbCore.InWater(2 | 16) && UbCore.InWater(8) && UbCore.InWater(64) && UbCore.InWater(128) && !UbCore.InWater(1) && !UbCore.InWater(4) && !UbCore.InWater(16) && !UbCore.InWater(32),
+            "boat: a sea, pond or pool goal stays exact (EA Port Pyre sea goal, terrain 2); dry world, road, lot terrain and floor pass");
         Check(UbCore.FarEnough(UbCore.kMinTripM) && !UbCore.FarEnough(UbCore.kMinTripM - 1f), "boat: short trips stay exact");
         Check(UbCore.Denied("Sims3.Gameplay.Objects.Vehicles.WindSurfboard+Sail") && UbCore.Denied("X.GoFishing") && UbCore.Denied("X.BoatTour") && !UbCore.Denied("Sims3.Gameplay.Autonomy.VisitCommunityLot"), "boat: interactions about the water stay exact");
         const string ubRun = "Ts3Fixes.Fixes+VclSubHook0.Run", ubLot = "Sims3.Gameplay.Core.Lot.";

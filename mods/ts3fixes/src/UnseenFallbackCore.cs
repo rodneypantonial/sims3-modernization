@@ -395,6 +395,9 @@ namespace Ts3Fixes
         static readonly string[] kWaterPostures = { "SwimmingInPool", "ScubaDiving", "PondAndOceanRoutingPosture" };
         public static bool WaterPosture(string postureType) { return System.Array.IndexOf(kWaterPostures, postureType) >= 0; }
         public static bool FarEnough(float distM) { return distM >= kMinTripM; }
+        // water by World.GetTerrainType: WorldSea 2, WorldPond 8, LotPool 64, LotPond 128 (Sims3.SimIFace.TerrainType); a goal there stays exact
+        public const int kWaterTerrain = 2 | 8 | 64 | 128;
+        public static bool InWater(int terrainType) { return (terrainType & kWaterTerrain) != 0; }
 
         // colours: UfSameComponent, -1 = another land component, the only proof that the water must be crossed. Unknown stays exact
         public static int Trip(bool houseboatGoal, int colours, bool sameLot) { return Trip(houseboatGoal, colours, sameLot, false); }
