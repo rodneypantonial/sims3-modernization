@@ -353,7 +353,9 @@ static u8 UtViewerMsg(DWORD lo, DWORD hi) {
     Ts3nCounters& k = ts3native_counters;
     const DWORD code = (hi >> 16) & 0xFF;
     if (code == 25 || code == 26) return UtbReadyMsg(code);  // docs/227 §6 [UnseenTable]: ts3fixes may call UnseenTableNative (unseentable.cpp)
-    if (!g_utOn && !((g_asTierMs > 0 || g_aaOn || g_utbOn) && code <= 5)) return 0;  // the viewer table also feeds [AutShadow] TierMs, [UnseenAnim], [UnseenTable]
+    // the viewer table also feeds [AutShadow] TierMs, [UnseenAnim], [UnseenTable]; [UnseenAnim] reads the held table too (docs/249: refused
+    // here without [UnseenThrottle], so the shipped set, UnseenThrottle off, had an empty table and no household exemption)
+    if (!g_utOn && !((g_asTierMs > 0 || g_aaOn || g_utbOn) && code <= 5) && !(g_aaOn && code >= 12 && code <= 15)) return 0;
     if (code == 1) { g_utInOpen = true, g_utIn.n = 0, g_utInHave = 0; return 1; }
     // snap-back watch (unseen_snapback): 6 arm with the object id's low half (record cleared), 7 its high half (armed);
     // 8 bit `lo` of the record (0 armed, 1 flipped, 2 ran that same pass, 3 avoidance called, 4 avoidance ran,

@@ -220,6 +220,21 @@ static void TestUnseenThrottle() {
     // 1. viewer channel: refused while not installed; sequence and count checked; a good table goes live
     g_utOn = false;
     assert(UtMsg(1, 1) == 0);
+    {  // docs/249: the held table without [UnseenThrottle]: refused with nobody to read it, live for [UnseenAnim]; both id halves match
+        const bool aaSave = g_aaOn;
+        const auto heldSave = g_utHeld;
+        g_aaOn = false, g_utHeld.n = 0;
+        assert(UtMsg(12, 0) == 0 && g_utHeld.n == 0);
+        g_aaOn = true;
+        assert(UtMsg(12, 0) && UtMsg(13, 0x24E62D10) && UtMsg(14, 0xC49C0022) && UtMsg(15, 1) && g_utHeld.n == 1);
+        static DWORD idA[4], idLo[4], idHi[4];
+        idA[2] = 0x24E62D10, idA[3] = 0xC49C0022;
+        idLo[2] = 0x24E62D11, idLo[3] = 0xC49C0022;
+        idHi[2] = 0x24E62D10, idHi[3] = 0xC49C0023;
+        assert(UtHeldObj(idA) && !UtHeldObj(idLo) && !UtHeldObj(idHi));
+        assert(UtMsg(6, 0) == 0 && UtMsg(19, 0) == 0);  // only the table codes opened up: the watch and skip queries stay throttle-only
+        g_aaOn = aaSave, g_utHeld = heldSave;
+    }
     g_utOn = true;
     g_utView.at = 0;
     UtPush(far1, 1, 2);  // count mismatch: refused, table stays stale
