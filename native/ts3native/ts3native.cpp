@@ -54,7 +54,10 @@ static bool Readable(const void* p, size_t n) {
 #include "ts3bytes-ea169.h"  // ts3bytes_rows[] sorted by (addr, len), ts3bytes_pool[], ts3bytes_count (tools/patch-bytes-check.ts --table)
 // EA build: the bytes the game itself has at an already translated site replace the caller's Steam literal (they differ
 // only in rel32 / absolute-pointer operands, docs/68 7.3). Same address and length required, else the literal stays.
+// set around a check whose literal already holds this build's bytes with a changed operand (gcgrow.cpp GcCapWindow): no swap
+static __declspec(thread) bool t_expLiteral;
 static const u8* ExpectedAt(const void* addr, const u8* lit, size_t n) {
+    if (t_expLiteral) return lit;
     const DWORD a = (DWORD)(uintptr_t)addr, len = (DWORD)n;
     int lo = 0, hi = ts3bytes_count - 1;
     while (lo <= hi) {
