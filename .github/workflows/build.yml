@@ -26,6 +26,16 @@ jobs:
           path: |
             native/ts3native/out/ts3native.asi
             native/ts3native/out/ts3native.ini
+      # D3D9On12 proxy, a test tool: built here for hosts without MSVC (the EA laptop)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+      - name: Build the D3D9On12 test proxy
+        run: node tools/d3d9on12-test/build.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: d3d9on12-proxy
+          path: tools/d3d9on12-test/out/d3d9.dll
 
   node:
     runs-on: ubuntu-latest
