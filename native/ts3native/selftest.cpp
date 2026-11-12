@@ -2,6 +2,7 @@
 #define TS3NATIVE_NO_DLLMAIN
 #define TS3N_FAULTINJ  // docs/157: the P5 / P5b / P5c fault-injection hooks (p4.cpp, p5.cpp), test builds only
 #define TS3N_TEST_EXPECTED  // TestDetourCallRel: live bytes that differ from the literal, as on EA
+#define TS3N_EA_PORT  // the EA-port-only features (ts3addr.h): [ImageGuard], [EaCrashFixes] SimNoTexture, tested on dummies
 #include "ts3native.cpp"
 static void TestUfStrict();  // unseenfbc-test.h (docs/202 §3.1.1), run from the uf block
 #include <assert.h>
@@ -12856,6 +12857,7 @@ static void TestP5() {
 #include "s3sscompat-test.h"  // TestS3ssCompat ([S3SSCompat] StaleWriteGuard, docs/539 §22)
 #include "pkglock-test.h"  // TestPkgLock ([PkgLock], docs/539 §13.9)
 #include "eafix-test.h"   // TestEaCrashFixes ([EaCrashFixes] ConformActor + ThumbPose, docs/67 §26.4 / §27.5)
+#include "imgguard-test.h"  // TestImageGuard ([ImageGuard], docs/232 Run 8d, EA port)
 #include "wastar-test.h"  // TestWorldAStarRefs ([EaCrashFixes] WorldAStarRefs, docs/67 §30)
 #include "earlyout-test.h"  // TestEarlyOut ([RouteEarlyOut] probe, docs/142)
 #include "routephases-test.h"  // TestRouteJobPhases ([RouteJobPhases], docs/150 §7)
@@ -14299,6 +14301,7 @@ int main() {
     TestMonoSigGuard();  // docs/539 §20
     TestS3ssCompat();  // docs/539 §22
     TestEaCrashFixes();
+    TestImageGuard();
     TestPkgLock();
     TestWorldAStarRefs();
     TestIlPatch();
