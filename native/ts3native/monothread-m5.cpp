@@ -282,7 +282,7 @@ static int MtInstallLockSites(const MtSite* sites, int n) {
     for (int i = 0; i < n; i++) {
         u8* tramp = mem + i * 112;  // 32 trampoline + 80 stub
         u8* t = (u8*)(uintptr_t)sites[i].addr;
-        memcpy(tramp, sites[i].bytes, sites[i].len);
+        memcpy(tramp, t, sites[i].len);  // the live bytes (= the checked ones; on EA their globals differ from the Steam literal)
         tramp[sites[i].len] = 0xE9;
         *(LONG*)(tramp + sites[i].len + 1) = (LONG)((t + sites[i].len) - (tramp + sites[i].len + 5));
         g_mtTramp[i] = tramp;
@@ -496,7 +496,7 @@ static DWORD g_mtSlotF = TLS_OUT_OF_INDEXES, g_mtSlotA = TLS_OUT_OF_INDEXES;
 // Stub for one block at `site` (the block's bytes, here or in a test copy): same instructions, globals -> fs:[0xE10 + 4*slot],
 // then jmp site + len. Returns the end of the stub.
 static u8* MtEmitBlock(u8* p, const MtBlock& b, DWORD site) {
-    const u8* in = b.bytes;
+    const u8* in = (const u8*)(uintptr_t)site;  // the live block (checked against b.bytes; on EA its globals are the EA ones)
     for (int i = 0; i < b.nIns; i++) {
         const u8 l = b.insLen[i];
         DWORD a;
