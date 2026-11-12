@@ -549,6 +549,10 @@
           "cmd": "cas_state",
           "all": [
             {
+              "path": "measuring",
+              "equals": false
+            },
+            {
               "path": "cas_ready",
               "equals": true
             }
@@ -616,6 +620,10 @@
           "cmd": "cas_state",
           "all": [
             {
+              "path": "measuring",
+              "equals": false
+            },
+            {
               "path": "state",
               "equals": "LiveModeState"
             }
@@ -629,6 +637,10 @@
         "until": {
           "cmd": "cas_state",
           "all": [
+            {
+              "path": "measuring",
+              "equals": false
+            },
             {
               "path": "buy_catalog"
             }
@@ -684,6 +696,10 @@
         "until": {
           "cmd": "cas_state",
           "all": [
+            {
+              "path": "measuring",
+              "equals": false
+            },
             {
               "path": "state",
               "equals": "LiveModeState"

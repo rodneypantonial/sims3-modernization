@@ -953,6 +953,13 @@ export const ACTIVITY: { what: string; on: string[]; counters: string[]; fix?: s
   // Verify runs (docs/236): 0 mismatches with 0 calls is no verification
   { what: '[WaterJps] Verify', on: ['WaterJps.Enabled', 'WaterJps.Verify'], counters: ['waterJpsCallsK', 'waterJpsCellsK'] },
   { what: '[LotSinCos] Verify', on: ['LotSinCos.Enabled', 'LotSinCos.Verify'], counters: ['lscCallsK', 'lscHitsK'] },
+  { what: '[HeightCache] Verify', on: ['HeightCache.Enabled', 'HeightCache.Verify'], counters: ['heightCalls'] },
+  { what: '[IdCache] Verify', on: ['IdCache.Enabled', 'IdCache.Verify'], counters: ['idcLookupsK'] },
+  // docs/232 Runs 8h/8i: these never fired on EA and the rows said PASS (queues/ea-feature-triggers.json has their triggers)
+  { what: '[TerrainGrave]', on: ['TerrainGrave.Enabled', 'TerrainGrave.Mode'], counters: ['vfRtGraveParked'] },
+  { what: '[FpRebuildLock]', on: ['FpRebuildLock.Enabled'], counters: ['caSimInJobFEB848', 'caSimInJobFEB970', 'caSimInJobFEBD10', 'caSimInJobFEBE38'] },
+  { what: '[RouteToObjRO]', on: ['RouteToObjRO.Enabled', 'RouteToObjRO.Mode'], counters: ['rtoCalls'] },
+  { what: '[Watchpoint] Writers', on: ['Watchpoint.Enabled', 'Watchpoint.Writers'], counters: ['wrZ_0', 'wrP30_0'] },
   { what: 'ts3fixes overwatchchain', on: [], fix: 'overwatchchain', when: '3am', counters: ['owchain_alarms', 'owspread_types_run'], standDown: /^overwatchspread: .*\boff\b/ },
   { what: 'ts3fixes stuckcheckasync', on: [], fix: 'stuckcheckasync', when: '3am', counters: ['stuckcheckasync_queued', 'stuckcheckasync_run'] },
   { what: 'ts3fixes errortrapspread', on: [], fix: 'errortrapspread', when: 'load', counters: ['etspread_passes'], standDown: /^errortrapspread: .*\boff\b/ },
@@ -1084,6 +1091,16 @@ export function verdicts(out: string): string[] {
 export const missingFixes = (plan: string): string[] => [...plan.matchAll(/^(?:installed|pending)\s+(\S+).*manual: MISSING \((.*)\)\s*$/gm)].map(m => `${m[1]} <- ${m[2]}`);
 export const naRow = (row: { pass?: boolean; crashed?: boolean; timedOut?: boolean; error?: string | null; selfCheckFail?: string; verdict: string[] }): boolean =>
   !row.pass && !row.crashed && !row.timedOut && !row.error && !row.selfCheckFail && row.verdict.some(l => /^N\/A: /.test(l)) && !row.verdict.some(isFail);
+// enabled feature whose counters rose 0 (featureIdle "self check" lines in row.idle): a row that would PASS becomes VOID ("not
+// triggered", never PASS, not a FAIL: no queue exit 1, no stopQueueOnFail stop; run-verdict.ts reads "run void" as VOID); a row
+// that already fails keeps its FAIL and gets the reason as a note
+export function featureVoids(row: { pass?: boolean; idle?: string[]; verdict: string[] }): { pass?: boolean; void?: boolean } {
+  if (!row.idle?.length) return {};
+  const why = row.idle.map(f => f.replace(/^self check: /, '').replace(': feature idle', ': not triggered'));
+  if (!row.pass) { row.verdict.push(...why.map(w => `note: ${w.replace(', run void', '')}`)); return {}; }
+  row.verdict.push(...why.map(w => `VOID: ${w}`));
+  return { pass: false, void: true };
+}
 // a verdict line in the children's own format: "FAIL: why" (repro.ts, profile-world.ts, cycle.ts) or "<id>: FAIL" (repro.ts, save-matrix.ts);
 // UNKNOWN (absent data, e1cdbc4) counts as a failed result too: repro.ts prints "<id>: UNKNOWN: ..." and exits 1
 export const isFail = (l: string) => /^(FAIL|UNKNOWN): |^[\w.\- ]+: (FAIL|UNKNOWN)\b/.test(l);
@@ -1151,8 +1168,8 @@ export function routelockSummary(r: any): any {
 }
 
 // stopQueueOnFail / --stop-on-fail: '' = go on, else the STOP reason naming the job (a noisy job with its -rerun queued goes on)
-export function failStop(j: { id: string; stopQueueOnFail?: boolean }, row: { pass?: boolean; na?: boolean; rerun?: string; error?: string | null; verdict?: string[] }, cli: boolean): string {
-  if (row.pass || row.na || row.rerun || !(j.stopQueueOnFail || cli)) return '';
+export function failStop(j: { id: string; stopQueueOnFail?: boolean }, row: { pass?: boolean; na?: boolean; void?: boolean; rerun?: string; error?: string | null; verdict?: string[] }, cli: boolean): string {
+  if (row.pass || row.na || row.void || row.rerun || !(j.stopQueueOnFail || cli)) return '';
   return `${j.id} failed (stopQueueOnFail): ${String(row.error || row.verdict?.find(v => /^FAIL/.test(v)) || 'see the row').slice(0, 200)}`;
 }
 // stop rule after a job: same job crashed twice (earlier rows count), or this and the previous job both crashed
@@ -1600,6 +1617,18 @@ if (values['self-check']) {
     const na = 'N/A: not triggered: no dialog matching "x" in 6 min (1 windows); the offer never appeared (Steam edition: never seen there); nothing accepted';
     assert.deepEqual(silentFail(1, `12:00:00 dialog_expect armed\n12:06:00 ${na}`, false), [na]);
     const r = { pass: false, crashed: false, timedOut: false, error: null, verdict: [na, 'N/A (vanilla): asi build check'] };
+    { // docs/232 Run 8h: Verify on with 0 calls is VOID, never PASS; a failing row keeps FAIL and names the idle feature
+      const idle = featureIdle('[WaterJps]\nEnabled=1\nVerify=1\n', { waterJpsCallsK: 0, waterJpsCellsK: 0 }, { waterJpsCallsK: 0, waterJpsCellsK: 0, waterJpsMismatches: 0 });
+      const v = { pass: true, idle, verdict: ['PASS: no forbidden log lines'] };
+      assert.deepEqual(featureVoids(v), { pass: false, void: true });
+      assert.deepEqual(v.verdict.at(-1), 'VOID: [WaterJps] Verify on but waterJpsCallsK+waterJpsCellsK rose 0: not triggered, run void');
+      assert.ok(!naRow({ ...v, pass: false }) && failStop({ id: 'v', stopQueueOnFail: true }, { pass: false, void: true, verdict: v.verdict }, false) === '');
+      const f = { pass: false, idle, verdict: ['FAIL: x'] };
+      assert.deepEqual(featureVoids(f), {}); assert.equal(f.verdict.at(-1), 'note: [WaterJps] Verify on but waterJpsCallsK+waterJpsCellsK rose 0: not triggered');
+      assert.deepEqual(featureVoids({ pass: true, verdict: [] }), {});
+      assert.deepEqual(featureIdle('[TerrainGrave]\nEnabled=1\nMode=1\n[RouteToObjRO]\nEnabled=1\nMode=1\n', { vfRtGraveParked: 0, rtoCalls: 0 }, { vfRtGraveParked: 0, rtoCalls: 2 }),
+        ['self check: [TerrainGrave] on but vfRtGraveParked rose 0: feature idle, run void']);
+    }
     assert.ok(naRow(r)); assert.ok(!naRow({ ...r, pass: true }) && !naRow({ ...r, crashed: true }) && !naRow({ ...r, verdict: [na, 'FAIL: x'] }) && !naRow({ ...r, verdict: ['N/A (vanilla): asi build check'] }));
     assert.equal(failStop({ id: 'm', stopQueueOnFail: true }, { pass: false, na: true, verdict: [na] }, false), '');
   }
@@ -3021,10 +3050,13 @@ for (const [n, j] of jobs.entries()) {
     if (idle) { row.verdict.push(`FAIL: ${idle}`); row.selfCheckFail = idle; }
     // forced repro loops exercise one path: a default-on feature the job's own ini does not name may idle there (2026-10-25:
     // DeferFootprint voided the boat and Overwatch verify jobs), so it is a note; natural and bundle runs keep the void
-    const pr = j.run.profile, focused = !!(pr?.repro || pr?.repros);
-    for (const f of pr ? featureIdle(jobIniText, c0, c1) : []) {
-      if (focused && !Object.keys(j.ini ?? {}).some(k => f.includes(k.split('.')[1]))) { row.verdict.push(`note: ${f.replace(', run void', ' (forced repro: not the job subject)')}`); continue; }
-      row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f;
+    // non-profile jobs (age-save, soak, scripts) judge only the sections their own ini names (docs/232 Run 8h: WaterJps 0 calls
+    // in an age-save verify row said PASS); an idle feature makes the row VOID at the end (featureVoids), never PASS
+    const pr = j.run.profile, focused = !!(pr?.repro || pr?.repros), named = (f: string) => Object.keys(j.ini ?? {}).some(k => f.includes(`[${k.split('.')[0]}]`));
+    for (const f of j.run.menuMemory || VANILLA ? [] : featureIdle(jobIniText, c0, c1)) {
+      if (!pr && !named(f)) continue;
+      if (focused && !named(f)) { row.verdict.push(`note: ${f.replace(', run void', ' (forced repro: not the job subject)')}`); continue; }
+      if (/^UNKNOWN: /.test(f)) { row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f; } else (row.idle ??= []).push(f);
     }
     if (j.ourMods === false) { // read while the game is up; a job that threw before this has row.error, and the jobGuard watched the Bin
       const fails = ourModsFails({ logExists: existsSync(LOG), native: [c0, c1], patches: [fx0?.p, (await fixRead()).p] });
@@ -3180,14 +3212,15 @@ for (const [n, j] of jobs.entries()) {
     Object.assign(row, { timing: tm.timing, timingWhy: tm.why });
     for (const rr of row.repros ?? []) { const w = tm.windows?.[rr.id]; if (w) Object.assign(rr, { timing: w.timing, timingWhy: w.why }); }
   } catch (e) { row.timing = 'invalid'; row.timingWhy = `timing verdict failed: ${String(e).split('\n')[0]}`; }
+  Object.assign(row, featureVoids(row));
   row.na = naRow(row);
   appendFileSync(jsonl, JSON.stringify(row) + '\n');
   clearJob();
   const cd = row.counters.delta ? Object.entries(row.counters.delta).map(([k, v]) => `${k} ${(v as number) > 0 ? '+' : ''}${v}`).join(', ') : '-';
   const cell = (x: string) => x.replace(/\|/g, '/').replace(/\r?\n/g, '<br>').slice(0, 400);
-  appendFileSync(md, `| ${j.id} | ${t0.slice(11, 16)} (${pht(t0)}) | ${row.minutes} | ${row.pass ? 'PASS' : row.na ? '**N/A**' : row.crashed ? '**CRASH**' : '**FAIL**'} | ${cell(row.verdict.join('<br>') || row.error || '-')} | ${row.exitCode ?? '-'} | ${memLine(row.memory.before)} -> ${memLine(row.memory.after)} | ${cell(cd || '-')} | ${cell([countsNote(row), `timing: ${timingText({ timing: row.timing, why: row.timingWhy })}`, buildLine(row.buildCheck), row.saveHashes.after && saveDrift(row.saveHashes.before, row.saveHashes.after).length ? 'BASELINE SAVE CHANGED' : '', row.session.line !== 'fresh load' || row.session.after ? [row.session.line, row.session.after, row.session.next].filter(Boolean).join('; ') : '', row.noiseNote, row.hangCapture, j.note, row.content !== 'as-is' ? `content ${row.content} (${row.contentMoved} moved)` : '', row.crashed ? row.crash.split('\n')[1]?.trim() : '', row.error && row.verdict.length ? row.error : ''].filter(Boolean).join('; ') || '')} |${machineCols(machineTag()).cell(MACHINE)}\n`);
-  log(`${j.id}: ${row.pass ? 'PASS' : row.na ? 'N/A' : row.crashed ? 'CRASH' : 'FAIL'} in ${row.minutes} min`);
-  if (!row.pass && !row.na) exitCode = 1;
+  appendFileSync(md, `| ${j.id} | ${t0.slice(11, 16)} (${pht(t0)}) | ${row.minutes} | ${row.pass ? 'PASS' : row.void ? '**VOID**' : row.na ? '**N/A**' : row.crashed ? '**CRASH**' : '**FAIL**'} | ${cell(row.verdict.join('<br>') || row.error || '-')} | ${row.exitCode ?? '-'} | ${memLine(row.memory.before)} -> ${memLine(row.memory.after)} | ${cell(cd || '-')} | ${cell([countsNote(row), `timing: ${timingText({ timing: row.timing, why: row.timingWhy })}`, buildLine(row.buildCheck), row.saveHashes.after && saveDrift(row.saveHashes.before, row.saveHashes.after).length ? 'BASELINE SAVE CHANGED' : '', row.session.line !== 'fresh load' || row.session.after ? [row.session.line, row.session.after, row.session.next].filter(Boolean).join('; ') : '', row.noiseNote, row.hangCapture, j.note, row.content !== 'as-is' ? `content ${row.content} (${row.contentMoved} moved)` : '', row.crashed ? row.crash.split('\n')[1]?.trim() : '', row.error && row.verdict.length ? row.error : ''].filter(Boolean).join('; ') || '')} |${machineCols(machineTag()).cell(MACHINE)}\n`);
+  log(`${j.id}: ${row.pass ? 'PASS' : row.void ? 'VOID' : row.na ? 'N/A' : row.crashed ? 'CRASH' : 'FAIL'} in ${row.minutes} min`);
+  if (!row.pass && !row.na && !row.void) exitCode = 1;
 
   const earlierCrashes = earlier.filter(r => r.job === j.id && r.crashed).length;
   stopWhy ||= crashStop(row.crashed, earlierCrashes, prevCrashed, !!j.crashHunt);

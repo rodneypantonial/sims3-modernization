@@ -131,6 +131,7 @@ function selfCheck() {
   assert.equal(classify({ pass: true, verdict: ['PASS: profile 10 min'] }).v, 'PASS');
   assert.deepEqual(classify({ pass: false, na: true, exitCode: 1, verdict: ['N/A: not triggered: x', 'N/A (vanilla): asi build check'] }), { v: 'N/A', why: 'N/A: not triggered: x' });
   assert.equal(classify({ pass: false, exitCode: 1, verdict: ['FAIL: self check: [RouteAsync] on but 0 async route jobs started (invokeHook 0): async off, run void'] }).v, 'VOID');
+  assert.equal(classify({ pass: false, void: true, exitCode: 0, verdict: ['PASS: x', 'VOID: [WaterJps] Verify on but waterJpsCallsK+waterJpsCellsK rose 0: not triggered, run void'] }).v, 'VOID'); // queue.ts featureVoids
   assert.equal(classify({ pass: false, exitCode: 1, verdict: ['FAIL: noisy machine early: machine load: ...'] }).v, 'VOID');
   assert.equal(classify({ pass: true, verdict: ['PASS'] }, 'profiler cut short (100 of 600 s)').v, 'VOID');
   const c = classify({ pass: false, crashed: true, crash: 'fault TS3W.exe+0x1234\nmore', verdict: [] });
