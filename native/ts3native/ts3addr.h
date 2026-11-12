@@ -10,6 +10,10 @@
 #define TS3A(x) (x)
 #else
 #include "ts3addr-ea169.h"  // ts3addr_pairs[][2] sorted by Steam address, ts3addr_count, TS3A_HOST_*
+// EA-port-only features (ported from hotfix/v0.2.10-ea169, not in the Steam asi): [ImageGuard], [EaCrashFixes] SimNoTexture /
+// SimNoTextureAtlas. Their TS3A literals sit outside any `#ifdef TS3A_TABLE` block, so the table regen maps them like the rest;
+// the selftest defines it too and tests them with its own dummies.
+#define TS3N_EA_PORT
 constexpr unsigned long ts3addr_find(unsigned long x, int lo, int hi) {
     return lo > hi ? throw "TS3A: address not in ts3addr-ea169.h (rerun tools/port-run.ts --table, docs/228)"
          : ts3addr_pairs[(lo + hi) / 2][0] == x ? ts3addr_pairs[(lo + hi) / 2][1]
