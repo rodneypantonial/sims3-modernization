@@ -253,6 +253,17 @@ static void GcCapWindow(bool strict, const char* ev) {
     const DWORD from = strict ? g_gcCapBytes : 0x800000u, to = strict ? 0x800000u : g_gcCapBytes;
     Site s[2] = {kBlCap[0], kBlCap[1]};
     memcpy(s[0].expect + 1, &from, 4), memcpy(s[1].expect + 6, &from, 4);
+#ifdef TS3A_TABLE
+    // EA: Matches swaps in the EA bytes table's row for these sites (the game's 0x800000), so the strict switch never matched
+    // our own cap; ApplyGcBlackCap byte-checked both sites, so here only the immediates must hold `from`
+    for (Site& x : s) {
+        if (*(const DWORD*)(uintptr_t)(x.addr + x.immOff) != from) {
+            Log("SKIP %s: imm at 0x%08X is not 0x%lX, nothing written", strict ? "GC black-list clamp strict" : "GC black-list clamp lenient", x.addr, from);
+            return;
+        }
+        x.len = 0;
+    }
+#endif
     if (!PatchImm32(strict ? "GC black-list clamp strict" : "GC black-list clamp lenient", s, 2, to)) return;
     g_gcStrict = strict;
     Ts3nCounters& k = ts3native_counters;
