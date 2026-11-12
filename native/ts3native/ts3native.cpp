@@ -43,17 +43,11 @@ static void Hex(const u8* p, size_t n, char* out, size_t cap) {
     for (size_t i = 0; i < n && (i * 3 + 3) < cap; i++) sprintf_s(out + i * 3, cap - i * 3, "%02X ", p[i]);
 }
 
-// every region the range touches: one .data range can be several regions (write-copy pages already written split off)
 static bool Readable(const void* p, size_t n) {
-    const u8* a = (const u8*)p;
-    const u8* const end = a + n;
-    do {
-        MEMORY_BASIC_INFORMATION mbi;
-        if (!VirtualQuery(a, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) return false;
-        if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
-        a = (const u8*)mbi.BaseAddress + mbi.RegionSize;
-    } while (a < end);
-    return true;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(p, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) return false;
+    if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+    return (const u8*)p + n <= (const u8*)mbi.BaseAddress + mbi.RegionSize;
 }
 
 #ifdef TS3A_TABLE
