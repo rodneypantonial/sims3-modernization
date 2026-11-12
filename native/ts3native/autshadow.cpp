@@ -3155,6 +3155,16 @@ static int AsInstallGuards(DWORD* lo, DWORD* hi, DWORD imgLo, DWORD imgHi, DWORD
     for (DWORD* p = lo + 1; p < hi; p++) {
         const DWORD name = *p, fn = p[-1];
         if (name < imgLo || name >= imgHi || !AsIsName((const char*)(uintptr_t)name, imgHi)) continue;
+#ifdef TS3A_TABLE
+        // EA 1.69.47: mono's corlib icall tables (class-start u16s 0x010FF678, class names, method names, functions up to
+        // 0x01100BDC) are not IC slots, but the u16 pair at 0x010FF6BC reads as {0x00ED00CD in .text, "ScriptCore.World::
+        // World_SetObjectHighlightImpl"}; a thunk there broke the class table and mono_icall_init faulted at 0xE824B2 [verified]
+        if ((DWORD)(uintptr_t)(p - 1) >= 0x010FF678 && (DWORD)(uintptr_t)(p - 1) < 0x01100BDC) {
+            k.guardSkipped++;
+            Log("autonomy shadow: 0x%08lX is in mono's icall tables, not an IC slot: left as it is", (DWORD)(uintptr_t)(p - 1));
+            continue;
+        }
+#endif
         const bool chained = AsIsSnShim(fn);
         if (!chained && (fn < textLo || fn >= textHi)) continue;
         const char* s = (const char*)(uintptr_t)name;
