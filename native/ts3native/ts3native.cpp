@@ -45,16 +45,31 @@ static void Hex(const u8* p, size_t n, char* out, size_t cap) {
 
 static bool Readable(const void* p, size_t n) {
     MEMORY_BASIC_INFORMATION mbi;
+#ifdef TS3A_TABLE
+    // EA: a span may cross regions. A written copy-on-write image page turns PAGE_READWRITE, so .data splits into regions by
+    // write history: the [MonoThread] GC thread table (0x127B380, 0x1400 bytes, 2 pages) failed in some starts ("SKIP mono
+    // thread: GC globals unreadable"). Walk them; every region must be committed and readable.
+    for (const u8 *a = (const u8*)p, *end = a + n;;) {
+        if (!VirtualQuery(a, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) return false;
+        const u8* next = (const u8*)mbi.BaseAddress + mbi.RegionSize;
+        if (end <= next) return true;
+        a = next;
+    }
+#else
     if (!VirtualQuery(p, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) return false;
     if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
     return (const u8*)p + n <= (const u8*)mbi.BaseAddress + mbi.RegionSize;
+#endif
 }
 
 #ifdef TS3A_TABLE
 #include "ts3bytes-ea169.h"  // ts3bytes_rows[] sorted by (addr, len), ts3bytes_pool[], ts3bytes_count (tools/patch-bytes-check.ts --table)
 // EA build: the bytes the game itself has at an already translated site replace the caller's Steam literal (they differ
 // only in rel32 / absolute-pointer operands, docs/68 7.3). Same address and length required, else the literal stays.
+// set around a check whose literal already holds this build's bytes with a changed operand (gcgrow.cpp GcCapWindow): no swap
+static __declspec(thread) bool t_expLiteral;
 static const u8* ExpectedAt(const void* addr, const u8* lit, size_t n) {
+    if (t_expLiteral) return lit;
     const DWORD a = (DWORD)(uintptr_t)addr, len = (DWORD)n;
     int lo = 0, hi = ts3bytes_count - 1;
     while (lo <= hi) {
@@ -5249,6 +5264,9 @@ static void SlimWait();
 #include "gcthreads.cpp"
 #include "memexp.cpp"  // docs/199: [MemDiag] TypeGrowth, [GC] SqrtHeapLimit (off)
 #include "gcgrow.cpp"  // docs/232 Run 8l/8n: [GcGrowLog] + [GC] BlackListCapKB (after memexp.cpp: g_mx; savewrite.cpp: PatchCalls)
+#ifdef TS3N_EA_PORT
+#include "imgguard.cpp"  // docs/232 Run 8d: [ImageGuard], EA build only (after savewrite.cpp: PatchCalls)
+#endif
 #include "threadstack.cpp"
 #include "iclock.cpp"
 #include "routegate.cpp"
@@ -5559,6 +5577,9 @@ static void Run(HMODULE self) {
         keepLog = ApplyLotSinCos(ini) || keepLog;
         keepLog = ApplyIdCache(ini) || keepLog;
         keepLog = ApplyEaCrashFixes(ini) || keepLog;  // docs/67 §26.4 / §27.5 / §28: off by default; before any game object exists
+#ifdef TS3N_EA_PORT
+        keepLog = ApplyImageGuard(ini) || keepLog;  // docs/232 Run 8d: off by default, EA build only
+#endif
         keepLog = ApplyPkgLock(ini) || keepLog;  // docs/539 §13.9: off by default ([PkgLock] Mode=0); vtable slots only
         keepLog = ApplyWorldAStarRefs(ini) || keepLog;  // docs/67 §30: off by default
         keepLog = ApplyPortalFlagRefs(ini) || keepLog;  // docs/67 §30.5: off by default
