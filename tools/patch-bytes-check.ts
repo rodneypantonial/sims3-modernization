@@ -87,10 +87,29 @@ type Ctx = { file: string; pos: number } | undefined;  // where a name is used: 
 type Field = { name: string; arr: boolean; ptr: boolean };
 export type Src = { syms: Map<string, Sym[]>; structs: Map<string, Field[]>; texts: [string, string][]; depths: Map<string, Int32Array> };
 
+// function-like macros whose body is one table row (`#define VFT(name, at, len, slot, ...) {name, at, len, {__VA_ARGS__}, ...}`,
+// verify.cpp kVf): every use is expanded in place on its own line, so the table rule sees plain rows
+function expandRowMacros(t: string): string {
+    for (const m of [...t.matchAll(/^[ \t]*#\s*define\s+(\w+)\(([^)]*)\)[ \t]+(\{[^\n]*\})[ \t]*$/gm)]) {
+        const ps = m[2].split(",").map((s) => s.trim()), defEnd = m.index! + m[0].length, uses: [number, number, string][] = [];
+        for (const u of t.matchAll(new RegExp(`\\b${m[1]}\\s*\\(`, "g"))) {
+            if (u.index! < defEnd) continue;  // the #define itself
+            const args: string[] = [];
+            let p = u.index! + u[0].length;
+            for (;;) { const r = parseInit(t, p); args.push(r.node as string); p = r.end; if (t[p] !== ",") break; p++; }
+            if (t[p] !== ")") continue;
+            const val = (n: string) => n === "__VA_ARGS__" ? args.slice(ps.length - 1).join(", ") : args[ps.indexOf(n)] ?? n;
+            uses.push([u.index!, p + 1, m[3].replace(/\b(\w+)\b/g, (w) => (ps.includes(w) || (w === "__VA_ARGS__" && ps.includes("..."))) ? val(w) : w)]);
+        }
+        for (const [s, e, body] of uses.reverse()) t = t.slice(0, s) + body + t.slice(e);
+    }
+    return t;
+}
+
 export function readSources(files: [string, string][]): Src {
     const syms = new Map<string, Sym[]>(), depths = new Map<string, Int32Array>(), structs = new Map<string, Field[]>(), texts: [string, string][] = [];
     for (const [file, raw] of files) {
-        const t = strip(raw);
+        const t = expandRowMacros(strip(raw));
         texts.push([file, t]);
         const depth = new Int32Array(t.length + 1);
         for (let i = 0, d = 0; i < t.length; i++) { if (t[i] === "{") d++; else if (t[i] === "}") d--; depth[i + 1] = d; }
@@ -388,6 +407,7 @@ function selfCheck(refPath?: string) {
     put(0x400, [0xa1, 0x00, 0x30, 0x40, 0x00]);                  // mov eax,[0x403000] (.data moves in the other exe)
     put(0x500, [0x8b, 0x41, 0x08]);                              // changed in the other exe
     put(0x600, [0x6a, 0x01]); put(0x700, [0x6a, 0x02]);          // indexed pair
+    put(0x900, [0x31, 0xc0]);                                    // row macro
     const src = readSources([["t.cpp", [
         "struct Site { DWORD addr; u8 expect[8]; size_t len; size_t immOff; };",
         "struct CallSite { DWORD site, target; void* hook; };",
@@ -404,6 +424,9 @@ function selfCheck(refPath?: string) {
         "};",
         "static const CallSite kC[1] = {{0x00401300, FN_A, NULL}};",
         "static const SnIc kSlot[] = {{0x00403010, FN_A, \"x\"}};",
+        "struct VfP { const char* name; DWORD at; u8 len; u8 pro[10]; u8 kind; };",
+        "#define VFT(name, at, len, ...) {name, at, len, {__VA_ARGS__}, 1}",
+        "static const VfP kV[] = {VFT(\"v\", 0x00401900, 2, 0x31, 0xC0), VFT(\"w\", 0, 1, 0x90)};",
         "void Go() {",
         "    void* t = InstallDetour(\"A\", FN_A, kPro, sizeof(kPro), (void*)Hook);",
         "    if (!Matches((const void*)(uintptr_t)AT_LOAD, kLoad, sizeof(kLoad)) || !Matches((void*)(uintptr_t)AT_CHG, kChg, 3)) return;",
@@ -421,6 +444,7 @@ function selfCheck(refPath?: string) {
     ok(at(0x401100).length === 1 && at(0x401100)[0].bytes.length === 6, "InstallDetour prologue");
     ok(at(0x401200)[0]?.bytes.length === 4 && at(0x401300)[0]?.kind === "call" && at(0x403010)[0]?.kind === "slot", "Site / CallSite / slot tables");
     ok(at(0x401800).some((x) => x.bytes.length === 2) && at(0x409999).length === 0, "Matches on a parameter resolves from the caller, not a same-named global");
+    ok(at(0x401900)[0]?.bytes.join() === "49,192", "row macro (VFT) expanded into a table row");
     ok(at(0x401400)[0]?.bytes.length === 5 && at(0x401500)[0]?.bytes.length === 3 && at(0x401600).length === 1 && at(0x401700)[0]?.bytes[1] === 2, "Matches: string bytes, #define, indexed");
     ok(unresolved.length === 1 && /want/.test(unresolved[0]), `one unresolved (local want): ${unresolved.join("; ")}`);
     const data = (shift: number) => { const d = Buffer.alloc(0x200); d.writeUInt32LE(0x401100 + shift, 0x10); return d; };

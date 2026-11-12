@@ -17,9 +17,10 @@ const SRC = join(repo, "native", "ts3native");
 // the section's file has no EA table row on purpose (raw 1.69.47 addresses, no Steam counterpart): allowed in the minimal ini
 export const EA_ONLY = new Set(["EaDiag"]);
 // kept off on EA whatever the tables say (diagnostics). SteerRO, FpRebuildLock, Watchpoint, RouteToObjRO and MemDiag left this
-// list with docs/238 (struct offsets same on 1.69, every address of theirs checked, §5): shipped Enabled=0, so allowed, not on
+// list with docs/238 (struct offsets same on 1.69, every address of theirs checked, §5): shipped Enabled=0, so allowed, not on.
+// Verify left it 2026-11-13: its 89 probe prologues are in the bytes table now (patch-bytes-check reads the kVf row macros)
 export const ALWAYS_OFF: Record<string, string> = {
-    EaDiag: "EA-only diagnostics, log only, minimal ini only", Verify: "bit-compares against Steam code",
+    EaDiag: "EA-only diagnostics, log only, minimal ini only",
 };
 // single keys the rc ini zeroes in a kept section: on in the Steam ini, not yet run on EA
 // The other rows came with the merge of main (2026-11-06): on in the Steam ini, off on the port, never run on EA. Each leaves here after its EA smoke.
@@ -119,9 +120,9 @@ function selfCheck() {
     const kh = "// unresolved: 0x0082B608 no-ea-evidence native/ts3native/wastar.cpp:197\n";
     ok(badFiles(kh, "", new Map()).size === 0 && [...keysOff(kh)].join() === "EaCrashFixes.LotGridMiss" && keysOff("").size === 0, "keyed row");
     const map = { A: ["a.cpp"], B: ["ok.cpp"], E: ["b.cpp", "ok.cpp"], RouteGate: ["ok.cpp"], RouteAsync: ["a.cpp"], AvoidRO: ["ok.cpp"], GC: ["memexp.cpp", "ok.cpp"] };
-    const r = rcPlan(["A", "B", "Verify", "E", "RouteGate", "RouteAsync", "AvoidRO", "GC"], { A: "1", B: "1" }, map, new Map([...bad, ["memexp.cpp", "unresolved row"]]));
+    const r = rcPlan(["A", "B", "EaDiag", "E", "RouteGate", "RouteAsync", "AvoidRO", "GC"], { A: "1", B: "1" }, map, new Map([...bad, ["memexp.cpp", "unresolved row"]]));
     const st = Object.fromEntries(r.map((x) => [x.section, x.state]));
-    ok(st.A === "zeroed" && st.B === "kept" && st.Verify === "zeroed" && st.E === "zeroed" && st.RouteGate === "zeroed" && st.AvoidRO === "zeroed" && st.GC === "kept", "plan " + JSON.stringify(st));
+    ok(st.A === "zeroed" && st.B === "kept" && st.EaDiag === "zeroed" && !ALWAYS_OFF.Verify && st.E === "zeroed" && st.RouteGate === "zeroed" && st.AvoidRO === "zeroed" && st.GC === "kept", "plan " + JSON.stringify(st));
     ok(render(["[A]", "Enabled=1", "Path=x", "[B]", "Enabled=0"], (s) => s === "A", (s) => s === "B") === "[A]\r\nEnabled=0\r\nPath=x\r\n[B]\r\nEnabled=1", "render");
     ok(!["SteerRO", "FpRebuildLock", "Watchpoint", "RouteToObjRO", "MemDiag"].some((s) => ALWAYS_OFF[s]), "docs/238 sections allowed");
     ok(render(["[GC]", "Enabled=1", "BlackListCapKB=0", "[Z]", "BlackListCapKB=0"], () => false, () => false, undefined, EA_SET) === "[GC]\r\nEnabled=1\r\nBlackListCapKB=1024\r\n[Z]\r\nBlackListCapKB=0", "render set");
