@@ -9,13 +9,17 @@
 // docs/data/*.csv (IC, hook, Mono glue tables). ts3native frames need the link map of the same build: `--build <dir>` takes
 // ts3native.asi + ts3native.map from a folder (native/ts3native/out, or the CI artifacts once build.yml uploads the map) and
 // checks the asi's version against the log; `--map` alone is used unchecked. Other modules stay name+offset.
+// EA app 1.69.47 (log `host build: EA app 1.69.47` / `host TS3.exe base`, report `exe sha256: 7352dd6e`, module `TS3`, image
+// 0xEB5000) is a different binary: its frames are named only from out/port/ts3-ea169-file-*/ghidra-names.csv (newest folder or
+// `--ea-names <file>`; local derived data, function starts only), never from the Steam 1.67 tables above. No CSV: raw offsets
+// and `EA build: run tools/port-run.ts for names`.
 // Short output: every distinct exception with its first 8 frames; --all every frame; last line `needs review: ...`.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const TS3W_BASE = 0x400000, TS3W_SIZE = 0xe5a000;   // SizeOfImage of the 1.67 exe [verified: PE header of a contributor's copy]
+const TS3W_BASE = 0x400000, TS3W_SIZE = 0xe5a000, EA_SIZE = 0xeb5000;   // SizeOfImage of the 1.67 exe [verified: PE header of a contributor's copy]
 const NEAR = 0x400;                                  // past this distance from the nearest named function: say it may be another
 // 0x00XX00YY with XX, YY printable: two UTF-16 characters on the stack, not a return address (stack scans pick them up)
 export const looksUtf16 = (a: number) => (a >>> 24) === 0 && (a & 0xff00) === 0 && [(a >>> 16) & 0xff, a & 0xff].every(c => c >= 0x20 && c < 0x7f);
@@ -23,7 +27,7 @@ const hex = (n: number) => '0x' + (n >>> 0).toString(16).toUpperCase().padStart(
 const off = (n: number) => '0x' + n.toString(16).toUpperCase();
 
 export interface Sym { at: number; end?: number; name: string }
-export interface Names { ts3w: Sym[]; exact: Map<number, string[]>; map: Sym[] | null; mapBase: number }
+export interface Names { ts3w: Sym[]; exact: Map<number, string[]>; map: Sym[] | null; mapBase: number; ea?: { syms: Sym[] | null } }
 export interface Crash { title: string; count: number; frames: { a: number | null; mod?: string; modOff?: number; note?: string }[] }
 
 // nearest symbol at or below a (sorted by at)
@@ -76,12 +80,13 @@ export function loadExact(files: [string, string][]): Map<number, string[]> {
   return out;
 }
 
-export function parseInput(text: string): { crashes: Crash[]; version?: string; self?: [number, number]; ts3wBase: number } {
+export function parseInput(text: string): { crashes: Crash[]; version?: string; self?: [number, number]; ts3wBase: number; ea: boolean } {
   const L = text.split(/\r?\n/);
   const version = (text.match(/^ts3native (\d+\.\d+\.\d+) \d{4}-/m) ?? text.match(/^ts3native: (\d+\.\d+\.\d+)/m))?.[1];
   const r = text.match(/^crash log: first \d+ first-chance exceptions.*?\(module 0x([0-9A-F]+)-0x([0-9A-F]+)\)/m);
   const self: [number, number] | undefined = r ? [parseInt(r[1], 16), parseInt(r[2], 16)] : undefined;
-  const ts3wBase = parseInt(text.match(/^host TS3W\.exe base 0x([0-9A-F]+)/m)?.[1] ?? '400000', 16);
+  const ts3wBase = parseInt(text.match(/^host TS3W?\.exe base 0x([0-9A-F]+)/m)?.[1] ?? '400000', 16);
+  const ea = /^host build: EA app|^host TS3\.exe base|^exe sha256: 7352dd6e|size 0xEB5000|^(fault: |\s+)TS3(\.exe)?\+0x/im.test(text);
   const crashes: Crash[] = [], seen = new Map<string, Crash>();
   if (/^ts3native crash report \d+/m.test(text)) {  // [CrashReport] report: fault + stack as module+0xoffset
     const frame = (s: string) => { const m = s.trim().match(/^([\w.-]+)\+0x([0-9A-F]+)$/i); return m ? { a: null, mod: m[1], modOff: parseInt(m[2], 16) } : { a: /^0x[0-9A-F]+$/i.test(s.trim()) ? parseInt(s.trim(), 16) : null, note: s.trim() }; };
@@ -102,24 +107,30 @@ export function parseInput(text: string): { crashes: Crash[]; version?: string; 
       frames: [named ? { a: parseInt(m[2], 16), mod: named[1], modOff: parseInt(named[2], 16) } : { a: parseInt(m[2], 16) }, ...refs.map(x => ({ a: parseInt(x, 16) }))] };
     seen.set(key, c); crashes.push(c);
   }
-  return { crashes, version, self, ts3wBase };
+  return { crashes, version, self, ts3wBase, ea };
 }
 
 // one frame -> text
 export function name(f: Crash['frames'][number], n: Names, self: [number, number] | undefined, ts3wBase: number): { text: string; ours: boolean; unknown: boolean } {
+  const exe = n.ea ? 'TS3' : 'TS3W';
   let mod = f.mod?.replace(/\.(exe|dll|asi)$/i, ''), o = f.modOff, a = f.a;
-  if (mod && /^ts3w$/i.test(mod) && o !== undefined) a = ts3wBase + o;
+  if (mod && /^ts3w?$/i.test(mod)) mod = exe;
+  if (mod === exe && o !== undefined) a = ts3wBase + o;
   if (a !== null && a !== undefined && !mod) {
-    if (a >= ts3wBase && a < ts3wBase + TS3W_SIZE) mod = 'TS3W';
+    if (a >= ts3wBase && a < ts3wBase + (n.ea ? EA_SIZE : TS3W_SIZE)) mod = exe;
     else if (self && a >= self[0] && a < self[1]) { mod = 'ts3native'; o = a - self[0]; }
   }
   const where = a !== null && a !== undefined ? `${hex(a)}  ` : '';
   if (a !== null && a !== undefined && looksUtf16(a)) return { text: `${where}UTF-16 text "${String.fromCharCode(a & 0xff, (a >>> 16) & 0xff)}" on the stack, not a code address`, ours: false, unknown: false };
-  if (mod === 'TS3W' && a !== null && a !== undefined) {
+  if (mod === exe && a !== null && a !== undefined) {
+    if (n.ea) {  // EA: only its own ported names; Steam tables and exact hits do not apply
+      const s = n.ea.syms ? nearest(n.ea.syms, a) : undefined, d = s ? a - s.at : 0;
+      return { text: `${where}TS3+${off(a - ts3wBase)}${s ? `  ${s.name}+${off(d)}${d > NEAR ? ` (nearest named function below, ${(d / 1024).toFixed(1)} KB: may be another function)` : ''}` : ''}`, ours: false, unknown: !s };
+    }
     const s = nearest(n.ts3w, a), ex = n.exact.get(a), d = s ? a - s.at : 0;
     const label = !s ? 'no symbol below' : s.end !== undefined ? (a < s.end ? `${s.name}+${off(d)}` : `after ${s.name} (outside it)`)
       : d <= NEAR ? `${s.name}+${off(d)}` : `${s.name}+${off(d)} (nearest named function below, ${(d / 1024).toFixed(1)} KB: may be another function)`;
-    return { text: `${where}TS3W+${off(a - ts3wBase)}  ${label}${ex ? `  [${ex.join('; ')}]` : ''}`, ours: false, unknown: !s };
+    return { text: `${where}${exe}+${off(a - ts3wBase)}  ${label}${ex ? `  [${ex.join('; ')}]` : ''}`, ours: false, unknown: !s };
   }
   if (mod && /^ts3native$/i.test(mod) && o !== undefined) {
     if (!n.map) return { text: `${where}ts3native+${off(o)}  (no map: --build <dir> or --map)`, ours: true, unknown: true };
@@ -162,12 +173,21 @@ function fromBuild(dir: string, logVersion: string | undefined): { map: string; 
   return { map, notes };
 }
 
-function loadNames(mapText: string | null): Names {
+// newest out/port/ts3-ea169-file-*/ghidra-names.csv (local, gitignored), or the --ea-names file
+function eaNamesPath(given?: string): string | null {
+  if (given) return given;
+  const base = join(ROOT, 'out', 'port');
+  const c = existsSync(base) ? readdirSync(base).filter(d => d.startsWith('ts3-ea169-file-')).map(d => join(base, d, 'ghidra-names.csv')).filter(existsSync) : [];
+  return c.sort((x, y) => statSync(y).mtimeMs - statSync(x).mtimeMs)[0] ?? null;
+}
+
+function loadNames(mapText: string | null, ea?: string | null | false): Names {
+  const m = mapText ? parseMap(mapText) : null;
+  if (ea !== undefined) return { ts3w: [], exact: new Map(), map: m?.syms ?? null, mapBase: m?.base ?? 0, ea: { syms: ea ? loadSymbolsCsv(readFileSync(ea, 'utf8')) : null } };
   const fc = join(ROOT, 'game-copy', 'analysis', 'functions.csv');
   const ts3w = existsSync(fc) ? loadFunctionsCsv(readFileSync(fc, 'utf8')) : loadSymbolsCsv(readFileSync(join(ROOT, 'tools', 'ghidra', 'symbols', 'ts3w-1.67.symbols.csv'), 'utf8'));
   const dd = join(ROOT, 'docs', 'data');
   const exact = loadExact(readdirSync(dd).filter(f => f.endsWith('.csv')).map(f => [`docs/data/${f}`, readFileSync(join(dd, f), 'utf8')] as [string, string]));
-  const m = mapText ? parseMap(mapText) : null;
   return { ts3w, exact, map: m?.syms ?? null, mapBase: m?.base ?? 0 };
 }
 
@@ -207,14 +227,23 @@ function selfCheck() {
     'stack (return addresses found on the stack, top first):', '  ntdll+0x6919C', '  ts3native+0x1A44', '  TS3W+0xA1BD4', 'exe sha256: x'].join('\n'));
   const ro = render('r.txt', rep, N, true, []);
   t(rep.version === '0.36.143' && ro.includes('  #0 0x004331F2  TS3W+0x331F2  zlib_inflate+0x2') && ro.includes('  #1 ntdll+0x6919C') && ro.includes('  #2 ts3native+0x1A44  XcptLog+0x4') && ro.includes('  #3 0x004A1BD4  TS3W+0xA1BD4  ResourceConfig_ParseDirectives+0x4'), 'crash report frames');
+  // EA 1.69: own names only, module TS3, no Steam fallback
+  const eaSyms = loadSymbolsCsv('address,name,type,comment\n0x005EC6B0,SimService_Process,function,x\n0x005F1D00,SimService_Update,function,"a, b"\n');
+  const eaRep = parseInput(['ts3native crash report 1', 'ts3native: 0.36.152', 'fault: TS3+0x1EC891', 'stack (return addresses found on the stack, top first):', '  WindowsCodecs+0xC126F', '  TS3+0x1F1DFA', 'exe sha256: 7352dd6e'].join('\n'));
+  const eo = render('e.txt', eaRep, { ...N, ea: { syms: eaSyms } }, true, []);
+  t(eaRep.ea && !p.ea && !rep.ea, 'edition detection');
+  t(eo.includes('  #0 0x005EC891  TS3+0x1EC891  SimService_Process+0x1E1') && eo.includes('  #2 0x005F1DFA  TS3+0x1F1DFA  SimService_Update+0xFA') && eo.includes('  #1 WindowsCodecs+0xC126F'), 'EA names from the EA csv');
+  const en = render('e.txt', eaRep, { ...N, ea: { syms: null } }, true, []);
+  t(en.includes('  #0 0x005EC891  TS3+0x1EC891') && !en.some(l => /zlib_inflate|ResourceConfig|TS3W/.test(l)), 'EA without csv: raw offsets, no Steam names');
+  t(parseInput('host TS3.exe base 0x00400000 pe 6707155C size 0xEB5000\nhost build: EA app 1.69.47').ea && render('t.log', p, N, false, []).join('\n') === out.join('\n'), 'Steam unchanged');
   console.log(`crash-symbolize self-check: ${k} checks${process.exitCode ? ', FAILED' : ', ok'}`);
 }
 
 if (import.meta.filename === resolve(process.argv[1] ?? '')) {
   const { values: v, positionals } = parseArgs({ allowPositionals: true, options: {
-    map: { type: 'string' }, build: { type: 'string' }, all: { type: 'boolean' }, json: { type: 'boolean' }, 'self-check': { type: 'boolean' } } });
+    map: { type: 'string' }, build: { type: 'string' }, all: { type: 'boolean' }, json: { type: 'boolean' }, 'self-check': { type: 'boolean' }, 'ea-names': { type: 'string' } } });
   if (v['self-check']) selfCheck();
-  else if (positionals.length !== 1) { console.error('usage: node tools/crash-symbolize.ts <ts3native.log | crash report> [--map <file>] [--build <dir>] [--all] [--json]'); process.exit(2); }
+  else if (positionals.length !== 1) { console.error('usage: node tools/crash-symbolize.ts <ts3native.log | crash report> [--map <file>] [--build <dir>] [--ea-names <file>] [--all] [--json]'); process.exit(2); }
   else {
     const input = parseInput(readFileSync(positionals[0], 'utf8').replace(/^﻿/, '')), notes: string[] = [];
     let mapPath = v.map ?? '';
@@ -223,7 +252,9 @@ if (import.meta.filename === resolve(process.argv[1] ?? '')) {
       if (b.problem) { console.error(b.problem); process.exit(1); }
       mapPath = b.map; notes.push(...b.notes);
     } else if (mapPath) notes.push(`map: ${mapPath} (not checked against the log's build: --build checks it)`);
-    const n = loadNames(mapPath ? readFileSync(mapPath, 'latin1') : null);
+    const eaCsv = input.ea ? eaNamesPath(v['ea-names']) : undefined;
+    if (input.ea) notes.push(eaCsv ? `EA build: names from ${eaCsv}` : 'EA build: run tools/port-run.ts for names');
+    const n = loadNames(mapPath ? readFileSync(mapPath, 'latin1') : null, input.ea ? eaCsv : undefined);
     if (v.json) console.log(JSON.stringify(input.crashes.map(c => ({ ...c, frames: c.frames.map(f => name(f, n, input.self, input.ts3wBase).text) })), null, 2));
     else {
       const out = render(positionals[0], input, n, !!v.all, notes);
