@@ -541,7 +541,11 @@ static bool ApplySaveWrite(const wchar_t* ini) {
     QueryPerformanceFrequency(&g_qpf);
     ts3native_counters.saveMode = Clamp(GetPrivateProfileIntW(L"SaveWrite", L"Mode", 1, ini), 0, 1);
     CallSite sites[sizeof(kSaveSites) / sizeof(kSaveSites[0])];
+#ifdef TS3A_TABLE
+    const int n = SaveSitesFor(false, sites);  // EA: Apex never takes 0xAB12AF there (SaveWriteYieldToApex)
+#else
     const int n = SaveSitesFor(ApexStandsDown(AXF_MEMORY_GUARD, "[SaveWrite] write-phase timing call", "call 0xAB12AF"), sites);
+#endif
     if (!PatchCalls("save write", sites, n)) return false;
     ts3native_counters.saveReady = 1;
     Log("save write settings: Mode=%ld", ts3native_counters.saveMode);
@@ -551,6 +555,12 @@ static bool ApplySaveWrite(const wchar_t* ini) {
 // apex.cpp late check: puts the original rel32 back at 0xAB12AF if it still goes to SaveWriteHook (one aligned 4-byte store
 // at 0xAB12B0; no save runs before a world is loaded [inferred], so no thread is inside the call). True when given back.
 static bool SaveWriteYieldToApex(DWORD site) {  // site: SAVE_WRITE_SITE (selftest: a copy)
+#ifdef TS3A_TABLE
+    // EA: Apex's only user of 0xAB12AF is its early save, gated on the Steam exe stamp 0x52DEC247 (Apex 3.1.1
+    // features/memory_guard.cpp:430, docs/260 §4.3): nothing to give back, the write phase stays timed
+    (void)site;
+    return false;
+#else
     LONG* rel = (LONG*)(uintptr_t)(site + 1);
     const u8* p = (const u8*)(uintptr_t)site;
     if (!ts3native_counters.saveReady || !Readable(p, 5) || p[0] != 0xE8 || (DWORD)(site + 5 + *rel) != (DWORD)(uintptr_t)SaveWriteHook)
@@ -561,6 +571,7 @@ static bool SaveWriteYieldToApex(DWORD site) {  // site: SAVE_WRITE_SITE (selfte
     VirtualProtect(rel, 4, old, &old);
     FlushInstructionCache(GetCurrentProcess(), rel, 4);
     return true;
+#endif
 }
 
 static const CallSite kFlushSites[] = {{SAVE_FLUSH_COPY_SITE, SAVE_FLUSH, (void*)SaveFlushHook},
