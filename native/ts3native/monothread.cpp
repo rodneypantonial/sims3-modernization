@@ -211,7 +211,14 @@ static bool ApplyMonoThread(const wchar_t* ini) {
     if (k.mtMode < 0) k.mtMode = 0;
     DWORD* hook = (DWORD*)(uintptr_t)MT_PUSH_HOOK;
     DWORD* slot = (DWORD*)(uintptr_t)MT_SIM_SLOT;
-    if (!Readable(hook, 4) || !Readable(slot, 4) || !Readable(g_mtTable, 256 * 0x14)) { Log("SKIP mono thread: GC globals unreadable"); return false; }
+    if (!Readable(hook, 4) || !Readable(slot, 4) || !Readable(g_mtTable, 256 * 0x14)) {
+        MEMORY_BASIC_INFORMATION m = {};
+        VirtualQuery(g_mtTable, &m, sizeof(m));
+        Log("SKIP mono thread: GC globals unreadable (hook 0x%08lX %d, slot 0x%08lX %d, table 0x%08lX %d: region 0x%08lX+0x%lX state 0x%lX protect 0x%lX)",
+            (DWORD)(uintptr_t)hook, Readable(hook, 4), (DWORD)(uintptr_t)slot, Readable(slot, 4), (DWORD)(uintptr_t)g_mtTable,
+            Readable(g_mtTable, 256 * 0x14), (DWORD)(uintptr_t)m.BaseAddress, (DWORD)m.RegionSize, m.State, m.Protect);
+        return false;
+    }
     const bool viaThunk = *hook == MT_PUSH_THUNK && Matches((void*)(uintptr_t)MT_PUSH_THUNK, kMtThunk, 5) &&
                           Matches((void*)(uintptr_t)MT_PUSH_THUNK2, kMtThunk2, 5);
     if (!(viaThunk || *hook == MT_PUSH_EA) || !Matches((void*)(uintptr_t)MT_PUSH_EA, kMtPushEa, sizeof(kMtPushEa)) ||
