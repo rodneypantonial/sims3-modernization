@@ -24,10 +24,9 @@ export const ALWAYS_OFF: Record<string, string> = {
 };
 // single keys the rc ini zeroes in a kept section: on in the Steam ini, not yet run on EA
 // The other rows came with the merge of main (2026-11-06): on in the Steam ini, off on the port, never run on EA. Each leaves here after its EA smoke.
-export const RC_ZERO_KEYS: Record<string, string[]> = {
-    // addresses mapped by the table regen, never run on EA: mapped is not tested, so they stay off until their smoke
-    UnseenRootMotion: ["Mode"],
-};
+// [UnseenRootMotion] Mode left 2026-11-13: all 29 unseenrm.cpp addresses compared on the decrypted exe (code 12 instructions,
+// the steering slot 0x10445C0 -> 0x108F5D0 holds 0x954C70 = TS3A(0x954580)), every byte expectation ok or ported
+export const RC_ZERO_KEYS: Record<string, string[]> = {};
 const rcZeroKey = (sec: string, key: string) => (RC_ZERO_KEYS[sec] ?? []).includes(key);
 // One key of a section that is clean otherwise: its unresolved rows zero that key on EA instead of flagging the whole file (eafix.cpp, wastar.cpp,
 // rtoro.cpp and idlero.cpp hold other, working features). The key comes back by itself once port-run resolves its addresses.
