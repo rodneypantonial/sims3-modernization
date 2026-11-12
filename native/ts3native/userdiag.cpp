@@ -659,7 +659,7 @@ static void UdWorldLoad() {  // sim thread, from the ts3fixes "world:" line
 static const LONG kUdHitchLines = 6000;
 static const LONG kUdUfPlanLines = 30000;  // ufplan: disk guard (~3 MB); ts3fixes sends at most 120 a minute (UnseenFallback.cs)
 static bool UdHitchLine(const char* s) {
-    return !strncmp(s, "boatreplan:", 11) || !strncmp(s, "gangway:", 8) || !strncmp(s, "owreset:", 8) || !strncmp(s, "alarmtime:", 10) || !strncmp(s, "lotpass:", 8);
+    return !strncmp(s, "boatreplan:", 11) || !strncmp(s, "owreset:", 8) || !strncmp(s, "alarmtime:", 10) || !strncmp(s, "lotpass:", 8);
 }
 static const DWORD kUdTextHi = 0x87000000;  // 0x86000000 exact = the stuck-check PROBE mark (docs/163 §10)
 static int g_udTxtN;
@@ -676,8 +676,7 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
         case 7: return CpOp(lo);    // compaction.cpp: [Compaction] verdict and steps (docs/204)
         case 8: return (u8)g_asLiveUnseen;  // autshadow-run.cpp: [AutShadow] Unseen=1 (docs/222); no icalls when [AutShadow] is off
         case 10: case 11: KdScopeSet(lo, ((hi >> 16) & 0xFF) == 10 ? 1 : 2); return 1;  // docs/197 §7: UfWhy of route lo, before its START or sync plan
-        case 12: KdScopeClear(lo); GvaPlanEnd(); return 1;  // docs/197 §7: route lo's plan is over (docs/250 §7.0: gvattr's plan end)
-        case 35: return GvaSrcMsg(lo);  // docs/250 §7.0 (gvro.cpp): the next plan's source class and scope, or "gvattr on?"
+        case 12: KdScopeClear(lo); return 1;  // docs/197 §7: route lo's plan is over
         case 13: KdScopeSet(lo, 3); return 1;  // docs/197 §7: a seen NPC (KdSeenNpcCeilMs); an old package never sends it
         case 14: case 15: case 16: case 17: case 18: case 19: return CtOp((hi >> 16) & 0xFF, lo);
         case 20: case 21: case 22: case 23: case 24: case 25: case 26: case 27: case 28: case 29:

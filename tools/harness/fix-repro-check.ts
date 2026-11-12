@@ -25,7 +25,6 @@ const MONO ='Mono offload, parked: no Mono game runs allowed now (memory mono-pa
 const DEADSIM = 'opt-in, Dalexlol leak stress (#40, al342-al358)';
 // Switches with no repro on purpose. Dead ends: "dead end: <evidence>"; diagnostics; parked work.
 export const EXEMPT: Record<string, string> = {
-  equalsfast: 'exact speedup, no hitch to repro (docs/258 option C): judged by the native selftest and the monohost exactness corpus (MONOHOST_EQFAST=1, 0 mismatches) and the BP/IP --ab equalsfast timing pair (queues/equalsfast-1112.json)',
   boatgetoutdiag: 'diagnostic only, off (docs/257 §8): the GetOutIntoWater NRE is natural (about one per few IP hours), no forced repro exists; turned on in natural IP correctness jobs',
   buyiconleak: '2026-11-11 leak fixes (docs/545 §1): off/on in one session by ts3agent phase runs (switch on mid-session via patches, leak_census counters before/after); no harness queue repro yet',
   casrowleak: '2026-11-11 leak fixes (docs/545 §1): off/on in one session by ts3agent phase runs (switch on mid-session via patches, leak_census counters before/after); no harness queue repro yet',
@@ -67,7 +66,6 @@ export const EXEMPT: Record<string, string> = {
   autofftick: OFFLOAD,
   jit: 'Mono speed, not a hitch fix: no repro makes script calls more frequent than plain play; correctness by jit-verify.json (Mode=2) and the selftest TestMonoJit, timing by jit-ab.json once jit-verify passed (docs/527 §5)',
   mintcall: 'Mono speed, not a hitch fix: no repro makes script calls more frequent than plain play; correctness by mintcall-verify.json (CallPath=2) and the monohost selftests, timing by the plain-play pairs in mintcall-ab.json (docs/139 §8)',
-  steerretry: 'transient [SteerRO] fallbacks (a W1-W6 writer holding QL, a tripwire) with no deterministic trigger: measured per site (srrN / srrOk / srrFb / srrFbWaitUs) in the h4-goalvalid natural jobs (--ab watchdogasync,steerretry, docs/250 §8), correctness by the selftest TestSteerRO (retry ok, fallback after 4, State not retried, job ended)',
   ufhostlate: 'diagnostic: [UnseenFallback] HostLate=1 only splits the late-count into host vs work time (docs/202), no behaviour change; checked by the selftest TestUfHostLate (modes 0 and 1)',
   workerwait: 'worker CPU, not a hitch fix: no repro makes the job-start wait more likely than plain play; measured by the off/on plain-play pairs in route-worker-wait.json, correctness by the selftest TestRouteWorkerWait (docs/203 §6)',
   steershadow: SHADOW, lotfdshadow: SHADOW, obstructedshadow: SHADOW, slotenabledshadow: SHADOW, avoidshadow: SHADOW,
