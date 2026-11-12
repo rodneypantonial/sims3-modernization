@@ -252,8 +252,18 @@ static void GcCapWindow(bool strict, const char* ev) {
     if (!g_gcCapBytes || strict == g_gcStrict) return;
     const DWORD from = strict ? g_gcCapBytes : 0x800000u, to = strict ? 0x800000u : g_gcCapBytes;
     Site s[2] = {kBlCap[0], kBlCap[1]};
+#ifdef TS3A_TABLE
+    // EA: start from this build's own bytes (the spacing global's address differs from the Steam literal), and keep
+    // ExpectedAt from swapping the changed immediate back to the stock 0x800000 (the strict switch always SKIPped on EA)
+    for (Site& x : s) memcpy(x.expect, ExpectedAt((const void*)(uintptr_t)x.addr, x.expect, x.len), x.len);
+    t_expLiteral = true;
+#endif
     memcpy(s[0].expect + 1, &from, 4), memcpy(s[1].expect + 6, &from, 4);
-    if (!PatchImm32(strict ? "GC black-list clamp strict" : "GC black-list clamp lenient", s, 2, to)) return;
+    const bool ok = PatchImm32(strict ? "GC black-list clamp strict" : "GC black-list clamp lenient", s, 2, to);
+#ifdef TS3A_TABLE
+    t_expLiteral = false;
+#endif
+    if (!ok) return;
     g_gcStrict = strict;
     Ts3nCounters& k = ts3native_counters;
     (strict ? k.gcStrictN : k.gcLenientN)++;
