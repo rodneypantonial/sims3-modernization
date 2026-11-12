@@ -5400,6 +5400,8 @@ static bool ApplyD3dMultithreaded(const wchar_t* ini) {
 }
 
 #include "launcherfix.cpp"  // docs/255: [LauncherFix] EA launcher telemetry busy-wait (launcher host only)
+#include "restart.cpp"  // docs/530 step 1: [Wrapper] Channel / Restart, the game side of the host's lifecycle (default off)
+#include "wrapper.cpp"  // docs/530 step 0: [Wrapper] the game window as a child of ts3wrap.exe's host window (spike, default off)
 static bool g_otherHost;  // not TS3W.exe (the launcher also loads the ASI loader): no exit work at DLL_PROCESS_DETACH
 
 static void Run(HMODULE self) {
@@ -5424,6 +5426,10 @@ static void Run(HMODULE self) {
         if (ReadFile(oldLog, priorLog, sizeof(priorLog) - 1, &got, NULL)) priorLog[got] = 0;
         priorLog[strcspn(priorLog, "\r\n")] = 0;
         CloseHandle(oldLog);
+    }
+    if (!g_otherHost && GetEnvironmentVariableW(L"TS3WRAP_CHANNEL", NULL, 0)) {  // docs/530 step 1: the game before the restart
+        wchar_t before[MAX_PATH];
+        if (_snwprintf_s(before, MAX_PATH, _TRUNCATE, L"%s.before-restart.log", path) > 0) CopyFileW(log, before, FALSE);
     }
     g_log = CreateFileW(log, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
@@ -5556,6 +5562,7 @@ static void Run(HMODULE self) {
         keepLog = ApplyMintCall(ini) || keepLog;   // docs/139 §8: after every code patch (checks EA's call path bytes), before Satb
         keepLog = ApplyMonoJit(ini) || keepLog;    // docs/527 §4.1: after every code patch, before [AutShadow]
         g_asJobState = &g_async.state;  // E3 level gate: no lot-table lookup while a job runs (autshadow.cpp AsLevelGate)
+        keepLog = ApplyWrapper(ini, self) || keepLog;   // docs/530 step 0: import slots only, long before the game window exists
         keepLog = ApplyAutShadow(ini) || keepLog;  // docs/122 part 1: guard thunks after every other table owner (routesnap)
         ApexStartLate();  // zzApexRadiance.asi loads after us (its lines reach the log only while it stays open)
     }
@@ -5574,6 +5581,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
         JcnExit();  // [MonoJit] Count: the last count report
         LuExit();  // [RouteSnap] LotUseReadout: the exit summary (last walk's bytes, final job counts)
         UdExit();
+        WrExit();  // docs/530 step 1: the host reads a normal exit
         CrCleanExit();
         FgRevert();  // [Harness] ForegroundRender: original bytes back
     }
