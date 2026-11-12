@@ -41,9 +41,48 @@ const unresolvedRows = (addrHdr: string) => [...addrHdr.matchAll(/^\/\/ unresolv
 export const keysOff = (addrHdr: string) => { const un = new Set(unresolvedRows(addrHdr).map((m) => parseInt(m[1], 16))); return new Set(Object.keys(KEY_ADDRS).filter((k) => KEY_ADDRS[k].some((a) => un.has(a)))); };
 // EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
 // ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
-// SimNoTexture (docs/67 s34.5) is not in the v0.2.11 tree (ea169-port only), so no EA_SET row for it here.
 // ThreadStack.Skip: SimulatorThread_Proc, a runtime string the address table cannot rewrite; the Steam value left the EA sim thread capped.
 export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360" };
+// EA-port-only keys (TS3N_EA_PORT in ts3addr.h: compiled into the EA asi only, so the Steam ts3native.ini has no line for them):
+// appended to the end of their section; a section ts3native.ini lacks goes at the end of the file. Values as the v0.2.10 EA
+// rc ini shipped them: SimNoTexture on (player crash, deterministic repro, the fix passes it, docs/67 §34.5), ImageGuard off
+// (build.yml ALLOW_ON turns it on in the minimal ini, as on v0.2.10 EA).
+export const EA_ADD: Record<string, string[]> = {
+    EaCrashFixes: [
+        "; EA build only: SimNoTexture=1 (docs/67 §34, crash at 0x5EBE31 / EA 0x5EC891, also seen on vanilla): when a Sim's composite",
+        "; texture could not be created (seen near the end of address space), the outfit build read its width through a null pointer.",
+        "; The build now skips that composite, the path the game already takes for a texture too wide. That Sim build has no",
+        "; composite texture. One \"ea fix: SimNoTexture\" line for each of the first 8.",
+        "; SimNoTextureRepro=0 TEST KEY (docs/67 §34): 1 = every Sim composite texture create fails, N = every Nth. With SimNoTexture=0 it",
+        "; crashes at the first Sim build by design. Never a player setting.",
+        "; SimNoTextureAtlas=0 (docs/67 §34.6, sibling site EA 0x5E16FA / Steam 0x5E082A, no crash report yet): the same read in the",
+        "; household atlas build. 1 = a missing texture skips that composite. Static only, never run live.",
+        "SimNoTexture=1", "SimNoTextureAtlas=0", "SimNoTextureRepro=0",
+    ],
+    ImageGuard: [
+        "; EA build only. Size check on the raster buffer of the game's image decode (docs/232 Run 8d, imgguard.cpp). The",
+        "; decode (PNG, JPEG, DDS, TGA, BMP, GIF) sizes its pixel buffer as (bits per pixel / 8) * width * height from the image",
+        "; header, unchecked: a huge or corrupt image asked for ~1.9 GB at the main menu on the EA app build (run 8c), the",
+        "; allocation failed and the game crashed in msvcr80. Every decode of LogMB or more is logged as an \"IMAGEGUARD\" line",
+        "; (size, codec, resource key when the caller has one, caller address). Over MaxMB, or a size that wraps in 32 bits:",
+        "; \"IMAGEGUARD REJECT\", and the decode returns its normal failure, so the game skips that image instead of crashing.",
+        "Enabled=0", "LogMB=64", "MaxMB=512",
+    ],
+};
+// ts3native.ini lines with EA_ADD in place (blank lines before the next section stay after the added keys)
+export function addEaKeys(lines: string[], add: Record<string, string[]> = EA_ADD): string[] {
+    const out: string[] = [], done = new Set<string>();
+    let sec = "", tail: string[] = [];
+    const flush = () => { if (add[sec] && !done.has(sec)) out.push(...add[sec]), done.add(sec); out.push(...tail); tail = []; };
+    for (const l of lines) {
+        const m = /^\[(\w+)\]/.exec(l);
+        if (m) { flush(); sec = m[1]; out.push(l); continue; }
+        if (l.trim() === "") tail.push(l); else { out.push(...tail, l); tail = []; }
+    }
+    flush();
+    for (const s of Object.keys(add)) if (!done.has(s)) out.push("", "[" + s + "]", ...add[s]);
+    return out;
+}
 // the player test build's settings on top of the rc ini (docs/232 "Test build"): the crash guard ([MemDiag] Blockers and
 // [Decompress] RepeatLog are ea169-port only, not in the v0.2.11 tree)
 export const TEST_SET: Record<string, string> = { "CrashReport.Enabled": "1" };
@@ -101,7 +140,7 @@ function render(lines: string[], zero: (sec: string) => boolean, force: (sec: st
 }
 
 function load() {
-    const ini = readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/);
+    const ini = addEaKeys(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/));
     const sections: string[] = [], enabled: Record<string, string> = {};
     let sec = "";
     for (const l of ini) { const m = /^\[(\w+)\]/.exec(l); if (m) { sec = m[1]; sections.push(sec); } const e = /^Enabled=(-?\d+)/.exec(l); if (e && sec) enabled[sec] = e[1]; }
@@ -132,6 +171,9 @@ function selfCheck() {
     const test = render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, { ...EA_SET, ...TEST_SET }).split("\r\n");
     const base = rc.split("\r\n"), changed = test.filter((l, i) => l !== base[i]);
     ok(test.length === base.length && [...changed].sort().join() === Object.entries(TEST_SET).map(([k, v]) => k.split(".")[1] + "=" + v).sort().join(), "test ini differs from rc only by TEST_SET: " + changed);
+    ok(addEaKeys(["[A]", "x=1", "", "[B]", "y=1"], { A: ["k=2"], C: ["z=3"] }).join() === "[A],x=1,k=2,,[B],y=1,,[C],z=3", "addEaKeys");
+    const eaRc = render(addEaKeys(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/)), () => false, () => false, rcZeroKey, EA_SET);
+    ok(/^SimNoTexture=1\s*$/m.test(eaRc) && /\r\n\[ImageGuard\]\r\n(;[^\r]*\r\n)*Enabled=0\r\n/.test(eaRc), "EA rc ini: SimNoTexture=1, [ImageGuard] Enabled=0");
     console.log("ea-ini self-check: ok");
 }
 

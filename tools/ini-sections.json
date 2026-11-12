@@ -90,6 +90,7 @@
  "P6Waits": ["p6wait.cpp"],
  "ResourceCache": ["rctrim.cpp"],
  "EaCrashFixes": ["eafix.cpp", "wastar.cpp"],
+ "ImageGuard": ["imgguard.cpp"],
  "IlPatch": ["ilpatch.cpp"],
  "GcGrowLog": ["gcgrow.cpp"],
  "LauncherFix": ["launcherfix.cpp"]
