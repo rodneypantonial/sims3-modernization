@@ -74,7 +74,9 @@ export function scanText(text: string, file: string, data: Range[] = DATA_DEFAUL
             }
             i += id[0].length; continue;
         }
-        const m = /^0[xX]([0-9A-Fa-f]{6,8})([uUlL]*)(?![\w.])/.exec(text.slice(i, i + 16));
+        // MASM hex (0D5A9D2h) is legal only inside __asm and was invisible to the 0x scan (ThumbStall EA crash at 0xD5A9D2, 2026-11-13)
+        const masm = asmDepth >= 0 || asmLine === line ? /^0*([0-9][0-9A-Fa-f]{5,7})[hH](?![\w.])/.exec(text.slice(i, i + 16)) : null;
+        const m = masm ?? /^0[xX]([0-9A-Fa-f]{6,8})([uUlL]*)(?![\w.])/.exec(text.slice(i, i + 16));
         if (!m || (i > 0 && /[\w.]/.test(text[i - 1]))) { i++; continue; }
         if (pp.includes(true)) { i += m[0].length; continue; }
         const addr = parseInt(m[1], 16), sect = sectOf(addr);
@@ -83,7 +85,8 @@ export function scanText(text: string, file: string, data: Range[] = DATA_DEFAUL
             const before = text.slice(lineStart, i), after = lineText.slice(i - lineStart + m[0].length);
             const row: Row = { file, line, col: i - lineStart + 1, lit: m[0], addr, sect, kind: "wrap", why: "" };
             const stmt = before.split(/[;{}]/).pop()!;
-            if (/TS3A\(\s*$/.test(before)) row.kind = "wrapped";
+            if (masm) [row.kind, row.why] = ["manual", "inline asm (MASM hex)"];
+            else if (/TS3A\(\s*$/.test(before)) row.kind = "wrapped";
             else if (asmDepth >= 0 || asmLine === line) [row.kind, row.why] = ["manual", "inline asm"];
             else if (ppKind && ppKind !== "define") [row.kind, row.why] = ["manual", `#${ppKind}`];
             else if (/\bcase\b[^:]*$/.test(stmt)) [row.kind, row.why] = ["manual", "case label"];
@@ -99,6 +102,11 @@ export function scanText(text: string, file: string, data: Range[] = DATA_DEFAUL
     }
     return rows;
 }
+
+// Raw TS3W addresses inside __asm cannot take TS3A(): on the EA build they keep their Steam value and jump or read there.
+// Each must be a per-build literal under `#ifdef TS3A_TABLE`, tied to the table by a static_assert (mintcall.cpp MC_ASM_*),
+// which the scan skips; any row left here is a port bug. `scan`, port-run and ea-ini fail on it.
+export const rawAsmRows = (rows: Row[]) => rows.filter((r) => r.kind === "manual" && r.why.startsWith("inline asm"));
 
 // rewrite the wrap rows (right to left per line so columns stay valid)
 export function applyText(text: string, rows: Row[]): string {
@@ -197,6 +205,9 @@ function selfCheck() {
         "T<0x00D7E560> t; v[0x00D7E560] = 1; ok = a < 0x00D7E560 || a >= 0x00D7E570;",  // 11: template, [], comparison wraps
         "{ 0x00D718CC, 6, {0x8D, 0x90} },",                                     // 12: aggregate -> wrap
         "#ifdef TS3A_TABLE\n#define K_EA 0x00E598D0\n#else\n#define K_EA 0x00E59880\n#endif",  // 13-17: both branches skipped
+        "__asm {\n mov eax, 0D5A9D2h\n push 005A80A9h\n add eax, 10h\n mov ecx, 2000000h\n}",  // 18-23: MASM hex in asm (image range only)
+        "#ifdef TS3A_TABLE\n__asm mov eax, 0D5A9F2h\n#endif",                    // 24-26: per-build asm literal skipped
+        "x = 0D5A9D2h;",                                                         // 27: not asm: not a literal
     ].join("\n");
     const rows = scanText(src, "t.cpp");
     const at = (l: number) => rows.filter((r) => r.line === l).map((r) => r.kind + (r.why ? ":" + r.why.split(" ")[0] : "")).join(",");
@@ -213,6 +224,8 @@ function selfCheck() {
     ok(at(11) === "manual:template,manual:inside,wrap,wrap", "template/[] " + at(11));
     ok(at(12) === "wrap", "aggregate " + at(12));
     ok(at(14) === "" && at(16) === "", "#ifdef TS3A_TABLE block " + at(14) + "/" + at(16));
+    ok(at(19) === "manual:inline" && at(20) === "manual:inline" && at(21) === "" && at(22) === "" && at(25) === "" && at(27) === "", "MASM hex " + [19, 20, 21, 22, 25, 27].map(at).join("/"));
+    ok(rawAsmRows(rows).map((r) => r.addr.toString(16)).join() === "e59880,d5a9d2,5a80a9", "raw asm rows " + rawAsmRows(rows).map((r) => r.lit).join());
     const once = applyText(src, rows), twice = applyText(once, scanText(once, "t.cpp"));
     ok(once === twice, "apply idempotent");
     ok(once.includes("EA_MALLOC = TS3A(0x004E69D0), EA_FREE = TS3A(0x004E5920);") && once.includes("TS3A(0x00AB12AFu)") && once.includes('"call 0xAB12AF') && once.includes("case 0x00939100:") && once.includes("// 0x00D7E561"), "apply text");
@@ -282,6 +295,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
             mkdirSync(dirname(out), { recursive: true });
             writeFileSync(out, "file,line,col,literal,section,kind,why\n" + all.map((r) => [r.file, r.line, r.col, r.lit, r.sect, r.kind, `"${r.why}"`].join(",")).join("\n") + "\n");
             console.log(`${v.apply ? "applied" : "dry run"}; all rows -> ${out}`);
+            for (const r of rawAsmRows(all)) { console.log(`FAIL raw TS3W address in inline asm: ${r.file}:${r.line}:${r.col} ${r.lit} (per-build literal under #ifdef TS3A_TABLE + static_assert, as mintcall.cpp)`); process.exitCode = 1; }
         }
     }
 }
