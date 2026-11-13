@@ -10,6 +10,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { eaOnly, generated, rawAsmRows, scanText, sourceFiles } from "./addr-codemod.ts";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(repo, "native", "ts3native");
@@ -182,6 +183,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     if (v["self-check"]) selfCheck();
     else {
         const { ini, sections, enabled, map, bad, off } = load();
+        // a raw TS3W address in __asm keeps its Steam value on EA (ThumbStall 0xD5A9D2 crash): no EA ini until it is per-build
+        const asm = rawAsmRows(sourceFiles().flatMap((f) => { const t = readFileSync(join(SRC, f), "utf8"); return generated(t) || eaOnly(t) ? [] : scanText(t, f); }));
+        if (asm.length) throw new Error("raw TS3W address in inline asm (per-build literal under #ifdef TS3A_TABLE + static_assert, as mintcall.cpp): " + asm.map((r) => `${r.file}:${r.line} ${r.lit}`).join(", "));
         const zeroKey = (s: string, k: string) => off.has(s + "." + k);
         const on = (process.env.ALLOW_ON ?? "").split(" ").filter(Boolean), allow = (process.env.ALLOW ?? "").split(" ").filter(Boolean).concat(on);
         for (const s of allow) {

@@ -24,7 +24,7 @@ import { parseArgs } from "node:util";
 import { csvRow } from "./hook-sites.ts";
 import { parsePe } from "./exe-addr-map.ts";
 import { bytesTable, type BytesRow, check, extract, patchedSites, readSources, sourceTexts, type Expect } from "./patch-bytes-check.ts";
-import { dataRanges, eaOnly, gen, generated, scanText, sourceFiles } from "./addr-codemod.ts";
+import { dataRanges, eaOnly, gen, generated, rawAsmRows, scanText, sourceFiles } from "./addr-codemod.ts";
 import { readReport } from "./port-report.ts";
 import { mapExtra, portNames, readCands, readMap, steamNames, type MapRow } from "./port-ghidra-names.ts";
 
@@ -121,6 +121,8 @@ function run(v: { zip?: string; exe?: string; ref?: string; asm?: string; "allow
     const texts = sourceTexts(), gens = new Set(texts.filter(([, t]) => generated(t)).map(([f]) => f));
     const all = extract(readSources(texts)).exp, exp = all.filter((x) => !x.where.split(" ").every((w) => gens.has(w.replace(/:\d+$/, ""))));
     const data = dataRanges(refPath), scan = sourceFiles().flatMap((f) => { const t = readFileSync(join(SRC, f), "utf8"); return generated(t) || eaOnly(t) ? [] : scanText(t, f, data); });
+    for (const r of rawAsmRows(scan)) console.log(`FAIL raw TS3W address in inline asm: native/ts3native/${r.file}:${r.line} ${r.lit} (per-build literal under #ifdef TS3A_TABLE + static_assert, as mintcall.cpp)`);
+    if (rawAsmRows(scan).length) process.exit(1);
     const needed = scan.filter((r) => r.kind === "wrap" || r.kind === "wrapped").map((r) => r.addr);
     const whereBy = new Map<number, string>();
     for (const r of scan) whereBy.set(r.addr, whereBy.has(r.addr) ? whereBy.get(r.addr)!.replace(/( \(\+(\d+)\))?$/, (_, __, n) => ` (+${Number(n ?? 0) + 1})`) : `native/ts3native/${r.file}:${r.line}`);
