@@ -3076,6 +3076,19 @@ static DWORD WINAPI MtVictim(void*) {
 }
 static DWORD WINAPI MtOtherRegister(void*) { return MtRegisterCurrentThread() ? 1 : 0; }
 
+// Readable() over a span that crosses two regions (the [MonoThread] GC table: 0x1400 bytes over two pages)
+static void TestReadableSpan() {
+    u8* b = (u8*)VirtualAlloc(NULL, 0x2000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    assert(b);
+    DWORD old;
+    assert(VirtualProtect(b + 0x1000, 0x1000, PAGE_READONLY, &old));  // two regions, both readable
+    assert(Readable(b + 0xF00, 0x200));
+    assert(VirtualProtect(b + 0x1000, 0x1000, PAGE_NOACCESS, &old));  // second unreadable
+    assert(Readable(b + 0xF00, 0x100));                                // stays inside the first
+    assert(!Readable(b + 0xF00, 0x200));
+    VirtualFree(b, 0, MEM_RELEASE);
+}
+
 static void TestMonoThread() {
     g_mtOrigPush = MtFakeOrig; g_mtPushOne = MtFakeOne; g_mtPushStack = MtFakeStack; g_mtNewThread = MtFakeNewThread;
     g_mtTable = g_mtFakeTab; g_mtMaxIdx = &g_mtFakeMax; g_mtStopped = &g_mtFakeStopped;
@@ -14309,6 +14322,7 @@ int main() {
     TestTerrainGrave();
     TestIcLock();
     TestRouteGate();
+    TestReadableSpan();
     TestMonoThread();
     TestSimLoop();
     TestSimPump();
