@@ -61,9 +61,9 @@ static SgSeen& SgSlot(DWORD comp) { return g_sgSeen[(comp >> 3) & 4095]; }
 static const char* SgWhen(DWORD ret, bool after) {
     if (after) return ret ? "load end (0x951F20)" : "clone end (0x951AE0)";
     switch (ret) {
-        case 0x00952D2F: return "teardown (SlotComponent dtor 0x952D20)";
-        case 0x00951F49: return "clear before load (0x951F44)";
-        case 0x00951B5E: return "clear before clone (0x951B59)";
+        case TS3A(0x00952D2F): return "teardown (SlotComponent dtor 0x952D20)";
+        case TS3A(0x00951F49): return "clear before load (0x951F44)";
+        case TS3A(0x00951B5E): return "clear before clone (0x951B59)";
         default: return "clear (other caller)";
     }
 }
