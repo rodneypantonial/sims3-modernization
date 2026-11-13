@@ -30,7 +30,7 @@
 // which goes on at the game's own exit for a lot with nothing to connect (0x82B7F4, the target of 0x82B659): it clears the
 // byte and returns. The connection pass is skipped as before. One "ea fix: LotGridMiss" line for each of the first 8 lots.
 
-static const DWORD WA_SITE = 0x00676627, WA_BACK = 0x0067662E, WA_SKIP = 0x0067673F;
+static const DWORD WA_SITE = TS3A(0x00676627), WA_BACK = TS3A(0x0067662E), WA_SKIP = TS3A(0x0067673F);
 static const u8 kWaSite[7] = {0x8B, 0x54, 0x24, 0x1C, 0x0F, 0xB7, 0xC8};  // mov edx,[esp+1Ch]; movzx ecx,ax
 static DWORD g_waBack = WA_BACK, g_waSkip = WA_SKIP;
 static volatile LONG g_waLogged;
@@ -110,8 +110,8 @@ static bool ApplyWorldAStarRefs(const wchar_t* ini) {
 }
 
 // --- [EaCrashFixes] PortalFlagRefs ---
-static const DWORD PF1_SITE = 0x0082A1CF, PF1_BACK = 0x0082A1DA, PF1_SKIP = 0x0082A204;  // writer 1, a lot portal's stored id
-static const DWORD PF2_SITE = 0x0082B6B1, PF2_BACK = 0x0082B6B7, PF2_SKIP = 0x0082B7D5;  // writer 2, a lot waypoint's neighbour
+static const DWORD PF1_SITE = TS3A(0x0082A1CF), PF1_BACK = TS3A(0x0082A1DA), PF1_SKIP = TS3A(0x0082A204);  // writer 1, a lot portal's stored id
+static const DWORD PF2_SITE = TS3A(0x0082B6B1), PF2_BACK = TS3A(0x0082B6B7), PF2_SKIP = TS3A(0x0082B7D5);  // writer 2, a lot waypoint's neighbour
 static const u8 kPf1Site[11] = {0x8B, 0x46, 0x5C, 0x8B, 0xD1, 0x81, 0xE2, 0xFF, 0x3F, 0x00, 0x00};  // mov eax,[esi+5Ch]; mov edx,ecx; and edx,3FFFh
 static const u8 kPf2Site[6] = {0x8B, 0x0C, 0x8A, 0x03, 0x4E, 0x60};  // mov ecx,[edx+ecx*4]; add ecx,[esi+60h]
 static DWORD g_pf1Back = PF1_BACK, g_pf1Skip = PF1_SKIP, g_pf2Back = PF2_BACK, g_pf2Skip = PF2_SKIP;
@@ -194,7 +194,7 @@ static bool PfPatch(u8* at, const u8* want, size_t n, void (*stub)()) {
 }
 
 // --- [EaCrashFixes] LotGridMiss ---
-static const DWORD LG_SITE = 0x0082B608, LG_CLEAR = 0x0082B7F4;
+static const DWORD LG_SITE = TS3A(0x0082B608), LG_CLEAR = TS3A(0x0082B7F4);
 static const u8 kLgSite[6] = {0x0F, 0x84, 0xF9, 0x01, 0x00, 0x00};   // je 0x82B807 (the exit without the clear)
 static const u8 kLgClear[6] = {0x8B, 0x4B, 0x4C, 0x8B, 0x53, 0x48};  // mov ecx,[ebx+4Ch]; mov edx,[ebx+48h] (the lot id)
 static DWORD g_lgClear = LG_CLEAR;

@@ -27,14 +27,14 @@
 #error define EQ_CTR (the struct holding the eq* counters) before including equalsfast.cpp
 #endif
 
-static const DWORD EQ_ICALL = 0x00E7A590, EQ_GETFIELDS = 0x00E70180;
+static const DWORD EQ_ICALL = TS3A(0x00E7A590), EQ_GETFIELDS = TS3A(0x00E70180);
 static const u8 kEqPrologue[6] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x10};  // push ebp; mov ebp,esp; sub esp,10h
 typedef bool(__cdecl* EqFn)(const u8* self, const u8* that, void** fields);
 typedef const u8*(__cdecl* EqFieldsFn)(const u8* klass, void** iter);
 // the game's (the selftest and the host point them at their own)
 static EqFn g_eqOrig;  // the trampoline: vanilla InternalEquals
 static EqFieldsFn g_eqGetFields = (EqFieldsFn)(uintptr_t)EQ_GETFIELDS;
-static CRITICAL_SECTION* g_eqLoaderCs = (CRITICAL_SECTION*)(uintptr_t)0x011F43A8;
+static CRITICAL_SECTION* g_eqLoaderCs = (CRITICAL_SECTION*)(uintptr_t)TS3A(0x011F43A8);
 
 enum { EQ_MAXF = 8, EQ_TAB = 8192, EQ_POOL = 4096, EQ_PROBE = 16 };
 struct EqPlan {

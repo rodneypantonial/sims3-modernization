@@ -12,7 +12,7 @@
 // entry work (new interpreter state, exception frame), which get_Value (no call, no throw, `this` never null here) does not need.
 // The check covers the whole body up to 0xDB0995 (frame, memset, the window, the result reads after it): another owner or
 // another exe = SKIP. No other mod is known to patch this body (S3SS source, Apex 3.0.0 / 3.1.0 binaries: no 0xDB09xx address).
-static const DWORD TD_BODY = 0x00DB0940, TD_SITE = 0x00DB095E;
+static const DWORD TD_BODY = TS3A(0x00DB0940), TD_SITE = TS3A(0x00DB095E);
 static const u8 kTdBody[0x56] = {
     0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x8C, 0x00, 0x00, 0x00, 0x56, 0x57, 0x6A, 0x48, 0x8D, 0x45, 0xB4,  // +0x00 frame, memset args
     0x6A, 0x00, 0x50, 0xE8, 0x60, 0xDF, 0x1C, 0x00, 0x8B, 0x75, 0x10, 0x8B, 0x7D, 0x0C, 0x56, 0x57,  // +0x10 call memset; esi, edi; window

@@ -15,11 +15,16 @@
 // must match at install, else the row stays off. All rows: readers with no managed call, allocation or throw once `this` is
 // not null (docs/220 class `reader`, confidence high; the guard bails on a null receiver before this path).
 struct JitBoundCallee { const char* name; DWORD inv, invN, body, bodyN, extra, extraN, fnv; };
+#ifdef TS3A_TABLE  // EA app 1.69.47: the same code moved; only 4-byte operands differ (docs/data/ea169-overrides.csv, fold PR)
+#define JIT_BOUND_FNV(steam, ea) ea
+#else
+#define JIT_BOUND_FNV(steam, ea) steam
+#endif
 static const JitBoundCallee kJitBound[] = {
     // hash loop over the chars; [0x11EF7BC] (OffsetToStringData's icall, 8) under the IC-nesting setjmp; null this = NRE in +0x20
-    {"System.String.GetHashCode()", TS3A(0x00DBFBF0), 0x28, TS3A(0x00DBFAE0), 0x104, 0, 0, 0x958D9EA6},
+    {"System.String.GetHashCode()", TS3A(0x00DBFBF0), 0x28, TS3A(0x00DBFAE0), 0x104, 0, 0, JIT_BOUND_FNV(0x958D9EA6, 0x99FCCCFF)},
     // [0x11F06E0] = Equals(string,string)'s RuntimeMethod: its bound body 0xDA4200 (compare lengths, then the chars) when +0x28 != 0
-    {"System.String.Equals(string)", TS3A(0x00DDD900), 0x2E, TS3A(0x00DDD880), 0x78, TS3A(0x00DA4200), 0x10A, 0x8B23206C},
+    {"System.String.Equals(string)", TS3A(0x00DDD900), 0x2E, TS3A(0x00DDD880), 0x78, TS3A(0x00DA4200), 0x10A, JIT_BOUND_FNV(0x8B23206C, 0x687F6D46)},
 };
 enum { JIT_BOUND_N = sizeof(kJitBound) / sizeof(kJitBound[0]) };
 // counters v194 (docs/registry.md), 12 int32; ts3native points g_jitBc at its block, the host keeps its own
