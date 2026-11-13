@@ -199,3 +199,32 @@ The reference core: "accepted set 1 (by content)", no misses.
 - One more arm-a start (the first) froze on the startup loading screen, before the main menu: not responding, CPU idle.
   It was killed after 4 minutes. The two reruns of the same arm loaded and passed. This change runs only when a world has
   loaded (the hash runs from GuardSweep), so the freeze is not from it [inferred]. There was no hang capture.
+
+## 9. EA app 1.69.47 build (2026-11-13, EA-only branch `feature/ea169-autshadow-hashes`)
+
+On the EA laptop parity run of v0.2.11 (docs/260 §7.5, setup with simler90 UPDATE242 as the core, so SGS + SGO are accepted
+set 1) [AutShadow] skipped 17 owners: ScriptCore, SimIFace, Sims3Metadata, Sims3StoreObjects and UI are EA 1.69 builds, not on
+the content list. docs/260 counted 11 differing methods; that is the log cap (closure lines stop after 11, hierarchy lines
+after 10). The real count, by `tools/autshadow-il-hashes.ts --one` on the EA 1.69 modules plus simler90's SGS + SGO, is
+56: 1 closure method (`GameUtils::GetWorldType`, IL hash 49edb73e, the same hash the game logged) and 55 hierarchy methods
+(7 `SimBuilder` methods in SimIFace, 48 Sims3StoreObjects methods, mostly `ConfigureInteraction` overrides) [verified].
+Their owner masks give exactly the 17 owners the game logged [verified].
+
+**Review.** Every one of the 56, and every one of the 961 keys that differ on a vanilla EA 1.69 install (all 7 modules EA's),
+has the same normalized IL as Steam 1.67 (`managed-callgraph.ts ilShape`: opcodes, member names of every token, constants,
+strings, branch targets, EH clauses, local types): 957 equal, 4 equal once compiler-generated names are folded
+(`InteractionInstance::CreateTooltipCallback` with its renamed closure class, whose `.ctor` and lambda body are equal too;
+`Localization::FillInTokens`, `Localization::LocalizeOpportunityToken`, `Sim+Dare+Definition::TestDareRestrictions` with
+their `<PrivateImplementationDetails>` string-switch caches) [verified]. The hash differs only by raw tokens it cannot name
+(generic instances, `0a000119` in the game's GetWorldType trace) and by those generated names. Same body = no new icall,
+no new write, no yield and the same callees as the cleared Steam build, so all 56 (and all 961) are safe for the worker.
+
+**Change.** `tools/autshadow-il-hashes.ts` hashes EA 1.69 (`game-copy/assemblies-ea169`) as a fourth build:
+`AutShadowIlHashes.Known` 4,477 -> 5,438 hashes, KnownMvids + 7 EA 1.69 MVIDs. ts3fixes only, no ts3native change. Offline
+check: 0 misses for EA 1.69 + simler90 SGS/SGO, 0 for vanilla EA 1.69 (3,569 of 3,570 keys; the missing one is the old
+closure class `.ctor`, renamed in EA 1.69), 0 for Steam 1.67. The content list (`kShaOther`) is unchanged: the EA modules
+still log "not on the content accept list" and still get the per-definition pass, which now passes.
+
+**In-game check (not run):** the parity job on the EA laptop with this package: no `G-M6 skips` and no `mod guard G-M6`
+line; counters [603] = 0, [2025] = 0, [606] = 0; [2024] = hierarchy methods hashed (> 0); the G-M5 skip of
+`VisitCommunityLot+Definition` (LynMods override) stays, as on Steam. Requests and jobs counted for the 16 owners.
