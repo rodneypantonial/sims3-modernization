@@ -356,24 +356,10 @@ struct Ts3nAutShadow {
     LONG rainArm;         // +0xC8C, rain/hail outdoor pairs the worker armed (RainArm with a definition)
     LONG rainSkip;        // +0xC90, of those, CreateInstance calls not made (null result)
     LONG rainMiss;        // +0xC94, armed but the call never came (disarmed with no skip: ts3fixes aborts the pair `rain`)
-    // v22: races R1b pre-warm + R2b/R3a witness ([AutShadow] Races, autraces.cpp, docs/data/races-handoff.md)
-    LONG r1On;            // +0xC98, Races in force (bit 0 R1, bit 1 R2)
-    LONG r1Calls;         // +0xC9C, lazy getters called by the pre-warm (their done flag was clear)
-    LONG r1Fills;         // +0xCA0, host converter class caches filled by the pre-warm
-    LONG r1Guard;         // +0xCA4, converter guard bits 0x11EE588 after the last pre-warm (0x7FFF = all 15)
-    LONG r1Clear;         // +0xCA8, guards still clear after the last pre-warm (the worker aborts while > 0)
-    LONG r1Aborts;        // +0xCAC, worker answers aborted by a clear guard
-    LONG r2Rows;          // +0xCB0, witness rows (37 R2 + 6 R3)
-    LONG r2Bases;         // +0xCB4, baselines taken (first cut after each world event 7)
-    LONG r2Cuts;          // +0xCB8, cuts compared
-    LONG r2Unexp;         // +0xCBC, changes of rows that must not change after load (must be 0)
-    LONG r2Runtime;       // +0xCC0, changes of rows R2a lists as runtime-written (logged)
-    LONG r2First;         // +0xCC4, witness row index + 1 of the first unexpected change
 };
-extern "C" __declspec(dllexport) Ts3nAutShadow ts3native_autshadow = {22};
+extern "C" __declspec(dllexport) Ts3nAutShadow ts3native_autshadow = {21};
 static_assert(offsetof(Ts3nAutShadow, alOn) == 0xB8C && offsetof(Ts3nAutShadow, al) == 0xBAC, "autshadow v20 layout");
-static_assert(offsetof(Ts3nAutShadow, rainArm) == 0xC8C && offsetof(Ts3nAutShadow, r1On) == 0xC98, "autshadow v21 layout");
-static_assert(offsetof(Ts3nAutShadow, r2First) == 0xCC4 && sizeof(Ts3nAutShadow) == 0xCC8, "autshadow v22 layout");
+static_assert(offsetof(Ts3nAutShadow, rainArm) == 0xC8C && sizeof(Ts3nAutShadow) == 0xC98, "autshadow v21 layout");
 
 enum { AO_OBJ, AO_LIST, AO_CUT, AO_WORLD, AO_MEMO, AO_STUB, AO_ABORT, AO_RNG };  // AO_RNG: per-unit MT streams (docs/125 §2)
 enum { AK_INT, AK_FP, AK_STRUCT, AK_REF, AK_ARRAY };
@@ -395,9 +381,7 @@ static const char* const kAsAbortName[AS_AB_N] = {"row", "pos", "memo", "rng", "
 // is a ref the game sets to a fresh managed array of 4-byte elements, kept as a pool payload and re-made on each hit.
 // AS_OF_LVL1 / AS_OF_LVLA (E3, docs/126 §4.1 correction, ledger §463): the cut fills the row only when the level bit the
 // body's footprint check would test is set (AsLevelGate); LVL1 = the level is the third argument, LVLA = every level of the lot.
-// AS_OF_HH (P6, P5): the actor gate: the worker refuses the row (abort `other`, no lookup, no learn) while the request's actor
-// is household, selected or unknown (g_asActorHh, AutShadowNative.ActorScope); a flag, so the rows need no fixed position.
-enum { AS_OF_TRUE = 1, AS_OF_DIFF = 2, AS_OF_ARR = 4, AS_OF_LVL1 = 8, AS_OF_LVLA = 16, AS_OF_HH = 32 };
+enum { AS_OF_TRUE = 1, AS_OF_DIFF = 2, AS_OF_ARR = 4, AS_OF_LVL1 = 8, AS_OF_LVLA = 16 };
 struct AsDesc {
     const char* name;
     u8 owner, kind, nArg, sz, at, reason, strMask, lotClear, nOut;
@@ -521,22 +505,13 @@ static const AsDesc kAsDesc[] = {
     // layout as Query_GetObjectsInRange (0x749770 vs 0x7496E0 differ only in the host slot, +0xC4 count vs +0xC0 array)
     // [verified]. The answer moves with every object of the type in range (a Sim type moves each tick), so it is AO_CUT:
     // re-asked through the game's body at every cut, never carried over a cut. Its own bit ([AutShadow] Tier2CountRange,
-    // g_asT2eBits bit 7) and the actor gate (AS_OF_HH: household, selected or unknown actors abort, no learn).
-    {"ScriptCore.Queries::Query_CountObjectsInRange", AO_CUT, AK_INT, 5, 4, 0, AS_AB_QUERY, 0, 0, 0, {0}, {0}, AS_OF_HH, 0},
-    // P5 slot rows (docs/data/tier2-rows35-handoff.md, ledger §466), both behind [AutShadow] Tier2SlotRows (E bits 8-9) and the
-    // actor gate. Layouts [verified, Steam 1.67]: 0x76F000 is cdecl (ulong id, uint slot hash) -> bool: object lookup 0x939560,
-    // refcount +1, slot component 0x935770, 0x951940 = linear scan of the component's slot lists (0x951750) and flag bit 0 at
-    // entry +8, refcount -1 (deleting call at 0); no lock, no +0x918 (docs/90 holds; docs/219's +0x918 note was wrong). The
-    // enabled bit is live state (portals, pools turn slots on and off), so AO_CUT. 0x76FAE0 is cdecl (ulong id) -> uint[]: the
-    // same lookups, the slot hashes (entry +4) into a local vector, host +0x84 / +0x9C make and fill the managed array, null when
-    // the object or component is missing: the shape of Slots_GetContainmentSlotNamesImpl (row 9, AO_OBJ, 4-byte elements).
-    {"ScriptCore.Slots::Slots_IsSlotEnabledImpl", AO_CUT, AK_INT, 3, 1, 0, AS_AB_ROW, 0, 0, 0, {0}, {0}, AS_OF_HH, 0},
-    {"ScriptCore.Slots::Slots_GetRoutingSlotNamesImpl", AO_OBJ, AK_ARRAY, 2, 4, 0, AS_AB_ROW, 0, 0, 0, {0}, {0}, AS_OF_HH, 0},
+    // g_asT2eBits bit 7) and the actor gate (AsWorkerAnswer: household, selected or unknown actors abort, no learn).
+    AS_D("ScriptCore.Queries::Query_CountObjectsInRange", AO_CUT, AK_INT, 5, 4, 0, AS_AB_QUERY),
 };
 static const int AS_NDESC = sizeof(kAsDesc) / sizeof(kAsDesc[0]);
 static const int AS_NT2 = 4;     // the docs/219 rows, just before the docs/126 §8 rows
-static const int AS_NT2IC = 25;  // the docs/126 §8 rows + E3 + P6 + P5 at the end of kAsDesc (the last AS_NT2E also need their bit)
-static const int AS_NT2E = 10;   // the E rows: Tier2IcNew bits 0-3, bit 4 = Tier2HouseboatRow, bits 5-6 = Tier2IcNew bit 4 (E3), bit 7 = Tier2CountRange (P6), bits 8-9 = Tier2SlotRows (P5); P6 and P5 also carry AS_OF_HH (actor gate)
+static const int AS_NT2IC = 23;  // the docs/126 §8 rows + E3 + P6 at the end of kAsDesc (the last AS_NT2E also need their bit)
+static const int AS_NT2E = 8;    // the E rows: Tier2IcNew bits 0-3, bit 4 = Tier2HouseboatRow, bits 5-6 = Tier2IcNew bit 4 (E3), bit 7 = Tier2CountRange (P6; stays the last row: AsWorkerAnswer gates kAsDesc[AS_NDESC - 1])
 static bool g_asTier2Rows;       // [AutShadow] Tier2Rows
 static bool g_asTier2IcRows;     // [AutShadow] Tier2IcRows (only with Tier2Rows)
 static DWORD g_asT2eBits;        // per E row, default 0 (all off)
@@ -863,10 +838,10 @@ static void AsMaskRet(const AsDesc& d, DWORD* r) {
 // lookup itself would wait at gate 12 (docs/195): skip. Sim thread (the cut) only.
 typedef u8*(__fastcall* AsLvLotAtFn)(u8* wm, void* edx, float x, float z);   // 0xC68990, ret 8
 typedef u8*(__fastcall* AsLvGipFn)(u8* p, void* edx, DWORD lo, DWORD hi);     // 0x62FB60, ret 8
-static AsLvLotAtFn g_asLvLotAt = (AsLvLotAtFn)(uintptr_t)0x00C68990;
-static AsLvGipFn g_asLvGip = (AsLvGipFn)(uintptr_t)0x0062FB60;
-static u8* const* g_asLvWm = (u8* const*)(uintptr_t)0x011ECBC4;
-static u8* const* g_asLvRw = (u8* const*)(uintptr_t)0x011D9128;
+static AsLvLotAtFn g_asLvLotAt = (AsLvLotAtFn)(uintptr_t)TS3A(0x00C68990);
+static AsLvGipFn g_asLvGip = (AsLvGipFn)(uintptr_t)TS3A(0x0062FB60);
+static u8* const* g_asLvWm = (u8* const*)(uintptr_t)TS3A(0x011ECBC4);
+static u8* const* g_asLvRw = (u8* const*)(uintptr_t)TS3A(0x011D9128);
 static volatile LONG* g_asJobState;  // &g_async.state (ts3native.cpp; A_IDLE = 0); NULL in the host
 static LONG g_asLvFill, g_asLvSkip;  // logged: Mode R's skip count (I-131-8)
 static bool AsLevelGate(const AsDesc& d, const DWORD* a) {
@@ -1142,7 +1117,7 @@ static int g_asTransient;
 // map (+0x1678): those stay unknown, as do ids with no handle [verified disassembly]. [inferred, I-403-2: an id's handle and
 // class do not change while the object lives and the handle outlives event 5; the typed ListAudit rows and Mode R check it]
 static int g_asHostCls;
-static const DWORD* const g_asHostPP = (const DWORD*)(uintptr_t)0x011D4BBC;  // MonoScriptHost* (the getter 0x7692B0 reads it)
+static const DWORD* const g_asHostPP = (const DWORD*)(uintptr_t)TS3A(0x011D4BBC);  // MonoScriptHost* (the getter 0x7692B0 reads it)
 typedef DWORD(__fastcall* AsHostListFn)(void* host, void* edx, DWORD type, const AsU64* ids, DWORD n);  // thiscall, ret 0xC
 // the host's id -> handle maps (0xD726F0): {?, buckets +4, bucket count +8}; node {id lo, id hi, ?, handle +0xC, next +0x10}
 static const u8* AsHostNode(const u8* map, AsU64 id) {
@@ -1354,7 +1329,7 @@ static void AsObjRegister() {
     }
 }
 
-#include "autraces.cpp"  // [AutShadow] Races: R1b pre-warm, R2b/R3a witness (docs/data/races-handoff.md)
+#include "autraces.cpp"  // [AutShadow] Races bit 2: R2c worker drain (docs/data/races-handoff.md; R1b / R2b not in this release)
 
 // routesnap's World_FireEvent detour, sim thread (docs/76 §2): world events 2, 3, 5, 7, 9, 0x0A and lot events 0x0D-0x10,
 // 0x46 force a full rebuild; 0x11 (OnObjectLotUpdate) moves objects between lot lists
@@ -1390,10 +1365,10 @@ static void AsLearn(DWORD idx, const DWORD* key, int n) {
 
 // worker run bounds (part 2): only inside the sim's quiescent window, so never during a cut; a run that overruns keeps
 // its version held and the next cut writes the other one
-// P6/P5 actor gate (AS_OF_HH rows): 1 = the request the worker is scoring has a household, selected or unknown actor. ts3fixes sets it per
+// P6 actor gate: 1 = the request the worker is scoring has a household, selected or unknown actor. ts3fixes sets it per
 // request (AutShadowNative.ActorScope, worker only); every run starts at 1, so a ts3fixes without the call keeps it shut
 static volatile LONG g_asActorHh = 1;
-static LONG g_asActorHhAborts;  // AS_OF_HH row reads (P6 CountObjectsInRange, P5 slot rows) refused by the gate (selftest; runs: the abortic line)
+static LONG g_asActorHhAborts;  // Query_CountObjectsInRange reads refused by the gate (selftest; runs: the abortic line)
 void AsWorkerBegin() { InterlockedExchange(&g_asHeld, g_asPub); InterlockedExchange(&g_asStop, 0); InterlockedExchange(&g_asActorHh, 1); }
 void AsWorkerEnd() { InterlockedExchange(&g_asHeld, -1); }
 
@@ -1409,11 +1384,10 @@ static int AsWorkerAnswer(DWORD idx, DWORD* args, AsRet* r) {
     const AsDesc* d = g_asDescOf[idx];
     if (g_arGate) { InterlockedIncrement(&ts3native_counters.r2cGateAborts); AsAbort(AS_AB_STOP, idx); return fp; }  // races R2c
     if (g_asStop) { AsAbort(AS_AB_STOP, idx); return fp; }
-    if (g_arR1Bad && (g_arOn & 1)) { InterlockedIncrement(&k.r1Aborts); AsAbort(AS_AB_OTHER, idx); return fp; }  // races R1b
     if (!d) { AsAbort(g_asNoDesc[idx], idx); return fp; }  // never the body: H12 route ICs would answer for handle 0
     if (d->owner == AO_ABORT) { AsAbort(d->reason, idx); return fp; }
-    // P6, P5: household Sims never get these rows' answers (CLAUDE.md household rule): no lookup, no learn, the game scores it
-    if ((d->of & AS_OF_HH) && g_asActorHh) { InterlockedIncrement(&g_asActorHhAborts); AsAbort(AS_AB_OTHER, idx); return fp; }
+    // P6: household Sims never get this row's answer (CLAUDE.md household rule): no lookup, no learn, the game scores it
+    if (d == &kAsDesc[AS_NDESC - 1] && g_asActorHh) { InterlockedIncrement(&g_asActorHhAborts); AsAbort(AS_AB_OTHER, idx); return fp; }
     if (d->owner == AO_RNG) return AsRngWorker(idx, r);
     if (d->owner == AO_STUB) {
         if (!g_asEmptyStr) AsAbort(AS_AB_REF, idx); else r->lo = (DWORD)(uintptr_t)g_asEmptyStr;
@@ -1572,12 +1546,12 @@ static __declspec(naked) void AsGuardEntry() {
 // [0x11F2D84] (non-atomic ++/--). cdecl, arg 2 = MonoObject** exception out; the body's error exit stores the exception
 // there and returns [verified: 0xDA9F94..0xDAA08A]. Worker: abort `fmt` and leave through the same contract with an
 // exception, never touching the counter.
-static const DWORD AS_FMT_AT = 0x00DA9790;
+static const DWORD AS_FMT_AT = TS3A(0x00DA9790);
 static const u8 kAsFmtPro[6] = {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF8};  // push ebp; mov ebp,esp; and esp,-8
 static void* g_asFmtTramp;
 static void* g_asFmtExc;  // part 2: a preallocated, rooted exception; else one is made on the worker (P3 lock)
 typedef void*(__cdecl* AsNewExcFn)();
-static AsNewExcFn g_asNewExc = (AsNewExcFn)(uintptr_t)0x00E770E0;  // mono_get_exception_null_reference (docs/118 §2)
+static AsNewExcFn g_asNewExc = (AsNewExcFn)(uintptr_t)TS3A(0x00E770E0);  // mono_get_exception_null_reference (docs/118 §2)
 static void __cdecl AsFmtAbort(void** exc) {
     AsAbort(AS_AB_FMT, (DWORD)-1);
     if (exc) *exc = g_asFmtExc ? g_asFmtExc : g_asNewExc();
@@ -1722,10 +1696,10 @@ static bool AsIsActor(AsU64 id) {
 // walk across lots if listPrintUs shows it
 typedef void*(__fastcall* AsFindLotFn)(void* mgr, void* edx, DWORD lo, DWORD hi, DWORD z);
 typedef const u8*(__fastcall* AsCompFn)(const void* obj, void* edx, DWORD bit);
-static void* const* g_asWmPP = (void* const*)(uintptr_t)0x011ECBC4;
-static AsFindLotFn g_asFindLot = (AsFindLotFn)(uintptr_t)0x00C62D40;
-static AsCompFn g_asComp = (AsCompFn)(uintptr_t)0x00935770;
-static const DWORD* g_asCompBit = (const DWORD*)(uintptr_t)0x011ECF08;
+static void* const* g_asWmPP = (void* const*)(uintptr_t)TS3A(0x011ECBC4);
+static AsFindLotFn g_asFindLot = (AsFindLotFn)(uintptr_t)TS3A(0x00C62D40);
+static AsCompFn g_asComp = (AsCompFn)(uintptr_t)TS3A(0x00935770);
+static const DWORD* g_asCompBit = (const DWORD*)(uintptr_t)TS3A(0x011ECF08);
 static const LONG AS_AGE_EVERY = 8;  // CutLean=1: aging and its reindex every 8th cut (unused rows live up to 7 cuts longer)
 static void AsMix(AsU64& h, DWORD v) { h ^= v; h *= 0x100000001B3ull; }
 static void AsMixVec(const u8* owner, AsU64 lot, bool world, AsU64* p) {
@@ -3140,7 +3114,6 @@ LONG AsCut() {
     k.entries = m.n;
     k.snapBytes = (LONG)(m.n * sizeof(AsEnt) + sizeof(t.idx) + m.poolN * 4);
     k.listGen = gen;
-    ArCut();  // races R2b/R3a witness (Races bit 1)
     k.cuts++;
     QueryPerformanceCounter(&t1);
     k.cutLearnUs += us(t0, tp[0]), k.cutPrepUs += us(tp[0], tp[1]), k.cutRefreshUs += us(tp[1], tp[2]);
@@ -3182,6 +3155,16 @@ static int AsInstallGuards(DWORD* lo, DWORD* hi, DWORD imgLo, DWORD imgHi, DWORD
     for (DWORD* p = lo + 1; p < hi; p++) {
         const DWORD name = *p, fn = p[-1];
         if (name < imgLo || name >= imgHi || !AsIsName((const char*)(uintptr_t)name, imgHi)) continue;
+#ifdef TS3A_TABLE
+        // EA 1.69.47: mono's corlib icall tables (class-start u16s 0x010FF678, class names, method names, functions up to
+        // 0x01100BDC) are not IC slots, but the u16 pair at 0x010FF6BC reads as {0x00ED00CD in .text, "ScriptCore.World::
+        // World_SetObjectHighlightImpl"}; a thunk there broke the class table and mono_icall_init faulted at 0xE824B2 [verified]
+        if ((DWORD)(uintptr_t)(p - 1) >= 0x010FF678 && (DWORD)(uintptr_t)(p - 1) < 0x01100BDC) {
+            k.guardSkipped++;
+            Log("autonomy shadow: 0x%08lX is in mono's icall tables, not an IC slot: left as it is", (DWORD)(uintptr_t)(p - 1));
+            continue;
+        }
+#endif
         const bool chained = AsIsSnShim(fn);
         if (!chained && (fn < textLo || fn >= textHi)) continue;
         const char* s = (const char*)(uintptr_t)name;
@@ -3233,10 +3216,9 @@ static bool ApplyAutShadow(const wchar_t* ini) {
     Log("autonomy shadow: Tier2IcRows=%d (docs/126 IC rows, needs Tier2Rows)", g_asTier2IcRows ? 1 : 0);
     const DWORD icNew = (DWORD)GetPrivateProfileIntW(L"AutShadow", L"Tier2IcNew", 0, ini);
     g_asT2eBits = (icNew & 15) | (GetPrivateProfileIntW(L"AutShadow", L"Tier2HouseboatRow", 0, ini) ? 16u : 0u) | (icNew & 16 ? 0x60u : 0u) |
-                  (GetPrivateProfileIntW(L"AutShadow", L"Tier2CountRange", 0, ini) ? 0x80u : 0u) |
-                  (GetPrivateProfileIntW(L"AutShadow", L"Tier2SlotRows", 0, ini) ? 0x300u : 0u);
-    Log("autonomy shadow: Tier2IcNew=%lu Tier2HouseboatRow=%d Tier2CountRange=%d Tier2SlotRows=%d (E rows #7 #15 #16 #21, bit 4 = E3 #2 #4; houseboat; P6 CountObjectsInRange; P5 IsSlotEnabled + GetRoutingSlotNames; need Tier2IcRows)",
-        (g_asT2eBits & 15) | (icNew & 16), (g_asT2eBits >> 4) & 1, (g_asT2eBits >> 7) & 1, (g_asT2eBits >> 8) & 1);
+                  (GetPrivateProfileIntW(L"AutShadow", L"Tier2CountRange", 0, ini) ? 0x80u : 0u);
+    Log("autonomy shadow: Tier2IcNew=%lu Tier2HouseboatRow=%d Tier2CountRange=%d (E rows #7 #15 #16 #21, bit 4 = E3 #2 #4; houseboat; P6 CountObjectsInRange; need Tier2IcRows)",
+        (g_asT2eBits & 15) | (icNew & 16), (g_asT2eBits >> 4) & 1, (g_asT2eBits >> 7) & 1);
     const u8* base = (const u8*)GetModuleHandleW(NULL);
     const IMAGE_NT_HEADERS* nt = (const IMAGE_NT_HEADERS*)(base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
     const IMAGE_SECTION_HEADER* sec = IMAGE_FIRST_SECTION(nt);

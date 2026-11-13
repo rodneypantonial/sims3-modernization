@@ -29,7 +29,16 @@
 #include <tlhelp32.h>  // the reader trap: the other threads
 
 static const DWORD JIT_OP = 0x1A9, JIT_EA_UNIMPLEMENTED = TS3A(0x00E596C2);
+#ifdef TS3A_TABLE
+// EA app 1.69.47: the interpreter range is the same code moved (8fb8e487); the bytes that differ are per build (JIT_B)
+static const DWORD JIT_PE_STAMP = TS3A_HOST_PE, JIT_PE_SIZE = TS3A_HOST_SIZE;  // the exe gate
+#define JIT_EXE_NAME TS3A_HOST_NAME
+#define JIT_B(steam, ea) ea
+#else
 static const DWORD JIT_PE_STAMP = 0x52DEC247, JIT_PE_SIZE = TS3A(0x00E5A000);  // the exe gate: Steam 1.67 (docs/527 §4.1)
+#define JIT_EXE_NAME "Steam 1.67"
+#define JIT_B(steam, ea) steam
+#endif
 // game addresses the selftest points elsewhere
 static DWORD* g_jitTableP = (DWORD*)(uintptr_t)TS3A(0x00E59880);                  // the mint jump table
 static const BYTE* g_jitOpLen = (const BYTE*)(uintptr_t)TS3A(0x01195088);        // instruction length in words, per opcode
@@ -310,16 +319,8 @@ static void Fix(u8* rel, const u8* target) { *(int*)rel = (int)(target - (rel + 
 struct JitMeth;
 struct JitEnt { DWORD ip; u8* native; DWORD orig; JitMeth* m; };
 static_assert(sizeof(JitEnt) == 16 && offsetof(JitEnt, native) == 4 && offsetof(JitEnt, orig) == 8, "JitEnter reads these offsets");
-// R1 (docs/537 §20.0): the table and the positions doubled with the code region ([MonoJit] CodeKB): at ~21 positions a body
-// the old 24576 positions held ~1170 bodies, about what a 2 MB region held, so a larger region alone would stop at "position table full"
-static const DWORD JIT_TAB_N = 1 << 16;  // JitEnter's mask
-static const int JIT_METH_N = 2048, JIT_POS_N = 49152, JIT_MAX_POS = 4000, JIT_MAX_WORDS = 16384;
-static size_t g_jitCodeBytes = 2 << 20;  // [MonoJit] CodeKB (JitCodeBytes); the selftest keeps 2 MB
-static const int JIT_REF_REASONS = 16, JIT_REF_NAMES = 32;  // R1: refusal reasons tracked, names logged per reason
-struct JitRefWhy { const char* why; LONG n; };
-static JitRefWhy g_jitRefWhy[JIT_REF_REASONS];  // under g_jitCs
-static int g_jitRefWhyN;
-static LONG g_jitRefSave = -1, g_jitRefLogged;  // JitTick: saveCount and jitRefused at the last summary
+static const DWORD JIT_TAB_N = 1 << 15;  // JitEnter's mask
+static const int JIT_METH_N = 2048, JIT_POS_N = 24576, JIT_MAX_POS = 4000, JIT_MAX_WORDS = 16384, JIT_CODE_BYTES = 2 << 20;
 struct JitMeth { u8* rm; unsigned short* code; int words; int pos0, posN; char name[96]; int nativeOps, exitOps, bytes; u8* native0; bool verifyOk, dead; DWORD tick; };
 struct JitFix { u8* rel; int targetW; bool abs; };  // abs: a switch table slot takes the label itself
 // posReal: an EA instruction start (dispatch can land there), not a superop's inner position
@@ -370,10 +371,7 @@ struct JitLazyCell { const u8* rm; u8* entry; };  // callee -> its lazy body (NU
 // rm NULL (asked again at the next call), one with no lazy body leaves entry NULL (bails until the cache changes or the
 // target compiles: the publish step refills). unbox (CallExit): 4 when the cache's class is a value type and the target takes a
 // value-type this, as EA's callvirt passes box + 4 then (0xE54B2C-0xE54B41 [verified]); the site adds it to the receiver.
-// bound ([MonoJit] BoundCall, docs/537 §22): kJitBound row + 1 when the target is an allowed EA native body (entry stays NULL).
-// tRm / tNoLazy (Count=1): the targets this site bailed "no lazy body" on, and how often (the jitcallee lines).
-struct JitGuardSite { const u8* rm; u8* entry; DWORD w38, w3E, wLoc, w3C, wVt; const DWORD* cls; DWORD unbox; int bound; const u8* tRm[4]; LONG tNoLazy[4]; };
-#include "monojit-bound.h"  // [MonoJit] BoundCall: the allow list, JitBoundCall, JitBoundEmit (shared with monohost)
+struct JitGuardSite { const u8* rm; u8* entry; DWORD w38, w3E, wLoc, w3C, wVt; const DWORD* cls; DWORD unbox; };
 static const int JIT_CELL_N = 2048, JIT_GUARD_N = 1024;
 static JitLazyCell* g_jitLazyCell;   // carved from the region
 static JitGuardSite* g_jitGuard;
@@ -385,13 +383,12 @@ static JitLazyCell* JitLazyCellFor(const u8* rm) {
     return &g_jitLazyCell[g_jitLazyCellN++];
 }
 static void __cdecl JitGuardFill(JitGuardSite* s, const u8* rm) {
-    s->rm = NULL, s->entry = NULL, s->bound = 0;
+    s->rm = NULL, s->entry = NULL;
     if (!rm) return;
     const DWORD fl = *(const DWORD*)(rm + 0x44);
     if (!(fl & 0x100)) return;
     s->rm = rm;
-    if (*(const DWORD*)(rm + 0x24)) { if (fl & 0x200) s->bound = JitBoundOf(rm); return; }  // an EA native body: BoundCall's list or a bail
-    if (!(fl & 0x200)) return;  // no this
+    if (!(fl & 0x200) || *(const DWORD*)(rm + 0x24)) return;  // no this, or an EA native body
     JitLazyCell* cell = JitLazyCellFor(rm);
     if (!cell || !cell->entry) return;
     s->w38 = *(const unsigned short*)(rm + 0x38), s->w3E = *(const unsigned short*)(rm + 0x3E);
@@ -419,7 +416,7 @@ static const int JCN_SITES = 32768, JCN_BAILS = 8192, JCN_MATS = 4096, JCN_LINES
 static const char* const kJcnBail[12] = {"null this", "null *this", "null vtable", "remoting", "boxed vt", "cache class", "no lazy body",
                                          "ForceJIT", "depth slot", "no MonoInvocation", "no arena chunk", "arena full"};
 struct JcnSite { int meth; unsigned short op; bool slow; volatile LONG n; const unsigned short* ip; };
-struct JcnBail { const u8* callerRm; const unsigned short* ip; unsigned short op; bool lazy, guard; volatile LONG r[12]; JitGuardSite* gs; };
+struct JcnBail { const u8* callerRm; const unsigned short* ip; unsigned short op; bool lazy, guard; volatile LONG r[12]; };
 struct JcnMat { const u8* rm; DWORD ip; unsigned short op; LONG n; };
 struct JcnTabs {
     JcnSite site[JCN_SITES]; JcnBail bail[JCN_BAILS]; JcnMat mat[JCN_MATS];
@@ -439,22 +436,13 @@ static void JcnExitSite(Em& e, const unsigned short* ip, DWORD op) {
     s.meth = t->meth, s.op = (unsigned short)op, s.slow = t->slow, s.n = 0, s.ip = ip;
     e.incAbs(&s.n);
 }
-static JcnBail* JcnBailSite(const u8* callerRm, const unsigned short* ip, DWORD op, bool lazy, JitGuardSite* gs) {
+static JcnBail* JcnBailSite(const u8* callerRm, const unsigned short* ip, DWORD op, bool lazy, bool guard) {
     JcnTabs* t = g_jcn;
     if (!t || t->bailN >= JCN_BAILS) return NULL;
     JcnBail& b = t->bail[t->bailN++];
     memset(&b, 0, sizeof(b));
-    b.callerRm = callerRm, b.ip = ip, b.op = (unsigned short)op, b.lazy = lazy, b.guard = gs != NULL, b.gs = gs;
+    b.callerRm = callerRm, b.ip = ip, b.op = (unsigned short)op, b.lazy = lazy, b.guard = guard;
     return &b;
-}
-// count mode, a guard's "no lazy body" bail (docs/537 §22, I-476-1): which target it bailed on (eax = the cache's target; 0 after
-// a bound call's exception = the site's target). Four targets a site; a fifth counts on the last row.
-static void __cdecl JcnGuardBail(JitGuardSite* s, const u8* target) {
-    if (!target) target = s->rm;
-    int i = 0;
-    while (i < 3 && s->tRm[i] && s->tRm[i] != target) i++;
-    if (!s->tRm[i]) s->tRm[i] = target;
-    s->tNoLazy[i]++;
 }
 static void JcnMatHit(const u8* rm, DWORD ip, DWORD op) {  // JitLazyMatC: the innermost callee and its exit ip
     JcnTabs* t = g_jcn;
@@ -485,21 +473,6 @@ static int JcnReportTo(const char* why, JcnOut out) {
         sprintf_s(line, "jitbail %s %d %X %s %s%s", JitMethodName(S.callerRm, cn, sizeof(cn)), (int)(S.ip - *(const unsigned short* const*)S.callerRm),
                   S.op, S.lazy ? "lazy" : "normal", S.guard ? "guard" : "direct", rs);
         put();
-    }
-    // "jitcallee <caller> <ip> <op> <lazy|normal> <target> native=<0|1> bound=<row|0> nolazy=<n>": the targets of each guard's
-    // "no lazy body" bails, native = EA bound body (RuntimeMethod+0x24), bound = BoundCall row + 1 of the site's current target
-    for (int i = 0; i < t->bailN; i++) {
-        const JcnBail& S = t->bail[i];
-        if (!S.gs) continue;
-        for (int k = 0; k < 4; k++) {
-            if (!S.gs->tNoLazy[k]) continue;
-            const u8* r = S.gs->tRm[k];
-            char tn[128];
-            sprintf_s(line, "jitcallee %s %d %X %s %s native=%d bound=%d nolazy=%ld", JitMethodName(S.callerRm, cn, sizeof(cn)),
-                      (int)(S.ip - *(const unsigned short* const*)S.callerRm), S.op, S.lazy ? "lazy" : "normal", r ? JitMethodName(r, tn, sizeof(tn)) : "(none)",
-                      r && *(const DWORD*)(r + 0x24) ? 1 : 0, r == S.gs->rm ? S.gs->bound : 0, S.gs->tNoLazy[k]);
-            put();
-        }
     }
     // "jitnew <meth> <word> <exits> <vt> <class flags +0x14> <ctor>", vt = EA's value-type test 0xE52160 (as the host's line)
     for (int s = 0; s < t->siteN; s++) {
@@ -630,10 +603,10 @@ static DWORD JitIcallFn(const unsigned short* ip, const u8* callerRm) {
 // do not allocate, so a lazy body may run them. A null this or a bad dimension exits before any change: EA's call path throws.
 // EA's icall return leaves the result slot's high dword as the word above the arguments ([esi+4], as EmitIcall).
 static const u8 kPureGetLength[] = {0x56, 0x8B, 0x74, 0x24, 0x08, 0x57, 0x8B, 0x7C, 0x24, 0x10, 0x85, 0xFF, 0x7C, 0x0C, 0x8B, 0x06, 0x8B, 0x08, 0x0F, 0xB6,
-    0x51, 0x10, 0x3B, 0xFA, 0x7C, 0x0E, 0xE8, 0xC1, 0xD2, 0xFF, 0xFF, 0x50, 0xE8, 0x0B, 0x79, 0x02, 0x00, 0x83, 0xC4, 0x04, 0x8B, 0x46, 0x04, 0x85,
+    0x51, 0x10, 0x3B, 0xFA, 0x7C, 0x0E, 0xE8, 0xC1, 0xD2, 0xFF, 0xFF, 0x50, 0xE8, JIT_B(0x0B, 0x1B), 0x79, 0x02, 0x00, 0x83, 0xC4, 0x04, 0x8B, 0x46, 0x04, 0x85,
     0xC0, 0x75, 0x06, 0x8B, 0x46, 0x08, 0x5F, 0x5E, 0xC3, 0x8B, 0x04, 0xF8};
 static const u8 kPureGetLower[] = {0x56, 0x8B, 0x74, 0x24, 0x0C, 0x85, 0xF6, 0x57, 0x8B, 0x7C, 0x24, 0x0C, 0x7C, 0x0C, 0x8B, 0x07, 0x8B, 0x08, 0x0F, 0xB6,
-    0x51, 0x10, 0x3B, 0xF2, 0x7C, 0x0E, 0xE8, 0x81, 0xD2, 0xFF, 0xFF, 0x50, 0xE8, 0xCB, 0x78, 0x02, 0x00, 0x83, 0xC4, 0x04, 0x8B, 0x47, 0x04, 0x85,
+    0x51, 0x10, 0x3B, 0xF2, 0x7C, 0x0E, 0xE8, 0x81, 0xD2, 0xFF, 0xFF, 0x50, 0xE8, JIT_B(0xCB, 0xDB), 0x78, 0x02, 0x00, 0x83, 0xC4, 0x04, 0x8B, 0x47, 0x04, 0x85,
     0xC0, 0x75, 0x03, 0x5F, 0x5E, 0xC3, 0x8B, 0x44, 0xF0, 0x04, 0x5F, 0x5E, 0xC3};
 static const u8 kPureGetRank[] = {0x8B, 0x44, 0x24, 0x04, 0x8B, 0x08, 0x8B, 0x11, 0x0F, 0xB6, 0x42, 0x10, 0xC3};
 static bool JitPureIcallsOk() {
@@ -660,7 +633,7 @@ static int JitPureIcall(const unsigned short* ip, DWORD op, const u8* callerRm) 
 // SatbRtFastCopy in the slot) runs as before. No allocation, no frame read, no reference stored; the destination range goes to
 // JitSatbStore first (sim side of a span, as SatbRtFastCopy logs it). Compiled code runs only on the sim thread (JitEnter), so the
 // wrapper's worker-side patch never applies here.
-static const DWORD kFastCopyFnv = 0x555A37B8;  // FNV-1a of EA's 641 bytes 0xE7A070..0xE7A2F0
+static const DWORD kFastCopyFnv = JIT_B(0x555A37B8, 0x0FFE50AD);  // FNV-1a of EA's 641 bytes 0xE7A070..0xE7A2F0 (EA app: 0xE7A0C0, same code, operands moved)
 static bool JitFastCopyOk() {
     const DWORD slot = *(const DWORD*)(uintptr_t)TS3A(0x010B58CC);
     return McFnv((const u8*)(uintptr_t)TS3A(0x00E7A070), 0x281) == kFastCopyFnv && (slot == TS3A(0x00E7A070) || slot == (DWORD)(uintptr_t)SatbRtFastCopy);
@@ -796,7 +769,6 @@ static bool EmitLazyCall(Em& e, const unsigned short* ip, DWORD op, const u8* ca
     u8* bail[16];
     u8 why[16];  // count mode: the bail reason per jump (kJcnBail)
     int nb = 0;
-    u8* nolazy = NULL;  // BoundCall: the guard's "no lazy body" jump
     if (guard) {  // receiver not null, with a vtable, not the remoting class, not a value type, of the cache's class; target = the cache's
         e.op(0x8B, ECX, ESI, thisOff); e.rr(0x85, ECX, ECX); why[nb] = 0, bail[nb++] = e.jcc(0x84);
         if (op == 0xED) { e.op(0x8B, ECX, ECX, 0); e.rr(0x85, ECX, ECX); why[nb] = 1, bail[nb++] = e.jcc(0x84); }  // this = *ptr
@@ -810,9 +782,7 @@ static bool EmitLazyCall(Em& e, const unsigned short* ip, DWORD op, const u8* ca
         e.b(0xE8); e.d((DWORD)(uintptr_t)JitGuardFill - ((DWORD)(uintptr_t)e.p + 4));
         e.b(0x83); e.b(0xC4); e.b(8); e.b(0x61);                                                // add esp, 8; popad
         Fix(same, e.p);
-        e.b(0x83); e.b(0x3D); e.d((DWORD)(uintptr_t)&gs->entry); e.b(0);
-        if (g_jitBoundMask) nolazy = e.jcc(0x84);                  // no lazy body: BoundCall's path below (docs/537 §22)
-        else why[nb] = 6, bail[nb++] = e.jcc(0x84);              // no lazy body (yet)
+        e.b(0x83); e.b(0x3D); e.d((DWORD)(uintptr_t)&gs->entry); e.b(0); why[nb] = 6, bail[nb++] = e.jcc(0x84);  // no lazy body (yet)
         if (g_jitCallExit && op == 0xEC) { e.b(0x03); e.b(0x0D); e.d((DWORD)(uintptr_t)&gs->unbox); }  // add ecx, [site.unbox]: this = box + 4
     } else {
         e.b(0x83); e.b(0x3D); e.d((DWORD)(uintptr_t)&cell->entry); e.b(0); why[nb] = 6, bail[nb++] = e.jcc(0x84);  // no lazy body (yet)
@@ -899,25 +869,14 @@ static bool EmitLazyCall(Em& e, const unsigned short* ip, DWORD op, const u8* ca
         e.op(0x89, EAX, ESI, 4); e.addEsi(8);
     }
     u8* skip = e.jmp();
-    u8* bound = NULL;
-    if (nolazy) JitBoundEmit(e, gs, nolazy, (DWORD)(uintptr_t)g_jitForceJit, bail, why, nb, &bound);
-    if (JcnBail* st = g_jcn ? JcnBailSite(callerRm, ip, op, lazy, gs) : NULL) {  // count mode: one counter per bail reason, then the common exit
+    if (JcnBail* st = g_jcn ? JcnBailSite(callerRm, ip, op, lazy, guard) : NULL) {  // count mode: one counter per bail reason, then the common exit
         u8* toExit[16];
-        for (int i = 0; i < nb; i++) {
-            Fix(bail[i], e.p);
-            e.incAbs(&st->r[why[i]]);
-            if (gs && why[i] == 6) {  // the target it bailed on: push eax; push site; call JcnGuardBail; add esp, 8
-                e.b(0x50 + EAX); e.b(0x68); e.d((DWORD)(uintptr_t)gs);
-                e.b(0xE8); e.d((DWORD)(uintptr_t)JcnGuardBail - ((DWORD)(uintptr_t)e.p + 4)); e.b(0x83); e.b(0xC4); e.b(8);
-            }
-            toExit[i] = e.jmp();
-        }
+        for (int i = 0; i < nb; i++) { Fix(bail[i], e.p); e.incAbs(&st->r[why[i]]); toExit[i] = e.jmp(); }
         for (int i = 0; i < nb; i++) Fix(toExit[i], e.p);
     } else
         for (int i = 0; i < nb; i++) Fix(bail[i], e.p);
     EmitExit(e, ip, op, false);
     Fix(skip, e.p);
-    if (bound) Fix(bound, e.p);
     ts3native_counters.jitLazySites++;
     if (guard) ts3native_counters.jitGuardSites++;
     return true;
@@ -1206,10 +1165,7 @@ static const char* JitCompile(u8* rm) {
     // bound: 256 bytes per position, as the host's pool check (a lazy site in both bodies: 768); a switch's table is 2 bytes
     // per mint word it takes
     const size_t need = ((g_jitLazy ? 768 : 256) + (g_jcn ? 256 : 0)) * (size_t)n + 2 * (size_t)words + 512;  // count mode: an inc per position and exit, bail counters
-    if ((size_t)(g_jitCodeEnd - (g_jitCode + g_jitCodeUsed)) < need) {
-        ts3native_counters.jitFullN++, ts3native_counters.jitFullBytes += (LONG)need;  // R1: what a larger region would have to hold
-        return "code region full";
-    }
+    if ((size_t)(g_jitCodeEnd - (g_jitCode + g_jitCodeUsed)) < need) return "code region full";
     u8* const start = g_jitCode + g_jitCodeUsed;
     JitProt(start, need, PAGE_READWRITE);  // from the end of the last method on: no finished code lives here (its last page flips below)
     u8** const label = g_js->label;
@@ -1700,7 +1656,7 @@ static __declspec(naked) void JitEnter() {
     __asm {
         mov eax, edi
         shr eax, 1
-        and eax, 0xFFFF            // JIT_TAB_N - 1
+        and eax, 0x7FFF            // JIT_TAB_N - 1
         shl eax, 4
         add eax, g_jitTab
     probe:
@@ -2441,24 +2397,6 @@ static const char* JitOne(BYTE* rm, void* ctx, char* name, int nameN, char* note
     if (why && g_jcn) g_jcn->siteN = s0, g_jcn->bailN = b0;  // count mode: a refused method leaves no rows
     return why;
 }
-// R1 (docs/537 §20.0): a reason's slot in g_jitRefWhy (== g_jitRefWhyN: not there yet); under g_jitCs
-static int JitRefSlot(const char* why) {
-    int r = 0;
-    while (r < g_jitRefWhyN && strcmp(g_jitRefWhy[r].why, why)) r++;
-    return r;
-}
-// one line: every reason with its count, the region and the "code region full" bound; under g_jitCs
-static void JitRefSummary(const char* when) {
-    char line[1024];
-    int n = _snprintf_s(line, _TRUNCATE, "jit: refusals by reason (%s):", when);
-    for (int r = 0; r < g_jitRefWhyN && n > 0; r++) {
-        const int k = _snprintf_s(line + n, sizeof(line) - n, _TRUNCATE, "%s %s %ld", r ? "," : "", g_jitRefWhy[r].why, g_jitRefWhy[r].n);
-        n = k < 0 ? -1 : n + k;
-    }
-    const Ts3nCounters& C = ts3native_counters;
-    Log("%s%s; code region %lu of %ld KB, %d methods, %ld refused \"code region full\" asking %ld KB", line, g_jitRefWhyN ? "" : " none",
-        (unsigned long)(g_jitCodeUsed >> 10), C.jitRegionKB, g_jitMethN, C.jitFullN, C.jitFullBytes >> 10);
-}
 static void __cdecl JitPostPass(BYTE* rm, void* ctx) {
     if (g_jitDead) return;
     char name[256] = "?", note[64] = "";
@@ -2469,20 +2407,15 @@ static void __cdecl JitPostPass(BYTE* rm, void* ctx) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         g_jitDead = true;
         ts3native_counters.jitFaults++;
-        JitProt(g_jitCode, g_jitCodeBytes, PAGE_EXECUTE_READ);
+        JitProt(g_jitCode, JIT_CODE_BYTES, PAGE_EXECUTE_READ);
         Log("jit: fault 0x%08lX while compiling %s: no more compiles this session", GetExceptionCode(), name);
     }
-    if (why) {  // R1: own cap per reason (they shared the compile lines' 256 and lost: docs/537 §20.0)
-        ts3native_counters.jitRefused++;
-        const int r = JitRefSlot(why);
-        if (r == g_jitRefWhyN && r < JIT_REF_REASONS) g_jitRefWhy[g_jitRefWhyN++].why = why;  // reasons are literals: the pointer lives
-        const LONG k = r < g_jitRefWhyN ? ++g_jitRefWhy[r].n : 0;  // 0: a 17th reason, counted in jitRefused only
-        if (k && k <= JIT_REF_NAMES) Log("jit: %s refused: %s%s (#%ld of this reason)", name, why, note, k);
-        else if (k == JIT_REF_NAMES + 1) Log("jit: refused: more than %d \"%s\", names not logged from here on (counts: jitRefused, the per-reason summary)", JIT_REF_NAMES, why);
-    }
     LeaveCriticalSection(&g_jitCs);
+    if (why) {
+        ts3native_counters.jitRefused++;
+        if (g_jitLogN++ < 256) Log("jit: %s refused: %s%s", name, why, note);
+    }
 }
-static size_t JitCodeBytes(int kb) { return (size_t)(kb < 1024 ? 1024 : kb > 16384 ? 16384 : kb) << 10; }  // [MonoJit] CodeKB, 1-16 MB
 // End of every Simulate iteration (sim thread): names the sim thread, applies jitSwitch
 static void __cdecl JitTick() {
     if (!g_jitSimTid) {
@@ -2490,13 +2423,6 @@ static void __cdecl JitTick() {
         g_jitSimTid = GetCurrentThreadId();
         LeaveCriticalSection(&g_jitCs);
         Log("jit: sim thread %lu, %d methods compiled before the first tick", g_jitSimTid, g_jitMethN);
-    }
-    if (ts3native_counters.saveCount != g_jitRefSave) {  // R1: the per-reason summary at the first tick and after a save, when it moved
-        const bool first = g_jitRefSave < 0;
-        g_jitRefSave = ts3native_counters.saveCount;
-        EnterCriticalSection(&g_jitCs);
-        if (first || ts3native_counters.jitRefused != g_jitRefLogged) JitRefSummary(first ? "first tick" : "save"), g_jitRefLogged = ts3native_counters.jitRefused;
-        LeaveCriticalSection(&g_jitCs);
     }
     const bool on = ts3native_counters.jitSwitch != 0;
     if (on != g_jitPatched) JitSetPatched(on);
@@ -2540,7 +2466,7 @@ static bool JitAlloc() {
     const size_t tab = sizeof(JitEnt) * (JIT_TAB_N + 4096), meth = sizeof(JitMeth) * JIT_METH_N, pos = 2 * sizeof(unsigned short) * JIT_POS_N;
     const size_t cells = sizeof(JitLazyCell) * JIT_CELL_N, guards = sizeof(JitGuardSite) * JIT_GUARD_N;
     const size_t data = (tab + meth + pos + cells + guards + sizeof(JitScratch) + 0xFFF) & ~(size_t)0xFFF;
-    u8* p = (u8*)VirtualAlloc(NULL, data + g_jitCodeBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    u8* p = (u8*)VirtualAlloc(NULL, data + JIT_CODE_BYTES, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!p) return false;
     g_jitTab = (JitEnt*)p;
     g_jitMeth = (JitMeth*)(p + tab);
@@ -2549,7 +2475,7 @@ static bool JitAlloc() {
     g_jitLazyCell = (JitLazyCell*)(p + tab + meth + pos);
     g_jitGuard = (JitGuardSite*)(p + tab + meth + pos + cells);
     g_js = (JitScratch*)(p + tab + meth + pos + cells + guards);
-    g_jitCode = p + data, g_jitCodeEnd = g_jitCode + g_jitCodeBytes, g_jitCodeUsed = 0;
+    g_jitCode = p + data, g_jitCodeEnd = g_jitCode + JIT_CODE_BYTES, g_jitCodeUsed = 0;
     return true;
 }
 static_assert(JIT_POS_N <= (int)(JIT_TAB_N * 3 / 4), "the ip table stays under 3/4 full");
@@ -2587,9 +2513,9 @@ static void JitCaptureOn(const wchar_t* ini) {
     Log("OK   mono jit capture (docs/537 §17, §19): sampled at JitEnter%s%s", g_jitLazy ? ", lazy bodies" : "", g_jitInline ? ", inlined sites" : "");
 }
 
-// ts3native.ini [MonoJit] Enabled=1, Mode=1 compiled | 2 verify, VerifyEvery=<n>, CodeKB=<KB> the code region (R1, default 4096), Groups=<mask>, List=<names>, Direct=1 lazy frames,
+// ts3native.ini [MonoJit] Enabled=1, Mode=1 compiled | 2 verify, VerifyEvery=<n>, Groups=<mask>, List=<names>, Direct=1 lazy frames,
 // DirectLeaf=1 leaves only, Trap=1 the reader trap (TrapEvery=<n>), Inline=1|2 tiny callees at compiled call sites, Wide=1 the S5 templates and methods with clauses, Capture=1 argument samples to CaptureFile=<path> (docs/537 §17; CaptureFirst, CaptureReservoir, CaptureDepth, CaptureObjs, CaptureBytes, CaptureObjMax, CaptureBudgetUs, CaptureMaxMb). true = installed (keep the log). After every other code
-// patch, before [AutShadow] (docs/527 §4.1), and only on the Steam 1.67 exe.
+// patch, before [AutShadow] (docs/527 §4.1), and only on the Steam 1.67 exe (EA build: EA app 1.69.47).
 static bool ApplyMonoJit(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"MonoJit", L"Enabled", 0, ini)) return false;
     Ts3nCounters& C = ts3native_counters;
@@ -2597,10 +2523,10 @@ static bool ApplyMonoJit(const wchar_t* ini) {
     if (mode != 1 && mode != 2) { Log("SKIP mono jit: Mode=%d (1 compiled, 2 verify)", mode); return false; }
     const u8* base = (const u8*)GetModuleHandleW(NULL);
     const IMAGE_NT_HEADERS* nt = (const IMAGE_NT_HEADERS*)(base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
-    if (nt->FileHeader.TimeDateStamp != JIT_PE_STAMP || nt->OptionalHeader.SizeOfImage != JIT_PE_SIZE) { Log("SKIP mono jit: not the Steam 1.67 exe"); return false; }
+    if (nt->FileHeader.TimeDateStamp != JIT_PE_STAMP || nt->OptionalHeader.SizeOfImage != JIT_PE_SIZE) { Log("SKIP mono jit: not the " JIT_EXE_NAME " exe"); return false; }
     for (const auto& c : kMcCode)  // [GcRootCheck] TailWatch and any other owner of the call path
         if (McFnv((const u8*)(uintptr_t)c.at, c.n) != c.fnv && (!c.fnv2 || McFnv((const u8*)(uintptr_t)c.at, c.n) != c.fnv2)) {
-            Log("SKIP mono jit: EA code at 0x%08lX (%lu bytes) is not the stock Steam 1.67 bytes", c.at, c.n);
+            Log("SKIP mono jit: EA code at 0x%08lX (%lu bytes) is not the stock " JIT_EXE_NAME " bytes", c.at, c.n);
             return false;
         }
     if (g_jitTableP[JIT_OP] != JIT_EA_UNIMPLEMENTED) { Log("SKIP mono jit: jump-table entry 0x%03lX is 0x%08lX, not EA's (another owner; [MonoFast] CallPath=2 has them all)", JIT_OP, g_jitTableP[JIT_OP]); return false; }
@@ -2611,9 +2537,7 @@ static bool ApplyMonoJit(const wchar_t* ini) {
     if ((g_jitVtOps = GetPrivateProfileIntW(L"MonoJit", L"VtOps", 0, ini) != 0)) g_jitGroups |= 1024;  // docs/537 §20 B1
     const int templates = JitTemplates((unsigned)g_jitGroups);
     if (!templates) { Log("SKIP mono jit: no template matches EA's opcode names"); return false; }
-    g_jitCodeBytes = JitCodeBytes(GetPrivateProfileIntW(L"MonoJit", L"CodeKB", 4096, ini));  // R1, docs/537 §20.0
-    C.jitRegionKB = (LONG)(g_jitCodeBytes >> 10);
-    if (!JitAlloc()) { Log("SKIP mono jit: no address space for the region (%ld KB)", C.jitRegionKB); return false; }
+    if (!JitAlloc()) { Log("SKIP mono jit: no address space for the region"); return false; }
     if (mode == 2) g_jitV = (JitV*)VirtualAlloc(NULL, sizeof(JitV) * JIT_VD, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (mode == 2 && !g_jitV) { Log("SKIP mono jit: no memory for the verifier"); return false; }
     InitializeCriticalSection(&g_jitCs);
@@ -2635,12 +2559,6 @@ static bool ApplyMonoJit(const wchar_t* ini) {
     g_jitPureIcalls = g_jitCallExit && JitPureIcallsOk();
     if (g_jitCallExit && !g_jitPureIcalls) Log("jit: CallExit: the Array icall bytes differ, pure icalls stay EA calls");
     g_jitNewVt = GetPrivateProfileIntW(L"MonoJit", L"NewVt", 0, ini) != 0;  // docs/537 §20 B2b (needs Direct=1)
-    g_jitBc = (JitBoundStats*)&C.bcOn;  // docs/537 §22: BoundCall=1 (needs Direct=1, DirectLeaf=0 for guards), BoundCallMask = kJitBound rows
-    if (GetPrivateProfileIntW(L"MonoJit", L"BoundCall", 0, ini)) {
-        const unsigned want = (unsigned)GetPrivateProfileIntW(L"MonoJit", L"BoundCallMask", (1 << JIT_BOUND_N) - 1, ini);
-        const unsigned on = JitBoundInit(want);
-        if (on != want) Log("jit: BoundCall: mask 0x%X asked, 0x%X in force (a row's EA bytes differ, or no such row)", want, on);
-    }
     if (GetPrivateProfileIntW(L"MonoJit", L"Count", 0, ini) && !JcnOn()) Log("jit: Count: no memory for the tables (%u KB), count mode off", (unsigned)(sizeof(JcnTabs) >> 10));
     const bool fcWant = GetPrivateProfileIntW(L"MonoJit", L"FastCopy", 0, ini) != 0;  // docs/537 §20 C3
     g_jitFastCopy = fcWant && JitFastCopyOk();
@@ -2660,6 +2578,6 @@ static bool ApplyMonoJit(const wchar_t* ini) {
     C.jitSwitch = 1;
     C.jitOn = mode;
     g_ilpPost = JitPostPass;
-    Log("OK   mono jit (docs/527): Mode=%d, %d templates (Groups=%d), %d list rows%s, VerifyEvery=%lu, code region %lu KB (CodeKB), Direct=%ld (docs/537), Trap=%d, VtOps=%d, CallExit=%d, NewVt=%d, Count=%d, FastCopy=%d, Ldsflda=%d, BoundCall=0x%lX", mode, templates, g_jitGroups, g_jitRowN, g_jitUserN ? " narrowed by List=" : "", g_jitEvery, (unsigned long)(g_jitCodeBytes >> 10), C.jitDirect, g_jitTrap ? 1 : 0, g_jitVtOps ? 1 : 0, g_jitCallExit ? 1 : 0, g_jitNewVt ? 1 : 0, g_jcn ? 1 : 0, g_jitFastCopy ? 1 : 0, g_jitLdsflda ? 1 : 0, (unsigned long)C.bcOn);
+    Log("OK   mono jit (docs/527): Mode=%d, %d templates (Groups=%d), %d list rows%s, VerifyEvery=%lu, code region %d KB, Direct=%ld (docs/537), Trap=%d, VtOps=%d, CallExit=%d, NewVt=%d, Count=%d, FastCopy=%d, Ldsflda=%d", mode, templates, g_jitGroups, g_jitRowN, g_jitUserN ? " narrowed by List=" : "", g_jitEvery, JIT_CODE_BYTES >> 10, C.jitDirect, g_jitTrap ? 1 : 0, g_jitVtOps ? 1 : 0, g_jitCallExit ? 1 : 0, g_jitNewVt ? 1 : 0, g_jcn ? 1 : 0, g_jitFastCopy ? 1 : 0, g_jitLdsflda ? 1 : 0);
     return true;
 }
