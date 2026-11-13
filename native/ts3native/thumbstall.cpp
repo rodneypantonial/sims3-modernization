@@ -65,6 +65,22 @@
 // the blocking object's ready job first (its wanted LOD if there, else any LOD of that object).
 // Action 4 does not get past it: the pick in 0x6DBDE0 does take index 0 under min 0 when the distance falls in LOD 0's
 // range, but RequestSim raises it to MinSimLOD (1 below SimQuality VeryHigh) and the job is still the same queue.
+// inline asm takes no constexpr: the stubs' jump targets are literals per build, tied to the table by the asserts (mintcall.cpp)
+#ifdef TS3A_TABLE
+#define TS_ASM_KEEP 0x00D5A9F2
+#define TS_ASM_GO 0x00D5A9FD
+#define TS_ASM_ABORT 0x00D5AA45
+#define TC_ASM_CALL 0x0044C5D0
+#define TC_ASM_RET 0x005A8759
+#else
+#define TS_ASM_KEEP 0x00D5A9D2
+#define TS_ASM_GO 0x00D5A9DD
+#define TS_ASM_ABORT 0x00D5AA25
+#define TC_ASM_CALL 0x0044C470
+#define TC_ASM_RET 0x005A80A9
+#endif
+static_assert(TS_ASM_KEEP == TS3A(0x00D5A9D2) && TS_ASM_GO == TS3A(0x00D5A9DD) && TS_ASM_ABORT == TS3A(0x00D5AA25), "thumbstall asm literals");
+static_assert(TC_ASM_CALL == TS3A(0x0044C470) && TC_ASM_RET == TS3A(0x005A80A0) + 9, "thumbcallers asm literals");
 static const DWORD TS_SITE = TS3A(0x00D5A9C8), TS_KEEP = TS3A(0x00D5A9D2), TS_GO = TS3A(0x00D5A9DD), TS_ABORT = TS3A(0x00D5AA25);
 static const u8 kTsOrig[10] = {0x8B, 0x54, 0x24, 0x60, 0x89, 0x97, 0x44, 0x02, 0x00, 0x00};
 static const u8 kTsKeep[11] = {0x32, 0xC0, 0x5F, 0x5E, 0x5B, 0x8B, 0xE5, 0x5D, 0xC2, 0x04, 0x00};   // at TS_KEEP
@@ -352,15 +368,15 @@ static __declspec(naked) void TsStub() {
         je ts_abort
         cmp eax, 2
         je ts_go
-        mov eax, 0D5A9D2h
+        mov eax, TS_ASM_KEEP
         jmp eax
     ts_abort:
         mov dword ptr [edi + 0x108], 0x19
-        mov eax, 0D5AA25h
+        mov eax, TS_ASM_ABORT
         jmp eax
     ts_go:
         mov dword ptr [edi + 0x244], 0
-        mov eax, 0D5A9DDh
+        mov eax, TS_ASM_GO
         jmp eax
     }
 }
@@ -585,9 +601,9 @@ static __declspec(naked) void TcStubBuild() {
         push ebp
         push esi
         push edi
-        mov eax, 0044C470h
+        mov eax, TC_ASM_CALL
         call eax
-        push 005A80A9h
+        push TC_ASM_RET
         ret
     }
 }
