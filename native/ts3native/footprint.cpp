@@ -23,7 +23,12 @@
 // Runtime switch: exported ts3native_footprintMode (0 = the game's scan, 1 = index), start value [FootprintIndex] Mode.
 // One log line per save from the World_Save call 0xAAC320.
 
-static const DWORD FP_FN_LO = TS3A(0x006663C0), FP_FN_HI = TS3A(0x00666740), FP_FN_FNV = 0xF2CDC1C1;  // LotLevel_SaveFootprints body
+static const DWORD FP_FN_LO = TS3A(0x006663C0), FP_FN_HI = TS3A(0x00666740);  // LotLevel_SaveFootprints body
+#ifdef TS3A_TABLE
+static const DWORD FP_FN_FNV = 0xCA5029BC;  // EA 1.69.47: same code, moved (docs/232 "FootprintIndex on 1.69")
+#else
+static const DWORD FP_FN_FNV = 0xF2CDC1C1;
+#endif
 static const DWORD FP_SCAN_SITE = TS3A(0x00666488);
 static const u8 kFpScanBytes[6] = {0x8B, 0x53, 0x20, 0x8B, 0x4A, 0x24};  // mov edx,[ebx+0x20] ; mov ecx,[edx+0x24]
 static const DWORD FP_LOT_SITE = TS3A(0x0082C940), FP_LOT = TS3A(0x0063C690);      // RoutingWorld_SaveLot -> LotRouting_SaveLevels

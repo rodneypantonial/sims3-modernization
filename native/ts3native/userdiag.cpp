@@ -894,8 +894,18 @@ static bool ApplyUserDiag(const wchar_t* ini) {
     const int cls = UdInstallClass(exe);
     const bool steam = cls == UD_STEAM;
     Log("diag: ts3native " TS3NATIVE_VERSION " (built " __DATE__ "), send this whole file (ts3native.log next to TS3W.exe) with a report");
+#ifdef TS3A_TABLE
+    // EA build: supported = the exe the address table was made for (same PE timestamp + SizeOfImage as the host check)
+    (void)steam;
+    const u8* hb = (const u8*)GetModuleHandleW(NULL);
+    const IMAGE_NT_HEADERS* hn = (const IMAGE_NT_HEADERS*)(hb + ((const IMAGE_DOS_HEADER*)hb)->e_lfanew);
+    const bool host = hn->FileHeader.TimeDateStamp == (DWORD)TS3A_HOST_PE && hn->OptionalHeader.SizeOfImage == (DWORD)TS3A_HOST_SIZE;
+    Log("diag: edition %s, game exe file version %s, install class %s%s", host ? TS3A_HOST_NAME : "unknown", ver[0] ? ver : "?", kUdClass[cls],
+        host ? " - supported" : " - UNSUPPORTED, this ts3native build supports " TS3A_HOST_NAME " only");
+#else
     Log("diag: edition %s, TS3W.exe file version %s, install class %s%s", steam ? "Steam" : "not Steam", ver[0] ? ver : "?", kUdClass[cls],
         steam ? "" : " - UNSUPPORTED, ts3native supports the Steam TS3W.exe only (other exes skip patches whose bytes differ)");
+#endif
     char sys[512];
     // g_crSys = "cpu: ...\r\nram: ...\r\nos: ...\r\nlarge address aware: ...\r\n": one log line each
     char* ctx2 = NULL;

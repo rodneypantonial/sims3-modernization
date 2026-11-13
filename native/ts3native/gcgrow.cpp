@@ -38,7 +38,7 @@ typedef DWORD(__cdecl* GwFn0)();
 typedef DWORD(__cdecl* GwXmlFn)(DWORD lo, DWORD hi, DWORD group, DWORD type);
 static const DWORD GW_EXPAND = TS3A(0x00E49C80);
 static const DWORD GW_SITE[2] = {TS3A(0x00E4A20C), TS3A(0x00E4A219)};
-static const DWORD GW_TEXT_LO = 0x00401000, GW_TEXT_HI = 0x00F95000;
+static const DWORD GW_TEXT_LO = TS3A(0x00401000), GW_TEXT_HI = TS3A(0x00F95000);
 static const DWORD GW_XML = TS3A(0x0076D290);  // IC_Simulator_LoadXmlAsString(ulong instance, uint group, uint type) -> string
 static const DWORD* const GW_LARGE_FREE = (const DWORD*)(uintptr_t)TS3A(0x012225B4);  // GC_large_free_bytes
 struct GwBoehm {  // GC_allochblk_nth inputs; the selftest points them at fakes

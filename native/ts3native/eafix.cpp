@@ -60,8 +60,8 @@ static const u8 kCaAsk[11] = {0x8B, 0x48, 0x1C, 0x8B, 0x11, 0x50, 0x8B, 0x42, 0x
 static const DWORD CA_CTOR_SITE = TS3A(0x0093F90D), CA_CTOR = TS3A(0x0093E5C0);  // AnimationComponent ctor (thiscall, owner; ret 4)
 static const DWORD CA_DTOR_SITE = TS3A(0x00942E73), CA_DTOR = TS3A(0x00941CD0);  // AnimationComponent dtor (thiscall, no args)
 static const DWORD CA_ANIM_VT8 = TS3A(0x010433EC);                          // AnimationComponent +8 interface vtable
-static DWORD g_ecaRdLo = 0x00F95000, g_ecaRdHi = 0x01146000;            // .rdata (vtables); selftest: its own range
-static DWORD g_ecaTxLo = 0x00401000, g_ecaTxHi = 0x00F95000;            // .text
+static DWORD g_ecaRdLo = TS3A(0x00F95000), g_ecaRdHi = TS3A(0x01146000);            // .rdata (vtables); selftest: its own range
+static DWORD g_ecaTxLo = TS3A(0x00401000), g_ecaTxHi = TS3A(0x00F95000);            // .text
 
 typedef void*(__fastcall* CaCtorFn)(u8* comp, void* edx, void* owner);
 typedef void(__fastcall* CaDtorFn)(u8* comp);
@@ -394,7 +394,7 @@ static bool ApplyThumbPoseBones(const wchar_t* ini) {
 }
 
 // ---- GeomBoneIndex ----
-static const DWORD GB_SLOT = TS3A(0x00FE3314), GB_GET = TS3A(0x005C6E00), GB_COUNT = 0x005C6DF0;  // vtable 0xFE32C0 +0x54, +0x50
+static const DWORD GB_SLOT = TS3A(0x00FE3314), GB_GET = TS3A(0x005C6E00), GB_COUNT = TS3A(0x005C6DF0);  // vtable 0xFE32C0 +0x54, +0x50
 // mov eax,[ecx+58h]; mov ecx,[esp+4]; mov eax,[eax+ecx*4]; ret 4
 static const u8 kGbGet[13] = {0x8B, 0x41, 0x58, 0x8B, 0x4C, 0x24, 0x04, 0x8B, 0x04, 0x88, 0xC2, 0x04, 0x00};
 // mov eax,[ecx+5Ch]; sub eax,[ecx+58h]; sar eax,2; ret
