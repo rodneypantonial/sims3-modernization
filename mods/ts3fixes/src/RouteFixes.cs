@@ -122,28 +122,6 @@ namespace Ts3Fixes
         // NotePlanResult. shortcut: one slot, a second check sleeping beside it ends the first's cover early; a list if that ever shows up
         static bool sOwnCheckOn;
         static ulong sOwnCheckTask;
-        // docs/250: inside the watchdog's idle check (CheckIdle's SpotVerdict), same per-task rule as sInOwnCheck
-        static bool sWdCheckOn;
-        static ulong sWdCheckTask;
-        static bool sInWdCheck
-        {
-            get { return sWdCheckOn && sWdCheckTask == Simulator.CurrentTask.Value; }
-            set { sWdCheckOn = value; sWdCheckTask = value ? Simulator.CurrentTask.Value : 0; }
-        }
-
-        // docs/250 §7.0: ts3native [GoalValidRO] Attr (switch gvattr) gets each plan's source class and scope (UserDiag op 35;
-        // op 12 at the plan's end is UfPlan's). Off: one ask per sim tick. The game and older ts3native answer false.
-        static long sGvaTick = -1;
-        static bool sGvaOn;
-        static void GvaSend(Sims3.Gameplay.Actors.Sim sim, int why, bool ownCheck)
-        {
-            long now = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
-            if (now != sGvaTick) { sGvaTick = now; sGvaOn = DiagSend(35, 0xFFFF); }
-            if (!sGvaOn) return;
-            ObjectGuid task = Simulator.CurrentTask;
-            int cls = H4Core.SrcClass(sInWdCheck && sInOwnCheck, sStuckIn, ownCheck, sim != null && task == sim.ObjectId, task.IsValid);
-            DiagSend(35, H4Core.Message(cls, H4Core.Scope(why, UnseenFallbackCore.SeenNpc(why))));
-        }
         static bool sInOwnCheck
         {
             get { return sOwnCheckOn && sOwnCheckTask == Simulator.CurrentTask.Value; }
@@ -251,9 +229,7 @@ namespace Ts3Fixes
             // gets SetToResetAndSendHome (its own spot may count as safe inside the hidden room). Shared daily reset limit.
             const float kIdleMinutes = 60f, kRouteFailMinutes = 30f;
             const int kRouteFailPlans = 10, kIdleChecksPerPass = 16;
-            // Cur is weak: a strong ref kept the old world's interaction (and through it a Sim) alive after travel until the next pass.
-            struct Still { public Vector3 Pos; public WeakReference Cur; public long Since, OkAt; }
-            static bool SameCur(WeakReference w, InteractionInstance i) { return w == null ? i == null : i != null && object.ReferenceEquals(w.Target, i); }
+            struct Still { public Vector3 Pos; public InteractionInstance Cur; public long Since, OkAt; }
             readonly Dictionary<ulong, Still> mStill = new Dictionary<ulong, Still>();
 
             void CheckIdle()
@@ -280,8 +256,8 @@ namespace Ts3Fixes
                     if (household || s.Parent != null || s.SimInRabbitHolePosture) continue;
                     InteractionInstance cur = s.CurrentInteraction;
                     Still st;
-                    if (!mStill.TryGetValue(id, out st) || (s.Position - st.Pos).Length() > 1f || !SameCur(st.Cur, cur) || st.Since > now)
-                        st = new Still { Pos = s.Position, Cur = cur == null ? null : new WeakReference(cur), Since = now };
+                    if (!mStill.TryGetValue(id, out st) || (s.Position - st.Pos).Length() > 1f || st.Cur != cur || st.Since > now)
+                        st = new Still { Pos = s.Position, Cur = cur, Since = now };
                     keep[id] = st;
                     long still = now - st.Since;
                     if (still >= kDayTicks) { if (Act(s, now, 48, "reset (stationary a sim-day)")) keep.Remove(id); continue; }
@@ -309,7 +285,7 @@ namespace Ts3Fixes
                     {
                         Still st;
                         if (s.HasBeenDestroyed || !s.InWorld || !mStill.TryGetValue(s.ObjectId.Value, out st) || (s.Position - st.Pos).Length() > 1f
-                            || !SameCur(st.Cur, s.CurrentInteraction) || s.IsRouting || s.Posture != s.Standing || s.LotCurrent == null || s.LotCurrent.IsWorldLot) break;
+                            || st.Cur != s.CurrentInteraction || s.IsRouting || s.Posture != s.Standing || s.LotCurrent == null || s.LotCurrent.IsWorldLot) break;
                         if ((memo || src) && sPlanOk.Covers(s.ObjectId.Value, s.Position.x, s.Position.y, s.Position.z, st.Since, now))
                         {
                             c[233]++;
@@ -342,9 +318,8 @@ namespace Ts3Fixes
                         bool? ok;
                         bool stale = false;
                         if (route == H4Core.kWdA1) sWdA1Task = Simulator.CurrentTask.Value;
-                        sInWdCheck = true;  // docs/250 §7.0: gvattr's watchdog class
                         try { ok = SpotVerdict(s, lot, vs, prof, at, true, true, false); }
-                        finally { sWdA1Task = 0; sInWdCheck = false; }
+                        finally { sWdA1Task = 0; }
                         if (route == H4Core.kWdA1)
                         {
                             c[875] += (int)(SimClock.CurrentTicks - t0);  // watchdogasync_ticks (started or not)
