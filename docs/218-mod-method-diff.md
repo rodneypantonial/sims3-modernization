@@ -225,6 +225,30 @@ check: 0 misses for EA 1.69 + simler90 SGS/SGO, 0 for vanilla EA 1.69 (3,569 of 
 closure class `.ctor`, renamed in EA 1.69), 0 for Steam 1.67. The content list (`kShaOther`) is unchanged: the EA modules
 still log "not on the content accept list" and still get the per-definition pass, which now passes.
 
-**In-game check (not run):** the parity job on the EA laptop with this package: no `G-M6 skips` and no `mod guard G-M6`
+**In-game check (planned):** the parity job on the EA laptop with this package: no `G-M6 skips` and no `mod guard G-M6`
 line; counters [603] = 0, [2025] = 0, [606] = 0; [2024] = hierarchy methods hashed (> 0); the G-M5 skip of
 `VisitCommunityLot+Definition` (LynMods override) stays, as on Steam. Requests and jobs counted for the 16 owners.
+
+**In-game check [verified, 2026-11-13, EA laptop].** The docs/260 §7.5 arm A parity job (`ea-v0211-bp-live`: BP load
++ 10 min live play, `TS3_ROW_RAW=1`) with this package (`build/ts3fixes.package` of f84cf23a, sha256 2647fca7…, pinned as
+`fixesPackage`), the v0.2.11 EA native pair unchanged (asi ab5a24af…, rc ini 6363aae1…), EA `queue.ts` of
+`sims-3-pr290-harness` (d9d4dac0), `--no-smoke`, game muted, no big CC. Bin backed up whole and restored after (436
+files, hashes equal except game logs).
+
+| Check | Parity run (a563cf8f) | This package (2647fca7) |
+|---|---|---|
+| Verdict | PASS 11.4 min | PASS 11.4 min, no crash, 0 script errors |
+| [602] closure methods hashed | 683 | 683 |
+| [603] closure mismatches | 1 | **0** |
+| [2024] hierarchy methods hashed | 371 | 371 |
+| [2025] hierarchy mismatches | 55 | **0** |
+| [606] owners skipped by G-M6 | 17 | **0** |
+| [2022] / [2023] modules hashed / not on the content list | 7 / 5 | 7 / 5 (content list unchanged, as intended) |
+| `G-M6 skips` / `mod guard G-M6` lines | 17 / 11 | none |
+| G-M5 skip lines | `VisitCommunityLot+Definition` (LynMods) | the same one only |
+| autshadow requests in the run | 140 | 1216 |
+
+16 of the 17 owners are now on the worker; the 17th, `VisitCommunityLot+Definition`, stays on the sim thread through
+its G-M5 skip (LynMods override), as on Steam. Install lines: the same 220 OK lines and the same FAIL/SKIP/WARN set as the
+parity run (only the known `WARN detour write ... crosses an 8-byte boundary`). Row:
+`probe-out/queue/ea169-autshadow-hashes-2026-11-13.jsonl` (harness worktree).
