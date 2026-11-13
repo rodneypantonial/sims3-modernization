@@ -84,7 +84,7 @@
  "MintFuse": ["mintfuse.cpp"],
  "MonoFast": ["mintcall.cpp"],
  "MonoJit": ["monojit.cpp"],
- "AutShadow": ["autshadow-run.cpp", "autshadow.cpp"],
+ "AutShadow": ["autraces.cpp", "autshadow-run.cpp", "autshadow.cpp"],
  "WorldImage": ["worldimage.cpp"],
  "CrashReport": ["crashreport.cpp"],
  "P6Waits": ["p6wait.cpp"],
