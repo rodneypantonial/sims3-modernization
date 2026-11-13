@@ -44,9 +44,14 @@ static void Hex(const u8* p, size_t n, char* out, size_t cap) {
 
 static bool Readable(const void* p, size_t n) {
     MEMORY_BASIC_INFORMATION mbi;
-    if (!VirtualQuery(p, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) return false;
-    if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
-    return (const u8*)p + n <= (const u8*)mbi.BaseAddress + mbi.RegionSize;
+    // a span may cross regions (a written copy-on-write image page turns PAGE_READWRITE, so .data splits by write history,
+    // e.g. the 0x1400-byte [MonoThread] GC thread table): walk them, every one committed and not NOACCESS / GUARD
+    for (const u8 *a = (const u8*)p, *end = a + n;;) {
+        if (!VirtualQuery(a, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) return false;
+        const u8* next = (const u8*)mbi.BaseAddress + mbi.RegionSize;
+        if (end <= next) return true;
+        a = next;
+    }
 }
 
 #ifdef TS3N_TEST_EXPECTED
