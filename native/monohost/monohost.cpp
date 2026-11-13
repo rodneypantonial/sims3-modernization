@@ -1072,7 +1072,10 @@ struct EqCtr { LONG eqOn, eqMode, eqHits, eqPlans, eqRejects, eqFtNull, eqFtType
 static EqCtr g_eqCtr;
 #define EQ_CTR g_eqCtr
 #define EQ_NO_INSTALL
+#if __has_include("../ts3native/equalsfast.cpp")  // release trees drop [EqualsFast]; the MONOHOST_EQFAST corpus goes with it
+#define MONOHOST_HAS_EQFAST 1
 #include "../ts3native/equalsfast.cpp"
+#endif
 static void* g_ilpNext;  // [IlPatch] (ilpatch.cpp) is not in the host: satb.cpp keeps its own cold site 0
 static void (*g_ilpColdEnter)(int site, DWORD arg0);
 #include "../ts3native/autshadow.cpp"
@@ -1926,6 +1929,7 @@ static void McBench() {
 #include "monohost-jit.cpp"  // docs/207 P0 method compiler (MONOHOST_JIT)
 static int M5PassBar() { return g_jitMode == 3 ? 4 : 10; }  // verify snapshots every call of a listed method: 15x fewer passes with Math.Min listed, same overlap
 
+#ifdef MONOHOST_HAS_EQFAST
 // ---- docs/258 option C, MONOHOST_EQFAST=1: [EqualsFast] exactness corpus. HostTest.EqCorpusRun (EqCorpus.cs) boxes values of
 // every value type it can build from the game's assemblies and hands each pair to EqIc.Check = EqCheckIc: EA's InternalEquals
 // 0xE7A590 (no detour in the host), then the [EqualsFast] hook twice (the first call may learn the class through EA's field walk,
@@ -1999,6 +2003,9 @@ static bool EqQuickRun() {
           "%ld plan answers (%ld enum), %ld plans, %ld not eligible", g_eqHitPairs, g_eqEnumHits, k.eqPlans, k.eqRejects);
     return true;
 }
+#else
+static bool EqQuickRun() { return false; }
+#endif
 
 static int SelfTest(void* domain) {
     if (EqQuickRun()) return g_fail;
