@@ -19,8 +19,8 @@
 //         flag != 0 = the start cell is not water (one step out, no scan); cb = route callback object (vtable, start x,y at
 //         +0x10, goal x,y at +0x18) or NULL. Returns the jump point's index or 0xFFFFFFFF.
 
-static const DWORD WJ_JUMP = 0x0061FE10, WJ_CALL = 0x006207FB, WJ_NEAR_CB = 0x0066DC50;
-static const DWORD WJ_CODE_LO = 0x0061F750, WJ_CODE_HI = 0x0061FF93;  // 0x61F750 .. end of 0x61FE10: every function the jump runs
+static const DWORD WJ_JUMP = TS3A(0x0061FE10), WJ_CALL = TS3A(0x006207FB), WJ_NEAR_CB = TS3A(0x0066DC50);
+static const DWORD WJ_CODE_LO = TS3A(0x0061F750), WJ_CODE_HI = TS3A(0x0061FF93);  // 0x61F750 .. end of 0x61FE10: every function the jump runs
 static const DWORD WJ_CODE_FNV = 0x5A2C1E2B, WJ_NEAR_FNV = 0x585FD97D;   // FNV-1a of those bytes and of 0x66DC50 (0x60 bytes), Steam 1.67
 
 typedef DWORD(__cdecl* WjJumpFn)(const u8* const* g1, const u8* const* g2, DWORD w, DWORD h, DWORD goal, DWORD cell, DWORD dir, DWORD flag, void* cb);

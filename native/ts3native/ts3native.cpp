@@ -12,6 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 #include <psapi.h>  // K32GetMappedFileNameW (XcptOtherModule)
+#include "ts3addr.h"  // TS3A(x): TS3W.exe addresses by Steam 1.67 value (tools/addr-codemod.ts)
 #include "uaftag.h"  // docs/539 §17: [UafCheck] free tags (before every tagged site: p5c, discourage, routesnap, eafix, ServeAsync, MonoThread)
 
 #ifdef TS3N_RFTEST
@@ -175,19 +176,19 @@ static void* InstallDetour(const char* name, DWORD target, const u8* prologue, s
 static DWORD g_mainTid;  // thread that loaded us (Run)
 
 // --- Phase 1: Boehm GC (docs/13-gc-tuning.md) ---
-static const DWORD GC_IS_INITIALIZED = 0x011F30D0;  // set at the end of GC_init (0xE4E160)
+static const DWORD GC_IS_INITIALIZED = TS3A(0x011F30D0);  // set at the end of GC_init (0xE4E160)
 static const DWORD BLOCKS_PER_MB = 256;              // GC heap blocks are 4 KB
 
 static const Site kInitialHeap[] = {
-    {0x00E4E168, {0xBD, 0x00, 0x28, 0x00, 0x00}, 5, 1},  // GC_init: mov ebp,0x2800 (40 MB default)
+    {TS3A(0x00E4E168), {0xBD, 0x00, 0x28, 0x00, 0x00}, 5, 1},  // GC_init: mov ebp,0x2800 (40 MB default)
 };
 static const Site kGrowthStep[] = {
-    {0x00E4A1D8, {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C}, 7, 1},  // GC_collect_or_expand: cmp eax,0x800 ; jbe
-    {0x00E4A1FF, {0x3D, 0x00, 0x08, 0x00, 0x00, 0x77, 0x05}, 7, 1},  // cmp eax,0x800 ; ja
-    {0x00E4A206, {0xB8, 0x00, 0x08, 0x00, 0x00, 0x50}, 6, 1},        // mov eax,0x800 ; push eax
+    {TS3A(0x00E4A1D8), {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C}, 7, 1},  // GC_collect_or_expand: cmp eax,0x800 ; jbe
+    {TS3A(0x00E4A1FF), {0x3D, 0x00, 0x08, 0x00, 0x00, 0x77, 0x05}, 7, 1},  // cmp eax,0x800 ; ja
+    {TS3A(0x00E4A206), {0xB8, 0x00, 0x08, 0x00, 0x00, 0x50}, 6, 1},        // mov eax,0x800 ; push eax
 };
 static const Site kBudgetCeiling[] = {
-    {0x01192324, {0xDC, 0x05, 0x00, 0x00}, 4, 0},  // .data dword 1500, per-frame GC budget ceiling
+    {TS3A(0x01192324), {0xDC, 0x05, 0x00, 0x00}, 4, 0},  // .data dword 1500, per-frame GC budget ceiling
 };
 
 static int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -232,10 +233,10 @@ static int FbName(char* d, int room, DWORD method);   // below (LogFallbackStack
 static int FbStackText(char* d, int room, int frames);
 static bool GrFaultText(const CONTEXT* c, char* d, int room);  // gcroots.cpp: the task line (docs/67 §22.4)
 static bool MonoFaultText(const CONTEXT* c, char* d, int room) {
-    if (c->Eip < 0x00E51000 || c->Eip >= 0x00E5A600) return false;
+    if (c->Eip < 0x00E51000 || c->Eip >= TS3A(0x00E5A600)) return false;
     char caller[120] = "?", callee[120] = "-", st[1100] = "unreadable";
     DWORD rm = 0, obj = 0, vt = 0, kl = 0;
-    const bool miss = c->Eip >= 0x00E51FC0 && c->Eip < 0x00E520C0;
+    const bool miss = c->Eip >= TS3A(0x00E51FC0) && c->Eip < TS3A(0x00E520C0);
     __try {
         rm = *(const DWORD*)(uintptr_t)(c->Ebp - 0x10);
         if (rm) FbName(caller, sizeof(caller), *(const DWORD*)(uintptr_t)(rm + 8));
@@ -3163,8 +3164,8 @@ __declspec(naked) static void CostGate() {
     }
 }
 
-static const DWORD kCostFns[] = {0x00674E40, 0x00673850, 0x00674250, 0x00675800, 0x006734E0};  // travel modes 1-4, default
-static const DWORD kCostSites[] = {0x00676340, 0x0067634A, 0x00676354, 0x0067635E, 0x00676368};  // mov [esp+0x60], fn
+static const DWORD kCostFns[] = {TS3A(0x00674E40), TS3A(0x00673850), TS3A(0x00674250), TS3A(0x00675800), TS3A(0x006734E0)};  // travel modes 1-4, default
+static const DWORD kCostSites[] = {TS3A(0x00676340), TS3A(0x0067634A), TS3A(0x00676354), TS3A(0x0067635E), TS3A(0x00676368)};  // mov [esp+0x60], fn
 
 // Builds the stubs and writes their addresses into the five sites (all verified first). Parameters let the selftest use local memory.
 static bool PatchCostSites(const DWORD* sites, const DWORD* fns) {
@@ -3444,9 +3445,9 @@ static void WaitNote(DWORD key, LONG us, DWORD mwTok = 0) {
 // removes its key from the warm-up slice on (AvoidRO, SlotEnabledRO, DeferFootprint) so hid that key's off-half wait
 // (2026-10-22 pairs, docs/51 §218). The A/B keys get their slots at start.
 static void SeedWaitKeys() {
-    static const DWORD kKeys[] = {0x0085FE10, 0x0062EF7A, 0x0062F782, 0x00833593, 0x02000003, 0x00846D21, 0x008334CC,
-                                  0x00760BFF, 0x0062FB74, 0x00631814, 0x00631F40, 0x0083156D, 0x0082D296, 0x0085B50C,
-                                  0x00755990, 0x0075A64C};  // 2026-11-04: idle check site C, GoalValidRO site
+    static const DWORD kKeys[] = {TS3A(0x0085FE10), TS3A(0x0062EF7A), TS3A(0x0062F782), TS3A(0x00833593), 0x02000003, TS3A(0x00846D21), TS3A(0x008334CC),
+                                  TS3A(0x00760BFF), TS3A(0x0062FB74), TS3A(0x00631814), TS3A(0x00631F40), TS3A(0x0083156D), TS3A(0x0082D296), TS3A(0x0085B50C),
+                                  TS3A(0x00755990), TS3A(0x0075A64C)};  // 2026-11-04: idle check site C, GoalValidRO site
     for (int i = 0; i < (int)(sizeof(kKeys) / sizeof(kKeys[0])); i++) ts3native_counters.blockKey[i] = (LONG)kKeys[i];
 }
 static HANDLE g_asyncReady, g_asyncDone;
@@ -3512,8 +3513,8 @@ static volatile LONG g_auAsk;
 // Each such call goes back to the waiting caller thread and runs there, as it would have without the worker. Only one
 // of the two threads runs at a time, so a plan started inside that managed call goes to the worker the same way.
 typedef void*(__cdecl* InvokeFn)(void* method, void* obj, void** params, void** exc);
-static DWORD* g_invokeSlot = (DWORD*)(uintptr_t)0x01195B60;  // set by mono_install_runtime_invoke 0xEA1470; 0xEA1080 before
-static DWORD g_invokeExpect = 0x00E5A600;  // the interpreter's runtime_invoke, installed by mono_interp_init 0xE5A680
+static DWORD* g_invokeSlot = (DWORD*)(uintptr_t)TS3A(0x01195B60);  // set by mono_install_runtime_invoke 0xEA1470; 0xEA1080 before
+static DWORD g_invokeExpect = TS3A(0x00E5A600);  // the interpreter's runtime_invoke, installed by mono_interp_init 0xE5A680
 static bool g_invokeCheckBytes = true;     // selftest turns it off (its fake invoke has another prologue)
 static const u8 kInvokePrologue[] = {0x81, 0xEC, 0x50, 0x01, 0x00, 0x00, 0x68, 0x50, 0x01, 0x00, 0x00};  // sub esp,150h; push 150h
 // prologue as read at load ([RouteAsync] start), before the Frida profiler can attach: its task attribution hooks 0xEA1090
@@ -3534,9 +3535,9 @@ static HANDLE g_invReady, g_invDone;
 // from 0xD70F60 -> interp.c:3595 assert). So the whole call goes to the caller/owner thread, as it runs without the worker.
 typedef void*(__fastcall* HostCallFn)(void* self, void* edx, void* out, void* a2, void* a3, void* a4);
 static HostCallFn g_hostCallOrig;
-static const DWORD HOST_CALL = 0x00D75FA0;
+static const DWORD HOST_CALL = TS3A(0x00D75FA0);
 static const u8 kHostCallPrologue[] = {0x55, 0x8D, 0x6C, 0x24, 0x98, 0x81, 0xEC, 0x84, 0x00, 0x00, 0x00};  // push ebp; lea ebp,[esp-68h]; sub esp,84h
-static DWORD* g_hostPtr = (DWORD*)(uintptr_t)0x011EE514;    // MonoScriptHost (ctor 0xD7E010)
+static DWORD* g_hostPtr = (DWORD*)(uintptr_t)TS3A(0x011EE514);    // MonoScriptHost (ctor 0xD7E010)
 
 // The caller's FPU state goes with the job: D3D9 can leave the game thread's x87 at single precision, and the
 // search must round the same way to find the same path.
@@ -4245,7 +4246,7 @@ static u8 PlanLockedBody(void* world, void* edx, int* outList, int* starts, int*
     return r;
 }
 
-static const DWORD ROUTE_PLAN_LOCKED = 0x0082C6E0;
+static const DWORD ROUTE_PLAN_LOCKED = TS3A(0x0082C6E0);
 static const u8 kPlanLockedPrologue[] = {0x81, 0xEC, 0xD8, 0x00, 0x00, 0x00};  // sub esp,0xD8
 
 // --- Async route plan (docs/18 "Async plan"): the C# hook on ScriptCore.Route.Plan (mods/ts3fixes RouteBackoff.cs) asks
@@ -4266,7 +4267,7 @@ static const DWORD kAsyncOptHi = 0x04000000, kAsyncCancelHi = 0x40000000, kNoYie
 // state, 0xD70F60), then asserts yieldReturn on the *current* state (0xE59763). The current state is the innermost
 // ves_exec's (0xE53EB0 keeps it in 0x11F4170); a native->managed call (runtime_invoke 0xE5A600, or 0xD8A8E0) runs on a
 // fresh one. So a yield is only safe when the current state is the task's root state.
-static DWORD* g_curState = (DWORD*)(uintptr_t)0x011F4170;   // current interpreter state
+static DWORD* g_curState = (DWORD*)(uintptr_t)TS3A(0x011F4170);   // current interpreter state
 static bool CanYield() {
     const u8* host = (const u8*)(uintptr_t)*g_hostPtr;
     if (!host) return false;
@@ -4412,8 +4413,8 @@ static const char* const kRfbName[] = {"NoStart", "NoYield", "M1NoLock", "M1Busy
 // (lot +0x39C, level group bit 0x10000) from inside the plan; on the worker that races the sim's level writers. Those plans
 // stay on the sim thread (refusal "Los"). Route lookup as the route ICs: RouteHandle_Lookup 0x74B2C0 on [0x11D40C4].
 typedef const u8*(__fastcall* AsRouteFn)(const void* rm, void* edx, DWORD handle);
-static AsRouteFn g_asRoute = (AsRouteFn)(uintptr_t)0x0074B2C0;
-static const u8* const* g_asRmSlot = (const u8* const*)(uintptr_t)0x011D40C4;
+static AsRouteFn g_asRoute = (AsRouteFn)(uintptr_t)TS3A(0x0074B2C0);
+static const u8* const* g_asRmSlot = (const u8* const*)(uintptr_t)TS3A(0x011D40C4);
 static bool AsyncLosRoute(DWORD handle) {
     __try {
         const u8* rm = *g_asRmSlot;
@@ -4581,7 +4582,7 @@ static void ArTrip(LONG* n, const char* what, int kind, int jobKind, DWORD handl
 // Route_StopFollowingRoute 0x753230 [verified writers])? Locomotion reads such a route every tick, so it is never replanned
 // on the worker [inferred race, never tested]. cdecl(handle), bool in AL; selftest swaps it. docs/134: foreign STARTs too.
 typedef u8(__cdecl* RouteIsActiveFn)(DWORD handle);
-static RouteIsActiveFn g_routeIsActive = (RouteIsActiveFn)(uintptr_t)0x0074CFC0;
+static RouteIsActiveFn g_routeIsActive = (RouteIsActiveFn)(uintptr_t)TS3A(0x0074CFC0);
 
 // The collect side of every async route IC (IcPlanHook, a10.cpp hooks): hands the stored result over when READY armed it
 // for this route and the job is this IC's (kind, start point), else plans here. Sim thread only.
@@ -4666,9 +4667,9 @@ static u8 AsyncRefuse(DWORD handle, int why, int kind, bool total = true) {
 // Lock_Acquire / Lock_Release and so our detours), and the job then finds a quiet world. Selftest swaps the three pointers.
 typedef void(__fastcall* FbApplyFn)(void* world, void* edx);
 typedef LONG(__fastcall* FbRelFn)(void* lock, void* edx);
-static FbApplyFn g_fbApply = (FbApplyFn)(uintptr_t)0x0082C420;
-static LockAcquireFn g_fbAcq = (LockAcquireFn)(uintptr_t)0x004E16F0;
-static FbRelFn g_fbRel = (FbRelFn)(uintptr_t)0x004E17B0;
+static FbApplyFn g_fbApply = (FbApplyFn)(uintptr_t)TS3A(0x0082C420);
+static LockAcquireFn g_fbAcq = (LockAcquireFn)(uintptr_t)TS3A(0x004E16F0);
+static FbRelFn g_fbRel = (FbRelFn)(uintptr_t)TS3A(0x004E17B0);
 static bool FbApplyPending() {
     void* lock = g_rgLock;
     static const DWORD kTry = 0;
@@ -5127,7 +5128,7 @@ static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline, DWORD
     return r;
 }
 
-static const DWORD IC_ROUTE_PLAN = 0x00765160, ROUTE_GET_OPTION = 0x0074D040, LOCK_ACQUIRE = 0x004E16F0;
+static const DWORD IC_ROUTE_PLAN = TS3A(0x00765160), ROUTE_GET_OPTION = TS3A(0x0074D040), LOCK_ACQUIRE = TS3A(0x004E16F0);
 static const u8 kIcPlanPrologue[] = {0x0F, 0x57, 0xC0, 0x8B, 0x0D, 0xC4, 0x40, 0x1D, 0x01};     // xorps xmm0,xmm0; mov ecx,[0x11D40C4]
 static const u8 kGetOptionPrologue[] = {0x8B, 0x0D, 0xC4, 0x40, 0x1D, 0x01};                     // mov ecx,[0x11D40C4]
 static const u8 kLockAcquirePrologue[] = {0x53, 0x55, 0x56, 0x8B, 0xF1, 0x80, 0x7E, 0x24, 0x00};  // push ebx/ebp/esi; mov esi,ecx; cmp byte [esi+24h],0
@@ -5406,8 +5407,8 @@ static bool CostStubsWanted(bool routeBudget, int asyncMode) {
 // on the sim thread (0xD5D910) no longer race the main thread's rendering. The deferral to the device thread is not built:
 // the IC callers wait for the result, and a sim-to-main wait can deadlock against the frame lock (docs/41 S1) [inferred].
 static const Site kD3dFlags[] = {
-    {0x006112A4, {0xBE, 0x40, 0x00, 0x00, 0x00}, 5, 1},  // mov esi,40h (D3DCREATE_SOFTWARE_VERTEXPROCESSING)
-    {0x006112B9, {0xBE, 0x20, 0x00, 0x00, 0x00}, 5, 1},  // mov esi,20h (D3DCREATE_HARDWARE_VERTEXPROCESSING)
+    {TS3A(0x006112A4), {0xBE, 0x40, 0x00, 0x00, 0x00}, 5, 1},  // mov esi,40h (D3DCREATE_SOFTWARE_VERTEXPROCESSING)
+    {TS3A(0x006112B9), {0xBE, 0x20, 0x00, 0x00, 0x00}, 5, 1},  // mov esi,20h (D3DCREATE_HARDWARE_VERTEXPROCESSING)
 };
 static bool ApplyD3dMultithreaded(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"D3DMultithreaded", L"Enabled", 0, ini)) { Log("d3d multithreaded disabled (Enabled=0)"); return false; }

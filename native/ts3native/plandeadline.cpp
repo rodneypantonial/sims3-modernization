@@ -753,7 +753,7 @@ static void InstallPlanDeadline() {
     Ts3nCounters& k = ts3native_counters;
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
     if (k.pdUs || k.pdOwnUs || g_fbjdIni || g_kdIni || g_ufIni) {
-        PdInstallAt(0x0061E500, 0x00671930);
+        PdInstallAt(TS3A(0x0061E500), TS3A(0x00671930));
         if (g_kdIni) KdInstalled();  // docs/197
         if (g_ufIni) UfInstalled();  // docs/202
         if (g_fbjdIni) {  // docs/178 T1: the worker slot of the same stubs; the deadline is FbJobCapMs's (t_fbDeadline)

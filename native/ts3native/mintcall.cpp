@@ -25,22 +25,22 @@
 #error define MC_CTR (the struct holding the mc* counters) before including mintcall.cpp
 #endif
 
-static const DWORD MC_TABLE = 0x00E59880, MC_HEAD = 0x00E544D5, MC_NOP = 0x1C1;
+static const DWORD MC_TABLE = TS3A(0x00E59880), MC_HEAD = TS3A(0x00E544D5), MC_NOP = 0x1C1;
 static const DWORD MC_OPS[4] = {0x06, 0x07, 0xEA, 0xEC};
-static const DWORD MC_EA[4] = {0x00E591FF, 0x00E59236, 0x00E5493E, 0x00E549EB};
+static const DWORD MC_EA[4] = {TS3A(0x00E591FF), TS3A(0x00E59236), TS3A(0x00E5493E), TS3A(0x00E549EB)};
 // EA code our handlers model (FNV-1a over the Steam 1.67 bytes): any other hook in them (ArenaTail TailWatch 0xE563B2,
 // monohost MINT=count 0xE54B0B, ...) changes what the stock path does, so the fast path refuses to install.
 // MonoPatcher 0.3.0 (docs/68 §1.3) is accepted: its DllMain patch 0xE59218 `jbe` -> `90 E9` only drops the "ret: more
 // values on stack" print (our ret bails on that case and EA's then returns either way), and its on-demand ForceJIT
 // (0xE5637D `jne` -> `90 90`: transform on every call) is tested per call (byte 0x75 expected): calls go to EA then.
 static const struct { DWORD at, n, fnv, fnv2; } kMcCode[5] = {
-    {0x00E5493E, 0xAD, 0x51DF97BD, 0},           // call / con.call
-    {0x00E549EB, 0x160, 0x65BD44CB, 0},          // callvirt family
-    {0x00E56287, 0x1C2, 0x3D55ED25, 0},          // common push
-    {0x00E591FF, 0x60, 0x41B1FFB3, 0x6B9C5C8D},  // ret / ret.void / ret.vt (2nd: MonoPatcher's 0xE59218 patch)
-    {0x00E543C7, 0x127, 0x86DC9168, 0},          // frame return + dispatch head
+    {TS3A(0x00E5493E), 0xAD, 0x51DF97BD, 0},           // call / con.call
+    {TS3A(0x00E549EB), 0x160, 0x65BD44CB, 0},          // callvirt family
+    {TS3A(0x00E56287), 0x1C2, 0x3D55ED25, 0},          // common push
+    {TS3A(0x00E591FF), 0x60, 0x41B1FFB3, 0x6B9C5C8D},  // ret / ret.void / ret.vt (2nd: MonoPatcher's 0xE59218 patch)
+    {TS3A(0x00E543C7), 0x127, 0x86DC9168, 0},          // frame return + dispatch head
 };
-static DWORD g_mcEaRet = 0x00E591FF, g_mcEaRetVoid = 0x00E59236, g_mcEaCall = 0x00E5493E, g_mcEaCallvirt = 0x00E549EB;
+static DWORD g_mcEaRet = TS3A(0x00E591FF), g_mcEaRetVoid = TS3A(0x00E59236), g_mcEaCall = TS3A(0x00E5493E), g_mcEaCallvirt = TS3A(0x00E549EB);
 static DWORD g_mcHead = MC_HEAD;
 static int g_mcVerify;          // verify mode installed (all entries -> McVCatch)
 static void* g_mcOrig[MC_NOP];  // verify: what each entry pointed at (our four handlers for our ops)

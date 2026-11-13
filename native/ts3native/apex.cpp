@@ -136,7 +136,7 @@ static int ApexVerifySite(DWORD at) {
     }
 }
 
-static bool SaveWriteYieldToApex(DWORD site = 0x00AB12AF);  // savewrite.cpp
+static bool SaveWriteYieldToApex(DWORD site = TS3A(0x00AB12AF));  // savewrite.cpp
 
 // Late check (zzApexRadiance.asi: its DllMain runs after ours). Apex installs its game code after the first Present + 1 s
 // [verified apex_main.cpp], so a site given back before then is seen as the game's. Only the [SaveWrite] timing call at
