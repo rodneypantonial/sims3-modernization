@@ -6,7 +6,8 @@
 // game bytes in the output.
 // Usage:
 //   node tools/autshadow-il-hashes.ts [--set "<label>=<a.dll>[,<b.dll>]"]... [--check]
-//     default builds: EA (game-copy/assemblies) and simler90 UPDATE242 (game-copy/simler90-242/dll SGS + SGO over EA);
+//     default builds: EA (game-copy/assemblies), simler90 UPDATE242 (game-copy/simler90-242/dll SGS + SGO over EA) and EA app
+//     1.69.47 (game-copy/assemblies-ea169, all modules);
 //     --set adds a build = the given DLLs over EA's (mod copies of game assemblies: extract with tools/extract-assemblies.ts).
 //     --check: compare with the committed file instead of writing it (exit 1 when they differ).
 //     NRaas ErrorTrap ScriptCore: game-copy/errortrap/ScriptCore.dll (extract-assemblies from NRaas_ErrorTrap.package); 0 new
@@ -23,6 +24,7 @@ const ROOT = resolve(import.meta.dirname, '..');
 const OUT = join(ROOT, 'mods/ts3fixes/src/AutShadowIlHashes.cs');
 const EA = join(ROOT, 'game-copy/assemblies');
 const SIMLER = join(ROOT, 'game-copy/simler90-242/dll');
+const EA169 = join(ROOT, 'game-copy/assemblies-ea169');
 // AutShadow.cs kGameModules: ClosureSweep resolves keys in this order (first assembly with the type wins)
 const ORDER = ['mscorlib', 'System', 'System.Xml', 'ScriptCore', 'SimIFace', 'Sims3GameplaySystems', 'Sims3GameplayObjects', 'Sims3Metadata', 'Sims3StoreObjects', 'UI'];
 
@@ -204,6 +206,9 @@ if (argv[0] === '--one') {
   const builds: [string, string[]][] = [['EA Steam 1.67', []]];
   if (existsSync(join(SIMLER, 'Sims3GameplaySystems.dll'))) builds.push(['simler90 Gameplay Core Mod UPDATE242 (Steam)', ['Sims3GameplaySystems.dll', 'Sims3GameplayObjects.dll'].map((f) => join(SIMLER, f))]);
   if (existsSync(join(ROOT, 'game-copy/errortrap/ScriptCore.dll'))) builds.push(['NRaas ErrorTrap ScriptCore (VersionStamp 100)', [join(ROOT, 'game-copy/errortrap/ScriptCore.dll')]]);
+  // EA app 1.69.47 (EA-only branch): every guarded key has the Steam 1.67 IL shape; the hashes differ only by raw generic
+  // tokens and compiler-generated names (docs/218 §9)
+  if (existsSync(join(EA169, 'SimIFace.dll'))) builds.push(['EA app 1.69.47', readdirSync(EA169).filter((n) => n.endsWith('.dll')).map((f) => join(EA169, f))]);
   for (let i = 0; i < argv.length; i++) if (argv[i] === '--set') { const [l, fs] = argv[++i].split('='); builds.push([l, fs.split(',')]); }
   const all = new Set<string>(), mvids = new Set<string>(), lines: string[] = [];
   for (const [label, overlay] of builds) {
