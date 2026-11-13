@@ -6,7 +6,7 @@
       "id": "ea-apex311-control-travel",
       "note": "[ours alone, no Apex file in Bin] [est 25 min] control for the travel jobs: v0.2.11 EA asi + rc ini + its ts3fixes, travel x3 to France with memory marks, Apex not detected. A FAIL here is ours or the harness, never Apex.",
       "asi": "tested",
-      "pinReason": "v0.2.11 EA build from release/v0.2.11-ea169 CI (TS3_NATIVE_DIR); placeholder folder name until the CI artifact lands (docs/260 §8 TODO). No fixesPackage: the EA harness queue.ts allows it only on profile/soak/repro jobs, so this matrix job runs the ts3fixes the harness tree builds (docs/260 §6.1)",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f); matrix jobs pin it since harness c40609c8",
       "releaseDefaults": true,
       "callSites": false,
       "save": "Baseline-SV-Spring",
@@ -36,7 +36,8 @@
         "^diag: mem #\\d+ load ev=(travel,)?world-switch ": 6,
         "^diag: mem #\\d+ mark ev=away ": 3,
         "^diag: mem #\\d+ mark ev=home ": 3,
-        "^OK   mono sig guard \\(docs/539 ": 1
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "^save: end #\\d+ result 0 after": 5
       },
       "logForbid": {
         "^FAIL\\b": 0,
@@ -44,15 +45,17 @@
         "^compat: Apex Radiance found": 0,
         "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
         "^SKIP mono sig guard": 0,
-        "[\\\\/]Users[\\\\/][^<]": 0
-      }
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [^0]": 0
+      },
+      "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package"
     },
     {
       "id": "ea-apex311-smoke-dxvk",
       "note": "[Apex 3.1.1 eatest asi + DXVK d3d9.dll in Bin, by hand] [est 15 min] smoke: Apex 3.1.1 loaded (Bin add-ons v3.1.1.0) and active in this process (its instance mutex seen at our start, ApexStandDown=1), ts3fixes alive, [LotPool] Trim stood down, one real save (Apex MemoryGuard redirects the world-save call on EA, docs/260 §2.3), real quit. Afterwards read Apex's log (docs/260 §6.3): [Addr] count, DelegateSigFix line, no Not available for groups found statically.",
       "asi": "tested",
       "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package",
-      "pinReason": "v0.2.11 EA build from release/v0.2.11-ea169 CI (TS3_NATIVE_DIR); placeholder folder name until the CI artifact lands (docs/260 §8 TODO)",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f)",
       "releaseDefaults": true,
       "callSites": false,
       "save": "Baseline-SV-Spring",
@@ -70,10 +73,9 @@
         "host build: EA app 1\\.69\\.47": 1,
         "^diag: Bin add-ons: .*ApexRadiance\\.asi \\d+ KB v3\\.1\\.1\\.0": 1,
         "^compat: Apex Radiance found at start \\(ApexRadiance\\.asi (zzApexRadiance\\.asi )?mutex\\).*; ApexStandDown=1": 1,
-        "^ts3fixes: world: \\S+\\.world, lots \\d+": 1,
-        "^lptrim: skipped \\(world load #\\d+\\), pool not read world=\\S+: stood down: Apex Radiance loaded; nothing changed": 1,
-        "save: end #1 result 0": 1,
-        "^OK   mono sig guard \\(docs/539 ": 1
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "^ts3fixes: world: .+?\\.world, lots \\d+": 1,
+        "^lptrim: skipped \\(world load #\\d+\\), pool not read world=.+?\\.world: stood down: Apex Radiance loaded; nothing changed": 1
       },
       "logForbid": {
         "^FAIL\\b": 0,
@@ -87,7 +89,7 @@
       "id": "ea-apex311-travel-dxvk",
       "note": "[Apex 3.1.1 eatest asi + DXVK d3d9.dll in Bin, by hand] [est 25 min] travel x3 to France with memory marks, Apex found at start, Trim stood down at every load. Same checks as the control plus Apex.",
       "asi": "tested",
-      "pinReason": "v0.2.11 EA build from release/v0.2.11-ea169 CI (TS3_NATIVE_DIR); placeholder folder name until the CI artifact lands (docs/260 §8 TODO). No fixesPackage: the EA harness queue.ts allows it only on profile/soak/repro jobs, so this matrix job runs the ts3fixes the harness tree builds (docs/260 §6.1)",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f); matrix jobs pin it since harness c40609c8",
       "releaseDefaults": true,
       "callSites": false,
       "save": "Baseline-SV-Spring",
@@ -117,8 +119,9 @@
         "^diag: mem #\\d+ load ev=(travel,)?world-switch ": 6,
         "^diag: mem #\\d+ mark ev=away ": 3,
         "^diag: mem #\\d+ mark ev=home ": 3,
-        "^lptrim: skipped \\(world load #\\d+\\), pool not read world=\\S+: stood down: Apex Radiance loaded; nothing changed": 3,
-        "^OK   mono sig guard \\(docs/539 ": 1
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "^lptrim: skipped \\(world load #\\d+\\), pool not read world=.+?\\.world: stood down: Apex Radiance loaded; nothing changed": 3,
+        "^save: end #\\d+ result 0 after": 5
       },
       "logForbid": {
         "^FAIL\\b": 0,
@@ -126,15 +129,17 @@
         "^lptrim: #\\d+ world load #\\d+ ": 0,
         "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
         "^SKIP mono sig guard": 0,
-        "[\\\\/]Users[\\\\/][^<]": 0
-      }
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [^0]": 0
+      },
+      "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package"
     },
     {
       "id": "ea-apex311-smoke-bridge",
       "note": "[Apex 3.1.1 eatest asi + RTX Remix bridge zip in Bin, DXVK moved out, both bridge.conf client.targetProcess = the game process name, by hand] [est 15 min] smoke as -dxvk. The bridge server (64-bit plain DXVK) runs on this laptop's Intel iGPU [inferred, docs/260 §4]; the first minute proves it: NvRemixBridge.exe in the process list and Apex's log line 'd3d9: RTX Remix bridge (DXVK in another process)' (runbook check, not a log regex here).",
       "asi": "tested",
       "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package",
-      "pinReason": "v0.2.11 EA build from release/v0.2.11-ea169 CI (TS3_NATIVE_DIR); placeholder folder name until the CI artifact lands (docs/260 §8 TODO)",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f)",
       "releaseDefaults": true,
       "callSites": false,
       "save": "Baseline-SV-Spring",
@@ -152,10 +157,9 @@
         "host build: EA app 1\\.69\\.47": 1,
         "^diag: Bin add-ons: .*ApexRadiance\\.asi \\d+ KB v3\\.1\\.1\\.0": 1,
         "^compat: Apex Radiance found at start \\(ApexRadiance\\.asi (zzApexRadiance\\.asi )?mutex\\).*; ApexStandDown=1": 1,
-        "^ts3fixes: world: \\S+\\.world, lots \\d+": 1,
-        "^lptrim: skipped \\(world load #\\d+\\), pool not read world=\\S+: stood down: Apex Radiance loaded; nothing changed": 1,
-        "save: end #1 result 0": 1,
-        "^OK   mono sig guard \\(docs/539 ": 1
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "^ts3fixes: world: .+?\\.world, lots \\d+": 1,
+        "^lptrim: skipped \\(world load #\\d+\\), pool not read world=.+?\\.world: stood down: Apex Radiance loaded; nothing changed": 1
       },
       "logForbid": {
         "^FAIL\\b": 0,
@@ -169,7 +173,7 @@
       "id": "ea-apex311-travel-bridge",
       "note": "[Apex 3.1.1 eatest asi + RTX Remix bridge, as the bridge smoke] [est 25 min] travel x3 to France (the job that crashed with rc1111g on Steam, docs/259 §7.1 crash 2; clean with rc1111d = v0.2.11).",
       "asi": "tested",
-      "pinReason": "v0.2.11 EA build from release/v0.2.11-ea169 CI (TS3_NATIVE_DIR); placeholder folder name until the CI artifact lands (docs/260 §8 TODO). No fixesPackage: the EA harness queue.ts allows it only on profile/soak/repro jobs, so this matrix job runs the ts3fixes the harness tree builds (docs/260 §6.1)",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f); matrix jobs pin it since harness c40609c8",
       "releaseDefaults": true,
       "callSites": false,
       "save": "Baseline-SV-Spring",
@@ -199,8 +203,9 @@
         "^diag: mem #\\d+ load ev=(travel,)?world-switch ": 6,
         "^diag: mem #\\d+ mark ev=away ": 3,
         "^diag: mem #\\d+ mark ev=home ": 3,
-        "^lptrim: skipped \\(world load #\\d+\\), pool not read world=\\S+: stood down: Apex Radiance loaded; nothing changed": 3,
-        "^OK   mono sig guard \\(docs/539 ": 1
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "^lptrim: skipped \\(world load #\\d+\\), pool not read world=.+?\\.world: stood down: Apex Radiance loaded; nothing changed": 3,
+        "^save: end #\\d+ result 0 after": 5
       },
       "logForbid": {
         "^FAIL\\b": 0,
@@ -208,8 +213,100 @@
         "^lptrim: #\\d+ world load #\\d+ ": 0,
         "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
         "^SKIP mono sig guard": 0,
-        "[\\\\/]Users[\\\\/][^<]": 0
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [^0]": 0
+      },
+      "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package"
+    },
+    {
+      "id": "ea-apex311-s3ss-smoke-dxvk",
+      "note": "[Apex 3.1.1 eatest asi + DXVK d3d9.dll in Bin, by hand] [est 15 min] smoke: Apex 3.1.1 loaded (Bin add-ons v3.1.1.0) and active in this process (its instance mutex seen at our start, ApexStandDown=1), ts3fixes alive, [LotPool] Trim stood down, one real save (Apex MemoryGuard redirects the world-save call on EA, docs/260 §2.3), real quit. Afterwards read Apex's log (docs/260 §6.3): [Addr] count, DelegateSigFix line, no Not available for groups found statically. + S3SS (Apex README: works alongside official S3SS) [S3SS 1.6.3 eatest copy in Bin by hand: game-copy/s3ss-1.6.3-eatest/Sims3SettingsSetter.asi, release asset 69ce87ee + 2 bytes at file offset 0x3841C (process-name check opened for Sims3Launcher.exe, test only); default settings, no toml]",
+      "asi": "tested",
+      "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f)",
+      "releaseDefaults": true,
+      "callSites": false,
+      "save": "Baseline-SV-Spring",
+      "noiseCheck": false,
+      "run": {
+        "soak": {
+          "minutes": 8,
+          "speed": "normal"
+        }
+      },
+      "scriptErrorsMax": 0,
+      "timeoutMin": 25,
+      "logRequire": {
+        "^ts3native 0\\.36\\.\\d+": 1,
+        "host build: EA app 1\\.69\\.47": 1,
+        "^diag: Bin add-ons: .*ApexRadiance\\.asi \\d+ KB v3\\.1\\.1\\.0": 1,
+        "^compat: Apex Radiance found at start \\(ApexRadiance\\.asi (zzApexRadiance\\.asi )?mutex\\).*; ApexStandDown=1": 1,
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "^diag: Bin add-ons: .*Sims3SettingsSetter\\.asi \\d+ KB": 1,
+        "^s3ss compat: stale write guard (on|stands aside) ": 1,
+        "^ts3fixes: world: .+?\\.world, lots \\d+": 1,
+        "^lptrim: skipped \\(world load #\\d+\\), pool not read world=.+?\\.world: stood down: Apex Radiance loaded; nothing changed": 1
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP all": 0,
+        "^lptrim: #\\d+ world load #\\d+ ": 0,
+        "^SKIP mono sig guard": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^s3ss compat: Sims3SettingsSetter\\.asi not loaded at start": 0
       }
+    },
+    {
+      "id": "ea-apex311-s3ss-travel-dxvk",
+      "note": "[Apex 3.1.1 eatest asi + DXVK d3d9.dll in Bin, by hand] [est 25 min] travel x3 to France with memory marks, Apex found at start, Trim stood down at every load. Same checks as the control plus Apex. + S3SS (Apex README: works alongside official S3SS) [S3SS 1.6.3 eatest copy in Bin by hand: game-copy/s3ss-1.6.3-eatest/Sims3SettingsSetter.asi, release asset 69ce87ee + 2 bytes at file offset 0x3841C (process-name check opened for Sims3Launcher.exe, test only); default settings, no toml]",
+      "asi": "tested",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f); matrix jobs pin it since harness c40609c8",
+      "releaseDefaults": true,
+      "callSites": false,
+      "save": "Baseline-SV-Spring",
+      "noiseCheck": false,
+      "ini": {
+        "MemDiag.Enabled": 1,
+        "UserDiag.Enabled": 1
+      },
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "france",
+          "--trips",
+          "3",
+          "--mem-marks"
+        ]
+      },
+      "timeoutMin": 60,
+      "logRequire": {
+        "^ts3native 0\\.36\\.\\d+": 1,
+        "host build: EA app 1\\.69\\.47": 1,
+        "^compat: Apex Radiance found at start \\(ApexRadiance\\.asi (zzApexRadiance\\.asi )?mutex\\).*; ApexStandDown=1": 1,
+        "^diag: world load #\\d+, uptime \\d+ min, ts3native": 7,
+        "^diag: mem #\\d+ load ev=(travel,)?world-switch ": 6,
+        "^diag: mem #\\d+ mark ev=away ": 3,
+        "^diag: mem #\\d+ mark ev=home ": 3,
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "^diag: Bin add-ons: .*Sims3SettingsSetter\\.asi \\d+ KB": 1,
+        "^s3ss compat: stale write guard (on|stands aside) ": 1,
+        "^lptrim: skipped \\(world load #\\d+\\), pool not read world=.+?\\.world: stood down: Apex Radiance loaded; nothing changed": 3,
+        "^save: end #\\d+ result 0 after": 5
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP all": 0,
+        "^lptrim: #\\d+ world load #\\d+ ": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "^SKIP mono sig guard": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^s3ss compat: Sims3SettingsSetter\\.asi not loaded at start": 0,
+        "^save: end #\\d+ result [^0]": 0
+      },
+      "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package"
     }
   ]
 }

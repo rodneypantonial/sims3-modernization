@@ -1,0 +1,159 @@
+{
+  "note": "Phase 1 of the v0.2.11 EA release check (docs/260 §7.1): ours alone on EA app 1.69.47, EA laptop, correctness only (game muted, no big CC, no timing). TS3_NATIVE_DIR=game-copy/ci-ea169-v0211. Travel x3 is the control job of apex311-ea-compat.json. node tools/harness/queue.ts <this> --no-smoke",
+  "stopQueueOnFail": true,
+  "jobs": [
+    {
+      "asi": "tested",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f); matrix jobs pin it since harness c40609c8",
+      "releaseDefaults": true,
+      "callSites": false,
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package",
+      "id": "ea-v0211-bp-live",
+      "note": "BP smoke load + 10 min live play at normal speed (autopilot + watchdog); every feature the EA rc ini turns on installs (read the log: MonoThread, AutShadow Satb=2, RouteSnap, MonoSigGuard, CasTrim, LotPool Trim, S3SSCompat StaleWriteGuard, RouteAsync)",
+      "run": {
+        "soak": {
+          "minutes": 10,
+          "speed": "normal"
+        }
+      },
+      "scriptErrorsMax": 0,
+      "timeoutMin": 30,
+      "logRequire": {
+        "^ts3native 0\\.36\\.\\d+": 1,
+        "host build: EA app 1\\.69\\.47": 1,
+        "^compat: Apex Radiance not loaded at start": 1,
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "^ts3fixes: world: \\S+\\.world, lots \\d+": 1
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP all": 0,
+        "^compat: Apex Radiance found": 0,
+        "^SKIP mono sig guard": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      }
+    },
+    {
+      "asi": "tested",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f); matrix jobs pin it since harness c40609c8",
+      "releaseDefaults": true,
+      "callSites": false,
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package",
+      "id": "ea-v0211-bp-save",
+      "note": "BP real save at speed 3 (save-matrix unpaused: result 0, no fails)",
+      "ini": {
+        "UserDiag.Enabled": 1
+      },
+      "run": {
+        "matrix": [
+          "--cases",
+          "unpaused"
+        ]
+      },
+      "timeoutMin": 30,
+      "logRequire": {
+        "^ts3native 0\\.36\\.\\d+": 1,
+        "host build: EA app 1\\.69\\.47": 1,
+        "^compat: Apex Radiance not loaded at start": 1,
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "save: end #1 result 0": 1
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP all": 0,
+        "^compat: Apex Radiance found": 0,
+        "^SKIP mono sig guard": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      }
+    },
+    {
+      "asi": "tested",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f); matrix jobs pin it since harness c40609c8",
+      "releaseDefaults": true,
+      "callSites": false,
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package",
+      "id": "ea-v0211-s3ss-smoke",
+      "note": "ours + S3SS: BP smoke load + 8 min live play [S3SS 1.6.3 eatest copy in Bin by hand: game-copy/s3ss-1.6.3-eatest/Sims3SettingsSetter.asi, release asset 69ce87ee + 2 bytes at file offset 0x3841C (process-name check opened for Sims3Launcher.exe, test only); default settings, no toml]",
+      "run": {
+        "soak": {
+          "minutes": 8,
+          "speed": "normal"
+        }
+      },
+      "scriptErrorsMax": 0,
+      "timeoutMin": 30,
+      "logRequire": {
+        "^ts3native 0\\.36\\.\\d+": 1,
+        "host build: EA app 1\\.69\\.47": 1,
+        "^compat: Apex Radiance not loaded at start": 1,
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "^ts3fixes: world: \\S+\\.world, lots \\d+": 1,
+        "^diag: Bin add-ons: .*Sims3SettingsSetter\\.asi \\d+ KB": 1,
+        "^s3ss compat: stale write guard (on|stands aside) ": 1
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP all": 0,
+        "^compat: Apex Radiance found": 0,
+        "^SKIP mono sig guard": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^s3ss compat: Sims3SettingsSetter\\.asi not loaded at start": 0
+      }
+    },
+    {
+      "id": "ea-v0211-s3ss-travel",
+      "note": "ours + S3SS: travel x3 to France with memory marks [S3SS 1.6.3 eatest copy in Bin by hand: game-copy/s3ss-1.6.3-eatest/Sims3SettingsSetter.asi, release asset 69ce87ee + 2 bytes at file offset 0x3841C (process-name check opened for Sims3Launcher.exe, test only); default settings, no toml]",
+      "asi": "tested",
+      "pinReason": "v0.2.11 EA build (release/v0.2.11-ea169, frozen in TS3_NATIVE_DIR) + the v0.2.11 release ts3fixes.package (sha256 a563cf8f); matrix jobs pin it since harness c40609c8",
+      "releaseDefaults": true,
+      "callSites": false,
+      "save": "Baseline-SV-Spring",
+      "noiseCheck": false,
+      "ini": {
+        "MemDiag.Enabled": 1,
+        "UserDiag.Enabled": 1
+      },
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "france",
+          "--trips",
+          "3",
+          "--mem-marks"
+        ]
+      },
+      "timeoutMin": 60,
+      "logRequire": {
+        "^ts3native 0\\.36\\.\\d+": 1,
+        "host build: EA app 1\\.69\\.47": 1,
+        "^compat: Apex Radiance not loaded at start": 1,
+        "^diag: world load #\\d+, uptime \\d+ min, ts3native": 7,
+        "^diag: mem #\\d+ load ev=(travel,)?world-switch ": 6,
+        "^diag: mem #\\d+ mark ev=away ": 3,
+        "^diag: mem #\\d+ mark ev=home ": 3,
+        "^OK   mono sig guard \\(docs/539 ": 1,
+        "^diag: Bin add-ons: .*Sims3SettingsSetter\\.asi \\d+ KB": 1,
+        "^s3ss compat: stale write guard (on|stands aside) ": 1
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP all": 0,
+        "^compat: Apex Radiance found": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "^SKIP mono sig guard": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^s3ss compat: Sims3SettingsSetter\\.asi not loaded at start": 0
+      },
+      "fixesPackage": "game-copy/ci-ea169-v0211/ts3fixes.package"
+    }
+  ]
+}
