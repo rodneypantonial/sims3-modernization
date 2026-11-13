@@ -252,3 +252,14 @@ files, hashes equal except game logs).
 its G-M5 skip (LynMods override), as on Steam. Install lines: the same 220 OK lines and the same FAIL/SKIP/WARN set as the
 parity run (only the known `WARN detour write ... crosses an 8-byte boundary`). Row:
 `probe-out/queue/ea169-autshadow-hashes-2026-11-13.jsonl` (harness worktree).
+
+**Release candidate `ts3fixes.package.rel0211b` [verified, 2026-11-13, EA laptop].** Built on the Alienware from rc1111e
+454cfb69 plus only `AutShadowIlHashes.cs` and `tools/autshadow-il-hashes.ts` from #389; candidate to replace the v0.2.11
+package on Steam and EA (sha256 570f8845…, checked before use). Offline: `node tools/autshadow-il-hashes.ts --check` in this
+worktree (its two files are the #389 ones; `game-copy/assemblies-ea169` equal to the main repo's): `AutShadowIlHashes.cs up
+to date`; EA app 1.69.47 3,569 of 3,570 keys, the one miss the renamed closure `.ctor` as above. (454cfb69 itself is not
+reachable from this machine, so the file was not byte-compared against it.) In game: the same parity job, setup and native
+pair as above with this package pinned: PASS 11.2 min, no crash, 0 script errors; [602] 683, [603] 0, [2024] 371, [2025] 0,
+[606] 0; no `G-M6 skips` or `mod guard G-M6` line; the one G-M5 skip of `VisitCommunityLot+Definition` (LynMods); 1472
+autshadow requests; 220 OK lines and the FAIL/SKIP/WARN set unchanged from the parity run. Bin restored, 436 hashes equal.
+Row: `probe-out/queue/ea169-rel0211b-2026-11-13.jsonl` (harness worktree).
