@@ -50,7 +50,22 @@ static bool Readable(const void* p, size_t n) {
     return (const u8*)p + n <= (const u8*)mbi.BaseAddress + mbi.RegionSize;
 }
 
-#ifdef TS3N_TEST_EXPECTED
+#ifdef TS3A_TABLE
+#include "ts3bytes-ea169.h"  // ts3bytes_rows[] sorted by (addr, len), ts3bytes_pool[], ts3bytes_count (tools/patch-bytes-check.ts --table)
+// EA build: the bytes the game itself has at an already translated site replace the caller's Steam literal (they differ
+// only in rel32 / absolute-pointer operands, docs/68 7.3). Same address and length required, else the literal stays.
+static const u8* ExpectedAt(const void* addr, const u8* lit, size_t n) {
+    const DWORD a = (DWORD)(uintptr_t)addr, len = (DWORD)n;
+    int lo = 0, hi = ts3bytes_count - 1;
+    while (lo <= hi) {
+        const int mid = (lo + hi) / 2;
+        const DWORD ra = ts3bytes_rows[mid].a, rl = ts3bytes_rows[mid].len;
+        if (ra == a && rl == len) return ts3bytes_pool + ts3bytes_rows[mid].off;
+        if (ra < a || (ra == a && rl < len)) lo = mid + 1; else hi = mid - 1;
+    }
+    return lit;
+}
+#elif defined(TS3N_TEST_EXPECTED)
 // selftest: one fake table row (address + live bytes), so a test can make the live bytes differ from the literal, as the
 // EA port's translated-bytes table does (TestDetourCallRel)
 static DWORD g_testExpAt;
@@ -233,7 +248,7 @@ static int FbName(char* d, int room, DWORD method);   // below (LogFallbackStack
 static int FbStackText(char* d, int room, int frames);
 static bool GrFaultText(const CONTEXT* c, char* d, int room);  // gcroots.cpp: the task line (docs/67 §22.4)
 static bool MonoFaultText(const CONTEXT* c, char* d, int room) {
-    if (c->Eip < 0x00E51000 || c->Eip >= TS3A(0x00E5A600)) return false;
+    if (c->Eip < TS3A(0x00E51000) || c->Eip >= TS3A(0x00E5A600)) return false;
     char caller[120] = "?", callee[120] = "-", st[1100] = "unreadable";
     DWORD rm = 0, obj = 0, vt = 0, kl = 0;
     const bool miss = c->Eip >= TS3A(0x00E51FC0) && c->Eip < TS3A(0x00E520C0);
@@ -295,14 +310,14 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
         c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp, c->Eip, c->EFlags);
     if (code == EXCEPTION_ACCESS_VIOLATION || XcptWild(code)) P5cRelMatch(c);
     if (code == EXCEPTION_ACCESS_VIOLATION || XcptWild(code)) AsCrashLine();
-    if ((code == EXCEPTION_ACCESS_VIOLATION || XcptWild(code)) && (c->Eip < 0x00401000 || c->Eip >= 0x00F95000)) AaDrainFaultDump(c);
+    if ((code == EXCEPTION_ACCESS_VIOLATION || XcptWild(code)) && (c->Eip < TS3A(0x00401000) || c->Eip >= TS3A(0x00F95000))) AaDrainFaultDump(c);
     char mono[1500];
     if (code == EXCEPTION_ACCESS_VIOLATION && MonoFaultText(c, mono, sizeof(mono))) {
         Log("  %s", mono);
         if (GrFaultText(c, mono, sizeof(mono))) Log("  %s", mono);  // docs/67 §22.4: is the task rooted, is the frame scanned
     }
     // TS3W.exe code (not the start-up AVs in other modules): the released ring once; an illegal instruction counts (wild call)
-    if ((code == EXCEPTION_ACCESS_VIOLATION && c->Eip >= 0x00401000 && c->Eip < 0x00F95000) || XcptWild(code))
+    if ((code == EXCEPTION_ACCESS_VIOLATION && c->Eip >= TS3A(0x00401000) && c->Eip < TS3A(0x00F95000)) || XcptWild(code))
         P5cRelDump();
     return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -5400,6 +5415,7 @@ static bool CostStubsWanted(bool routeBudget, int asyncMode) {
 #include "eafix.cpp"       // docs/67 §26.4 / §27.5 / §28: [EaCrashFixes] ConformActor, ThumbPose, GeomBoneIndex (needs footprint.cpp's FpCallOk / FpRedirect)
 #include "pkglock.cpp"     // docs/539 §13.9: [PkgLock] EA package-lock ABBA (after routegate.cpp: LockReleaseFn), off by default
 #include "wastar.cpp"      // docs/67 §30: [EaCrashFixes] WorldAStarRefs
+#include "eadiag.cpp"      // docs/234: [EaDiag] ProductGate log-only hooks, EA app 1.69.47 build only (empty on Steam)
 
 // [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
 // flags: 0x40 (software VP) at 0x6112A4, replaced by 0x20 (hardware VP) at 0x6112B9 when the caps allow [verified]. Adding
@@ -5434,7 +5450,15 @@ static void Run(HMODULE self) {
     GetModuleFileNameW(NULL, exe, MAX_PATH);
     HMODULE base = GetModuleHandleW(NULL);
     const wchar_t* name = wcsrchr(exe, L'\\');
+#ifdef TS3A_TABLE
+    // docs/228: the table names the build (PE timestamp + SizeOfImage), any file name: the EA game may run as Sims3Launcher.exe
+    {
+        const IMAGE_NT_HEADERS* nt = (const IMAGE_NT_HEADERS*)((const u8*)base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
+        g_otherHost = base != (HMODULE)0x400000 || nt->FileHeader.TimeDateStamp != (DWORD)TS3A_HOST_PE || nt->OptionalHeader.SizeOfImage != (DWORD)TS3A_HOST_SIZE;
+    }
+#else
     g_otherHost = base != (HMODULE)0x400000 || _wcsicmp(name ? name + 1 : exe, L"TS3W.exe") != 0;
+#endif
     swprintf_s(ini, L"%s.ini", path);
     swprintf_s(log, g_otherHost ? L"%s.launcher.log" : L"%s.log", path);  // a launcher start must not truncate the game's log
     if (!g_otherHost) CrPreLog(ini, log);  // [CrashReport]: the previous session's last lines, before the log is truncated
@@ -5452,15 +5476,25 @@ static void Run(HMODULE self) {
     GetLocalTime(&st);
     Log("ts3native " TS3NATIVE_VERSION " %04d-%02d-%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     if (!strncmp(priorLog, "ts3native ", 10)) Log("prior log: %s", priorLog);
+#ifdef TS3A_TABLE
+    Log("release: v0.2.11 EA");  // own line: log parsers read the header version as digits
+#endif
     // file name only: players send this log (docs/188 privacy); PE timestamp + SizeOfImage name the build (Steam 1.67
     // = 52DEC247 / 0xE5A000, EA app 1.69.47 TS3.exe = 6707155C / 0xEB5000) so a SKIP line from another edition is identifiable
     const IMAGE_NT_HEADERS* hostNt = (const IMAGE_NT_HEADERS*)((const u8*)base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
     Log("host %ls base 0x%p pe %08lX size 0x%lX", name ? name + 1 : exe, base, hostNt->FileHeader.TimeDateStamp, hostNt->OptionalHeader.SizeOfImage);
     if (g_otherHost) {
+#ifdef TS3A_TABLE
+        Log("SKIP all: host is not " TS3A_HOST_NAME " (pe %08lX size 0x%lX)", hostNt->FileHeader.TimeDateStamp, hostNt->OptionalHeader.SizeOfImage);
+#else
         Log("SKIP all: host is not TS3W.exe at 0x400000");
+#endif
         if (!_wcsicmp(name ? name + 1 : exe, L"Sims3LauncherW.exe") || !_wcsicmp(name ? name + 1 : exe, L"Sims3Launcher.exe"))
             keepLog = ApplyLauncherFix(ini, hostNt->FileHeader.TimeDateStamp);
     } else {
+#ifdef TS3A_TABLE
+        Log("host build: " TS3A_HOST_NAME);
+#endif
         SeedWaitKeys();
         InstallXcptLog(ini);
         ApexDetect(ini);  // docs/148 §7: before every install (stand-downs, crash report line)
@@ -5578,6 +5612,9 @@ static void Run(HMODULE self) {
         keepLog = ApplyMonoJit(ini) || keepLog;    // docs/527 §4.1: after every code patch, before [AutShadow]
         g_asJobState = &g_async.state;  // E3 level gate: no lot-table lookup while a job runs (autshadow.cpp AsLevelGate)
         keepLog = ApplyAutShadow(ini) || keepLog;  // docs/122 part 1: guard thunks after every other table owner (routesnap)
+#ifdef TS3A_TABLE
+        keepLog = ApplyEaDiag(ini) || keepLog;  // docs/234: EA 1.69.47 product/entitlement gate, log only (default off)
+#endif
         ApexStartLate();  // zzApexRadiance.asi loads after us (its lines reach the log only while it stays open)
     }
     Log("done");

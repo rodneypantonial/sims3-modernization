@@ -52,7 +52,7 @@ typedef int (*RtoGatherFn)(SrCtx* c, const u8* p, DWORD lo, DWORD hi, LONG level
                            float v1, float r);
 static RtoCompFn g_rtoComp = (RtoCompFn)(uintptr_t)TS3A(0x00935770);
 static RtoCompFn g_rtoSlotGet = (RtoCompFn)(uintptr_t)TS3A(0x00951420);
-static RtoMatFn g_rtoPos = (RtoMatFn)(uintptr_t)0x00959000;
+static RtoMatFn g_rtoPos = (RtoMatFn)(uintptr_t)TS3A(0x00959000);
 static RtoMatFn g_rtoMat = (RtoMatFn)(uintptr_t)TS3A(0x00959060);
 static RtoHasSlotFn g_rtoHasSlot = (RtoHasSlotFn)(uintptr_t)TS3A(0x00B02360);
 static SlFn g_rtoSlPos = (SlFn)(uintptr_t)TS3A(0x0076F0A0);  // through the address: SH's detour decides the hold

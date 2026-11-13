@@ -37,7 +37,7 @@ static const u8 kUnUsfPrologue[] = {0x83, 0xEC, 0x10, 0x80, 0x7C, 0x24, 0x1C, 0x
 static UnAgentFn g_unAgentOrig = (UnAgentFn)(uintptr_t)UN_AGENT;
 static UnUsfFn g_unUsfOrig;
 static UnCompFn g_unComp = (UnCompFn)(uintptr_t)TS3A(0x00935770);
-static UnPosFn g_unPos = (UnPosFn)(uintptr_t)0x00959000;
+static UnPosFn g_unPos = (UnPosFn)(uintptr_t)TS3A(0x00959000);
 static UnFrustumFn g_unFrustum = (UnFrustumFn)(uintptr_t)TS3A(0x0096B850);
 static UnInFrustumFn g_unInFrustum = (UnInFrustumFn)(uintptr_t)TS3A(0x0068D130);
 static UnCamFn g_unCamPos = (UnCamFn)(uintptr_t)TS3A(0x0073D410), g_unCamTgt = (UnCamFn)(uintptr_t)TS3A(0x0073D480);

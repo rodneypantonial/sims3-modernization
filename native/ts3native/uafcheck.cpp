@@ -72,7 +72,7 @@ static void UafFrames(const DWORD* sp, DWORD* f) {  // first 4 exe return addres
     int k = 0;
     for (int i = 0; i < 96 && sp + i < top && k < 4; i++) {
         const DWORD v = sp[i];
-        if (v >= TS3A(0x004E3D00) && v < 0x004E9000) continue;
+        if (v >= TS3A(0x004E3D00) && v < TS3A(0x004E9000)) continue;
         if (AsExeRet(v) && (!k || f[k - 1] != v)) f[k++] = v;
     }
 }

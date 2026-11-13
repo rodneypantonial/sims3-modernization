@@ -48,7 +48,7 @@ typedef bool(__fastcall* RmTestFn)(void* actor);                       // 0x93E1
 typedef void(__fastcall* RmInsFn)(void* list, void* edx, void* entry);  // 0x5718C0, thiscall(list; entry), ret 4: link at the head
 typedef void(__fastcall* RmRelFn)(void* owner, void* edx, int del);   // owner vtable +0, thiscall(owner; 1)
 typedef void(__fastcall* Rm2SteerFn)(void* self, void* edx, const float* p16, const float* q16);  // 0x954580, ret 8, movaps reads
-static const DWORD RM_TS_CALL = TS3A(0x00571BF3), RM_TS = TS3A(0x00942C00), RM_FLAG_CALL = 0x00571C4C, RM_FLAG = 0x00C0FD60,
+static const DWORD RM_TS_CALL = TS3A(0x00571BF3), RM_TS = TS3A(0x00942C00), RM_FLAG_CALL = TS3A(0x00571C4C), RM_FLAG = TS3A(0x00C0FD60),
                    RM_STEP_CALL = TS3A(0x00571D20), RM_REM_CALL = TS3A(0x00571DDC), RM_POSE = TS3A(0x00940430), RM_TEST = TS3A(0x0093E190),
                    RM_SUB_AT = TS3A(0x00571C83), RM_SUB_EA = TS3A(0x00571C8E), RM_SUB_DONE = TS3A(0x00571E0A), RM_INS_CALL = TS3A(0x009402E3),
                    RM_INS = TS3A(0x005718C0), RM_CLIP_AT = TS3A(0x00569CC9), RM2_STEER_SLOT = TS3A(0x010445C0), RM2_STEER = TS3A(0x00954580);
@@ -348,7 +348,7 @@ static const Rm2CamIcSite kRm2CamIc[RM2_IC_N] = {
     {TS3A(0x0073DE60), 5, {0xE8, 0x2B, 0xD5, 0x22, 0x00}, -1, "IC_Camera_TetherToObject"},                       // (obj u64)
     {TS3A(0x0073DEF0), 6, {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0}, 8, "IC_Camera_Lock"},                            // (obj u64, offset, zoom, pitch, yaw, time)
     {TS3A(0x0073DFB0), 5, {0xE8, 0xDB, 0xD3, 0x22, 0x00}, 0, "IC_Camera_EnableMapViewMode"},                     // (time)
-    {0x0073E000, 5, {0xE8, 0x8B, 0xD3, 0x22, 0x00}, 2, "IC_Camera_DisableMapViewMode"},                    // (zoom, pitch, time)
+    {TS3A(0x0073E000), 5, {0xE8, 0x8B, 0xD3, 0x22, 0x00}, 2, "IC_Camera_DisableMapViewMode"},                    // (zoom, pitch, time)
 };
 static void* g_rm2IcTramp[RM2_IC_N];
 static volatile LONG g_rm2IcHold;  // passes asked by the camera ICs since the last pass start (atomic max; any thread)

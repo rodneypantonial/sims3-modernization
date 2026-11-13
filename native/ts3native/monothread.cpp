@@ -32,7 +32,7 @@ static MtVoidFn g_mtOrigPush;
 static MtPushOneFn g_mtPushOne = (MtPushOneFn)(uintptr_t)MT_PUSH_ONE;
 static MtPushStackFn g_mtPushStack = (MtPushStackFn)(uintptr_t)MT_PUSH_STACK;
 static MtNewThreadFn g_mtNewThread = (MtNewThreadFn)(uintptr_t)MT_NEW_THREAD;
-static DWORD* g_mtTable = (DWORD*)(uintptr_t)0x01221000;               // 5 DWORDs per entry
+static DWORD* g_mtTable = (DWORD*)(uintptr_t)TS3A(0x01221000);               // 5 DWORDs per entry
 static volatile LONG* g_mtMaxIdx = (volatile LONG*)(uintptr_t)TS3A(0x011F4124);
 static volatile LONG* g_mtStopped = (volatile LONG*)(uintptr_t)TS3A(0x011F4120);
 static __declspec(align(16)) CONTEXT g_mtCtx;  // only used with the world stopped, by the one collecting thread

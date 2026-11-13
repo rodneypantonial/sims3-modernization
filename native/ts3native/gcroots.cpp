@@ -155,7 +155,7 @@ static void GrStateText(char* d, int room, int* n, const char* what, DWORD state
 
 // docs/67 §22.4: the task line after "mono fault:" (interpreter range only, as MonoFaultText)
 static bool GrFaultText(const CONTEXT* c, char* d, int room) {
-    if (c->Eip < 0x00E51000 || c->Eip >= TS3A(0x00E5A600)) return false;
+    if (c->Eip < TS3A(0x00E51000) || c->Eip >= TS3A(0x00E5A600)) return false;
     const DWORD* tbl = GrTable();
     DWORD cur = 0, outer = 0, recv = 0, cnt = 0, id[2] = {0, 0};
     __try { cur = *g_curState; } __except (EXCEPTION_EXECUTE_HANDLER) {}
