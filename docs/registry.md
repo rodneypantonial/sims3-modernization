@@ -21,7 +21,7 @@ The public repo lags the private one, so contributor PRs (currently alexvixell35
 |---|---|---|
 | `docs/NNN-*.md` | 500-599 | below 500 |
 | docs/51 inference ledger `## N.` | §900-999 | below 900 |
-| ts3fixes counter slots | 2000-2199 (full), 2200-2399 | below 2000 |
+| ts3fixes counter slots | 2000-2199 (full), 2200-2799 (2400-2799 added 2026-11-14) | below 2000 |
 | ts3native counter version blocks | v900+ | below v900 |
 
 `node tools/registry.ts reserve --contributor <doc|ledger|fixes|native> ...` hands out the next free number of the range (same arguments as the normal `reserve`; without `--contributor` the ranges are skipped). ts3native version strings (`TS3NATIVE_VERSION`, changelog headings) are assigned by the maintainers at merge: a contributor PR writes "next version" and does not change the define. `tools/pr-preflight.ts` flags numbers outside the ranges and a changed version string (`--maintainer` turns that check off).
@@ -269,6 +269,11 @@ Source of truth: the comment block above `PatchCounters()` in `mods/ts3fixes/src
 | 2293-2295 | `CasPuckLeak.cs` (`fixes-2293`, slots reused from the removed compositor Load probe, docs/545), `famcursorleak` | built 2026-11-11: family-screen drag cursor windows still alive at CASFamilyScreen.Unload (2293, also off) / disposed (2294) / errors (2295) |
 | 2296-2298 | `CompositorLeak.cs` (`fixes-2296`, contributor range 2200-2399, renumbered +106 at import, docs/545), `compositorghost` | built 2026-11-11: ghost CASCompositorController entries after Unload (2296, also off) / removed (2297) / left (a parented or visible compositor window), or errors (2298) / live orphan windows disposed (2299, slot reserved with `fixes-2299`) |
 | 2300-2303 | `CasExitSweep.cs` (slots reused from the removed Buy icon census probe, docs/545), `casexitsweep` | built 2026-11-12: detached live entries registered during the CAS visit, at CAS exit (2300, also off) / cleaned up (2301) / skipped, still parented (2302) / errors (2303) |
+| 2304-2307 | `JoyrideCostume.cs` (`fixes-2304`), `joyridecostume` | built 2026-11-13: Joyride tests answered without a costume build (2304) / costume-route tests run without a build (2305) / builds outside the tests, the game's own (2306, counted with the switch off too) / errors (2307) |
+| 2310-2311 | `SocialFinish.cs` (`fixes-2310`), `socialfinish` | built 2026-11-14: partners of a sync initiator signalled Finished before WaitForSyncComplete (2310) / errors (2311) |
+| 2312-2313 | `SocialReceiveFail.cs` (`fixes-2312`), `socialreceivefail` | built 2026-11-14: social starter waits ended at once because the partner's ReceiveSocialInteraction had failed (2312) / errors (2313) |
+| 2314-2319 | `SyncWaitLog.cs`, test switch `synctime` | built 2026-11-14 (test only): sync waits that ran to their giveup (2314), their sim minutes (2315), of them the socialreceivefail case (2316); initiator timeouts on a Started partner whose last receive failed that the fix did not take: not linked (2317), an earlier social's failure (2318), partner moved on (2319) |
+| 2308-2309 | `AlarmKillLog.cs` (`fixes-2308`), `alarmkilllog` | built 2026-11-14 (log only, on): repeating alarms EA removed after their callback threw (2308) / hook errors (2309) |
 | 945-947 | `BoatGetOutDiag.cs` (`fixes-945`, docs/257 §8), `boatgetoutdiag` | built 2026-11-12, NOT RUN: Boat.GetOut calls watched (945) / SittingInBoat replaced by another task during the fade (946) / NullReferenceException out of a watched GetOut, rethrown (947) |
 | 948-949 | `UnseenBoat.cs` `UbBookReplan` (`fixes-948`, docs/247 §12.11), `unseenboat` + `boatreplanlog` | built 2026-11-12, NOT RUN: boat replans booked with no `sUbLastWhy` entry (948, agent `unseenboat_norefusal_n`) / their ms (949, `unseenboat_norefusal_ms`) |
 | 950-952 | `HitchCause.cs` (`fixes-950`), `boatreplanlog` | built 2026-11-12 (docs/247 §13.3 R1): houseboat gangway fixup replans inside PostPlanCallback (`gangway:` lines, 950) / their ms with the Sim unseen (951) / not unseen: household, selected, unknown scope or seen (952) |

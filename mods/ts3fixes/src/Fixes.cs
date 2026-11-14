@@ -94,6 +94,10 @@ namespace Ts3Fixes
             ApplyWishListenerFixes();
             ApplyBuyCellRecycle();
             ApplyMoodPending();
+            ApplyJoyrideCostume();  // docs/546 §4, off by default
+            ApplyAlarmKillLog();  // docs/546 row 5, log only
+            ApplySocialFinish();  // docs/546 §9, off by default
+            ApplySocialReceiveFail();  // docs/546 §9, off by default
             ApplyFilterGridLeak();
             ApplyCasPuckLeak();
             ApplyCasExitSweep();
@@ -401,12 +405,22 @@ namespace Ts3Fixes
         // [872-875] watchdogasync A1 (RouteFixes.cs CheckIdle, RouteBackoff.cs OwnerTaskSlot, docs/250 §7.1): own STARTs sent, started by
         // ts3native, refused before sending (A1 on, Sim eligible, ts3native would not start it), sim ticks the A1 checks took
         // [930-932] watchdogasync: A1 verdicts dropped as stale (H4Core.WdFresh), shadow sync re-checks run, shadow verdicts that differ
+        // One size for every slot a fix may take (maintainer slots below 2000, contributor ranges up to 2799,
+        // docs/registry.md), so a new fix never needs the array resized by hand.
+        const int kCounterSlots = 2800;
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[2304]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null || c.Length < kCounterSlots)
+            {
+                // a shorter array (left by an older build in this session) is copied into a full-size one
+                int[] full = new int[kCounterSlots];
+                if (c != null) Array.Copy(c, full, c.Length);
+                c = full;
+                AppDomain.CurrentDomain.SetData("ts3fixes.counters", c);
+            }
             return sCountersCache = c;
         }
 
@@ -522,7 +536,7 @@ namespace Ts3Fixes
                 // docs/250 §7.1 A1: OFF since rc1110b (2026-11-09) until the wdasync-fix-1110 tests (Instantiator.kWatchdogAsync)
                 case "watchdogasync": return Instantiator.kWatchdogAsync;
                 case "watchdogasyncshadow": return false;  // correctness arm only: re-runs each A1 check sync and counts mismatches
-                case "alarmtime": case "boatreplanlog": case "owresettime": return false; // docs/247 §9: logging, hooks only with kHitchCauseHooks
+                case "alarmtime": case "boatreplanlog": case "owresettime": case "synctime": return false; // docs/247 §9: logging, hooks only with kHitchCauseHooks
                 case "legreplanskip": return Instantiator.kLegReplanSkip;
                 case "bouncerskip": return Instantiator.kBouncerSlotSkip;
                 case "idlememo": return Instantiator.kIdlePlanMemo;
@@ -601,6 +615,10 @@ namespace Ts3Fixes
                 case "buyclearrecycle": return Instantiator.kBuyClearRecycle;
                 case "buygridsweep": return Instantiator.kBuyGridSweep;
                 case "moodpending": return Instantiator.kMoodPending;
+                case "joyridecostume": return Instantiator.kJoyrideCostume;
+                case "alarmkilllog": return Instantiator.kAlarmKillLog;
+                case "socialfinish": return Instantiator.kSocialFinish;
+                case "socialreceivefail": return Instantiator.kSocialReceiveFail;
                 case "filtergridleak": return Instantiator.kFilterGridLeak;
                 case "compositorghost": return Instantiator.kCompositorGhost;
                 case "caspuckevents": return Instantiator.kCasPuckEvents;
