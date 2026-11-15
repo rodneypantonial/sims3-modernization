@@ -86,6 +86,7 @@ const LOCAL_ONLY: Record<string, { why: string; needs?: string }> = {
   'tools/selftest/boatgetoutdiag/run.ts': CSC,
   'tools/selftest/reftable/run.ts': { why: 'Windows csc + game ScriptCore.dll', needs: 'game-copy/assemblies/ScriptCore.dll' },
   'tools/selftest/replandefer/run.ts': CSC,
+  'tools/selftest/spawncap/run.ts': CSC,
   'tools/selftest/routesrc/run.ts': CSC,
   'tools/selftest/savercount/run.ts': CSC,
   'tools/selftest/screenfit/run.ts': CSC,
