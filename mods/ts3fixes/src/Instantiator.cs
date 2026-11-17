@@ -114,6 +114,7 @@ namespace Ts3Fixes
         [Tunable] public static bool kSeasonMarkerCache = false;   // opt-in until measured: Queries.GetGlobalObjects(typeof(SeasonalLotMarker)) (every world-lot object Dispose) answered from a live marker list, 1 in 8 checked against the game (SeasonMarkerCache.cs, docs/74 §11 (a))
         [Tunable] public static bool kOverwatchStuckNoticeSummary = false; // opt-in until tried: NRaas Overwatch's per-Sim stuck-reset notices held, one summary per 2 sim-hours (OverwatchNotice.cs, docs/145 §13)
         [Tunable] public static bool kOverwatchIgnoreStuckProbes = true; // NRaas Overwatch's Stuck Check V2 does not count the game's own stuck-check probe plans as the Sim's route failures (no double resets; OverwatchProbe.cs, docs/163 §9)
+        [Tunable] public static bool kSafeSpotPool = false;        // opt-in: SafeSpot never answers a pool or below-ground outdoor cell (Fixes.cs BelowGroundOutdoors, docs/74 §13)
         [Tunable] public static bool kSafeSpotYield = false;       // opt-in until measured: SafeSpot sleeps one tick after each FindGoodLocation in the Sim's own task (Fixes.cs SafeSpotYield, docs/74 §11 (b))
         [Tunable] public static bool kStuckCheckCap = false;      // opt-in until verified: with stuckcheckown, the stuck check's probe jobs of rounds 1-2 are cut at ts3native's PlanDeadlineMs like a foreign sync plan (FewerPlans.cs, RouteBackoff.cs OwnerTaskStart, docs/163 §10)
         [Tunable] public static bool kUnseenFallbackStuck = true;     // on, same as the shipped tuning (2026-11-14); was: opt-in until verified: the 3 AM stuck check plans nothing for a Sim the player cannot see (live mode) and re-arms itself (UnseenFallback.cs, docs/202 §3.3)
@@ -301,6 +302,8 @@ namespace Ts3Fixes
         [Tunable] public static bool kEatOutsideCount = true;    // eatoutsidecount (docs/569 §2): Bistro eat-outside follower counted twice (done, then cancelled)
         [Tunable] public static bool kHomeworkHelp = true;    // homeworkhelp (docs/565 §7): helper starting Help with Homework after the child finished hits a null jig
         [Tunable] public static bool kShellLighting = true;      // shelllighting (docs/561 §5): a buildable shell shows the lighting of the latest passed lighting time after load (EA keeps Default until the next alarm)
+        [Tunable] public static bool kUnseenLaneSnap = false;    // opt-in: an unseen townie's portal other-lane replan becomes a snap to the planned lane's exit (LaneSnap.cs, docs/807)
+        [Tunable] public static bool kUnseenLegSnap = false;     // opt-in: an unseen townie's car / boat leg end away from the planned exit is snapped there instead of replanned (RouteSources.cs LegSnap, docs/807)
         [Tunable] public static bool kPhotoBoothFunds = true;    // photoboothfunds (docs/561 §2): a Sim that entered a photo booth and then lacked the fee is walked out (EA leaves it faded out inside)
         [Tunable] public static bool kGoHomeWalk = true;         // gohomewalk (docs/560 §2): GoHome takes back the walk style (Run) it requested, so Sims sent home from a busted party stop running
         [Tunable] public static bool kBirdTvNull = true;         // birdtvnull (docs/559 §9): large bird TV reaction skips TVs on with no channel instead of throwing

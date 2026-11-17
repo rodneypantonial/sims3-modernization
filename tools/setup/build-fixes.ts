@@ -119,6 +119,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kStuckCheckOwn value="False" />
     <kOverwatchStuckSlice value="True" />
     <kSeasonMarkerCache value="False" />
+    <kSafeSpotPool value="False" />
     <kSafeSpotYield value="False" />
     <kDisposeSpread value="False" />
     <kOverwatchStuckNoticeSummary value="False" />
@@ -266,6 +267,8 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kCleanFlag value="True" />
     <kBirdTvNull value="True" />
     <kGoHomeWalk value="True" />
+    <kUnseenLaneSnap value="False" />
+    <kUnseenLegSnap value="False" />
     <kPhotoBoothFunds value="True" />
     <kShellLighting value="True" />
     <kBonfireSpice value="True" />

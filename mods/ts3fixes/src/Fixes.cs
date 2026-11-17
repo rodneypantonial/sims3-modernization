@@ -172,6 +172,7 @@ namespace Ts3Fixes
             ApplyVenueMemo();
             ApplyExactMemos();  // lane L4 1115: permamemo, buffremovenoop, catnamecache (ExactMemos.cs), off by default
             ApplyDoorMirror();
+            ApplyLaneSnap();  // docs/807: unseenlanesnap (opt-in, unseen townies): portal other-lane replans
             ApplyAutShadow();
             ApplyAutRoomMemo();  // docs/97 AM-1 H1-H3/H5 (AutRoomMemo.cs), off by default; after AutShadow (rides on its IsAllowedInRoom swap)
             ApplyAutOffload();
@@ -478,6 +479,7 @@ namespace Ts3Fixes
         // [2564-2565] free (released).
         // [2566-2567] trainboost (TrainBoost.cs, docs/569 §1): Train Sim boosts undone after an unwound session / errors.
         // [2568-2569] eatoutsidecount (EatOutsideCount.cs, docs/569 §2): Bistro eat-outside double decrements undone / errors.
+        // [2700-2701] safespotpool (SafeSpot, docs/74 §13): placement answers in a pool or under the ground skipped / cached start spots skipped.
         // [2453-2454] geniebanish (docs/559 §4): banishes run through the fixed copy / errors. [2455-2457] spacesimpartner (docs/559 §5): partners released / partners left waiting (also off) / errors.
         // [2438-2442] birthroute (BirthRoute.cs, docs/558 §1): birth plans kept uncut / failed hospital births (also off) / home births queued instead / homeless moms sent to a hospital / errors.
         // [2469-2476] birthroute (BirthRoute.cs, docs/558 §1): re-haves deferred / lost births re-armed / stale or duplicate calls dropped / BabyIsComing restored / unseen moms placed at the hospital / watchdogs / homeless after-birth / born after a failure.
@@ -538,6 +540,7 @@ namespace Ts3Fixes
         // per scope (household, selected, seenNpc, unseen, unknown), bursts, call lines, lines dropped, would start but Kinds
         // [1057] householdtoo (PlayerSims.cs HouseholdExempt, docs/271, ts3native [Experimental] HouseholdToo=1): household, selected or
         // unknown-scope asks the flag let through to a realistic-only path (worker answers, exact go-live); 0 with the flag off
+        // [3511-3525] unseenlanesnap (LaneSnap.cs, docs/807): see the list there; [3526-3530] unseenlegsnap (RouteSources.cs LegSnap)
         // One size for every slot a fix may take (maintainer slots below 2000, contributor ranges up to 3999 since 2026-11-17, 16 KB,
         // docs/registry.md), so a new fix never needs the array resized by hand.
         const int kCounterSlots = 4000;
@@ -585,6 +588,8 @@ namespace Ts3Fixes
                 case "gohome": return Instantiator.kGoHomeShortcut;
                 case "rabbithole": return Instantiator.kBuildingTripShortcut;
                 case "visit": case "visitlot": case "gotolot": case "gotocommunity": return Instantiator.kLotTripShortcut;
+                case "unseenlanesnap": return Instantiator.kUnseenLaneSnap;
+                case "unseenlegsnap": return Instantiator.kUnseenLegSnap;
                 case "broadcast": return Instantiator.kBroadcasterThrottle;
                 case "virtualhome": return Instantiator.kVirtualHomeShortcut;
                 case "failreplan": return Instantiator.kNoRouteFailWalkOffscreen;
@@ -815,6 +820,7 @@ namespace Ts3Fixes
                 case "sculptpose": return Instantiator.kSculptPose;
                 case "trainboost": return Instantiator.kTrainBoost;
                 case "eatoutsidecount": return Instantiator.kEatOutsideCount;
+                case "safespotpool": return Instantiator.kSafeSpotPool;
                 case "birthroute": return Instantiator.kBirthRoute;
                 case "putdownplace": return Instantiator.kPutDownPlace;
                 case "awardkeep": return Instantiator.kAwardKeep;
@@ -1113,11 +1119,14 @@ namespace Ts3Fixes
             bool spread = ShortcutOn("spotspread");
             bool reuse = ShortcutOn("safespotreuse");
             int[] c = PatchCounters();
+            // safespotpool (default off): spots in a pool or under the ground outdoors are refused, so the caller runs EA's trip
+            bool noPool = ShortcutOn("safespotpool");
             for (int i = 0; i < 2 + 3; i++)
             {
                 bool fresh = i >= 2;
                 if (!fresh && v.Good.Count == 0) continue;
                 Sims3.SimIFace.Vector3 start = fresh ? near : v.Good[spread ? v.Next++ % v.Good.Count : v.Good.Count - 1];
+                if (noPool && !fresh && BelowGroundOutdoors(start)) { c[2701]++; continue; }
                 // A verified spot is itself an earlier FindGoodLocation result (a native placement search, hundreds of ms
                 // in Isla Paradiso at the school run): answer with it and the facing stored then, while its cached verdict
                 // (same cell and route profile; the lot's verdicts reset on a move-in, a moved lot or a day) still says
@@ -1140,6 +1149,7 @@ namespace Ts3Fixes
                 bool found = GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(start), out pos, out fwd);
                 if (ShortcutOn("safespotyield") && !SafeSpotYield(sim, near)) break;
                 if (!found) continue;
+                if (noPool && BelowGroundOutdoors(pos)) { c[2700]++; continue; }
                 if (verify && (pos - start).Length() > 0.5f) c[92]++;
                 if (LotManager.GetLotAtPoint(pos) != lot || SpotVerdict(sim, lot, v, prof, pos, fresh, false, true) != true) continue;
                 if (reuse && prof.Ok && v.Fwds.Count < 64) v.Fwds[KeyOf(prof, pos)] = fwd;
@@ -1148,6 +1158,17 @@ namespace Ts3Fixes
             }
             pos = fwd = Sims3.SimIFace.Vector3.Invalid;
             return false;
+        }
+
+        // safespotpool: a pool point, or an outdoor point under the ground (room 0, level < 0). FindGoodLocation can answer with
+        // the floor of a pool and IsPointInLotSafelyRoutable passes it, so every verified spot of a lot can lie in the water
+        // (Sunset Valley's community pool lot: those Sims' plans all failed). Basements (room > 0, level < 0) stay allowed.
+        static bool BelowGroundOutdoors(Sims3.SimIFace.Vector3 p)
+        {
+            if (World.IsInPool(p)) return true;
+            LotLocation l = LotLocation.Invalid;
+            World.GetLotLocation(p, ref l, eRoomDefinition.Default);
+            return l.mLevel < 0 && l.mRoom == 0;
         }
 
         // safespotyield (docs/74 §11 (b)): one native placement search per sim tick instead of up to 5 in one run. Yields
