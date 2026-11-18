@@ -8,7 +8,7 @@ Sources: capstone over the Steam 1.67 `TS3W.exe` (copy under `game-copy/`), docs
 
 | Rank | Option | Expected gain in game | Hours (Claude + agents) | Game runs | State |
 |---|---|---|---|---|---|
-| 1 | **Sub-run fusion** of the existing 22 superops (§4): fuse a descriptor wherever it occurs inside a run, not only when the whole run equals it | **~2-8 ms/s** [inferred], overlapping compiled bodies after S1 [inferred, §4.5]; offline: -0.7% to -11.8% dispatches, **-7.1%** time on the bench | done | `mintfuse-verify` queue (1 load); 2 loads + clean night only for a gain number (transform-time: no in-load A/B) | **built** (ts3native `[MintFuse] Sub`, next version, counters v164, off, §4.6), not run in game; the one host failure is a timing bound in the test, not fusion (§4.4) |
+| 1 | **Sub-run fusion** of the existing 22 superops (§4): fuse a descriptor wherever it occurs inside a run, not only when the whole run equals it | **~2-8 ms/s** [inferred], overlapping compiled bodies after S1 [inferred, §4.5]; offline: -0.7% to -11.8% dispatches, **-7.1%** time on the bench | done | `mintfuse-verify` queue (1 load); 2 loads + clean night only for a gain number (transform-time: no in-load A/B) | **ON on master** since a56f0221 (2026-11-13, ts3native 0.36.254, §4.7); `mintfuse-verify` PASS in game 2026-11-06 / 11-08 (BP) and 11-10 (IP, SV); in every JIT bundle ON arm since (jit-bundle-ab-1113, jit-bundle-ab2-1114) [verified 2026-11-18: git, ini, results]; the one host failure is a timing bound in the test, not fusion (§4.4) |
 | 2 | **Call/return fast path** (§5, §8): own handlers for `call`/`callvirt`/`ret*` through the jump table, falling back to EA's handler before any state change | design said ~15-30 ms/s; **as built ~5-10 ms/s** [inferred from host benches, §8.5]: a bit-exact frame keeps nearly all of EA's stores (209-233 -> 191-201 instructions) | done | verify queue + A/B **in one load** (`--ab mintcall`) | **built** (ts3native 0.36.127 `[MonoFast] CallPath`, off), host-verified 0 mismatches over 19-21 M calls, not run in game |
 | 3 | New superinstructions for frequent pairs (§3) on top of rank 1 | ~1-4 ms/s [inferred] | 4-8 h, after G-I1 picks the pairs | 2 loads | design only |
 | 4 | Threaded (replicated) dispatch, G-I10 (§2) | **≤ ~2-3 ms/s** of a 16 ms/s ceiling; offline -1.7%, at the noise floor | done offline; port 1 h | not worth one | **built in monohost**, not recommended |
@@ -135,7 +135,10 @@ The offline phases bracket the dispatch reduction from 0.7% (init code, many cal
 
 **Overlap:** the gain above is on interpreted code. Compiled bodies do not dispatch at all, so once S1 compiles the hot methods, fusion only helps what stays interpreted: the two gains do not add up [inferred]. In the ~2-8 ms/s estimate this is not subtracted.
 
-### 4.6 Port (built 2026-11-06, not run in game)
+### 4.6 Port (built 2026-11-06; run in game since, ON since 0.36.254: §4.7)
+
+**Status 2026-11-18 [verified: git a56f0221, `native/ts3native/ts3native.ini`, docs/data/results/2026-11-0{6,8}-queue-mintfuse-verify.md, 2026-11-10-queue-mintfuse-verify-m1110.md]:** the "default off" and "not run in game" below are the 11-06 state. `[MintFuse] Sub=1` is the repo-ini default since a56f0221; `mintfuse-verify` passed BP (11-06, 11-08), IP and SV (11-10); the dedicated `mintfuse-sub-on-1113` queue never ran on its own, its build ran inside the JIT bundle ON arms.
+
 
 `native/ts3native/mintfuse.cpp`, shared with monohost (`MONOHOST_MINTFUSE=sub` runs this code), selftest `mintfuse-test.h`. The same 5-byte call patch at `0xE5C8CA`: `E8` -> `0xD89930` is checked first, any other bytes refuse (`SKIP mintfuse`, `mfReady` -1). `ApplyMintFuse` runs at DLL load, before `MonoScriptHost_Init` (`0xD7E560`) transforms anything; `ts3native.ini` `[MintFuse] Sub=1`, default off, no runtime switch (a method keeps the form it was transformed in). Counters v164 `mfReady`, `mfRuns`, `mfWhole`, `mfInner` (`docs/registry.md`, `agent.js`). No S3SS/S3PP hook site near `0xE5C660`, `0xD89930` or the handlers (docs/68 row).
 
@@ -170,7 +173,7 @@ Complementary, not a replacement: G-I2's transform-time inliner removes trivial 
 
 ## 7. Next
 
-1. Sub-run fusion: **ported** (§4.6). Next `mintfuse-verify` in game; a two-load BP A/B on a clean night only if a gain number is wanted, measured with S1 on if S1 is on by then (§4.5).
+1. Sub-run fusion: **ported** (§4.6), verified in game and ON since 0.36.254 (§4.7). Left: a two-load BP A/B on a clean night only if a gain number is wanted, measured with S1 on if S1 is on by then (§4.5).
 2. G-I1 managed sampler (1 BP job) to weight pairs and calls by hot methods; then decide §5 vs G-I2 inliner order.
 3. §5 call/return fast path with a host differential harness: **built, §8**.
 
