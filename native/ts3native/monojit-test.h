@@ -927,7 +927,7 @@ static void TestMonoJitClauseLazy() {
     static JtMeth m0, m1, mF, mP, mE;
     const LONG bodies0 = C.jitLazyBodies;
     static_assert(offsetof(Ts3nCounters, clOn) == 0x62A8 && offsetof(Ts3nCounters, clVerRuns) == 0x62BC && offsetof(Ts3nCounters, clSpare) == 0x62C0 &&
-                      sizeof(Ts3nCounters) == 6722 * 4, "counters v195 layout after v194 (docs/registry.md)");
+                      sizeof(Ts3nCounters) == 6778 * 4, "counters v195 layout after v194 (docs/registry.md)");
     g_jitClauseOk = true;  // JitOne's allow-list answer (tested below)
     g_jitClauseLazy = false;
     assert(make(m0, c0, 4, cl, 1) && C.jitLazyBodies == bodies0);  // ClauseLazy=0: as before
@@ -1279,7 +1279,7 @@ static void TestMonoJitBoundCall() {
     g_jtLen[0xEC] = 4;
     g_jitBc = (JitBoundStats*)&C.bcOn;
     static_assert(offsetof(Ts3nCounters, bcOn) == 0x6278 && offsetof(Ts3nCounters, bcSpare) == 0x62A0 && sizeof(JitBoundStats) == 12 * 4 &&
-                      sizeof(Ts3nCounters) == 6722 * 4, "counters v194 layout after the v193 hold (docs/registry.md)");
+                      sizeof(Ts3nCounters) == 6778 * 4, "counters v194 layout after the v193 hold (docs/registry.md)");
     const JitBoundEntryFn entry0 = g_jitBoundEntry;
     g_jitBoundEntry = JtE525C0, g_jitBoundInv[0] = (DWORD)(uintptr_t)JtBoundInv, g_jitBoundInv[1] = 0, C.bcOn = 1, g_jitBoundMask = 1;
     // the cache's class and target: a transformed instance method with an EA native body, no lazy body, one int result
@@ -1555,7 +1555,7 @@ static void TestMonoJit() {
     assert(JitTemplates(511) == 29);  // Groups bit 256: the nine C5 rows above and two float compares
     assert(g_opInfo[JT_RET].kind == K_RET && g_opInfo[JT_MYSTERY].kind == K_EXIT);
     {  // T4096 (docs/537 §26): MaxMethods clamp, the fallback to 2048 / 4096 KB when the asked region does not fit, and the counters' place
-        static_assert(offsetof(Ts3nCounters, jitTableFull) == 0x62CC && offsetof(Ts3nCounters, jitMethCap) == 0x62D0 && sizeof(Ts3nCounters) == 6722 * 4,
+        static_assert(offsetof(Ts3nCounters, jitTableFull) == 0x62CC && offsetof(Ts3nCounters, jitMethCap) == 0x62D0 && sizeof(Ts3nCounters) == 6778 * 4,
                       "counters v196 layout after the v189-v195 / v918 gap (docs/registry.md)");
         assert(JitMaxMethods(0) == 512 && JitMaxMethods(3000) == 3000 && JitMaxMethods(1 << 20) == JIT_METH_MAX);
         const size_t code0 = g_jitCodeBytes;
@@ -1952,6 +1952,58 @@ static void TestMonoJit() {
         compiled++;
         g_jitCodeUsed = hUsed0;  // the two bodies sit at the region end; the rest of the selftest stays far below them
         g_jitYRows = false, g_jitYRowP = hyp0, g_jitYRowCnt = hyn0;
+        // docs/537 §34 YieldBodies: off = not listed; on = listed with the hash, its own reserve; a clause body is refused; the body
+        // compiles as region code (the sleep opcode and the ret are exits, never verified); the resume position is an entry; the
+        // count lines and counters; a ts3fixes swap stub's name matches its key on the same class only
+        static JitRow ybrow = {"Cls.Yb", 8, {0}};
+        memcpy(ybrow.sha, sha, 32);
+        const JitRow* ybp0 = g_jitYbRowP;
+        const int ybn0 = g_jitYbRowCnt;
+        g_jitYbRowP = &ybrow, g_jitYbRowCnt = 1, g_jitYb = false;
+        static unsigned short pY[] = {JT_LDC2, 0x1A6, JT_RET};
+        static JtMeth mY;
+        JtInit(mY, pY, 3, "Yb");
+        g_jtNames[0x1A6] = "sim_sleep";
+        assert(!JitListed("Ns.Cls.Yb") && !JitYbKey("Ns.Cls.Yb") && !JitHashKnown("Ns.Cls.Yb", "Yb", 8, sha));
+        JitPostPass(mY.rm, &domain);  // YieldBodies=0: not listed, silent
+        assert(pY[0] == JT_LDC2 && C.jitRefused == refused);
+        JitHotInit(L"C:\\ts3native-selftest-no-such.ini");
+        assert(!g_jitHotPend && !g_jitHotBytes);
+        g_jitYb = true;
+        assert(JitListed("Ns.Cls.Yb") && !JitListed("Ns.Other.Yb") && JitHashKnown("Ns.Cls.Yb", "Yb", 8, sha) && !JitHashKnown("Ns.Cls.Yb", "Yb", 9, sha));
+        assert(JitYEnds("N.Sim.DoOrig", "Sim.DoInteraction") && JitYEnds("N.Sim.WaitOrig", "Sim.WaitForExitReason") && !JitYEnds("N.WpSimHook.DoOrig", "Sim.DoInteraction"));
+        const bool wide0 = g_jitWide;
+        g_jitWide = true, mY.rm[0x41] = 1;
+        JitPostPass(mY.rm, &domain);  // a clause body stays interpreted
+        assert(pY[0] == JT_LDC2 && C.jitRefused == ++refused && nOf("a yield body with exception clauses") == 1 && !g_jitYbNow);
+        g_jitWide = wide0, mY.rm[0x41] = 0;
+        JitHotInit(L"C:\\ts3native-selftest-no-such.ini");  // YieldBodies alone holds the yield bodies' room
+        assert(g_jitHotPend == 1 && g_jitHotPos == JIT_YB_POS && g_jitHotBytes >= 256u * JIT_YB_POS && C.jitHotKB);
+        assert(JcnOn());
+        const LONG ybM0 = C.jitYbMeth, ybX0 = C.jitExits;
+        JitPostPass(mY.rm, &domain);
+        JitMeth& Y = g_jitMeth[g_jitMethN - 1];
+        assert(pY[0] == JIT_OP && pY[1] == JIT_OP && pY[2] == JIT_OP && C.jitRefused == refused && C.jitYbMeth == ybM0 + 1 && !g_jitYbNow);
+        assert(Y.yld && !Y.verifyOk && Y.nativeOps == 1 && Y.exitOps == 2 && !JitLazyCellFor(mY.rm)->entry && !g_jitHotPend && !C.jitHotKB);
+        compiled++;
+        JtFrame();
+        JtGo(pY, 8);  // ldc compiled, then the sleep opcode is EA's handler, ip at its word
+        assert(g_jtEax == 0x1A6 && g_jtEdi == (DWORD)(uintptr_t)(pY + 1) && g_jtArena[8] == 2 && C.jitExits == ybX0 + 1);
+        JtGo(pY + 2, 10);  // the resume dispatches the word after the sleep: an entry of its own
+        assert(g_jtEax == JT_RET && g_jtEdi == (DWORD)(uintptr_t)(pY + 2));
+        assert(C.jitYbEntries == 1 && C.jitYbPos == 3 && C.jitYbExits == 2 && C.jitYbYieldExits == 1);
+        g_jtcN = 0;
+        JcnReportTo("test", JtcSink);
+        assert(*JtcFind("jitcount ybrow Ns.Cls.Yb: entries 1, positions run 3, ret exits 1, other exits 1, yield exits 1, exits per position 0.667"));
+        VirtualFree(g_jcn, 0, MEM_RELEASE), g_jcn = NULL;
+        C.jitYbEntries = C.jitYbPos = C.jitYbExits = C.jitYbYieldExits = 0;
+        static unsigned short pN[] = {0x1A6, JT_RET};  // a yield opcode in any other body: compiled as before, never verified
+        static JtMeth mYn;
+        JtInit(mYn, pN, 2);
+        assert(JitCompile(mYn.rm) == NULL && g_jitMeth[g_jitMethN - 1].yld && !g_jitMeth[g_jitMethN - 1].verifyOk && C.jitYbMeth == ybM0 + 1);
+        compiled++;
+        g_jtNames[0x1A6] = NULL;
+        g_jitYb = false, g_jitYbRowP = ybp0, g_jitYbRowCnt = ybn0;
     }
     g_jitUserN = 1, g_jitUser[0] = "Other.Thing";  // List= narrows
     assert(!JitListed("Ns.Cls.Meth") && JitListed("Ns.Other.Thing") == false);
@@ -2033,6 +2085,38 @@ static void TestMonoJit() {
     JitTick();
     assert(q[0] == JT_LDC2 && a[0] == JIT_OP);  // a dead method stays off across the runtime byte
     g_jtTable[JT_LDC2] = (DWORD)(uintptr_t)JitTestStop;
+    {  // docs/537 §34 R-2 (Mode=2): a yield body starts no pass; reaching it ends every pass of this activation (none of another)
+        static unsigned short pV[] = {JT_LDC2, 0x1A6, JT_RET};
+        static JtMeth mYv;
+        JtInit(mYv, pV, 3);
+        g_jitYbNow = true;
+        assert(JitCompile(mYv.rm) == NULL);
+        g_jitYbNow = false;
+        JitMeth& V = g_jitMeth[g_jitMethN - 1];
+        assert(V.yld && !V.verifyOk);
+        const LONG ver0 = C.jitVerified, ab0 = C.jitAbandoned, mis0 = C.jitMismatch;
+        JtFrame();
+        JtGo(pV, 8);
+        assert(g_jtEax == 0x1A6 && g_jtEdi == (DWORD)(uintptr_t)(pV + 1) && g_jtArena[8] == 2 && !g_jitV[0].active && C.jitAbandoned == ab0 && !C.jitYbAbandon);
+        g_jitV[0].active = true, g_jitV[0].phase = 1, g_jitV[0].ebp = (DWORD)(uintptr_t)g_jtEbp;
+        g_jitV[3].active = true, g_jitV[3].phase = 2, g_jitV[3].ebp = (DWORD)(uintptr_t)g_jtEbp;
+        g_jitV[1].active = true, g_jitV[1].phase = 1, g_jitV[1].ebp = (DWORD)(uintptr_t)g_jtEbp + 0x1000;  // another interpreter activation
+        JtFrame();
+        JtGo(pV, 8);  // a verified caller reached the body: its passes end, the body runs once
+        assert(g_jtEax == 0x1A6 && g_jtArena[8] == 2 && !g_jitV[0].active && !g_jitV[3].active && g_jitV[1].active && C.jitAbandoned == ab0 + 2 && C.jitYbAbandon == 2);
+        g_jitV[1].active = false;
+        JtGo(pV + 2, 10);  // the compiled ret (the verifier's exit stub): EA's ret, no pass
+        assert(g_jtEax == JT_RET && g_jtEdi == (DWORD)(uintptr_t)(pV + 2) && C.jitVerified == ver0 && C.jitMismatch == mis0 && C.jitAbandoned == ab0 + 2);
+        // the run-time arm (--ab yieldbodies): off = the yield bodies' words are EA's again, every other body stays compiled
+        g_jitYb = true, C.jitYbOn = 0;
+        JitTick();
+        assert(pV[0] == JT_LDC2 && pV[1] == 0x1A6 && pV[2] == JT_RET && a[0] == JIT_OP && !g_jitYbRun);
+        C.jitYbOn = 1;
+        JitTick();
+        assert(pV[0] == JIT_OP && pV[1] == JIT_OP && pV[2] == JIT_OP && g_jitYbRun);
+        g_jitYb = false, C.jitYbOn = 0;
+        C.jitYbAbandon = 0, C.jitYbMeth = 0;
+    }
 
     TestMonoJitInline();
     TestMonoJitWide();

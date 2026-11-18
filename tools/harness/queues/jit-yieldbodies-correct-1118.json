@@ -1,0 +1,529 @@
+{
+  "note": "jit-yieldbodies-correct-1118 (RUN FIRST, PREPARED, NOT RUN; docs/537 §34 R-5): [MonoJit] YieldBodies=1 on ts3native 0.36.286-yb1118. Jobs 1-3: the count run on BP / IP / SV (5 yield-body keys, Count=1, Mode=2). Job 4: save, quit and reload with YieldBodies=1 (save-matrix reload case: both loads, households compared, 60 s at speed 3). The in-load A/B is jit-yieldbodies-time-1118, only after this queue passes and only if the count run meets the go gate (<= 0.25 exits per executed position). Game jobs run on Apex + bridge (Bin state apex).",
+  "stopQueueOnFail": true,
+  "jobs": [
+    {
+      "id": "bp-yb-count",
+      "asi": "game-copy/ts3native.asi.jit-yieldbodies-1118",
+      "iniBase": "game-copy/ts3native.ini.jit-yieldbodies-1118",
+      "fixesPackage": "game-copy/ts3fixes.package.loadfix-1118",
+      "pinReason": "ts3native.asi.jit-yieldbodies-1118 (0.36.286-yb1118, sha256 1f4daf4d: master 74a77401e + [MonoJit] YieldBodies, docs/537 §34) with its own ini (ts3native.ini.jit-yieldbodies-1118, 0c3b3b76: master ini + YieldBodies=0) and master's ts3fixes.package.loadfix-1118; only the [MonoJit] keys of each job differ",
+      "minCounters": 912,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "scriptErrorsMax": 0,
+      "stopQueueOnFail": true,
+      "save": "Baseline-BP-Spring",
+      "note": "[est 15 min] BP 10 min count run, YieldBodies=1, Mode=2, Count=1 (R-5 count). Pass: the yield-bodies OK line with 10 rows, >= 3 yield bodies compiled (Lot.Simulate, Sim.DoInteraction / DoOrig and Sim.WaitForExitReason / WaitOrig always run), >= 3 jitcount ybrow lines with entries > 0, jitYbYieldExits >= 1 (a Sleep left through EA's handler and the Sim went on: resume through 0x1A9 works), 0 mismatches, 0 faults, 0 script errors. Read: the ybrow lines' exits per position (go gate <= 0.25) and jitYbExits / jitYbPos. Household: the bodies are the same instructions for every Sim (no scope gate); the reload job below compares the households.",
+      "logRequire": {
+        "^ts3native 0\\.36\\.286-yb1118 ": 1,
+        "^OK   mono jit yield bodies \\(docs/537 .34\\): YieldBodies=1, 10 rows": 1,
+        "OK   mono jit \\(docs/527\\): Mode=2, .*Count=1, ": 1,
+        "^jit: compiled ": 1,
+        "^jit: compiled .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): [0-9]+ positions, .*, yield body": 3,
+        "^jitcount ybrow .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): entries [1-9]": 3,
+        "^jitcount: end ": 1
+      },
+      "logForbid": {
+        "jit verify MISMATCH": 0,
+        "jit: fault": 0,
+        "^FAIL mono jit": 0,
+        "^jit: .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle) refused: (code region|method table|position table) full": 0
+      },
+      "ini": {
+        "MonoJit.YieldBodies": 1,
+        "MonoJit.Mode": 2,
+        "MonoJit.Count": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "noSamplers": true
+        }
+      },
+      "timeoutMin": 30,
+      "nativeRequire": "@jitMethods>=1000,jitMismatch<=0,jitFaults<=0,jitYbOn>=1,jitYbRows>=10,jitYbMeth>=3,jitYbPos>=1000,jitYbYieldExits>=1",
+      "regexCases": {
+        "^ts3native 0\\.36\\.286-yb1118 ": {
+          "match": [
+            "ts3native 0.36.286-yb1118 2026-11-18 23:10:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.285-g5p4 2026-11-18 21:00:00"
+          ]
+        },
+        "^OK   mono jit yield bodies \\(docs/537 .34\\): YieldBodies=1, 10 rows": {
+          "match": [
+            "OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, 10 rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=2, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=1, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0",
+            "OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, 0 rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified"
+          ]
+        },
+        "OK   mono jit \\(docs/527\\): Mode=2, .*Count=1, ": {
+          "match": [
+            "OK   mono jit (docs/527): Mode=2, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=1, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=1, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=1, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0",
+            "OK   mono jit (docs/527): Mode=2, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=0, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0"
+          ]
+        },
+        "^jit: compiled ": {
+          "match": [
+            "jit: compiled System.Collections.Generic.Dictionary`2.GetPrev: 51 positions, 47 native, 4 exits, 6421 bytes, lazy body"
+          ],
+          "noMatch": [
+            "jit: refusals by reason (first tick): none"
+          ]
+        },
+        "^jit: compiled .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): [0-9]+ positions, .*, yield body": {
+          "match": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)",
+            "jit: compiled Sims3.Gameplay.Actors.Sim.DoOrig: 240 positions, 150 native, 90 exits, 9000 bytes, yield body (not verified)",
+            "jit: compiled Sims3.Gameplay.ActorSystems.IdleManager.DistressIdle: 119 positions, 100 native, 19 exits, 4000 bytes, yield body (not verified)"
+          ],
+          "noMatch": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes",
+            "jit: compiled Sims3.Gameplay.Autonomy.Motive.DecayOrig: 1686 positions, 1474 native, 212 exits, 120873 bytes",
+            "jit: Sims3.Gameplay.Core.Lot.Simulate refused: code region full (#1 of this reason)",
+            "jit: compiled Sims3.Gameplay.Core.ResortLot.SimulateAll: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)"
+          ]
+        },
+        "^jitcount ybrow .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): entries [1-9]": {
+          "match": [
+            "jitcount ybrow Sims3.Gameplay.Core.Lot.Simulate: entries 5120, positions run 204800, ret exits 5000, other exits 40000, yield exits 5100, exits per position 0.220",
+            "jitcount ybrow Sims3.Gameplay.Actors.Sim.WaitOrig: entries 12, positions run 300, ret exits 12, other exits 40, yield exits 20, exits per position 0.173"
+          ],
+          "noMatch": [
+            "jitcount ybrow Sims3.Gameplay.Core.Lot.Simulate: entries 0, positions run 0, ret exits 0, other exits 0, yield exits 0, exits per position 0.000",
+            "jitcount yrow Sims3.Gameplay.Autonomy.Motive.DecayOrig: entries 5120, ret exits 4900, other exits 97000, exit sites taken 90, call-exit sites taken 83"
+          ]
+        },
+        "^jitcount: end ": {
+          "match": [
+            "jitcount: end exit #3, 4000 lines, 812 left out (cap 4000)"
+          ],
+          "noMatch": [
+            "jitcount: begin exit #3, 5463 methods, 9000 exit sites, 300 call sites, 12 mat rows"
+          ]
+        },
+        "jit verify MISMATCH": {
+          "match": [
+            "jit verify MISMATCH in X.Y at ip 12"
+          ],
+          "noMatch": [
+            "jit verify ok 1080046"
+          ]
+        },
+        "jit: fault": {
+          "match": [
+            "jit: fault 0xC0000005 in Sims3.Gameplay.Core.Lot.Simulate"
+          ],
+          "noMatch": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)"
+          ]
+        },
+        "^FAIL mono jit": {
+          "match": [
+            "FAIL mono jit clause lazy: x"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=1, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=0, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0"
+          ]
+        },
+        "^jit: .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle) refused: (code region|method table|position table) full": {
+          "match": [
+            "jit: Sims3.Gameplay.Core.Lot.Simulate refused: code region full (#3 of this reason)",
+            "jit: Sims3.Gameplay.Actors.Sim.DoOrig refused: method table full (#1 of this reason)"
+          ],
+          "noMatch": [
+            "jit: Sims3.Gameplay.Actors.Sim.DoInteraction refused: the IL hash is not a known one (737 bytes, sha256 0011223344556677...) (#1 of this reason)",
+            "jit: System.Collections.Generic.List`1.Add refused: code region full (HotReserve) (#1 of this reason)"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ip-yb-count",
+      "asi": "game-copy/ts3native.asi.jit-yieldbodies-1118",
+      "iniBase": "game-copy/ts3native.ini.jit-yieldbodies-1118",
+      "fixesPackage": "game-copy/ts3fixes.package.loadfix-1118",
+      "pinReason": "ts3native.asi.jit-yieldbodies-1118 (0.36.286-yb1118, sha256 1f4daf4d: master 74a77401e + [MonoJit] YieldBodies, docs/537 §34) with its own ini (ts3native.ini.jit-yieldbodies-1118, 0c3b3b76: master ini + YieldBodies=0) and master's ts3fixes.package.loadfix-1118; only the [MonoJit] keys of each job differ",
+      "minCounters": 912,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "scriptErrorsMax": 0,
+      "stopQueueOnFail": true,
+      "save": "Baseline-IP-Spring",
+      "note": "[est 15 min] IP 10 min count run, YieldBodies=1, Mode=2, Count=1 (R-5 count). Pass: the yield-bodies OK line with 10 rows, >= 3 yield bodies compiled (Lot.Simulate, Sim.DoInteraction / DoOrig and Sim.WaitForExitReason / WaitOrig always run), >= 3 jitcount ybrow lines with entries > 0, jitYbYieldExits >= 1 (a Sleep left through EA's handler and the Sim went on: resume through 0x1A9 works), 0 mismatches, 0 faults, 0 script errors. Read: the ybrow lines' exits per position (go gate <= 0.25) and jitYbExits / jitYbPos. Household: the bodies are the same instructions for every Sim (no scope gate); the reload job below compares the households.",
+      "logRequire": {
+        "^ts3native 0\\.36\\.286-yb1118 ": 1,
+        "^OK   mono jit yield bodies \\(docs/537 .34\\): YieldBodies=1, 10 rows": 1,
+        "OK   mono jit \\(docs/527\\): Mode=2, .*Count=1, ": 1,
+        "^jit: compiled ": 1,
+        "^jit: compiled .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): [0-9]+ positions, .*, yield body": 3,
+        "^jitcount ybrow .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): entries [1-9]": 3,
+        "^jitcount: end ": 1
+      },
+      "logForbid": {
+        "jit verify MISMATCH": 0,
+        "jit: fault": 0,
+        "^FAIL mono jit": 0,
+        "^jit: .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle) refused: (code region|method table|position table) full": 0
+      },
+      "ini": {
+        "MonoJit.YieldBodies": 1,
+        "MonoJit.Mode": 2,
+        "MonoJit.Count": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "noSamplers": true
+        }
+      },
+      "timeoutMin": 30,
+      "nativeRequire": "@jitMethods>=1000,jitMismatch<=0,jitFaults<=0,jitYbOn>=1,jitYbRows>=10,jitYbMeth>=3,jitYbPos>=1000,jitYbYieldExits>=1",
+      "regexCases": {
+        "^ts3native 0\\.36\\.286-yb1118 ": {
+          "match": [
+            "ts3native 0.36.286-yb1118 2026-11-18 23:10:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.285-g5p4 2026-11-18 21:00:00"
+          ]
+        },
+        "^OK   mono jit yield bodies \\(docs/537 .34\\): YieldBodies=1, 10 rows": {
+          "match": [
+            "OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, 10 rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=2, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=1, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0",
+            "OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, 0 rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified"
+          ]
+        },
+        "OK   mono jit \\(docs/527\\): Mode=2, .*Count=1, ": {
+          "match": [
+            "OK   mono jit (docs/527): Mode=2, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=1, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=1, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=1, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0",
+            "OK   mono jit (docs/527): Mode=2, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=0, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0"
+          ]
+        },
+        "^jit: compiled ": {
+          "match": [
+            "jit: compiled System.Collections.Generic.Dictionary`2.GetPrev: 51 positions, 47 native, 4 exits, 6421 bytes, lazy body"
+          ],
+          "noMatch": [
+            "jit: refusals by reason (first tick): none"
+          ]
+        },
+        "^jit: compiled .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): [0-9]+ positions, .*, yield body": {
+          "match": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)",
+            "jit: compiled Sims3.Gameplay.Actors.Sim.DoOrig: 240 positions, 150 native, 90 exits, 9000 bytes, yield body (not verified)",
+            "jit: compiled Sims3.Gameplay.ActorSystems.IdleManager.DistressIdle: 119 positions, 100 native, 19 exits, 4000 bytes, yield body (not verified)"
+          ],
+          "noMatch": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes",
+            "jit: compiled Sims3.Gameplay.Autonomy.Motive.DecayOrig: 1686 positions, 1474 native, 212 exits, 120873 bytes",
+            "jit: Sims3.Gameplay.Core.Lot.Simulate refused: code region full (#1 of this reason)",
+            "jit: compiled Sims3.Gameplay.Core.ResortLot.SimulateAll: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)"
+          ]
+        },
+        "^jitcount ybrow .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): entries [1-9]": {
+          "match": [
+            "jitcount ybrow Sims3.Gameplay.Core.Lot.Simulate: entries 5120, positions run 204800, ret exits 5000, other exits 40000, yield exits 5100, exits per position 0.220",
+            "jitcount ybrow Sims3.Gameplay.Actors.Sim.WaitOrig: entries 12, positions run 300, ret exits 12, other exits 40, yield exits 20, exits per position 0.173"
+          ],
+          "noMatch": [
+            "jitcount ybrow Sims3.Gameplay.Core.Lot.Simulate: entries 0, positions run 0, ret exits 0, other exits 0, yield exits 0, exits per position 0.000",
+            "jitcount yrow Sims3.Gameplay.Autonomy.Motive.DecayOrig: entries 5120, ret exits 4900, other exits 97000, exit sites taken 90, call-exit sites taken 83"
+          ]
+        },
+        "^jitcount: end ": {
+          "match": [
+            "jitcount: end exit #3, 4000 lines, 812 left out (cap 4000)"
+          ],
+          "noMatch": [
+            "jitcount: begin exit #3, 5463 methods, 9000 exit sites, 300 call sites, 12 mat rows"
+          ]
+        },
+        "jit verify MISMATCH": {
+          "match": [
+            "jit verify MISMATCH in X.Y at ip 12"
+          ],
+          "noMatch": [
+            "jit verify ok 1080046"
+          ]
+        },
+        "jit: fault": {
+          "match": [
+            "jit: fault 0xC0000005 in Sims3.Gameplay.Core.Lot.Simulate"
+          ],
+          "noMatch": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)"
+          ]
+        },
+        "^FAIL mono jit": {
+          "match": [
+            "FAIL mono jit clause lazy: x"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=1, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=0, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0"
+          ]
+        },
+        "^jit: .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle) refused: (code region|method table|position table) full": {
+          "match": [
+            "jit: Sims3.Gameplay.Core.Lot.Simulate refused: code region full (#3 of this reason)",
+            "jit: Sims3.Gameplay.Actors.Sim.DoOrig refused: method table full (#1 of this reason)"
+          ],
+          "noMatch": [
+            "jit: Sims3.Gameplay.Actors.Sim.DoInteraction refused: the IL hash is not a known one (737 bytes, sha256 0011223344556677...) (#1 of this reason)",
+            "jit: System.Collections.Generic.List`1.Add refused: code region full (HotReserve) (#1 of this reason)"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sv-yb-count",
+      "asi": "game-copy/ts3native.asi.jit-yieldbodies-1118",
+      "iniBase": "game-copy/ts3native.ini.jit-yieldbodies-1118",
+      "fixesPackage": "game-copy/ts3fixes.package.loadfix-1118",
+      "pinReason": "ts3native.asi.jit-yieldbodies-1118 (0.36.286-yb1118, sha256 1f4daf4d: master 74a77401e + [MonoJit] YieldBodies, docs/537 §34) with its own ini (ts3native.ini.jit-yieldbodies-1118, 0c3b3b76: master ini + YieldBodies=0) and master's ts3fixes.package.loadfix-1118; only the [MonoJit] keys of each job differ",
+      "minCounters": 912,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "scriptErrorsMax": 0,
+      "stopQueueOnFail": true,
+      "save": "Baseline-SV-Spring",
+      "note": "[est 15 min] SV 10 min count run, YieldBodies=1, Mode=2, Count=1 (R-5 count). Pass: the yield-bodies OK line with 10 rows, >= 3 yield bodies compiled (Lot.Simulate, Sim.DoInteraction / DoOrig and Sim.WaitForExitReason / WaitOrig always run), >= 3 jitcount ybrow lines with entries > 0, jitYbYieldExits >= 1 (a Sleep left through EA's handler and the Sim went on: resume through 0x1A9 works), 0 mismatches, 0 faults, 0 script errors. Read: the ybrow lines' exits per position (go gate <= 0.25) and jitYbExits / jitYbPos. Household: the bodies are the same instructions for every Sim (no scope gate); the reload job below compares the households.",
+      "logRequire": {
+        "^ts3native 0\\.36\\.286-yb1118 ": 1,
+        "^OK   mono jit yield bodies \\(docs/537 .34\\): YieldBodies=1, 10 rows": 1,
+        "OK   mono jit \\(docs/527\\): Mode=2, .*Count=1, ": 1,
+        "^jit: compiled ": 1,
+        "^jit: compiled .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): [0-9]+ positions, .*, yield body": 3,
+        "^jitcount ybrow .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): entries [1-9]": 3,
+        "^jitcount: end ": 1
+      },
+      "logForbid": {
+        "jit verify MISMATCH": 0,
+        "jit: fault": 0,
+        "^FAIL mono jit": 0,
+        "^jit: .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle) refused: (code region|method table|position table) full": 0
+      },
+      "ini": {
+        "MonoJit.YieldBodies": 1,
+        "MonoJit.Mode": 2,
+        "MonoJit.Count": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "noSamplers": true
+        }
+      },
+      "timeoutMin": 30,
+      "nativeRequire": "@jitMethods>=1000,jitMismatch<=0,jitFaults<=0,jitYbOn>=1,jitYbRows>=10,jitYbMeth>=3,jitYbPos>=1000,jitYbYieldExits>=1",
+      "regexCases": {
+        "^ts3native 0\\.36\\.286-yb1118 ": {
+          "match": [
+            "ts3native 0.36.286-yb1118 2026-11-18 23:10:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.285-g5p4 2026-11-18 21:00:00"
+          ]
+        },
+        "^OK   mono jit yield bodies \\(docs/537 .34\\): YieldBodies=1, 10 rows": {
+          "match": [
+            "OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, 10 rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=2, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=1, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0",
+            "OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, 0 rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified"
+          ]
+        },
+        "OK   mono jit \\(docs/527\\): Mode=2, .*Count=1, ": {
+          "match": [
+            "OK   mono jit (docs/527): Mode=2, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=1, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=1, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=1, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0",
+            "OK   mono jit (docs/527): Mode=2, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=0, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0"
+          ]
+        },
+        "^jit: compiled ": {
+          "match": [
+            "jit: compiled System.Collections.Generic.Dictionary`2.GetPrev: 51 positions, 47 native, 4 exits, 6421 bytes, lazy body"
+          ],
+          "noMatch": [
+            "jit: refusals by reason (first tick): none"
+          ]
+        },
+        "^jit: compiled .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): [0-9]+ positions, .*, yield body": {
+          "match": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)",
+            "jit: compiled Sims3.Gameplay.Actors.Sim.DoOrig: 240 positions, 150 native, 90 exits, 9000 bytes, yield body (not verified)",
+            "jit: compiled Sims3.Gameplay.ActorSystems.IdleManager.DistressIdle: 119 positions, 100 native, 19 exits, 4000 bytes, yield body (not verified)"
+          ],
+          "noMatch": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes",
+            "jit: compiled Sims3.Gameplay.Autonomy.Motive.DecayOrig: 1686 positions, 1474 native, 212 exits, 120873 bytes",
+            "jit: Sims3.Gameplay.Core.Lot.Simulate refused: code region full (#1 of this reason)",
+            "jit: compiled Sims3.Gameplay.Core.ResortLot.SimulateAll: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)"
+          ]
+        },
+        "^jitcount ybrow .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): entries [1-9]": {
+          "match": [
+            "jitcount ybrow Sims3.Gameplay.Core.Lot.Simulate: entries 5120, positions run 204800, ret exits 5000, other exits 40000, yield exits 5100, exits per position 0.220",
+            "jitcount ybrow Sims3.Gameplay.Actors.Sim.WaitOrig: entries 12, positions run 300, ret exits 12, other exits 40, yield exits 20, exits per position 0.173"
+          ],
+          "noMatch": [
+            "jitcount ybrow Sims3.Gameplay.Core.Lot.Simulate: entries 0, positions run 0, ret exits 0, other exits 0, yield exits 0, exits per position 0.000",
+            "jitcount yrow Sims3.Gameplay.Autonomy.Motive.DecayOrig: entries 5120, ret exits 4900, other exits 97000, exit sites taken 90, call-exit sites taken 83"
+          ]
+        },
+        "^jitcount: end ": {
+          "match": [
+            "jitcount: end exit #3, 4000 lines, 812 left out (cap 4000)"
+          ],
+          "noMatch": [
+            "jitcount: begin exit #3, 5463 methods, 9000 exit sites, 300 call sites, 12 mat rows"
+          ]
+        },
+        "jit verify MISMATCH": {
+          "match": [
+            "jit verify MISMATCH in X.Y at ip 12"
+          ],
+          "noMatch": [
+            "jit verify ok 1080046"
+          ]
+        },
+        "jit: fault": {
+          "match": [
+            "jit: fault 0xC0000005 in Sims3.Gameplay.Core.Lot.Simulate"
+          ],
+          "noMatch": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)"
+          ]
+        },
+        "^FAIL mono jit": {
+          "match": [
+            "FAIL mono jit clause lazy: x"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=1, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=0, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0"
+          ]
+        },
+        "^jit: .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle) refused: (code region|method table|position table) full": {
+          "match": [
+            "jit: Sims3.Gameplay.Core.Lot.Simulate refused: code region full (#3 of this reason)",
+            "jit: Sims3.Gameplay.Actors.Sim.DoOrig refused: method table full (#1 of this reason)"
+          ],
+          "noMatch": [
+            "jit: Sims3.Gameplay.Actors.Sim.DoInteraction refused: the IL hash is not a known one (737 bytes, sha256 0011223344556677...) (#1 of this reason)",
+            "jit: System.Collections.Generic.List`1.Add refused: code region full (HotReserve) (#1 of this reason)"
+          ]
+        }
+      }
+    },
+    {
+      "id": "bp-yb-reload",
+      "asi": "game-copy/ts3native.asi.jit-yieldbodies-1118",
+      "iniBase": "game-copy/ts3native.ini.jit-yieldbodies-1118",
+      "fixesPackage": "game-copy/ts3fixes.package.loadfix-1118",
+      "pinReason": "ts3native.asi.jit-yieldbodies-1118 (0.36.286-yb1118, sha256 1f4daf4d: master 74a77401e + [MonoJit] YieldBodies, docs/537 §34) with its own ini (ts3native.ini.jit-yieldbodies-1118, 0c3b3b76: master ini + YieldBodies=0) and master's ts3fixes.package.loadfix-1118; only the [MonoJit] keys of each job differ",
+      "minCounters": 912,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "scriptErrorsMax": 0,
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "note": "[est 25 min] save / quit / reload with YieldBodies=1, Mode=1 (save-matrix.ts --cases reload: the save is written while Sims are inside interactions, i.e. with frames of the yield bodies suspended in Sleep; two restarts). Pass: reload PASS (households match, 60 s at speed 3, no new ScriptErrors), 0 crashes, yield bodies compiled in the load, 0 faults.",
+      "run": {
+        "matrix": [
+          "--cases",
+          "reload"
+        ]
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "timeoutMin": 45,
+      "ini": {
+        "MonoJit.YieldBodies": 1,
+        "MonoJit.Mode": 1,
+        "MonoJit.Count": 0
+      },
+      "logRequire": {
+        "^ts3native 0\\.36\\.286-yb1118 ": 1,
+        "^OK   mono jit yield bodies \\(docs/537 .34\\): YieldBodies=1, 10 rows": 1,
+        "^jit: compiled .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): [0-9]+ positions, .*, yield body": 1
+      },
+      "logForbid": {
+        "jit: fault": 0,
+        "^FAIL mono jit": 0
+      },
+      "regexCases": {
+        "^ts3native 0\\.36\\.286-yb1118 ": {
+          "match": [
+            "ts3native 0.36.286-yb1118 2026-11-18 23:10:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.285-g5p4 2026-11-18 21:00:00"
+          ]
+        },
+        "^OK   mono jit yield bodies \\(docs/537 .34\\): YieldBodies=1, 10 rows": {
+          "match": [
+            "OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, 10 rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=2, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=1, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0",
+            "OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, 0 rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified"
+          ]
+        },
+        "^jit: compiled .*\\.(Lot\\.Simulate|Sim\\.(DoInteraction|DoOrig|WaitForExitReason|WaitOrig)|InteractionDefinitionUtilities\\.CommonTests|IdleManager\\.DistressIdle): [0-9]+ positions, .*, yield body": {
+          "match": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)",
+            "jit: compiled Sims3.Gameplay.Actors.Sim.DoOrig: 240 positions, 150 native, 90 exits, 9000 bytes, yield body (not verified)",
+            "jit: compiled Sims3.Gameplay.ActorSystems.IdleManager.DistressIdle: 119 positions, 100 native, 19 exits, 4000 bytes, yield body (not verified)"
+          ],
+          "noMatch": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes",
+            "jit: compiled Sims3.Gameplay.Autonomy.Motive.DecayOrig: 1686 positions, 1474 native, 212 exits, 120873 bytes",
+            "jit: Sims3.Gameplay.Core.Lot.Simulate refused: code region full (#1 of this reason)",
+            "jit: compiled Sims3.Gameplay.Core.ResortLot.SimulateAll: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)"
+          ]
+        },
+        "jit: fault": {
+          "match": [
+            "jit: fault 0xC0000005 in Sims3.Gameplay.Core.Lot.Simulate"
+          ],
+          "noMatch": [
+            "jit: compiled Sims3.Gameplay.Core.Lot.Simulate: 70 positions, 52 native, 18 exits, 2210 bytes, yield body (not verified)"
+          ]
+        },
+        "^FAIL mono jit": {
+          "match": [
+            "FAIL mono jit clause lazy: x"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=1, 254 templates (Groups=511), 117 list rows, VerifyEvery=16, code region 8192 KB (CodeKB), 4096 methods (MaxMethods), Direct=2 (docs/537), Trap=0, VtOps=0, CallExit=0, NewVt=0, Count=0, FastCopy=0, Ldsflda=0, BoundCall=0x3, ClauseLazy=1, RetTeardown=0, FaultRecover=1, YRows=0"
+          ]
+        }
+      }
+    }
+  ]
+}
