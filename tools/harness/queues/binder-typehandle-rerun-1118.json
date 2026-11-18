@@ -1,0 +1,104 @@
+{
+  "note": "binder-typehandle-rerun-1118 (J4 of the Dalexlol JIT list, docs/537 §20.6): the two on arms of binder-typehandle (2026-11-13) that never ran after the harness fix. Their FAILs were tdOn=0 from a delta rule on a startup counter (fixed 2fbb5f6f + 0ed40427: @tdOn>=1; fixes-require.ts and queue.ts self-checks cover it); ip-td-on also had 1 new script error whose xml was not kept. Same pair as the 11-13 run (master1112b asi 0.36.248, rc1111e package) so they pair with that run's PASS off arms (bp-td-off, ip-td-off-rerun). Pass per job: OK line, @tdOn>=1, 0 new script errors, no crash. Read: RuntimeTypeHandle.get_Value absent from probe-out/profile/<tag>-managed.txt (off arms 0.3-0.8 %, the 4 on arms of 11-13 had 0 samples). 2 loads, ~25 min, correctness only: node tools/harness/queue.ts tools/harness/queues/binder-typehandle-rerun-1118.json --no-smoke",
+  "rewind": "auto",
+  "jobs": [
+    {
+      "id": "bp-td-on",
+      "nativeRequire": "@tdOn>=1",
+      "note": "BP 10 min, release ini, [Binder] TypeHandleDirect=1, managed + simstack samplers on (measurement arm). Pass: see the queue note.",
+      "asi": "game-copy/ts3native.asi.master1112b",
+      "fixesPackage": "game-copy/ts3fixes.package.rc1111e",
+      "pinReason": "master1112b pair (repinned 2026-11-13 from r1e1-1112, which was never parked): asi game-copy/ts3native.asi.master1112b = ts3native 0.36.248, sha256 1017eee08f92, master 7b4dcb66 (everything merged 2026-11-12), registered in docs/data/builds.json; fixesPackage stays ts3fixes.package.rc1111e (the Sat 11-14 release package; no ts3fixes change in the R1/E1 work) so the arms differ from the release only in ts3native",
+      "releaseDefaults": true,
+      "noiseCheck": true,
+      "minCounters": 912,
+      "save": "Baseline-BP-Spring",
+      "ini": {
+        "Binder.TypeHandleDirect": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "logRequire": {
+        "OK   binder type handle direct": 1,
+        "^ts3native 0\\.36\\.248 ": 1
+      },
+      "scriptErrorsMax": 0,
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10
+        }
+      },
+      "timeoutMin": 25,
+      "regexCases": {
+        "OK   binder type handle direct": {
+          "match": [
+            "OK   binder type handle direct (docs/537 §20.3): Type.GetTypeFromHandle's EA body 0xDB0940 reads the handle at 0x00DB0950, no 0xD8A8E0 call to RuntimeTypeHandle.get_Value"
+          ],
+          "noMatch": [
+            "SKIP binder type handle direct: bytes at 0x00DB0950 differ (another owner or another exe): not installed"
+          ]
+        },
+        "^ts3native 0\\.36\\.248 ": {
+          "match": [
+            "ts3native 0.36.248 2026-11-13 21:00:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.245 2026-11-12 10:00:00",
+            "prior log: ts3native 0.36.248 2026-11-12 12:00:00",
+            "ts3native 0.36.2480 2026-11-13 21:00:00"
+          ]
+        }
+      },
+      "iniBase": "game-copy/ts3native.ini.master1112b"
+    },
+    {
+      "id": "ip-td-on",
+      "nativeRequire": "@tdOn>=1",
+      "note": "IP 10 min, release ini, [Binder] TypeHandleDirect=1, managed + simstack samplers on (measurement arm). Pass: see the queue note.",
+      "asi": "game-copy/ts3native.asi.master1112b",
+      "fixesPackage": "game-copy/ts3fixes.package.rc1111e",
+      "pinReason": "master1112b pair (repinned 2026-11-13 from r1e1-1112, which was never parked): asi game-copy/ts3native.asi.master1112b = ts3native 0.36.248, sha256 1017eee08f92, master 7b4dcb66 (everything merged 2026-11-12), registered in docs/data/builds.json; fixesPackage stays ts3fixes.package.rc1111e (the Sat 11-14 release package; no ts3fixes change in the R1/E1 work) so the arms differ from the release only in ts3native",
+      "releaseDefaults": true,
+      "noiseCheck": true,
+      "minCounters": 912,
+      "save": "Baseline-IP-Spring",
+      "ini": {
+        "Binder.TypeHandleDirect": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "logRequire": {
+        "OK   binder type handle direct": 1,
+        "^ts3native 0\\.36\\.248 ": 1
+      },
+      "scriptErrorsMax": 0,
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10
+        }
+      },
+      "timeoutMin": 25,
+      "regexCases": {
+        "OK   binder type handle direct": {
+          "match": [
+            "OK   binder type handle direct (docs/537 §20.3): Type.GetTypeFromHandle's EA body 0xDB0940 reads the handle at 0x00DB0950, no 0xD8A8E0 call to RuntimeTypeHandle.get_Value"
+          ],
+          "noMatch": [
+            "SKIP binder type handle direct: bytes at 0x00DB0950 differ (another owner or another exe): not installed"
+          ]
+        },
+        "^ts3native 0\\.36\\.248 ": {
+          "match": [
+            "ts3native 0.36.248 2026-11-13 21:00:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.245 2026-11-12 10:00:00",
+            "prior log: ts3native 0.36.248 2026-11-12 12:00:00",
+            "ts3native 0.36.2480 2026-11-13 21:00:00"
+          ]
+        }
+      },
+      "iniBase": "game-copy/ts3native.ini.master1112b"
+    }
+  ]
+}
