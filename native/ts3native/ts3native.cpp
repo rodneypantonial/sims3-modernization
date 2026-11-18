@@ -18,7 +18,7 @@
 #ifdef TS3N_RFTEST
 #define TS3NATIVE_VERSION "0.36.189-rftest1"  // docs/89 §18: repro ops 30-34, never a release
 #else
-#define TS3NATIVE_VERSION "0.36.285-g5p4"  // feature/gc-markhelpers-p4-1118: [GC] MarkHelpersVerify (docs/287 §8, default 0; g5VerifySub / g5VerifySkip in v214 spares); on 0.36.284-exact1 (feature/r1x-1118)
+#define TS3NATIVE_VERSION "0.36.285-lrv1"  // feature/monojit-lazyretvt-1118: [MonoJit] LazyRetVt (docs/537 §34, default 0); on 0.36.285-g5p4
 #endif
 
 typedef unsigned char u8;

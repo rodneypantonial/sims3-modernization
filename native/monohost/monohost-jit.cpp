@@ -126,6 +126,11 @@ static bool g_jitVtOps;
 // docs/537 §20 B2b, off by default. MONOHOST_JITNEWVT=1 ([MonoJit] NewVt, game key not added yet): newobj of a value-type class
 // calls the ctor's lazy body natively (this = the vt cursor, EA's 0xE5620C), see EmitLazyCall
 static bool g_jitNewVt;
+// docs/537 §34 (J5), off by default. MONOHOST_JITLAZYRETVT=1 ([MonoJit] LazyRetVt): ret.vt in a lazy body returns natively (EA's
+// 0xE5923E memcpy into retval->data.p, then the call site's 8-byte retval copy), same code as monojit.cpp
+static bool g_jitLazyRetVt;
+static DWORD g_jitRetVtOp = 0xFFFF;
+static LONG g_jitLazyRetVtN;
 static int g_jitNewVtSites;
 // handoff C3, off by default. MONOHOST_JITFASTCOPY=1 (game key not added yet): Array.FastCopy runs inline at its call site for
 // same-element value-type arrays without references (EA's memmove path); every other input exits to EA's call (JitFastCopy)
@@ -1192,6 +1197,24 @@ static void EmitLazyRet(Em& e, const unsigned short* ip, DWORD op, const u8* rm,
     Fix(slow, e.p);
     EmitExit(e, ip, op, true);
 }
+// LazyRetVt (docs/537 §34): see monojit.cpp EmitLazyRetVt (same bytes)
+static void EmitLazyRetVt(Em& e, const unsigned short* ip, DWORD op, const u8* rm) {
+    const unsigned short w3E = *(const unsigned short*)(rm + 0x3E);
+    const DWORD size = *(const DWORD*)(ip + 1);
+    e.op(0x8D, EAX, EBX, w3E + 8); e.rr(0x39, ESI, EAX);
+    u8* slow = e.jcc(0x87);
+    e.opEsp(0x8B, EAX, 4 + B_RSLOT); e.op(0x8B, EAX, EAX, 0);
+    e.op(0x8B, ECX, ESI, -8);
+    VtCopy(e, EAX, ECX, size);
+    e.op(0x8B, EAX, EBP, 8); e.op(0x8B, EAX, EAX, 0x13C); e.op(0x89, EBX, EAX, 0);
+    e.b(0xC3);
+    Fix(slow, e.p);
+    EmitExit(e, ip, op, true);
+    if (InterlockedIncrement(&g_jitLazyRetVtN) <= 32) {
+        char nm[256];
+        Log("jitlazy retvt %s (%lu bytes)\n", JitMethodName(rm, nm, sizeof(nm)), (unsigned long)size);
+    }
+}
 
 // before a listed method is compiled: transform the instance callees of its call / callvirt sites that are not transformed
 // yet (EA would at their first call), so the inliner can read their mint code. Transform builds code only; a failure
@@ -1281,7 +1304,7 @@ static void JitCompiled(u8* rm) {
         if ((g_jitPureIcalls || g_jitFastCopy) && (posOp[k] == 0xEA || posOp[k] == 0xEC) && posReal[k])  // native, not a call (the game's rule)
             if (const int pk = JitPureIcall(code + posW[k], posOp[k], rm)) if (pk == 4 ? g_jitFastCopy : g_jitPureIcalls) continue;
         // CallExit: a hot exit (and ret.vt) writes the frame first and then is EA's, as a cold one: the body stays lazy
-        if ((t.kind == K_EXIT && !posCold[k] && !ce) || (t.kind == K_RET && posOp[k] != 0x06 && posOp[k] != 0x07 && !ce)) lazyOk = false;
+        if ((t.kind == K_EXIT && !posCold[k] && !ce) || (t.kind == K_RET && posOp[k] != 0x06 && posOp[k] != 0x07 && !(g_jitLazyRetVt && posOp[k] == g_jitRetVtOp) && !ce)) lazyOk = false;
     }
     if (g_jitCodeEnd - (g_jitCode + g_jitCodeUsed) < (lazyOk ? 512 : 256) * n + 512) { Log("jit: code pool full\n"); return; }
     static u8* label[4096];
@@ -1676,6 +1699,7 @@ static void JitCompiled(u8* rm) {
                 break;  // conv.i4.i8: the low word already is the result
             default:
                 if (g_jitLazyPass && (op == 0x06 || op == 0x07)) { EmitLazyRet(e, ip, op, rm, op == 0x06); nat++; continue; }
+                if (g_jitLazyPass && g_jitLazyRetVt && op == g_jitRetVtOp) { EmitLazyRetVt(e, ip, op, rm); nat++; continue; }
                 if (op == 0xEA && g_jitC5 && !g_jitLazyPass) {
                     if (const DWORD fn = JitIcallFn(ip, rm)) { exitRel[0] = EmitIcall(e, fn); break; }
                 }
@@ -2927,6 +2951,8 @@ static bool InstallJit() {
         g_jitPureIcalls = g_jitCallExit && JitPureIcallsOk();
         if ((g_jitVtOps = GetEnvironmentVariableA("MONOHOST_JITVTOPS", x, sizeof(x)) && x[0] == '1')) c2 |= 1024;
         g_jitNewVt = GetEnvironmentVariableA("MONOHOST_JITNEWVT", x, sizeof(x)) && x[0] == '1';
+        g_jitLazyRetVt = GetEnvironmentVariableA("MONOHOST_JITLAZYRETVT", x, sizeof(x)) && x[0] == '1';
+        if (g_jitLazyRetVt) Log("jit lazyretvt: on (docs/537 §34)\n");
         g_jitBind = GetEnvironmentVariableA("MONOHOST_JITBIND", x, sizeof(x)) && x[0] == '1';  // docs/537 §22: the game's String bodies
         if (GetEnvironmentVariableA("MONOHOST_JITBOUNDCALL", x, sizeof(x)) && atoi(x) > 0)    // docs/537 §22: kJitBound row mask
             Log("jit boundcall: mask %s asked, 0x%X in force (rows whose EA bytes match)\n", x, JitBoundInit((unsigned)atoi(x)));
@@ -2952,6 +2978,8 @@ static bool InstallJit() {
             for (DWORD op = 0; op <= 0x1A8; op++)
                 if (!strcmp(names[op], t.name)) { g_opInfo[op] = {t.kind, t.width, t.x}; break; }
         }
+        for (DWORD op = 0; op <= 0x1A8; op++)
+            if (!strcmp(names[op], "ret.vt")) { g_jitRetVtOp = op; break; }
         g_jitTab = (JitEnt*)VirtualAlloc(NULL, sizeof(JitEnt) * (JIT_TAB_N + 4096), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         g_jitCode = (u8*)VirtualAlloc(NULL, 8 << 20, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);  // the game's CodeKB default (T4096)
         g_jitCodeEnd = g_jitCode + (8 << 20);
