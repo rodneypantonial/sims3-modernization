@@ -3,7 +3,7 @@
 // leave is the state an exit hands the interpreter (edi = ip, eax = op, esi, arena). The verify test adds a one-opcode
 // interpreter (JitTestLdc) for pass 2. Not covered: EA's real opcode numbers and handlers (the monohost corpus has those).
 
-enum { JT_LDC2 = 1, JT_LDC3, JT_ADD, JT_STLOC, JT_LDLOC, JT_RET, JT_BRS, JT_BRTRUE, JT_LDFLD, JT_STFLD, JT_LDELEM, JT_LDFLDR4, JT_LDLOCVT, JT_LDCS, JT_MYSTERY, JT_INITOBJ, JT_ISINST, JT_SHRUN8, JT_LDCR4, JT_LDCR8, JT_LDLOCR4, JT_LDLOCR8, JT_STLOCR4, JT_STLOCR8, JT_CEQR8, JT_BLTR8S, JT_LDTHIS, JT_LDIND, JT_LDLEN, JT_ADDR8, JT_CONVU4R8, JT_CONVI8R8, JT_CONVR4R8, JT_LDINDR8, JT_STINDR4, JT_LDSTR, JT_LDTOKEN, JT_CASTCLASS, JT_LEAVES = 0x9C, JT_SWITCH = 0xE8 };
+enum { JT_LDC2 = 1, JT_LDC3, JT_ADD, JT_STLOC, JT_LDLOC, JT_RET, JT_BRS, JT_BRTRUE, JT_LDFLD, JT_STFLD, JT_LDELEM, JT_LDFLDR4, JT_LDLOCVT, JT_LDCS, JT_MYSTERY, JT_INITOBJ, JT_ISINST, JT_SHRUN8, JT_LDCR4, JT_LDCR8, JT_LDLOCR4, JT_LDLOCR8, JT_STLOCR4, JT_STLOCR8, JT_CEQR8, JT_BLTR8S, JT_LDTHIS, JT_LDIND, JT_LDLEN, JT_ADDR8, JT_CONVU4R8, JT_CONVI8R8, JT_CONVR4R8, JT_LDINDR8, JT_STINDR4, JT_LDSTR, JT_LDTOKEN, JT_CASTCLASS, JT_RETVT, JT_LEAVES = 0x9C, JT_SWITCH = 0xE8 };
 static const char* g_jtNames[0x1A9];
 static BYTE g_jtLen[0x1C1];
 static DWORD g_jtTable[0x1C1];
@@ -215,7 +215,7 @@ static void TestMonoJitInline() {
 // [MonoJit] Wide (docs/537 §10): group 512 stays out of Groups' default; its templates give EA's bits, a null or failed cast leaves through EA's handler
 static void TestMonoJitWide() {
     assert(g_opInfo[JT_ADDR8].kind == K_EXIT && g_opInfo[JT_LDSTR].kind == K_EXIT);  // the 511 of the test above
-    assert(JitTemplates(1023) == 38 && g_opInfo[JT_ADDR8].kind == K_FARITH && g_opInfo[JT_CASTCLASS].kind == K_CASTCLASS);
+    assert(JitTemplates(1023) == 39 && g_opInfo[JT_ADDR8].kind == K_FARITH && g_opInfo[JT_CASTCLASS].kind == K_CASTCLASS);
     static BYTE sse2 = 1;
     const BYTE* sse2Was = g_jitSse2;
     g_jitSse2 = &sse2, g_jitSse3 = true, g_jitMode = 1, g_jitVerifyOn = 0;
@@ -304,9 +304,9 @@ static void TestMonoJitVtOps() {
     const bool lazy0 = g_jitLazy;
     g_jitLazy = false, g_jitMode = 1, g_jitVerifyOn = 0;
     memset(g_opInfo, 0, sizeof(g_opInfo));
-    assert(JitTemplates(1023) == 38 && g_opInfo[OP_STFLDVT].kind == K_EXIT && g_opInfo[OP_LDOBJ].kind == K_EXIT);
+    assert(JitTemplates(1023) == 39 && g_opInfo[OP_STFLDVT].kind == K_EXIT && g_opInfo[OP_LDOBJ].kind == K_EXIT);
     memset(g_opInfo, 0, sizeof(g_opInfo));
-    assert(JitTemplates(2047) == 43 && g_opInfo[OP_STFLDVT].kind == K_STFLDVT && g_opInfo[OP_STOBJVT].kind == K_STOBJVT);
+    assert(JitTemplates(2047) == 44 && g_opInfo[OP_STFLDVT].kind == K_STFLDVT && g_opInfo[OP_STOBJVT].kind == K_STOBJVT);
     const DWORD vt = (DWORD)(uintptr_t)g_jtVt;
     static DWORD obj[8], arr[12], dst[4];
     static const DWORD src3[3] = {0x11, 0x22, 0x33};
@@ -1501,6 +1501,58 @@ static void TestMonoJitCellHash() {
     printf("monojit: CellHash = linear on 20000 lookups (%d NULL at the cap)\n", nulls);
 }
 
+// [MonoJit] LazyRetVt (docs/537 §34): a lazy body's ret.vt copies the value to the caller's vt cursor (EA's 0xE5923E memcpy into
+// retval->data.p), pops the arena and returns natively; the call site pushes the cursor as EA's frame return does. Off: no lazy
+// body (ret.vt keeps the K_RET rule). Extra values on the eval stack: the exit, frame written (EA's ret.vt logs them).
+static void TestMonoJitLazyRetVt() {
+    Ts3nCounters& C = ts3native_counters;
+    g_jitMode = 1, g_jitVerifyOn = 0, g_jitLazy = true, g_jitLeafOnly = true, g_jitCallExit = false;
+    g_jitForceJit = &g_jtForceByte, g_jitProxyClassP = (const void* const*)&g_jtProxy;
+    g_jtLen[0xEA] = 2;
+    static BYTE src[12] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+    const DWORD locW = (32 + 64 + 8) / 4;  // the callee's locals: arena base (= chunk start) + w3E + w34 + w36
+    // off: a ret.vt body gets no lazy body
+    g_jitLazyRetVt = false;
+    static unsigned short e0[] = {JT_LDLOC, 0, JT_RETVT, 12, 0};
+    static JtMeth m0;
+    const LONG bodies0 = C.jitLazyBodies;
+    JtMake(m0, e0, 5, 0);
+    assert(C.jitLazyBodies == bodies0);
+    // on: the leaf's ret.vt is native
+    g_jitLazyRetVt = true;
+    static unsigned short e1[] = {JT_LDLOC, 0, JT_RETVT, 12, 0};
+    static JtMeth m1;
+    JtMake(m1, e1, 5, 0);
+    assert(C.jitLazyBodies == bodies0 + 1);
+    static DWORD items[1];
+    items[0] = (DWORD)(uintptr_t)m1.rm;
+    static unsigned short f[] = {0xEA, 0, JT_RET};
+    static JtMeth mF;
+    JtMake(mF, f, 3, 0, items);
+    JtLazyFrame();
+    g_jtChunkWords[locW] = (DWORD)(uintptr_t)src;
+    const LONG calls0 = C.jitLazyCalls, mats0 = C.jitLazyMats;
+    JtLazyGo(f);
+    assert(g_jtEax == JT_RET && g_jtEdi == (DWORD)(uintptr_t)(f + 2) && C.jitLazyCalls == calls0 + 1 && C.jitLazyMats == mats0);
+    assert(!memcmp(g_jtVt, src, sizeof(src)));                                   // the value at the caller's cursor
+    assert(g_jtArena[0] == (DWORD)(uintptr_t)g_jtVt && g_jtEsi == (DWORD)(uintptr_t)(g_jtArena + 2));  // the cursor pushed
+    assert(g_jtChunk[0] == (DWORD)(uintptr_t)g_jtChunkWords && *(DWORD*)(g_jtState + 0x140) == 0);   // arena popped, no frame
+    // a value left below the returned one: EA's ret.vt runs on a written frame
+    static unsigned short e2[] = {JT_LDC2, JT_LDLOC, 0, JT_RETVT, 12, 0};
+    static JtMeth m2;
+    JtMake(m2, e2, 6, 0);
+    assert(C.jitLazyBodies == bodies0 + 2);
+    items[0] = (DWORD)(uintptr_t)m2.rm;
+    static JtMeth mF2;
+    static unsigned short f2[] = {0xEA, 0, JT_RET};
+    JtMake(mF2, f2, 3, 0, items);
+    JtLazyFrame();
+    g_jtChunkWords[locW] = (DWORD)(uintptr_t)src;
+    JtLazyGo(f2);
+    assert(g_jtEax == JT_RETVT && g_jtEdi == (DWORD)(uintptr_t)(e2 + 3) && C.jitLazyMats == mats0 + 1);
+    g_jitLazyRetVt = false;
+    printf("mono jit LazyRetVt (docs/537 §34): off = no lazy body, native ret.vt copy + cursor push + arena pop, extra value = exit: ok\n");
+}
 static void TestMonoJit() {
     Ts3nCounters& C = ts3native_counters;
     // default: nothing installed without the switch, and the switch alone does nothing on another exe
@@ -1523,7 +1575,7 @@ static void TestMonoJit() {
         {JT_LDLOCR4, "ldloc.r4", 2}, {JT_LDLOCR8, "ldloc.r8", 2}, {JT_STLOCR4, "stloc.r4", 2}, {JT_STLOCR8, "stloc.r8", 2}, {JT_CEQR8, "ceq.r8", 1}, {JT_BLTR8S, "blt.r8.s", 2},
         {JT_LDTHIS, "ldthis", 1}, {JT_LDIND, "ldind.i4", 1}, {JT_LDLEN, "ldlen", 1},
         {JT_ADDR8, "add.r8", 1}, {JT_CONVU4R8, "conv.u4.r8", 1}, {JT_CONVI8R8, "conv.i8.r8", 1}, {JT_CONVR4R8, "conv.r4.r8", 1}, {JT_LDINDR8, "ldind.r8", 1}, {JT_STINDR4, "stind.r4", 1},
-        {JT_LDSTR, "ldstr", 2}, {JT_LDTOKEN, "ldtoken", 2}, {JT_CASTCLASS, "castclass", 2}};
+        {JT_LDSTR, "ldstr", 2}, {JT_LDTOKEN, "ldtoken", 2}, {JT_CASTCLASS, "castclass", 2}, {JT_RETVT, "ret.vt", 3}};
     for (const auto& o : kOps) g_jtNames[o.op] = o.name, g_jtLen[o.op] = (BYTE)o.len;
     g_jitTableP = g_jtTable, g_jitOpNames = g_jtNames, g_jitOpLen = g_jtLen, g_jitMemcpy = (DWORD)(uintptr_t)JtMemcpy;
     g_jitMemset = (DWORD)(uintptr_t)JtMemset, g_jitAullshr = (DWORD)(uintptr_t)JtAullshr, g_jitIfaceOff = (DWORD)(uintptr_t)JtIfaceOff;
@@ -1548,11 +1600,11 @@ static void TestMonoJit() {
         assert(!cold[0] && !cold[1] && cold[2] && cold[3] && cold[4] && !cold[5] && !cold[6]);
         g_jtNames[0x190] = g_jtNames[0x191] = g_jtNames[0x192] = NULL;
     }
-    assert(JitTemplates(255) == 18);  // every row above but "mystery" and leave.s
+    assert(JitTemplates(255) == 19 && g_jitRetVtOp == JT_RETVT);  // every row above but "mystery" and leave.s
     memset(g_opInfo, 0, sizeof(g_opInfo));
-    assert(JitTemplates(255 & ~1) == 17 && g_opInfo[JT_LDFLDR4].kind == K_EXIT);  // Groups: group 1 left out
+    assert(JitTemplates(255 & ~1) == 18 && g_opInfo[JT_LDFLDR4].kind == K_EXIT);  // Groups: group 1 left out
     memset(g_opInfo, 0, sizeof(g_opInfo));
-    assert(JitTemplates(511) == 29);  // Groups bit 256: the nine C5 rows above and two float compares
+    assert(JitTemplates(511) == 30);  // Groups bit 256: the nine C5 rows above and two float compares
     assert(g_opInfo[JT_RET].kind == K_RET && g_opInfo[JT_MYSTERY].kind == K_EXIT);
     {  // T4096 (docs/537 §26): MaxMethods clamp, the fallback to 2048 / 4096 KB when the asked region does not fit, and the counters' place
         static_assert(offsetof(Ts3nCounters, jitTableFull) == 0x62CC && offsetof(Ts3nCounters, jitMethCap) == 0x62D0 && sizeof(Ts3nCounters) == 6722 * 4,
@@ -2041,6 +2093,7 @@ static void TestMonoJit() {
     TestMonoJitCapture();
     TestMonoJitCallExit();
     TestMonoJitNewVt();
+    TestMonoJitLazyRetVt();
     TestMonoJitCount();
     TestMonoJitFastCopy();
     TestMonoJitBoundCall();

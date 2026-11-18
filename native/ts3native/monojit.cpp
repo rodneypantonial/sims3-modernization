@@ -55,6 +55,12 @@ static bool g_jitCallExit, g_jitPureIcalls;
 // docs/537 §20 B2b, off by default: [MonoJit] NewVt=1 (host MONOHOST_JITNEWVT): newobj of a value-type class calls the ctor's lazy
 // body natively (this = the vt cursor, EA's 0xE5620C), see EmitLazyCall
 static bool g_jitNewVt;
+// docs/537 §34 (J5), off by default: [MonoJit] LazyRetVt=1 (host MONOHOST_JITLAZYRETVT): ret.vt in a lazy body returns natively,
+// as EA's handler 0xE5923E does (memcpy(retval->data.p, [esi-8], size); the frame return 0xE543C7 then copies the 8-byte retval to
+// the caller's top for every non-void method, which the lazy call site already does), so a value-type getter keeps its lazy body
+static bool g_jitLazyRetVt;
+static DWORD g_jitRetVtOp = 0xFFFF;  // ret.vt's opcode (JitTemplates, by name; 0x08 on Steam 1.67)
+static LONG g_jitLazyRetVtN;         // lazy ret.vt sites emitted (log cap)
 // docs/537 §20 C3, off by default: [MonoJit] FastCopy=1 (host MONOHOST_JITFASTCOPY): Array.FastCopy runs inline at its call site for
 // same-element value-type arrays without references (EA's memmove path); every other input exits to EA's call (JitFastCopy)
 static bool g_jitFastCopy;
@@ -1094,6 +1100,27 @@ static void EmitLazyRet(Em& e, const unsigned short* ip, DWORD op, const u8* rm,
     Fix(slow, e.p);
     EmitExit(e, ip, op, true);
 }
+// LazyRetVt (docs/537 §34): lazy body ret.vt. Values left below the one returned go to EA's ret.vt (it logs), as EmitLazyRet; else
+// EA's copy memcpy(retval->data.p, [esi-8], size) through the same CRT thunk (retval = the return slot the lazy call site wrote,
+// data.p = the caller's vt cursor), the arena pop and a native ret. The call site copies the slot's 8 bytes to the caller's top
+// (non-void), as EA's frame return 0xE5448F does; the caller's vtresult advances the cursor.
+static void EmitLazyRetVt(Em& e, const unsigned short* ip, DWORD op, const u8* rm) {
+    const unsigned short w3E = *(const unsigned short*)(rm + 0x3E);
+    const DWORD size = *(const DWORD*)(ip + 1);
+    e.op(0x8D, EAX, EBX, w3E + 8); e.rr(0x39, ESI, EAX);
+    u8* slow = e.jcc(0x87);
+    e.opEsp(0x8B, EAX, 4 + B_RSLOT); e.op(0x8B, EAX, EAX, 0);  // eax = retval->data.p
+    e.op(0x8B, ECX, ESI, -8);                                   // ecx = the value's address
+    VtCopy(e, EAX, ECX, size);                                  // esp is back at the body's entry value after it
+    e.op(0x8B, EAX, EBP, 8); e.op(0x8B, EAX, EAX, 0x13C); e.op(0x89, EBX, EAX, 0);  // [chunk] = callee arena base
+    e.b(0xC3);
+    Fix(slow, e.p);
+    EmitExit(e, ip, op, true);
+    if (InterlockedIncrement(&g_jitLazyRetVtN) <= 32) {
+        char nm[256];
+        Log("jit: lazy ret.vt %s (%lu bytes)", JitMethodName(rm, nm, sizeof(nm)), (unsigned long)size);
+    }
+}
 
 // ---- inlining of tiny leaf instance methods at compiled call / callvirt sites (docs/207 §8, docs/537 §9) ----
 // Callee: transformed, compiled (so its IL passed the hash gate), instance, no EA native body, no clauses, body = stinarg*
@@ -1409,7 +1436,7 @@ static const char* JitCompile(u8* rm) {
         // its meaning (only leaves get a lazy body): a call site still drops it there (the host has no DirectLeaf).
         if ((g_jitPureIcalls || g_jitFastCopy) && (posOp[k] == 0xEA || posOp[k] == 0xEC) && posReal[k] && JitPureIcall(code + posW[k], posOp[k], rm)) continue;  // native, not a call
         const bool ce = g_jitCallExit && !(g_jitLeafOnly && posOp[k] >= 0xEA && posOp[k] <= 0xED);
-        if ((t.kind == K_EXIT && !posCold[k] && !ce) || (t.kind == K_RET && posOp[k] != 0x06 && posOp[k] != 0x07 && !ce)) lazyOk = false;
+        if ((t.kind == K_EXIT && !posCold[k] && !ce) || (t.kind == K_RET && posOp[k] != 0x06 && posOp[k] != 0x07 && !(g_jitLazyRetVt && posOp[k] == g_jitRetVtOp) && !ce)) lazyOk = false;
     }
     // bound: 256 bytes per position, as the host's pool check (a lazy site in both bodies: 768); a switch's table is 2 bytes
     // per mint word it takes
@@ -1830,6 +1857,7 @@ static const char* JitCompile(u8* rm) {
             if ((op == 0xEA || op == 0xEC) && (g_jitPureIcalls || g_jitFastCopy) && posReal[k])
                 if (const int pk = JitPureIcall(ip, op, rm)) { EmitPureIcall(e, pk, exitRel); pure++; break; }
             if (g_jitLazyPass && (op == 0x06 || op == 0x07)) { EmitLazyRet(e, ip, op, rm, op == 0x06); nat++; continue; }
+            if (g_jitLazyPass && g_jitLazyRetVt && op == g_jitRetVtOp) { EmitLazyRetVt(e, ip, op, rm); nat++; continue; }
             if ((op == 0xEA || op == 0xEC || (op == 0xEB && g_jitInline >= 2)) && g_jitInline && posReal[k] && JitTryInline(e, ip, op, rm)) { nat++; continue; }
             if (((op >= 0xEA && op <= 0xED) || (op == 0xF4 && g_jitNewVt)) && g_jitLazy && !(g_jitLeafOnly && g_jitLazyPass) && posReal[k] && EmitLazyCall(e, ip, op, rm)) { nat++; continue; }
             EmitExit(e, ip, op, t.kind == K_RET);
@@ -3077,6 +3105,9 @@ static int JitTemplates(unsigned groups) {
         for (DWORD op = 0; op <= 0x1A8; op++)
             if (g_jitOpNames[op] && !strcmp(g_jitOpNames[op], t.name)) { g_opInfo[op] = {t.kind, t.width, t.x}; n++; break; }
     }
+    g_jitRetVtOp = 0xFFFF;
+    for (DWORD op = 0; op <= 0x1A8; op++)
+        if (g_jitOpNames[op] && !strcmp(g_jitOpNames[op], "ret.vt")) { g_jitRetVtOp = op; break; }
     return n;
 }
 // the region: the tables, the work area and the code, carved from one allocation
@@ -3209,6 +3240,8 @@ static bool ApplyMonoJit(const wchar_t* ini) {
     g_jitPureIcalls = g_jitCallExit && JitPureIcallsOk();
     if (g_jitCallExit && !g_jitPureIcalls) Log("jit: CallExit: the Array icall bytes differ, pure icalls stay EA calls");
     g_jitNewVt = GetPrivateProfileIntW(L"MonoJit", L"NewVt", 0, ini) != 0;  // docs/537 §20 B2b (needs Direct=1)
+    g_jitLazyRetVt = GetPrivateProfileIntW(L"MonoJit", L"LazyRetVt", 0, ini) != 0;  // docs/537 §34 (needs Direct=1)
+    if (g_jitLazyRetVt) Log("jit: LazyRetVt=1: ret.vt returns natively from lazy bodies (docs/537 §34)%s", g_jitLazy ? "" : "; inert: Direct=0");
     g_jitBc = (JitBoundStats*)&C.bcOn;  // docs/537 §22: BoundCall=1 (needs Direct=1, DirectLeaf=0 for guards), BoundCallMask = kJitBound rows
 #if defined(TS3A_TABLE) && !defined(TS3A_RETAIL)  // retail 1.67 has the rows (docs/273)
     if (GetPrivateProfileIntW(L"MonoJit", L"BoundCall", 0, ini)) Log("SKIP jit BoundCall ([MonoJit] BoundCall, monojit-bound.h rows): no EA 1.69 address, docs/232 §8");
