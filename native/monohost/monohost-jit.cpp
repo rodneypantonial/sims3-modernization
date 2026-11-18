@@ -148,6 +148,14 @@ static void JcLazyStub();
 static void JcInlineStub();
 static void* g_jcInlineStubP = (void*)JcInlineStub;  // an inlined site calls through this cell: its code is built in a scratch buffer
 static void JitCompiled(u8* rm);  // compiler (below)
+// docs/537 §35, the game's [MonoJit] YieldBodiesClauses in the host (MONOHOST_JITYBC=1): HostTest.JitYbClauseBody joins the list and
+// compiles as the game's clause yield body: every call is an exit, the catch / finally handler positions keep EA's words and have
+// no entry, a native run ends at each clause boundary (ip stored, re-entered through JitEnter). JitYbClauseTask runs it as a task,
+// interpreted and compiled: sleeps inside try regions and a catch handler, throws out of compiled runs, nested finallys.
+static bool g_jitYbc;
+static volatile LONG g_jitYbcSplitRuns;
+static int g_jitYbcMeth, g_jitYbcHnd, g_jitYbcSplits, g_jitYbcPos;
+static const char kJitYbcBody[] = "MonoHostTest.HostTest.JitYbClauseBody";
 static void JitPreTransform(u8* rm, void* ctx);  // inliner (below)
 static u8* g_xformTramp;
 // ---- round 10 C2 (docs/207 §13): static fields, stobj, the array and string stores ----
@@ -955,6 +963,29 @@ static void JitMarkCold(int n, const unsigned short* posOp, bool* cold) {
 // (words); handler length at +0x10 [inferred: Mono's MonoExceptionClause; the dump line checks it lies in the code]. The lazy body
 // never runs a protected word: EA's frame is written first (JitLazyMat), so EA's clause search and leave / endfinally see the frame
 // an uncompiled call leaves, and a handler resumes in the normal body.
+// docs/537 §35: same code as the game's JitYbClauseMap (native/ts3native/monojit.cpp)
+static const char* JitYbClauseMap(const u8* rm, int n, const int* posW, const bool* posReal, int words, bool* hnd, bool* split) {
+    for (int k = 0; k < n; k++) hnd[k] = split[k] = false;
+    const DWORD* cl = *(const DWORD* const*)(rm + 0x18);
+    if (!cl) return "a yield body without its clause table";
+    for (int i = 0; i < rm[0x41]; i++, cl += 6) {
+        if (cl[0] != 0 && cl[0] != 2) return "a yield body clause that is not a catch or a finally";
+        for (int r = 1; r <= 3; r += 2) {
+            if (cl[r] > (DWORD)words || cl[r + 1] > (DWORD)words - cl[r]) return "a yield body clause range past the code";
+            const DWORD lo = cl[r], hi = cl[r] + cl[r + 1];
+            bool atLo = false, atHi = hi == (DWORD)words;
+            for (int k = 0; k < n; k++) {
+                const DWORD w = (DWORD)posW[k];
+                if (r == 3 && w >= lo && w < hi) hnd[k] = true;
+                if (w != lo && w != hi) continue;
+                if (!posReal[k]) return "a clause boundary inside a superop";
+                split[k] = true, atLo |= w == lo, atHi |= w == hi;
+            }
+            if (!atLo || !atHi) return "a clause boundary that is not an instruction start";
+        }
+    }
+    return NULL;
+}
 static bool JitClauseMark(const u8* rm, int n, const int* posW, int words, bool* prot) {
     for (int k = 0; k < n; k++) prot[k] = false;
     const DWORD* cl = *(const DWORD* const*)(rm + 0x18);
@@ -1269,8 +1300,11 @@ static void JitCompiled(u8* rm) {
     // first gets its lazy body, then the normal one; label[] and fix[] end as the normal body's.
     char clName[256];
     const bool clauseOk = g_jitClauseLazy && (!g_jitClauseList || (rm[0x41] == 2 && words == 408 && !strcmp(JitMethodName(rm, clName, sizeof(clName)), "System.Array.Copy")));
-    bool lazyOk = g_jitLazy && !g_jitExitAll && (!rm[0x41] || clauseOk);
-    static bool posCold[4096], posProt[4096];
+    static bool posCold[4096], posProt[4096], posHnd[4096], posSplit[4096];
+    const bool ybc = g_jitYbc && rm[0x41] && !strcmp(JitMethodName(rm, clName, sizeof(clName)), kJitYbcBody);  // docs/537 §35
+    int ybcHnd = 0, ybcSplit = 0;
+    if (ybc) if (const char* no = JitYbClauseMap(rm, n, posW, posReal, words, posHnd, posSplit)) { Log("jit: clause yield body %s refused: %s\n", clName, no); return; }
+    bool lazyOk = g_jitLazy && !g_jitExitAll && (!rm[0x41] || clauseOk) && !ybc;
     if (lazyOk) JitMarkCold(n, posOp, posCold), lazyOk = JitClauseMark(rm, n, posW, words, posProt);
     for (int k = 0; k < n && lazyOk; k++) {
         const JitOpInfo t = posOp[k] < 0x1C1 ? g_opInfo[posOp[k]] : JitOpInfo{K_EXIT, 0, 0};
@@ -1284,7 +1318,7 @@ static void JitCompiled(u8* rm) {
         if ((t.kind == K_EXIT && !posCold[k] && !ce) || (t.kind == K_RET && posOp[k] != 0x06 && posOp[k] != 0x07 && !ce)) lazyOk = false;
     }
     if (g_jitCodeEnd - (g_jitCode + g_jitCodeUsed) < (lazyOk ? 512 : 256) * n + 512) { Log("jit: code pool full\n"); return; }
-    static u8* label[4096];
+    static u8* label[4096], *entry[4096];  // entry: JitEnter's address of a position (behind the §35 split stub)
     static struct { u8* rel; int targetW; bool abs; } fix[4096];  // abs: a switch table slot takes the label itself
     static int wordToPos[65536];
     for (int k = 0; k < words; k++) wordToPos[k] = -1;
@@ -1304,6 +1338,16 @@ static void JitCompiled(u8* rm) {
         }
         for (int k = 0; k < n; k++) {
             label[k] = e.p;
+            if (ybc && posSplit[k] && !posHnd[k]) {  // §35: a native run ends at a clause boundary (the game's EmitYbSplit)
+                e.incAbs(&g_jitYbcSplitRuns);
+                e.b(0xBF); e.d((DWORD)(uintptr_t)(code + posW[k]));  // mov edi, ip
+                e.op(0x89, EDI, EBP, -4);                             // mov [ebp-4], edi
+                e.movRI(EAX, JIT_OP);
+                e.rr(0x8B, EAX, EDX);
+                e.b(0xFF); e.b(0x25); e.d(MINT_TABLE + JIT_OP * 4);
+                ybcSplit++;
+            }
+            entry[k] = e.p;
             if (g_jitCover || g_jitBench) JitGateEmit(e, k, posOp[k]);
             if (g_jitCountOn && g_jitMethN < 4096) e.incAbs(&g_jitPosRun[g_jitMethN]);  // the index this method gets if it compiles
             const unsigned short* ip = code + posW[k];
@@ -1311,6 +1355,7 @@ static void JitCompiled(u8* rm) {
             JitOpInfo t = op < 0x1C1 ? g_opInfo[op] : JitOpInfo{K_EXIT, 0, 0};
             if (g_jitExitAll) t.kind = t.kind == K_RET ? K_RET : K_EXIT;
             if (g_jitLazyPass && posProt[k]) { EmitExit(e, ip, op, false); ex++; continue; }  // ClauseLazy: EA runs the region on its frame
+            if (ybc && posHnd[k]) { EmitExit(e, ip, op, false); ex++, ybcHnd++; continue; }  // §35: a handler word is EA's
             int w = t.width, o16 = (short)ip[1];
             unsigned u16 = ip[1];
             u8* exitRel[3] = {NULL, NULL, NULL};
@@ -1676,14 +1721,14 @@ static void JitCompiled(u8* rm) {
                 break;  // conv.i4.i8: the low word already is the result
             default:
                 if (g_jitLazyPass && (op == 0x06 || op == 0x07)) { EmitLazyRet(e, ip, op, rm, op == 0x06); nat++; continue; }
-                if (op == 0xEA && g_jitC5 && !g_jitLazyPass) {
+                if (op == 0xEA && g_jitC5 && !g_jitLazyPass && !ybc) {
                     if (const DWORD fn = JitIcallFn(ip, rm)) { exitRel[0] = EmitIcall(e, fn); break; }
                 }
-                if ((op == 0xEA || op == 0xEC) && (g_jitPureIcalls || g_jitFastCopy) && posReal[k])
+                if ((op == 0xEA || op == 0xEC) && (g_jitPureIcalls || g_jitFastCopy) && posReal[k] && !ybc)  // §35: region code, every call an exit
                     if (const int pk = JitPureIcall(ip, op, rm))
                         if (pk == 4 ? g_jitFastCopy : g_jitPureIcalls) { EmitPureIcall(e, pk, exitRel); break; }
-                if ((op == 0xEA || op == 0xEC || (op == 0xEB && g_jitInline >= 2)) && g_jitInline && posReal[k] && JitTryInline(e, ip, op, rm)) { nat++; continue; }
-                if ((op == 0xEA || op == 0xEB || op == 0xEC || op == 0xED || (op == 0xF4 && g_jitNewVt)) && g_jitLazy && !(g_jitLeafOnly && g_jitLazyPass) && posReal[k] && EmitLazyCall(e, ip, op, rm)) { nat++; continue; }
+                if ((op == 0xEA || op == 0xEC || (op == 0xEB && g_jitInline >= 2)) && g_jitInline && !ybc && posReal[k] && JitTryInline(e, ip, op, rm)) { nat++; continue; }
+                if ((op == 0xEA || op == 0xEB || op == 0xEC || op == 0xED || (op == 0xF4 && g_jitNewVt)) && g_jitLazy && !ybc && !(g_jitLeafOnly && g_jitLazyPass) && posReal[k] && EmitLazyCall(e, ip, op, rm)) { nat++; continue; }
                 EmitExit(e, ip, op, t.kind == K_RET);
                 ex++;
                 continue;
@@ -1722,9 +1767,10 @@ static void JitCompiled(u8* rm) {
     for (int f = 0; f < nf; f++) branch0 |= fix[f].targetW == 0;
     M.verifyOk = !rm[0x41] && !branch0;
     for (int k = 0; k < n; k++) {
+        if (ybc && posHnd[k]) continue;  // §35: never patched, never entered
         JitEnt* en = JitAdd((DWORD)(uintptr_t)(code + posW[k]));
         if (!en) return;
-        en->native = label[k], en->orig = code[posW[k]], en->rm = rm;
+        en->native = entry[k], en->orig = code[posW[k]], en->rm = rm;
         g_jitPos[g_jitPosN] = (unsigned short)posW[k];
         g_jitOrigW[g_jitPosN++] = code[posW[k]];
     }
@@ -1735,6 +1781,12 @@ static void JitCompiled(u8* rm) {
     g_jitCodeUsed += M.bytes + 1;
     g_jitCodeUsed = (g_jitCodeUsed + 15) & ~(size_t)15;
     if (g_jitPatched) for (int k = M.pos0; k < M.posN; k++) code[g_jitPos[k]] = JitWord(g_jitOrigW[k]);
+    if (ybc) {
+        g_jitYbcMeth++, g_jitYbcHnd += ybcHnd, g_jitYbcSplits += ybcSplit, g_jitYbcPos += n;
+        Log("jit: clause yield body %s (docs/537 §35): %d clauses, %d of %d positions in handlers stay EA's, %d split sites, %d native, %d exits\n", M.name, rm[0x41], ybcHnd, n, ybcSplit, nat, ex);
+        const DWORD* cl = *(const DWORD* const*)(rm + 0x18);
+        for (int i = 0; i < rm[0x41]; i++) Log("jit:   clause %d: kind %lu try %lu+%lu handler %lu+%lu\n", i, cl[6 * i], cl[6 * i + 1], cl[6 * i + 2], cl[6 * i + 3], cl[6 * i + 4]);
+    }
     if (lazyEntry) {
         bool leaf = true;  // the jit-hot.ts --coverage row: leaf = DirectLeaf=1 can enter it (no call but in a cold run)
         for (int k = 0; k < n; k++) leaf &= !(posOp[k] >= 0xEA && posOp[k] <= 0xED) || posCold[k];
@@ -2564,6 +2616,52 @@ static int JitMotiveYieldOnce(bool compiled, int n, int* runs) {
     if (k.state) ((TaskFree)0xE53E80)(k.state), k.state = NULL;
     return r;
 }
+// docs/537 §35: HostTest.JitYbClause(n) as a task, interpreted then compiled. The same hash, the same number of runs (yields) and
+// the same counts of throws / finally bodies / sleeps prove that EA's clause search, leave and endfinally find the same clauses for
+// throws out of compiled runs, and that a yield inside a try resumes into compiled code with the try still in force.
+static int JitYbClauseOnce(bool compiled, int n, int* runs, int* st) {
+    static int arg;
+    static void* targs[1] = {&arg};
+    arg = n;
+    JitSetPatched(compiled);
+    FakeHostOnce();
+    HostTask& k = g_tasks[3];
+    k = HostTask{};
+    k.id = 0x0000ABCD00000045ULL;
+    k.state = ((TaskNew)0xE52D70)(Meth(g_testK, "JitYbClause", 1), NULL, targs, &k.exc);
+    k.wake = g_tick;
+    for (int i = 0; i < 8 * n + 64 && !k.done; i++, g_tick++) {
+        if (k.wake <= g_tick) RunTask(k);
+        HostTickGc();
+    }
+    *runs = k.runs;
+    if (k.exc) {
+        char t[128] = "", msg[256] = ""; void* in = NULL;
+        Describe(k.exc, t, msg, &in);
+        Log("jit ybclause: %s task ended by %s: %s\n", compiled ? "compiled" : "interpreted", t, msg);
+    }
+    const int r = k.done && !k.exc && !k.fault && k.result ? I32(k.result) : INT_MIN;
+    if (k.state) ((TaskFree)0xE53E80)(k.state), k.state = NULL;
+    for (int s = 0; s < 3; s++) { static int ka; static void* a1[1] = {&ka}; ka = s; st[s] = I32(T("JitYbClauseStat", 1, a1)); }
+    return r;
+}
+static void JitYbClauseTask() {
+    if (!g_jitYbc || !Meth(g_testK, "JitYbClause", 1)) return;
+    const int n = 120, vOn = g_jitVerifyOn;
+    int ri = 0, rc = 0, si[3] = {0}, sc[3] = {0};
+    g_jitVerifyOn = 0;
+    const int hi = JitYbClauseOnce(false, n, &ri, si);
+    const LONG sp0 = g_jitYbcSplitRuns;
+    const int hc = JitYbClauseOnce(true, n, &rc, sc);
+    g_jitVerifyOn = vOn;
+    JitSetPatched(true);
+    const bool same = hi != INT_MIN && hi == hc && ri == rc && !memcmp(si, sc, sizeof(si));
+    const bool ran = g_jitYbcMeth == 1 && g_jitYbcHnd > 0 && g_jitYbcSplits > 0 && g_jitYbcSplitRuns > sp0 && sp0 == 0 && si[0] > 0 && si[2] > 0 && ri > 1;
+    Log("jit ybclause: %d rounds, interpreted %08X in %d runs (thrown %d, finally %d, slept %d), compiled %08X in %d runs (thrown %d, finally %d, slept %d); "
+        "body %d positions, %d in handlers, %d split sites, %ld split runs: %s\n",
+        n, hi, ri, si[0], si[1], si[2], hc, rc, sc[0], sc[1], sc[2], g_jitYbcPos, g_jitYbcHnd, g_jitYbcSplits, g_jitYbcSplitRuns - sp0,
+        !same ? "DIFFER" : !ran ? "NOT PROVEN (the body did not compile as a clause yield body, or nothing threw / slept)" : "same");
+}
 static bool JitMotiveListed() { return JitListed("Sims3.Gameplay.Autonomy.Motive.UpdateMotiveWithDecay") && Meth(g_testK, "JitMotiveYield", 1); }
 static void JitMotiveCoverage(bool log) {  // reads and clears the counters
     if (!JitMotiveListed()) return;
@@ -2733,6 +2831,7 @@ static bool JitQuickRun() {
 static void JitBenchRun() {
     JitPrepRun();
     char cv[8] = "";
+    if (g_jitMode >= 2) JitYbClauseTask();  // docs/537 §35 (MONOHOST_JITYBC=1); before the corpus, as the motive yield task
     if (g_jitMode >= 2 && GetEnvironmentVariableA("MONOHOST_JITCORPUS", cv, sizeof(cv)) && cv[0] == '1') JitCorpusRun();
     if (g_jitMode < 2) {
         if (g_jitMode) for (int c = 0; c < JIT_CASES; c++) Log("jitbench warm case %d (%s): checksum %d\n", c, kJitCase[c], JitCase(c, 4096));
@@ -2972,6 +3071,7 @@ static bool InstallJit() {
         if (g_jitCountOn) g_jitSite = (JitSite*)calloc(65536, sizeof(JitSite));
         g_jitInline = GetEnvironmentVariableA("MONOHOST_JITINLINE", x, sizeof(x)) ? atoi(x) : 0;
         g_jitLazy = GetEnvironmentVariableA("MONOHOST_JITLAZY", x, sizeof(x)) && x[0] == '1';
+        g_jitYbc = GetEnvironmentVariableA("MONOHOST_JITYBC", x, sizeof(x)) && x[0] == '1';  // docs/537 §35
         g_jitDumpCode = GetEnvironmentVariableA("MONOHOST_JITDUMPCODE", x, sizeof(x)) && x[0] == '1';
         g_jitVerifyOn = g_jitMode == 3 ? 1 : g_jitCountOn ? 2 : 0;
         if (g_jitMode == 3 && GetEnvironmentVariableA("MONOHOST_JITVERIFY", x, sizeof(x)) && !strcmp(x, "bench")) g_jitVerifyOn = 0;
@@ -3002,6 +3102,7 @@ static bool InstallJit() {
     } else
         for (const char* n : kJitList) g_jitNames[g_jitNameN++] = n;
     // MONOHOST_JITLISTADD=<comma list>: extra names after the default list (jit-piece-bench cases of methods the host list lacks)
+    if (g_jitYbc && g_jitNameN < 256) g_jitNames[g_jitNameN++] = "HostTest.JitYbClauseBody";  // docs/537 §35
     static char addBuf[2048];
     if (GetEnvironmentVariableA("MONOHOST_JITLISTADD", addBuf, sizeof(addBuf))) {
         char* ctx = NULL;

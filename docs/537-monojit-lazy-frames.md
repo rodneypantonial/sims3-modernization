@@ -1027,6 +1027,71 @@ Game saves do not hold interpreter frames, so "save-safety" here is the yield sa
 
 ### 34.6 Open
 
-- The clause bodies carry the long runs and 14.9 of the 29.4 ms/s. §31 already runs one (`UpdateMotiveWithDecay`, normal body, EA's clause handling). Admitting `SimUpdate.Simulate` the same way needs the may-yield rule checked for a compiled frame with a finally running (`+0x128`), which EA's handlers keep; not built, by the task's "excluded at first".
+- The clause bodies carry the long runs and 14.9 of the 29.4 ms/s. §31 already runs one (`UpdateMotiveWithDecay`, normal body, EA's clause handling). Admitting `SimUpdate.Simulate` the same way needs the may-yield rule checked for a compiled frame with a finally running (`+0x128`), which EA's handlers keep; not built, by the task's "excluded at first". **Built since: §35** (`YieldBodiesClauses`).
 - No monohost port, so no host corpus case and no host speedup number for these rows.
 - The yield bodies are never verified in game (Mode=2 skips them); their templates are the ones Mode=2 verifies in every other body.
+
+## 35. J9 step 2: `[MonoJit] YieldBodiesClauses`, yield bodies with exception clauses (2026-11-18, branch `feature/jit-yieldbodies-clauses-1118` on `feature/jit-yieldbodies-1118`, ts3native 0.36.287-ybc1118, built + native selftest + host proof, NOT RUN in game, ledger §534)
+
+§34 left out the yield bodies with try / catch / finally. They hold the long IL runs and 14.9 of the 29.4 ms/s of the top-10 Y methods. This section admits three of them behind a sub-switch: `SimUpdate.Simulate` (9.2 ms/s), `Motive.UpdateMotiveBuffs` (2.0), `Lot.UpdateReactions` (1.6). `Motive.UpdateMotiveWithDecay` stays under `YRows` (§31).
+
+### 35.1 Static RE: how EA finds a handler [verified, disassembly of Steam 1.67, capstone over `game-copy/bin/TS3W.exe`]
+
+| Question | Finding | Evidence |
+|---|---|---|
+| What does the clause search read? | For each frame from the throwing one up: the frame's own ip `inv+0x1C`, turned into a word index (`(ip - [rm+0]) >> 1`), compared with each clause's try start / length; kind 0 also asks `0xEA3820` for the class. Nothing else of the frame decides. A filter (kind 1) asserts | `0xE540C4`-`0xE54180`; ip read `0xE540E9`, index `0xE540F4`-`0xE540F9`, range test `0xE5411A`-`0xE5412A`, assert `0xE5414C` |
+| What does the finally walk read? | The same `inv+0x1C`, the catching clause `inv+0x24`, the leave target `rec+0x12C`; it pushes the handler starts of the finally clauses whose try holds the ip (and not the target) to `rec+0x28 + 4n`, count `rec+0x128` | `0xE54198`-`0xE54344` |
+| Who writes `inv+0x1C`? | Only EA handlers, each from its own `edi` (or from the ip slot `[ebp-4]` in the two shared throw stubs): 34 `mov [inv+0x1C], edi` sites. By dispatch-table owner: calls `0xEA`-`0xEE`, `0xEF`, `0xF0`, `0xF1`, `newobj` `0xF4`, castclass's throw `0xF6`, the static-field class-init path `0x66`-`0x6C`, `0x12D`, leave `0x9A` / `0x9C`, sleep `0x1A6`, throw `0x9D` and the shared throw blocks behind it and `0x9E` (null, bounds, overflow, cast, ...), the unimplemented-opcode block | scan of `0xE53EB0`-`0xE5C900` against the jump table `0xE59880`; shared stubs `0xE54373`-`0xE54378`, `0xE594D9`-`0xE594DE` |
+| Does every route to the search have an ip an EA handler wrote? | Of the 32 jumps to the search head `0xE540AB`, 23 follow a write in the same block. The other 9: the two `[ebp-4]` stubs (`0xE543C2`, `0xE594F9`), one with the write 15 instructions up (`0xE5974C`), three after a call returned with an exception (`0xE591E8`, `0xE5927D`, `0xE5928F`: the call handler wrote the ip at its start, `0xE54949` / `0xE549F1`), two that hand a callee's exception to the caller frame (`0xE592FA`, `0xE59310`: the caller's ip is its call's), and the EA opcodes `0x199`-`0x1A0` (`0xE57F94`), which use the last ip written. Every writer is a throw path, a call / newobj, the class-init slow path of the static-field opcodes, leave or sleep: all exits in a yield body, so the sequence of ip writes is the same with and without compiled code | same scan; throw-only writes read at `0xE56478` (castclass), `0xE57AA5` (`0x12D`) |
+| leave | Stores its own ip (`inv+0x1C = edi`), the target (`rec+0x12C`), drops the active catch (`inv+0x24`, `inv+0x20`) when the leave sits in that clause's handler (`[clause+0xC]` .. `+[clause+0x10]`: the handler length, so far [inferred]), then the finally walk. It reads its own opcode word (`cmp word [edi], 0x9C`), which is why `leave.s` keeps its word (`JitWord`) | `0xE59315`-`0xE59397` |
+| endfinally | Pops the next ip from `rec+0x28` (`rec+0x128` - 1); with an empty list and an exception in flight it goes on unwinding | `0xE57E9E`-`0xE57ED0` |
+| Yield inside a try | No state: a try is entered by reaching its first word. The save keeps the word index (§34.2); the resume rebuilds `inv+0x1C` from it and clears `inv+0x24`, `rec+0x14`, `rec+0x128`, `rec+0x12C`. A throw after the resume finds the clause by the new ip like any other | `0xE53FE2`-`0xE53FFE` |
+| Yield inside a finally | Refused: the may-yield test returns 0 when any frame of the task has `rec+0x128 != 0`, and the sleep handler then throws (message `0x108E7CC`) with the sleep's ip | `0xE53580`-`0xE53587`, `0xE593B7`-`0xE593DA` |
+| Yield inside a catch handler | Allowed by EA; the resume drops the active-clause pointer `inv+0x24` (EA's behaviour, the same with and without the JIT because handler bodies stay interpreted here) | `0xE53FFE` |
+
+**What this means for compiled code.** The frame's clause state is `inv+0x1C` (ip), `inv+0x20` / `inv+0x24` (exception, catching clause), `rec+0x28..` / `rec+0x128` / `rec+0x12C` (pending finallys, leave target). Compiled templates write none of them (checked in `monojit.cpp`: the only writers are the Trap poison and the verifier's record reset, neither runs for a yield body). Every instruction that can throw, call or leave is an exit: `EmitExit` sets `edi` and `[ebp-4]` to the instruction's own word and jumps to EA's handler, which stores the ip itself. A template's own fault path (null, bounds, cast) is an exit of the same position before anything is written. So the answer to "does compiled code keep the interpreter ip valid at every throwing point" is: it does not keep it between exits, and it does not have to, because no reader of the ip runs without an EA handler having written it in the same instruction. A stale `inv+0x1C` between exits is the same as in the interpreter, whose non-throwing handlers do not write it either.
+
+### 35.2 Design rules and how the code meets them
+
+| Rule | Code |
+|---|---|
+| An instruction in a try or handler that can throw is an exit to EA's handler, or keeps the ip exact | §34's region code: no direct call, lazy frame, inline, icall shortcut, BoundCall or RetTeardown in a yield body; every template's slow path is `EmitExit` at its own position |
+| Handler and finally bodies stay interpreted | `JitYbClauseMap` marks the positions inside each clause's handler range. They get no table entry and their words are never patched, so EA's interpreter runs them. In the native code each is one `EmitExit` stub, reached only by a native fall-through or branch into a handler (not legal IL): the word goes to EA's handler |
+| Regions never span a clause boundary | At every position where a try or handler range starts or ends, `EmitYbSplit` ends a native arrival: `edi` and `[ebp-4]` get the position's ip, then a jump through the live `0x1A9` entry (`JitEnter`), which starts the next run at the word's own entry behind the stub. The dispatcher (a resume, a leave target, a handler's end) enters at that entry directly |
+| Nothing new for leave / endfinally / throw / rethrow | They are exits as in every compiled body (`leave.s` keeps its word) |
+| Refused, the body stays interpreted | A filter clause or an unknown kind; a clause range past the code; a boundary that is not an instruction start; a boundary on an inner position of a superop (`jitYbcRefused`) |
+
+Cost: one `JitEnter` round trip per native arrival at a boundary. `SimUpdate.Simulate` is one catch around the whole body (try at IL 0, 3-byte handler): its only split site is word 0, reached natively only by a branch back to the first instruction. `UpdateMotiveBuffs` has two nested finallys (two foreach loops), `UpdateReactions` one.
+
+### 35.3 Built
+
+- **Switch.** `[MonoJit] YieldBodiesClauses` (default 0; read only with `YieldBodies=1`). No Wide needed. The run-time arm is YieldBodies' (`jitYbOn`, `--ab yieldbodies`): it takes the clause bodies' words back too; handler words never change.
+- **Rows.** `tools/jit-hot.ts` `YBC_ADMIT` (3 keys), verdict `opt-in Y clause body ([MonoJit] YieldBodiesClauses=1)`; `--emit-native` writes `kJitYbcRows` (6 bodies: EA's and the simler90 UPDATE242 token twins) and throws when such a row has no clause. With the sub-switch the table in force is `kJitYbRows` + `kJitYbcRows` (16 rows); without it the clause keys are not listed at all. `kJitYAlias` gets `Lot.UpdateReactions` -> `Lot.ReactOrig` (WakePark's swap) [inferred, as the other aliases].
+- **Log.** The yield-bodies OK line reads `(docs/537 §34, §35): YieldBodies=1, 16 rows; ..., YieldBodiesClauses=1 (6 clause rows: ...)`; per body `jit: clause yield body <name> (docs/537 §35): N clauses, H of P positions in handlers stay EA's, S split sites`.
+- **Verify rule.** Unchanged from §34 and now also covering clause bodies: `verifyOk` is false (a yield body, and a body with clauses), so no pass starts on one, and the passes of an activation that reaches one end (`jitYbAbandon`).
+- **HotReserve.** With the sub-switch the reserve holds 1536 more positions (three keys, 1194 IL instructions + 25%); `g_jitHotSettled` grew to 16 keys.
+- **Counters v218 (0x69E8-0x6A07, block 6786 int32):** `jitYbcOn`, `jitYbcRows`, `jitYbcMeth`, `jitYbcHnd` (handler positions left to EA), `jitYbcSplits` (split sites), `jitYbcSplitRuns` (native runs ended at a boundary; always counted, one `inc` per split), `jitYbcRefused`, `jitYbcSpare`. `tools/probe/agent.js` names them.
+- **Household.** No scope gate, as §34: the same instructions in the same order for every Sim; exceptions, leave and finally run in EA's own code.
+- ts3native `0.36.287-ybc1118`, builds.json `ts3native.asi.jit-ybclauses-1118` (sha256 `80a6e821…`) + `ts3native.ini.jit-ybclauses-1118` (`d997d618…`).
+
+### 35.4 Tests
+
+- **Native selftest.** Sub-switch off: a clause yield body is refused (Wide=0: `exception clauses`; Wide=1: §34's reason). On: the reserve holds both position budgets; a filter clause, a range past the code and a boundary at a branch operand are refused with their reasons (`jitYbcRefused`); the body `ldc | try { ldc, add, leave } | finally { ldc, endfinally } | ret` compiles with 2 handler positions (words unpatched, no table entry) and 2 split sites; a run from word 0 ends at the try start, re-enters and stops in the leave's handler with `[ebp-4]` at the leave; entering at the try start or behind the handler takes no split; a native fall-through into a handler word is an exit at that word; the run-time arm restores and re-patches the words.
+- **Host proof [measured, monohost].** `MONOHOST_JITYBC=1` ports the same map, split stub and unpublished handler positions to `monohost-jit.cpp` for one body, `HostTest.JitYbClauseBody` (10 clauses: nested catch / finally, sleeps inside a try and inside a catch handler, throws out of compiled stretches by array bound, null receiver, an interpreted callee and the throw opcode, an exception that passes a finally to an outer catch, `continue` / `break` across two finallys, a throw right after a resume, a sleep in a finally that EA refuses by a throw). `JitYbClauseTask` runs it as a scheduler task, interpreted and then compiled:
+  `jit ybclause: 120 rounds, interpreted 96A8C9FD in 50 runs (thrown 61, finally 183, slept 49), compiled 96A8C9FD in 50 runs (thrown 61, finally 183, slept 49); body 240 positions, 117 in handlers, 11 split sites, 182 split runs: same`.
+  The same line with `MONOHOST_JIT=verify MONOHOST_JITLAZY=1 MONOHOST_JITINLINE=2` (verify MISMATCH 0). Run: `native\monohost\build.cmd`, then `MONOHOST_JIT=on MONOHOST_JITYBC=1 out\monohost.exe <TS3W.exe copy> <assemblies> selftest <hostdata.txt>`; read `out\monohost.exe.log`. The host selftest's one FAIL (`AS-install`, the [AutShadow] contract count) is the known one of docs/207 §7.2 and is there without the JIT.
+- **Not covered by the host:** the three game bodies themselves (they need a world), and a superop on a clause boundary (none in the test body; the game refuses such a body).
+
+### 35.5 Queue (NOT RUN)
+
+`jit-yieldbodies-correct-1118` gets a clause-body arm after its four jobs (they must pass first):
+- `bp-ybc-count`: BP 10 min, `YieldBodies=1 YieldBodiesClauses=1 Mode=2 Count=1`. Requires the OK line (16 rows, 6 clause rows), `SimUpdate.Simulate` compiled as a clause yield body and entered, a second clause body, `jitYbcSplitRuns >= 1`, `jitYbYieldExits >= 1`, no refusal of a clause key, 0 mismatches / faults / script errors.
+- `bp-ybc-reload`: save / quit / reload (save-matrix `reload`) with both switches, Mode=1: households compared.
+- **No forced-exception job.** The harness has no command that makes `SimUpdate.Simulate` throw without a script error on a household Sim (`scriptErrorsMax: 0`). The host run above is the thrown-exception proof; in the game the catch of `SimUpdate.Simulate` is reached when EA resets a Sim.
+- The timing queue `jit-yieldbodies-time-1118` is unchanged; a clause arm joins it only after the count job shows the `SimUpdate.Simulate` exits per position (go gate 0.25, §34.5).
+
+### 35.6 Open
+
+- Game run of the two jobs; `Lot.ReactOrig` alias [inferred] (the count job's `clause yield body` line names the body that compiled).
+- Handler bodies stay interpreted "at first". Compiling them needs nothing new from §35.1 (EA enters a handler by setting the ip and dispatching), but the gain is small: 2 to 6 positions per finally.
+- §34.6's other items stand (no host speedup number for the game rows).

@@ -927,7 +927,7 @@ static void TestMonoJitClauseLazy() {
     static JtMeth m0, m1, mF, mP, mE;
     const LONG bodies0 = C.jitLazyBodies;
     static_assert(offsetof(Ts3nCounters, clOn) == 0x62A8 && offsetof(Ts3nCounters, clVerRuns) == 0x62BC && offsetof(Ts3nCounters, clSpare) == 0x62C0 &&
-                      sizeof(Ts3nCounters) == 6778 * 4, "counters v195 layout after v194 (docs/registry.md)");
+                      sizeof(Ts3nCounters) == 6786 * 4, "counters v195 layout after v194 (docs/registry.md)");
     g_jitClauseOk = true;  // JitOne's allow-list answer (tested below)
     g_jitClauseLazy = false;
     assert(make(m0, c0, 4, cl, 1) && C.jitLazyBodies == bodies0);  // ClauseLazy=0: as before
@@ -1279,7 +1279,7 @@ static void TestMonoJitBoundCall() {
     g_jtLen[0xEC] = 4;
     g_jitBc = (JitBoundStats*)&C.bcOn;
     static_assert(offsetof(Ts3nCounters, bcOn) == 0x6278 && offsetof(Ts3nCounters, bcSpare) == 0x62A0 && sizeof(JitBoundStats) == 12 * 4 &&
-                      sizeof(Ts3nCounters) == 6778 * 4, "counters v194 layout after the v193 hold (docs/registry.md)");
+                      sizeof(Ts3nCounters) == 6786 * 4, "counters v194 layout after the v193 hold (docs/registry.md)");
     const JitBoundEntryFn entry0 = g_jitBoundEntry;
     g_jitBoundEntry = JtE525C0, g_jitBoundInv[0] = (DWORD)(uintptr_t)JtBoundInv, g_jitBoundInv[1] = 0, C.bcOn = 1, g_jitBoundMask = 1;
     // the cache's class and target: a transformed instance method with an EA native body, no lazy body, one int result
@@ -1555,7 +1555,7 @@ static void TestMonoJit() {
     assert(JitTemplates(511) == 29);  // Groups bit 256: the nine C5 rows above and two float compares
     assert(g_opInfo[JT_RET].kind == K_RET && g_opInfo[JT_MYSTERY].kind == K_EXIT);
     {  // T4096 (docs/537 §26): MaxMethods clamp, the fallback to 2048 / 4096 KB when the asked region does not fit, and the counters' place
-        static_assert(offsetof(Ts3nCounters, jitTableFull) == 0x62CC && offsetof(Ts3nCounters, jitMethCap) == 0x62D0 && sizeof(Ts3nCounters) == 6778 * 4,
+        static_assert(offsetof(Ts3nCounters, jitTableFull) == 0x62CC && offsetof(Ts3nCounters, jitMethCap) == 0x62D0 && sizeof(Ts3nCounters) == 6786 * 4,
                       "counters v196 layout after the v189-v195 / v918 gap (docs/registry.md)");
         assert(JitMaxMethods(0) == 512 && JitMaxMethods(3000) == 3000 && JitMaxMethods(1 << 20) == JIT_METH_MAX);
         const size_t code0 = g_jitCodeBytes;
@@ -2003,6 +2003,85 @@ static void TestMonoJit() {
         assert(JitCompile(mYn.rm) == NULL && g_jitMeth[g_jitMethN - 1].yld && !g_jitMeth[g_jitMethN - 1].verifyOk && C.jitYbMeth == ybM0 + 1);
         compiled++;
         g_jtNames[0x1A6] = NULL;
+        {  // docs/537 §35 YieldBodiesClauses: a clause yield body compiles only with the sub-switch (no Wide needed); handler positions
+            // keep EA's words and have no entry; a native run ends at a clause boundary and re-enters through JitEnter with the ip
+            // stored; a native arrival at a handler word is an exit; filter clauses and boundaries inside an instruction are refused
+            static_assert(offsetof(Ts3nCounters, jitYbcOn) == 0x69E8 && offsetof(Ts3nCounters, jitYbcRefused) == 0x6A00 && sizeof(Ts3nCounters) == 6786 * 4, "counters v218 layout (docs/registry.md)");
+            // word 0 ldc | try 1..3: ldc, add, (leave stand-in: an exit) | finally 4..5: ldc, (endfinally stand-in) | 6 ret
+            static unsigned short pC[] = {JT_LDC2, JT_LDC3, JT_ADD, JT_MYSTERY, JT_LDC2, JT_MYSTERY, JT_RET};
+            static DWORD clC[6] = {2, 1, 3, 4, 2, 0};
+            static JtMeth mC;
+            JtInit(mC, pC, 7, "Yb");
+            assert(g_jtLen[JT_MYSTERY] == 1);
+            *(DWORD**)(mC.rm + 0x18) = clC, mC.rm[0x41] = 1;
+            const bool wideC = g_jitWide;
+            g_jitWide = false;
+            assert(!g_jitYbc);
+            JitPostPass(mC.rm, &domain);  // the sub-switch off: refused before the hash (Wide=0), as every clause body
+            assert(pC[0] == JT_LDC2 && C.jitRefused == ++refused && !C.jitYbcMeth);
+            g_jitWide = true;
+            JitPostPass(mC.rm, &domain);  // Wide=1, sub-switch off: §34's refusal
+            assert(pC[0] == JT_LDC2 && C.jitRefused == ++refused && nOf("a yield body with exception clauses") == 2);
+            g_jitWide = false, g_jitYbc = true;
+            JitHotInit(L"C:\\ts3native-selftest-no-such.ini");  // the reserve holds the clause keys' positions too
+            assert(g_jitHotPend == 1 && g_jitHotPos == JIT_YB_POS + JIT_YBC_POS);
+            clC[0] = 1;
+            JitPostPass(mC.rm, &domain);  // a filter clause
+            assert(pC[0] == JT_LDC2 && C.jitRefused == ++refused && nOf("a yield body clause that is not a catch or a finally") == 1 && C.jitYbcRefused == 1);
+            clC[0] = 2, clC[2] = 9;
+            JitPostPass(mC.rm, &domain);  // a range past the code
+            assert(pC[0] == JT_LDC2 && C.jitRefused == ++refused && nOf("a yield body clause range past the code") == 1 && C.jitYbcRefused == 2);
+            clC[2] = 3;
+            static unsigned short pCb[] = {JT_LDC2, JT_BRS, 2, JT_RET};  // a try start at a branch's operand word
+            static DWORD clB[6] = {2, 2, 1, 3, 1, 0};
+            static JtMeth mCb;
+            JtInit(mCb, pCb, 4, "Yb");
+            *(DWORD**)(mCb.rm + 0x18) = clB, mCb.rm[0x41] = 1;
+            JitPostPass(mCb.rm, &domain);
+            assert(pCb[0] == JT_LDC2 && C.jitRefused == ++refused && nOf("a clause boundary that is not an instruction start") == 1 && C.jitYbcRefused == 3);
+            const LONG sp0 = C.jitYbcSplitRuns, mth0 = C.jitYbMeth;
+            JitPostPass(mC.rm, &domain);
+            JitMeth& Yc = g_jitMeth[g_jitMethN - 1];
+            assert(C.jitRefused == refused && C.jitYbcMeth == 1 && C.jitYbcHnd == 2 && C.jitYbcSplits == 2 && C.jitYbMeth == mth0 + 1);
+            assert(pC[0] == JIT_OP && pC[1] == JIT_OP && pC[2] == JIT_OP && pC[3] == JIT_OP && pC[4] == JT_LDC2 && pC[5] == JT_MYSTERY && pC[6] == JIT_OP);
+            assert(Yc.yb && Yc.yld && !Yc.verifyOk && Yc.posN - Yc.pos0 == 5 && !JitFind((DWORD)(uintptr_t)(pC + 4)) && !JitFind((DWORD)(uintptr_t)(pC + 5)));
+            assert(!JitLazyCellFor(mC.rm) || !JitLazyCellFor(mC.rm)->entry);
+            compiled++;
+            JtFrame();
+            JtGo(pC);  // ldc compiled; at the try start the run ends (ip stored, JitEnter again); ldc + add compiled; the leave is EA's
+            assert(g_jtEax == JT_MYSTERY && g_jtEdi == (DWORD)(uintptr_t)(pC + 3) && g_jtEbp[-1] == (DWORD)(uintptr_t)(pC + 3) && g_jtArena[0] == 5);
+            assert(C.jitYbcSplitRuns == sp0 + 1 && g_jtEsi == (DWORD)(uintptr_t)(g_jtArena + 2));
+            JtFrame();
+            g_jtArena[0] = 10;
+            JtGo(pC + 1, 2);  // the dispatcher (a resume, a leave target) enters at the try start: the word's own entry, no split
+            assert(g_jtEax == JT_MYSTERY && g_jtArena[0] == 13 && C.jitYbcSplitRuns == sp0 + 1);
+            JtFrame();
+            JtGo(pC + 6);  // the handler's end: an entry of its own
+            assert(g_jtEax == JT_RET && g_jtEdi == (DWORD)(uintptr_t)(pC + 6) && C.jitYbcSplitRuns == sp0 + 1);
+            // not legal IL, but never native: a compiled word that falls into a handler word hands it to EA's handler
+            static unsigned short pCf[] = {JT_LDC2, JT_LDC3, JT_RET};
+            static DWORD clF[6] = {0, 0, 1, 1, 1, 0};
+            static JtMeth mCf;
+            JtInit(mCf, pCf, 3, "Yb");
+            *(DWORD**)(mCf.rm + 0x18) = clF, mCf.rm[0x41] = 1;
+            JitPostPass(mCf.rm, &domain);
+            assert(C.jitRefused == refused && C.jitYbcMeth == 2 && pCf[0] == JIT_OP && pCf[1] == JT_LDC3 && pCf[2] == JIT_OP && C.jitYbcHnd == 3);
+            compiled++;
+            JtFrame();
+            JtGo(pCf);
+            assert(g_jtEax == JT_LDC3 && g_jtEdi == (DWORD)(uintptr_t)(pCf + 1) && g_jtEbp[-1] == (DWORD)(uintptr_t)(pCf + 1) && g_jtArena[0] == 2);
+            // the run-time arm (YieldBodies') takes the clause bodies' words back too; the handler words never changed
+            g_jitYbRun = false;
+            JitPatchMeth(Yc, true);
+            assert(pC[0] == JT_LDC2 && pC[1] == JT_LDC3 && pC[3] == JT_MYSTERY && pC[4] == JT_LDC2 && pC[6] == JT_RET);
+            g_jitYbRun = true;
+            JitPatchMeth(Yc, true);
+            assert(pC[0] == JIT_OP && pC[4] == JT_LDC2 && pC[6] == JIT_OP);
+            g_jitYbc = false, g_jitWide = wideC;
+            C.jitYbcMeth = C.jitYbcHnd = C.jitYbcSplits = C.jitYbcSplitRuns = C.jitYbcRefused = 0;
+            JitHotInit(L"C:\\ts3native-selftest-no-such.ini");
+            g_jitHotPend = 0, g_jitHotBytes = 0, g_jitHotPos = 0, C.jitHotKB = 0;
+        }
         g_jitYb = false, g_jitYbRowP = ybp0, g_jitYbRowCnt = ybn0;
     }
     g_jitUserN = 1, g_jitUser[0] = "Other.Thing";  // List= narrows
