@@ -18,12 +18,14 @@
 //      game count run ([MonoJit] Count=1; cumulative counters, so only the last block counts), as monohost-style lines that --count
 //      and tools/jit-exit-census.ts --census read unchanged; prints the bails by reason and the top exit sites, and the bail census
 //      (docs/537 §23): the block's `jitcallee` rows ranked by callee (bails per run, share, EA native body or managed, sites) [--top 30]
+//   node tools/jit-hot.ts --yield-runs <dir with the EA dlls> [--top 20] [--out docs/data/jit-yield-runs.csv]: docs/537 §34 R-0, the static IL
+//      run-length split of the top class-Y / D rows of the csv (runs between call, callvirt, newobj, calli, ret, throw; share in runs of 8+ / 16+)
 //   node tools/jit-hot.ts --self-check
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ACCESSORS } from './jit-corpus.ts';
-import { ilShapeBody, loadStandalone, rva, type Asm } from './managed-callgraph.ts';
+import { decodeAll, ilShapeBody, loadStandalone, rva, tokenText, type Asm } from './managed-callgraph.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 type Row = { frame: string; key: string; cls: string; worlds: number; samples: number; ms: number; il: number; asm: string };
@@ -146,6 +148,11 @@ export const Y_ADMIT = new Map<string, string>([
   ['Motive.UpdateMotiveWithDecay', 'yields only via BabySwing.InSwingPosture / WalkerClassic.InWalkerPosture GetPostureMotiveDecayUpdate (callvirt exit)'],
 ]);
 export const Y_VERDICT = 'opt-in Y ([MonoJit] YRows=1): hand-checked, docs/537 §31';
+// docs/537 §34 (J9): yield bodies. Class-Y methods whose own body holds a yield opcode or calls a yielding method; the game compiles
+// them only with [MonoJit] YieldBodies=1 (default 0) as region code: every call, ret and yield opcode is an exit to EA's handler on
+// EA's frame (no Direct, lazy frame or inlining), never verified. Bodies with exception clauses are refused by --emit-native.
+export const YB_ADMIT = new Set(['Lot.Simulate', 'Sim.DoInteraction', 'Sim.WaitForExitReason', 'InteractionDefinitionUtilities.CommonTests', 'IdleManager.DistressIdle']);
+export const YB_VERDICT = 'opt-in Y body ([MonoJit] YieldBodies=1): region compile, docs/537 §34';
 export const execs = (c: Count): number => Math.max(c.calls, c.rets);
 export type Verdict = { row: Row; listed: string; count?: Count; verdict: string };
 export function judge(rows: Row[], listed: Set<string>, acc: Set<string>, cnt: Map<string, Count>, threshold: number): Verdict[] {
@@ -154,6 +161,7 @@ export function judge(rows: Row[], listed: Set<string>, acc: Set<string>, cnt: M
     const count = cnt.get(row.key);
     let verdict: string;
     if (row.cls === 'Y' && Y_ADMIT.has(row.key)) verdict = Y_VERDICT;
+    else if (row.cls === 'Y' && YB_ADMIT.has(row.key)) verdict = YB_VERDICT;
     else if (row.cls === 'Y') verdict = 'yields: stays interpreted';
     else if (row.cls === '?') verdict = 'not in the index (mod or unmatched frame)';
     else if (row.ms < threshold) verdict = 'below threshold';
@@ -190,6 +198,19 @@ export function ilCode(b: Buffer, p: number): Buffer {
   if ((b[p] & 3) === 2) return b.subarray(p + 1, p + 1 + (b[p] >> 2));
   return b.subarray(p + (b.readUInt16LE(p) >> 12) * 4, p + (b.readUInt16LE(p) >> 12) * 4 + b.readUInt32LE(p + 4));
 }
+// docs/537 §34 (J9 R-0): the static run-length split of a body. A run is a stretch of IL instructions between two split points
+// (call, callvirt, newobj, calli, ret, throw, rethrow: where a region-compiled body leaves to EA's handler); branches do not split
+// (compiled code follows them). Unweighted: the sampler has no IL offsets, so hot loops and cold tails count the same.
+export const RUN_SPLIT = new Set([0x28, 0x29, 0x2a, 0x6f, 0x73, 0x7a, 0xfe1a]);
+export function ilRuns(il: Buffer): { ins: number; splits: number; in8: number; in16: number; longest: number } {
+  const { ins } = decodeAll(il, 0, il.length);
+  let run = 0, in8 = 0, in16 = 0, longest = 0, splits = 0;
+  const end = () => { if (run >= 8) in8 += run; if (run >= 16) in16 += run; if (run > longest) longest = run; run = 0; };
+  for (const i of ins) if (RUN_SPLIT.has(i.op)) splits++, end(); else run++;
+  end();
+  return { ins: ins.length, splits, in8, in16, longest };
+}
+export const hasClauses = (b: Buffer, p: number) => (b[p] & 3) === 3 && (b[p] & 8) !== 0;  // fat header with CorILMethod_MoreSects
 export type NativeRow = { key: string; size: number; sha: string };
 const ilRow = (key: string, il: Buffer): NativeRow => ({ key, size: il.length, sha: createHash('sha256').update(il).digest('hex') });
 // docs/537 §20.2 C2c: managed signatures EA binds to a native body (docs/data/binder-bodies.csv): the interpreter calls that body
@@ -208,19 +229,24 @@ export function rowsOf(a: Asm, frame: string, key: string, bound: Set<string> = 
 }
 // docs/537 §31.1: the bodies of `alt` (a core mod's rebuild of the same assembly) whose IL differs from EA's only in token numbers:
 // same token-resolved shape (header, code, clauses) as one of EA's overloads; a changed body never joins
-export function shapeTwins(ea: Asm, alt: Asm, frame: string, key: string): NativeRow[] {
+export function methodBodies(a: Asm, frame: string, key: string): number[] {  // file offsets of the method headers of "ns.Class.Method"
   const dot = key.indexOf('.'), cls = key.slice(0, dot), name = key.slice(dot + 1), ns = frame.slice(0, -key.length - 1);
-  const bodies = (a: Asm) => a.types.filter(t => t.name === cls && t.ns === ns).flatMap(t => t.methods.filter(m => m.name === name && m.rva)).map(m => rva(a, m.rva));
+  return a.types.filter(t => t.name === cls && t.ns === ns).flatMap(t => t.methods.filter(m => m.name === name && m.rva)).map(m => rva(a, m.rva));
+}
+export function shapeTwins(ea: Asm, alt: Asm, frame: string, key: string): NativeRow[] {
+  const bodies = (a: Asm) => methodBodies(a, frame, key);
   const eaShapes = new Set(bodies(ea).map(p => ilShapeBody(ea, ea.buf, p)));
   const eaShas = new Set(bodies(ea).map(p => ilRow(key, ilCode(ea.buf, p)).sha));
   return bodies(alt).filter(p => eaShapes.has(ilShapeBody(alt, alt.buf, p))).map(p => ilRow(key, ilCode(alt.buf, p))).filter(r => !eaShas.has(r.sha));
 }
-export function nativeHeader(rows: NativeRow[], csv: string, yRows: NativeRow[] = []): string {
+export function nativeHeader(rows: NativeRow[], csv: string, yRows: NativeRow[] = [], ybRows: NativeRow[] = []): string {
   const row = (r: NativeRow) => `    {"${r.key}", ${r.size}, {${r.sha.match(/../g)!.map(h => '0x' + h).join(', ')}}},`;
   return [`// Generated by node tools/jit-hot.ts --emit-native from the compile rows of ${csv}, EA's TS3 1.67 assemblies. Names, sizes and hashes only.`,
     'static const JitRow kJitRows[] = {', ...rows.map(row), '};', 'static const int kJitRowN = (int)(sizeof(kJitRows) / sizeof(kJitRows[0]));',
     '// docs/537 §31: the hand-checked class-Y rows (Y_ADMIT), compiled only with [MonoJit] YRows=1',
-    'static const JitRow kJitYRows[] = {', ...yRows.map(row), '};', 'static const int kJitYRowN = (int)(sizeof(kJitYRows) / sizeof(kJitYRows[0]));', ''].join('\r\n');
+    'static const JitRow kJitYRows[] = {', ...yRows.map(row), '};', 'static const int kJitYRowN = (int)(sizeof(kJitYRows) / sizeof(kJitYRows[0]));',
+    '// docs/537 §34: the yield-body rows (YB_ADMIT), compiled only with [MonoJit] YieldBodies=1',
+    'static const JitRow kJitYbRows[] = {', ...ybRows.map(row), '};', 'static const int kJitYbRowN = (int)(sizeof(kJitYbRows) / sizeof(kJitYbRows[0]));', ''].join('\r\n');
 }
 
 // the static coverage of docs/537 §5: an edge is lazy if the caller is listed and the callee has a lazy body; DirectLeaf=1 takes direct sites of a leaf callee only
@@ -327,6 +353,8 @@ function selfCheck() {
   ok(h.indexOf('{"C.D", 1,') > h.indexOf('kJitYRows[] = {') && h.indexOf('{"A.B"') < h.indexOf('kJitYRows[]') && h.includes('kJitYRowN'), 'Y rows in their own table');
   const yr = [{ ...rows[0], key: 'Motive.UpdateMotiveWithDecay', cls: 'Y' }, { ...rows[0], key: 'X.Other', cls: 'Y' }];
   const yv = judge(yr, new Set(), new Set(), new Map(), 1);
+  ok(judge([{ frame: 'N.Lot.Simulate', key: 'Lot.Simulate', cls: 'Y', worlds: 3, samples: 30, ms: 5.3, il: 214, asm: 'm' }], new Set(), new Set(), new Map(), 1)[0].verdict === YB_VERDICT, 'YB_ADMIT: its own verdict, never a compile row');
+  ok(nativeHeader([], 'x', [], [{ key: 'E.F', size: 2, sha: 'ab'.repeat(32) }]).includes('kJitYbRows[] = {\r\n    {"E.F", 2,'), 'yield-body rows in their own table');
   ok(yv[0].verdict === Y_VERDICT && !yv[0].verdict.startsWith('compile') && yv[1].verdict === 'yields: stays interpreted', 'Y_ADMIT: only the hand-checked Y row, never a compile row');
   const fake = { sections: [{ va: 0x1000, size: 16, raw: 0 }], buf: tiny, types: [{ name: 'C', ns: 'N', methods: [{ name: 'M', rva: 0x1001 }, { name: 'M', rva: 0 }, { name: 'X', rva: 0x1001 }] }] } as unknown as Asm;
   ok(rowsOf(fake, 'N.C.M', 'C.M').length === 1 && rowsOf(fake, 'O.C.M', 'C.M').length === 0, 'overloads with a body, in the namespace of the frame');
@@ -364,6 +392,10 @@ function selfCheck() {
   const rk = calleeRanking([...gcc!.callee, 'jitcallee broken']);
   ok(rk.total === 8520140 && rk.bad === 1 && rk.rows.length === 4 && rk.rows[0].callee === 'System.String.GetHashCode' && rk.rows[0].bails === 6760040 &&
     rk.rows[0].sites === 2 && rk.rows[0].top.endsWith('GetHashCode@4') && rk.rows[3].callee === '(other)' && rk.rows[3].native === '?', 'census ranking by callee');
+  // ldarg.0 x8, call, ldarg.0 x3, ret: one run of 8 (counted), one of 3; nop x16, throw: a run of 16
+  const r1 = ilRuns(Buffer.from([2, 2, 2, 2, 2, 2, 2, 2, 0x28, 1, 0, 0, 6, 2, 2, 2, 0x2a])), r2 = ilRuns(Buffer.from([...Array(16).fill(0), 0x7a]));
+  ok(r1.ins === 13 && r1.splits === 2 && r1.in8 === 8 && r1.in16 === 0 && r1.longest === 8 && r2.in8 === 16 && r2.in16 === 16 && r2.splits === 1, 'IL run-length split');
+  ok(hasClauses(Buffer.from([0x1b, 0x30]), 0) && !hasClauses(Buffer.from([0x13, 0x30]), 0) && !hasClauses(Buffer.from([0x2a]), 0), 'clause flag of a method header');
   console.log(`jit-hot self-check: ${k} checks, ok`);
 }
 
@@ -399,6 +431,33 @@ if (process.argv[1] && /jit-hot\.ts$/.test(process.argv[1])) {
     const out = arg('--out');
     if (out) { writeFileSync(out, g.lines.join('\n') + '\n'); console.log(`wrote ${out}`); }
   }
+  else if (process.argv.includes('--yield-runs')) {  // docs/537 §34 R-0: node tools/jit-hot.ts --yield-runs game-copy/assemblies [--top 20] [--out csv]
+    const dir = arg('--yield-runs')!, top = +(arg('--top') ?? 20);
+    const hot = readFileSync(resolve(ROOT, arg('--csv') ?? 'docs/data/jit-hot.csv'), 'utf8').split(/\r?\n/).slice(1).filter(l => l.trim()).map(csvFields).filter(f => f[3] === 'Y' || f[3] === 'D').slice(0, top);
+    const asms = new Map<string, Asm>(), out = ['rank,method,class,ms_s_mean,il_bytes,clauses,instructions,splits,yield_calls,in_runs_8,in_runs_16,share_8,share_16,longest_run'];
+    const pool = { y: [0, 0, 0, 0], all: [0, 0, 0, 0] }; let yN = 0;
+    for (const f of hot) {
+      const name = f[8].split('+')[0], key = f[1], dot = key.indexOf('.'), ns = f[2].slice(0, -key.length - 1);
+      if (!asms.has(name)) asms.set(name, loadStandalone(join(dir, name + '.dll'), name));
+      const a = asms.get(name)!;
+      const ms = a.types.filter(t => t.name === key.slice(0, dot) && t.ns === ns).flatMap(t => t.methods.filter(m => m.name === key.slice(dot + 1) && m.rva));
+      if (!ms.length) { console.log(`${key}: no IL body in ${name}`); continue; }
+      const isY = f[3] === 'Y' && yN++ < 10;
+      ms.forEach((m, k) => {
+        const p = rva(a, m.rva), il = ilCode(a.buf, p), r = ilRuns(il);
+        const yc = decodeAll(il, 0, il.length).ins.filter(i => i.op === 0x28 && /Simulator::(Sleep|CheckYieldingContext)/.test(tokenText(a, i.tok))).length;
+        // the pooled gate takes each method once per ms/s row: its overloads share the row's weight
+        const w = +f[6] / ms.length;
+        for (const pl of [pool.all, ...(isY ? [pool.y] : [])]) pl[0] += r.ins, pl[1] += r.in8, pl[2] += w, pl[3] += w * r.in8 / r.ins;
+        out.push([f[0], `"${key}${ms.length > 1 ? '#' + (k + 1) : ''}"`, f[3], f[6], il.length, hasClauses(a.buf, p) ? 1 : 0, r.ins, r.splits, yc, r.in8, r.in16, (r.in8 / r.ins).toFixed(3), (r.in16 / r.ins).toFixed(3), r.longest].join(','));
+      });
+    }
+    console.log(out.join('\n'));
+    const line = (n: string, pl: number[]) => `${n}: ${(100 * pl[1] / pl[0]).toFixed(1)}% of ${pl[0]} IL instructions in runs >= 8 (unweighted); ${(100 * pl[3] / pl[2]).toFixed(1)}% weighted by ms/s (${pl[2].toFixed(1)} ms/s)`;
+    console.log(line('top-10 Y', pool.y)); console.log(line(`top-${top} Y/D`, pool.all));
+    console.log(`go gate (>= 40% of the top-10 Y IL in runs >= 8): ${100 * pool.y[1] / pool.y[0] >= 40 ? 'PASS' : 'FAIL'}`);
+    if (arg('--out')) writeFileSync(resolve(ROOT, arg('--out')!), out.join('\r\n') + '\r\n');
+  }
   else if (process.argv.includes('--coverage')) {
     const keys = listKeys(readFileSync(resolve(ROOT, arg('--list') ?? 'native/ts3native/monojit-list.h'), 'utf8'));
     const c = coverage(edgeRows(readFileSync(resolve(ROOT, 'docs/data/jit-call-edges.csv'), 'utf8')), keys, lazyRows(readFileSync(arg('--coverage')!, 'utf8')));
@@ -409,8 +468,8 @@ if (process.argv[1] && /jit-hot\.ts$/.test(process.argv[1])) {
     for (const e of [...c.leaf, ...c.chain].sort((a, b) => b.calls - a.calls)) console.log(`  ${String(e.calls).padStart(9)} ${c.leaf.includes(e) ? 'leaf ' : 'chain'} ${e.caller} -> ${e.callee}`);
   } else if (process.argv.includes('--emit-native')) {
     const dir = arg('--emit-native')!, csv = arg('--csv') ?? 'docs/data/jit-hot.csv', out = arg('--out') ?? 'native/ts3native/monojit-list.h';
-    const hot = readFileSync(resolve(ROOT, csv), 'utf8').split(/\r?\n/).slice(1).filter(l => l.trim()).map(csvFields).filter(f => f[13].startsWith('compile') || f[13] === Y_VERDICT);
-    const asms = new Map<string, Asm>(), rows: NativeRow[] = [], yRows: NativeRow[] = [];
+    const hot = readFileSync(resolve(ROOT, csv), 'utf8').split(/\r?\n/).slice(1).filter(l => l.trim()).map(csvFields).filter(f => f[13].startsWith('compile') || f[13] === Y_VERDICT || f[13] === YB_VERDICT);
+    const asms = new Map<string, Asm>(), rows: NativeRow[] = [], yRows: NativeRow[] = [], ybRows: NativeRow[] = [];
     const bound = binderSigs(readFileSync(resolve(ROOT, 'docs/data/binder-bodies.csv'), 'utf8'));
     let methods = 0, dropped = 0;
     const alt = arg('--alt');
@@ -425,16 +484,18 @@ if (process.argv[1] && /jit-hot\.ts$/.test(process.argv[1])) {
       if (all.length > r.length) console.log(`${f[1].padEnd(60)} binder: native body, ${all.length - r.length} of ${all.length} bodies left out (docs/537 §20.2)`);
       if (!r.length) continue;
       methods++;
-      (f[13] === Y_VERDICT ? yRows : rows).push(...r);
-      if (f[13] === Y_VERDICT && alt) {
+      const yTab = f[13] === YB_VERDICT ? ybRows : yRows, isY = f[13] === Y_VERDICT || f[13] === YB_VERDICT;
+      if (f[13] === YB_VERDICT && methodBodies(asms.get(f[8])!, f[2], f[1]).some(p => hasClauses(asms.get(f[8])!.buf, p))) throw new Error(`${f[1]}: a yield body with exception clauses (docs/537 §34: excluded)`);
+      (isY ? yTab : rows).push(...r);
+      if (isY && alt) {
         const tw = shapeTwins(asms.get(f[8])!, loadStandalone(alt, f[8]), f[2], f[1]);
-        yRows.push(...tw);
+        yTab.push(...tw);
         console.log(`${f[1].padEnd(60)} --alt: ${tw.length} token-renumbered twin(s)`);
       }
       console.log(`${f[1].padEnd(60)} ${r.length} overload(s), IL ${r.map(x => x.size).join(' ')}`);
     }
-    writeFileSync(resolve(ROOT, out), nativeHeader(rows, csv, yRows));
-    console.log(`wrote ${out}: ${methods} methods, ${rows.length} bodies + ${yRows.length} YRows bodies (${dropped} binder-bound bodies left out)`);
+    writeFileSync(resolve(ROOT, out), nativeHeader(rows, csv, yRows, ybRows));
+    console.log(`wrote ${out}: ${methods} methods, ${rows.length} bodies + ${yRows.length} YRows bodies + ${ybRows.length} YieldBodies bodies (${dropped} binder-bound bodies left out)`);
   } else {
     const threshold = +(arg('--threshold') ?? 1);
     const rows = ranking(readFileSync(resolve(ROOT, 'docs/data/compile-candidates.csv'), 'utf8'));

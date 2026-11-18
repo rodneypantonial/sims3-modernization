@@ -105,10 +105,19 @@ static int g_jitRowN = kJitRowN;
 static bool g_jitYRows;
 static const JitRow* g_jitYRowP = kJitYRows;
 static int g_jitYRowCnt = kJitYRowN;
+// docs/537 §34 (J9), default 0: [MonoJit] YieldBodies=1 adds kJitYbRows (tools/jit-hot.ts YB_ADMIT): class-Y methods whose own body
+// holds a yield opcode (0x1A6-0x1A8) or calls a yielding method. They compile as region code only: every call, ret and yield
+// opcode is an exit to EA's handler on EA's frame (no lazy body, direct call, inlining, icall shortcut or RetTeardown), a body with
+// exception clauses is refused, and the verifier never runs one twice (JitVerifyStep ends the passes around it).
+static bool g_jitYb, g_jitYbNow;     // the switch; JitOne -> JitCompile: the method being compiled is a yield-body row
+static bool g_jitYbRun = true;       // the run-time arm (counter jitYbOn, --ab yieldbodies): false = the yield bodies run on EA's words
+static const JitRow* g_jitYbRowP = kJitYbRows;
+static int g_jitYbRowCnt = kJitYbRowN;
 // ts3fixes' body swaps (Fixes.SwapMethod keeps each method's own name) move EA's body of a Y key into the hook's stub, on the key's
 // class: with motivemultonce (docs/589 B11 §2, default on) EA's UpdateMotiveWithDecay runs as Motive.DecayOrig and the key name never
 // transforms (hotres2 BP 1117: no Motive line, jitHotKB 1800 to the end). The IL hash still has to be EA's.
-static const char* const kJitYAlias[][2] = {{"Motive.UpdateMotiveWithDecay", "Motive.DecayOrig"}};
+// §34: the same for the yield-body keys ts3fixes swaps (WakePark, LoopSkip632) [inferred from Fixes.SwapMethod, as DecayOrig was]
+static const char* const kJitYAlias[][2] = {{"Motive.UpdateMotiveWithDecay", "Motive.DecayOrig"}, {"Sim.DoInteraction", "Sim.DoOrig"}, {"Sim.WaitForExitReason", "Sim.WaitOrig"}};
 static bool JitYEnds(const char* full, const char* key) {  // full is the Y key, or its swap stub's name on the same class
     if (JitEndsWith(full, key)) return true;
     for (const auto& a : kJitYAlias) if (!strcmp(a[0], key) && JitEndsWith(full, a[1])) return true;
@@ -120,13 +129,20 @@ static bool JitYEnds(const char* full, const char* key) {  // full is the Y key,
 // full" at 8188 of 8192 KB, 4084 methods). The room is JitCompile's own `need` bound for the measured body, not its real size.
 // shortcut: one method's room for all Y keys (today one key); size it per key when a second Y key is admitted.
 static const int JIT_HOT_POS = 1792, JIT_HOT_WORDS = 4096;  // Motive.UpdateMotiveWithDecay: 1686 positions, 3931 mint words (monohost dump), + ~6%
+// §34: all yield-body keys together (5 keys, 819 IL instructions, docs/data/jit-yield-runs.csv; mint positions are of that order) + 25%
+static const int JIT_YB_POS = 1024, JIT_YB_WORDS = 4096;
+static int g_jitHotPos;              // positions held with the reserve
+static const char* JitYbKey(const char* full) {  // the yield-body row key this method name ends in (YieldBodies=1), else NULL
+    for (int i = 0; g_jitYb && i < g_jitYbRowCnt; i++) if (JitYEnds(full, g_jitYbRowP[i].key)) return g_jitYbRowP[i].key;
+    return NULL;
+}
 static size_t g_jitHotBytes;         // the code reserve while any Y key is pending (0: off or released)
 static int g_jitHotPend;             // Y keys not settled yet
 static bool g_jitHotNow;             // JitOne -> JitCompile: the method being compiled is a Y row (it may use the reserve)
 static const char* g_jitHotSettled[8];
 static const char* JitHotKey(const char* full) {  // the Y row key this method name ends in, else NULL
     for (int i = 0; i < g_jitYRowCnt; i++) if (JitYEnds(full, g_jitYRowP[i].key)) return g_jitYRowP[i].key;
-    return NULL;
+    return JitYbKey(full);
 }
 static char g_jitUserBuf[512];       // [MonoJit] List=: narrows the built-in list (a name not in it stays refused: no known hash)
 static const char* g_jitUser[32];
@@ -182,6 +198,7 @@ static bool JitListed(const char* full) {
     bool hit = false;
     for (int i = 0; i < g_jitRowN && !hit; i++) hit = JitEndsWith(full, g_jitRows[i].key);
     for (int i = 0; g_jitYRows && i < g_jitYRowCnt && !hit; i++) hit = JitYEnds(full, g_jitYRowP[i].key);
+    if (!hit) hit = JitYbKey(full) != NULL;
     if (!hit || !g_jitUserN) return hit;
     for (int i = 0; i < g_jitUserN; i++) if (JitEndsWith(full, g_jitUser[i])) return true;
     return false;
@@ -410,7 +427,7 @@ struct JitRefWhy { const char* why; LONG n; };
 static JitRefWhy g_jitRefWhy[JIT_REF_REASONS];  // under g_jitCs
 static int g_jitRefWhyN;
 static LONG g_jitRefSave = -1, g_jitRefLogged;  // JitTick: saveCount and jitRefused at the last summary
-struct JitMeth { u8* rm; unsigned short* code; int words; int pos0, posN; char name[96]; int nativeOps, exitOps, bytes; u8* native0; bool verifyOk, dead; DWORD tick; };
+struct JitMeth { u8* rm; unsigned short* code; int words; int pos0, posN; char name[96]; int nativeOps, exitOps, bytes; u8* native0; bool verifyOk, dead, yld, yb; DWORD tick; };  // docs/537 §34: yb = a yield-body row; yld = that, or a body holding a yield opcode: never run twice
 struct JitFix { u8* rel; int targetW; bool abs; };  // abs: a switch table slot takes the label itself
 // posReal: an EA instruction start (dispatch can land there), not a superop's inner position
 struct JitScratch { int posW[JIT_MAX_POS + 64]; unsigned short posOp[JIT_MAX_POS + 64]; bool posReal[JIT_MAX_POS + 64], posCold[JIT_MAX_POS + 64], posProt[JIT_MAX_POS + 64]; u8* label[JIT_MAX_POS + 64]; JitFix fix[JIT_MAX_POS + 64]; int wordToPos[JIT_MAX_WORDS]; };
@@ -677,6 +694,21 @@ static int JcnReportTo(const char* why, JcnOut out) {
                   g_jitMeth[m].name, t->calls[m], rets, exits, taken, callTaken);
         out(line);
     }
+    // docs/537 §34 R-4 (go gate: <= 0.25 exits per executed position): one uncapped line per compiled yield-body row
+    for (int m = 0; g_jitYb && m < g_jitMethN; m++) {
+        if (!g_jitMeth[m].yld || !JitYbKey(g_jitMeth[m].name)) continue;
+        LONG rets = 0, exits = 0, yields = 0;
+        for (int s = 0; s < t->siteN; s++) {
+            const JcnSite& S = t->site[s];
+            if (S.meth != m || !S.n) continue;
+            if (!strncmp(JcnOpName(S.op), "ret", 3)) rets += S.n; else exits += S.n;
+            if (S.op >= 0x1A6 && S.op <= 0x1A8) yields += S.n;
+        }
+        const LONG pos = t->posRun[m];
+        sprintf_s(line, "jitcount ybrow %s: entries %ld, positions run %ld, ret exits %ld, other exits %ld, yield exits %ld, exits per position %.3f",
+                  g_jitMeth[m].name, t->calls[m], pos, rets, exits, yields, pos > 0 ? (double)(rets + exits) / pos : 0.0);
+        out(line);
+    }
     sprintf_s(line, "jitcount: end %s #%d, %d lines, %d left out (cap %d)", why, ++t->reports, lines, cut, JCN_LINES);
     out(line);
     return lines;
@@ -698,6 +730,10 @@ static void JcnExit() { JcnReport("exit"); JtReport("exit"); }  // DLL_PROCESS_D
 static void EmitExit(Em& e, const unsigned short* ip, DWORD op, bool ret) {
     e.incAbs(&ts3native_counters.jitExits);
     if (g_jcn) JcnExitSite(e, ip, op);
+    if (g_jcn && g_jitYbNow) {  // docs/537 §34 R-4 (count mode only): exits of the yield bodies, and the yield opcodes among them
+        e.incAbs(&ts3native_counters.jitYbExits);
+        if (op >= 0x1A6 && op <= 0x1A8) e.incAbs(&ts3native_counters.jitYbYieldExits);
+    }
     e.b(0xBF); e.d((DWORD)(uintptr_t)ip);   // mov edi, ip
     if (g_jitLazyPass) {                     // lazy body: write the frame first, then the same exit
         e.movRI(EAX, op);
@@ -705,7 +741,7 @@ static void EmitExit(Em& e, const unsigned short* ip, DWORD op, bool ret) {
         return;
     }
     if (ret && g_jitMode == 2) { e.jmpTo((const void*)JitVerifyExitStub); return; }
-    if (ret && (op == 6 || op == 7) && g_jitRtOn && !g_jitRtDead) { e.jmpTo(g_jitRtEntry[op - 6]); ts3native_counters.rtdSites++; return; }  // RetTeardown
+    if (ret && (op == 6 || op == 7) && g_jitRtOn && !g_jitRtDead && !g_jitYbNow) { e.jmpTo(g_jitRtEntry[op - 6]); ts3native_counters.rtdSites++; return; }  // RetTeardown
     e.op(0x89, EDI, EBP, -4);                // mov [ebp-4], edi
     e.movRI(EAX, op);
     e.rr(0x8B, EAX, EDX);                    // mov edx, eax (rr: r/m operand first, reg operand second)
@@ -1353,6 +1389,8 @@ static const char* JitCompile(u8* rm) {
     if (hotHold && g_jitMethN >= g_jitMethCap - g_jitHotPend) return JitHotHeld("method table full (HotReserve)");
     if (g_jcn) g_jcn->meth = g_jitMethN;  // count mode: the index this method gets if it compiles
     if (rm[0x41] && !g_jitWide) return "exception clauses";
+    const bool yb = g_jitYbNow;  // docs/537 §34: region code only
+    if (yb && rm[0x41]) return "a yield body with exception clauses";
     g_jitFrTestNow = false;
     if (g_jitFrTestN > 0 && !g_jitFrTestRm) { char nm[96]; g_jitFrTestNow = JitEndsWith(JitMethodName(rm, nm, sizeof(nm)), g_jitFrTestName); }
     unsigned short* code = *(unsigned short**)rm;
@@ -1393,7 +1431,7 @@ static const char* JitCompile(u8* rm) {
     // ClauseLazy (docs/537 §24): only an allow-listed clause method, and never after the session kill switch
     const bool clauseOk = g_jitClauseLazy && g_jitClauseOk && !g_jitClauseDead && g_jitClMethN < JIT_CL_METH;
     if (rm[0x41] && g_jitLazy && g_jitClauseLazy && !clauseOk) ts3native_counters.clNotListed++;
-    bool lazyOk = g_jitLazy && (!rm[0x41] || clauseOk);
+    bool lazyOk = g_jitLazy && (!rm[0x41] || clauseOk) && !yb;
     bool* const posCold = g_js->posCold;
     bool* const posProt = g_js->posProt;
     if (lazyOk) JitMarkCold(n, posOp, posCold), lazyOk = JitClauseMark(rm, n, posW, words, posProt);
@@ -1448,6 +1486,7 @@ static const char* JitCompile(u8* rm) {
             // shortcut: a branch back to word 0 counts as a call too (rare: M.verifyOk names those methods), fine for a census
             if (!k && !g_jitLazyPass) e.incAbs(&g_jcn->calls[g_jitMethN]);
             e.incAbs(&g_jcn->posRun[g_jitMethN]);
+            if (yb) { if (!k) e.incAbs(&ts3native_counters.jitYbEntries); e.incAbs(&ts3native_counters.jitYbPos); }  // §34 R-4
         }
         if (!k && !g_jitLazyPass && g_jitFrTestNow) {  // [MonoJit] FaultTest: call N of the normal body reads address 0 (JitFrVeh resumes it)
             e.incAbs(&ts3native_counters.frTestCalls);
@@ -1824,6 +1863,7 @@ static const char* JitCompile(u8* rm) {
             else if (t.x >= 4) { e.load(t.x == 4 ? 1 : t.x == 5 ? 2 : t.x == 6 ? 3 : 4, EAX, ESI, -8); e.op(0x89, EAX, ESI, -8); }
             break;  // conv.i4.i8: the low word already is the result
         default:
+            if (yb) { EmitExit(e, ip, op, t.kind == K_RET); ex++; continue; }  // §34: every call, ret and yield opcode is EA's
             if (op == 0xEA && (g_jitGroups & 256) && !g_jitLazyPass) {
                 if (const DWORD fn = JitIcallFn(ip, rm)) { exitRel[0] = EmitIcall(e, fn); break; }
             }
@@ -1865,13 +1905,15 @@ static const char* JitCompile(u8* rm) {
     // 3. publish: table entries for every position, then patch the opcode words (positions of EA instruction starts and
     // superop inner positions alike; inner words are never read by the superop handlers)
     if (g_jitPosN + n > g_jitPosCap) return "position table full";
-    if (hotHold && g_jitPosN + n > g_jitPosCap - JIT_HOT_POS) return JitHotHeld("position table full (HotReserve)");
+    if (hotHold && g_jitPosN + n > g_jitPosCap - g_jitHotPos) return JitHotHeld("position table full (HotReserve)");
     JitMeth& M = g_jitMeth[g_jitMethN];
     M.rm = rm, M.code = code, M.words = words, M.pos0 = g_jitPosN, M.nativeOps = nat, M.exitOps = ex, M.native0 = start, M.bytes = bytes;
     JitMethodName(rm, M.name, sizeof(M.name));
     bool branch0 = false;
     for (int f = 0; f < nf; f++) branch0 |= fix[f].targetW == 0;
-    M.verifyOk = !rm[0x41] && !branch0;
+    M.yld = M.yb = yb;
+    for (int k = 0; k < n; k++) M.yld |= posOp[k] >= 0x1A6 && posOp[k] <= 0x1A8;
+    M.verifyOk = !rm[0x41] && !branch0 && !M.yld;
     for (int k = 0; k < n; k++) {
         JitEnt* en = JitAdd((DWORD)(uintptr_t)(code + posW[k]));
         if (!en) return "ip table full";
@@ -1902,13 +1944,14 @@ static const char* JitCompile(u8* rm) {
             if (g_jitGuard[i].rm == rm && !g_jitGuard[i].entry) JitGuardFill(&g_jitGuard[i], rm);
     }
     // docs/537 §32: a YRows body's line is outside the 256-line cap (it compiles after ~4k others; the M2 queues require it)
-    if (g_jitLogN++ < 256 || (g_jitYRows && JitHotKey(M.name))) Log("jit: compiled %s: %d positions, %d native, %d exits, %d bytes%s%s%s", M.name, n, nat, ex, bytes, lazyEntry ? ", lazy body" : "", M.verifyOk ? "" : ", not verified (branch to word 0)", pure ? ", pure icalls" : "");
+    if (yb) ts3native_counters.jitYbMeth++;
+    if (g_jitLogN++ < 256 || ((g_jitYRows || yb) && JitHotKey(M.name))) Log("jit: compiled %s: %d positions, %d native, %d exits, %d bytes%s%s%s%s", M.name, n, nat, ex, bytes, lazyEntry ? ", lazy body" : "", M.verifyOk || M.yld ? "" : ", not verified (branch to word 0)", pure ? ", pure icalls" : "", yb ? ", yield body (not verified)" : "");
     return NULL;
 }
 
 // patch (true) or restore (false) one method's opcode words; the native code stays
 static void JitPatchMeth(const JitMeth& m, bool on) {
-    for (int k = m.pos0; k < m.posN; k++) m.code[g_jitPos[k]] = on && !m.dead ? JitWord(g_jitOrigW[k]) : g_jitOrigW[k];
+    for (int k = m.pos0; k < m.posN; k++) m.code[g_jitPos[k]] = on && !m.dead && (!m.yb || g_jitYbRun) ? JitWord(g_jitOrigW[k]) : g_jitOrigW[k];
 }
 static void JitSetPatched(bool on) {
     for (int m = 0; m < g_jitMethN; m++) JitPatchMeth(g_jitMeth[m], on);
@@ -2739,6 +2782,11 @@ static void* JitVerifyStep(JitRegs* r, JitEnt* e, int fromExit) {
     Ts3nCounters& C = ts3native_counters;
     JitMeth* const m = e->m;
     const u8* rm = m->rm;
+    if (m->yld) {  // docs/537 §34 R-2: a body that can yield runs once. No pass starts on it, and every pass of this activation
+        // ends here (a verified caller reached it): the pass in flight stands as it ran, as after a collection in pass 1
+        for (DWORD k = 0; k < JIT_VD; k++) if (g_jitV[k].active && g_jitV[k].ebp == r->ebp) g_jitV[k].active = false, C.jitAbandoned++, C.jitYbAbandon++;
+        return fromExit ? JitOrig(r, r->edi, e->orig) : JitNative(r, e);
+    }
     DWORD depth = *(const DWORD*)(uintptr_t)(*(const DWORD*)(uintptr_t)(r->ebp + 8) + 0x140);
     if (depth >= JIT_VD) return fromExit ? JitOrig(r, r->edi, e->orig) : JitNative(r, e);
     JitV& v = g_jitV[depth];
@@ -2908,6 +2956,8 @@ static bool JitHashKnown(const char* full, const char* mn, DWORD size, const BYT
         if (g_jitRows[i].size == size && !memcmp(g_jitRows[i].sha, sha, 32) && JitEndsWith(full, g_jitRows[i].key)) return true;
     for (int i = 0; g_jitYRows && i < g_jitYRowCnt; i++)
         if (g_jitYRowP[i].size == size && !memcmp(g_jitYRowP[i].sha, sha, 32) && JitYEnds(full, g_jitYRowP[i].key)) return true;
+    for (int i = 0; g_jitYb && i < g_jitYbRowCnt; i++)
+        if (g_jitYbRowP[i].size == size && !memcmp(g_jitYbRowP[i].sha, sha, 32) && JitYEnds(full, g_jitYbRowP[i].key)) return true;
     for (int i = 0; i < kIlpSpecN; i++) {  // a core that carries an [IlPatch] fix in the converter's form (docs/527 §1)
         if (strcmp(mn, kIlpSpecs[i].name)) continue;
         for (DWORD b = 0; b < kIlpSpecs[i].nBuilds; b++) if (!memcmp(kIlpSpecs[i].builds[b].patched, sha, 32)) return true;
@@ -2945,8 +2995,9 @@ static const char* JitOne(BYTE* rm, void* ctx, char* name, int nameN, char* note
     const int s0 = g_jcn ? g_jcn->siteN : 0, b0 = g_jcn ? g_jcn->bailN : 0;
     JtTagBegin();
     g_jitHotNow = g_jitHotPend > 0 && JitHotKey(name);
+    g_jitYbNow = JitYbKey(name) != NULL;
     const char* why = JitCompile(rm);
-    g_jitHotNow = false;
+    g_jitHotNow = false, g_jitYbNow = false;
     if (!why) JtTagEnd(g_jitMethN - 1, rm[0x41] ? 1u << 5 : 0);  // [MonoJit] Time: the pieces this method's compile used
     if (why && g_jcn) g_jcn->siteN = s0, g_jcn->bailN = b0;  // count mode: a refused method leaves no rows
     return why;
@@ -2984,21 +3035,29 @@ static void JitHotSettle(const char* name, const char* why) {
 // docs/537 §32: [MonoJit] HotReserve (default 1) with YRows=1: the room JitCompile's bound asks for one Y body under this session's
 // Direct / Count switches (Direct + Count=1: 1800 KB; Direct only: 1352 KB; neither: 456 KB), at most half the region
 static void JitHotInit(const wchar_t* ini) {
-    g_jitHotPend = 0, g_jitHotBytes = 0, g_jitHotNow = false, g_jitHotT0 = 0;
+    g_jitHotPend = 0, g_jitHotBytes = 0, g_jitHotNow = false, g_jitHotT0 = 0, g_jitHotPos = 0;
     memset(g_jitHotSettled, 0, sizeof(g_jitHotSettled));
-    if (!g_jitYRows || !GetPrivateProfileIntW(L"MonoJit", L"HotReserve", 1, ini)) return;
-    for (int i = 0; i < g_jitYRowCnt; i++) {
+    if ((!g_jitYRows && !g_jitYb) || !GetPrivateProfileIntW(L"MonoJit", L"HotReserve", 1, ini)) return;
+    for (int i = 0; g_jitYRows && i < g_jitYRowCnt; i++) {
         bool dup = false;
         for (int j = 0; j < i; j++) dup |= !strcmp(g_jitYRowP[i].key, g_jitYRowP[j].key);
         g_jitHotPend += !dup;
     }
-    if (g_jitHotPend > 8) g_jitHotPend = 8;  // g_jitHotSettled's size; kJitYRows has one key today
+    const int yKeys = g_jitHotPend;
+    for (int i = 0; g_jitYb && i < g_jitYbRowCnt; i++) {  // §34: the yield-body keys wait behind the same ~4k general bodies
+        bool dup = false;
+        for (int j = 0; j < i; j++) dup |= !strcmp(g_jitYbRowP[i].key, g_jitYbRowP[j].key);
+        g_jitHotPend += !dup;
+    }
+    if (g_jitHotPend > 8) g_jitHotPend = 8;  // g_jitHotSettled's size; kJitYRows has one key, kJitYbRows five
     if (!g_jitHotPend) return;
-    g_jitHotBytes = ((g_jitLazy ? 768 : 256) + (g_jcn ? 256 : 0)) * (size_t)JIT_HOT_POS + 2 * JIT_HOT_WORDS + 512;
+    const size_t per = (g_jitLazy ? 768 : 256) + (g_jcn ? 256 : 0);  // JitCompile's bound per position
+    if (yKeys) g_jitHotBytes = per * JIT_HOT_POS + 2 * JIT_HOT_WORDS + 512, g_jitHotPos = JIT_HOT_POS;
+    if (g_jitHotPend > yKeys) g_jitHotBytes += per * JIT_YB_POS + 2 * JIT_YB_WORDS + 512 * (g_jitHotPend - yKeys), g_jitHotPos += JIT_YB_POS;
     if (g_jitHotBytes > g_jitCodeBytes / 2) g_jitHotBytes = g_jitCodeBytes / 2;
     ts3native_counters.jitHotKB = (LONG)(g_jitHotBytes >> 10);
-    Log("OK   mono jit hot reserve (docs/537 §32): HotReserve=1, %lu KB of the %lu KB region, %d method slots, %d positions held for %d YRows keys until they compile",
-        (unsigned long)(g_jitHotBytes >> 10), (unsigned long)(g_jitCodeBytes >> 10), g_jitHotPend, JIT_HOT_POS, g_jitHotPend);
+    Log("OK   mono jit hot reserve (docs/537 §32): HotReserve=1, %lu KB of the %lu KB region, %d method slots, %d positions held for %d %s keys until they compile",
+        (unsigned long)(g_jitHotBytes >> 10), (unsigned long)(g_jitCodeBytes >> 10), g_jitHotPend, g_jitHotPos, g_jitHotPend, g_jitHotPend > yKeys ? "YRows / YieldBodies" : "YRows");
 }
 static void __cdecl JitPostPass(BYTE* rm, void* ctx) {
     if (g_jitDead) return;
@@ -3013,7 +3072,7 @@ static void __cdecl JitPostPass(BYTE* rm, void* ctx) {
         JitProt(g_jitCode, g_jitCodeBytes, PAGE_EXECUTE_READ);
         Log("jit: fault 0x%08lX while compiling %s: no more compiles this session", GetExceptionCode(), name);
     }
-    g_jitHotNow = false;
+    g_jitHotNow = false, g_jitYbNow = false;
     if (g_jitHotPend > 0) JitHotSettle(name, why);
     if (why) {  // R1: own cap per reason (they shared the compile lines' 256 and lost: docs/537 §20.0)
         ts3native_counters.jitRefused++;
@@ -3043,6 +3102,12 @@ static void __cdecl JitTick() {
     }
     const bool on = ts3native_counters.jitSwitch != 0;
     if (on != g_jitPatched) JitSetPatched(on);
+    // docs/537 §34: the in-load A/B arm of the yield bodies alone. Between ticks no compiled code runs; a frame suspended in one
+    // of them (a call, a sleep) dispatches whatever word its ip holds when it resumes, EA's or 0x1A9, with the same frame
+    if (g_jitYb && (ts3native_counters.jitYbOn != 0) != g_jitYbRun) {
+        g_jitYbRun = !g_jitYbRun;
+        for (int m = 0; m < g_jitMethN; m++) if (g_jitMeth[m].yb) JitPatchMeth(g_jitMeth[m], g_jitPatched);
+    }
     if (g_jitTrap) JitTrapTick();
     if (g_jcOn) JcTick();
     if (g_jcn) JcnTick();
@@ -3235,6 +3300,8 @@ static bool ApplyMonoJit(const wchar_t* ini) {
     }
     g_jitClauseLazy = GetPrivateProfileIntW(L"MonoJit", L"ClauseLazy", 0, ini) != 0;  // handoff C5, guards docs/537 §24
     g_jitYRows = GetPrivateProfileIntW(L"MonoJit", L"YRows", 0, ini) != 0;  // docs/537 §31 M2
+    g_jitYb = GetPrivateProfileIntW(L"MonoJit", L"YieldBodies", 0, ini) != 0;  // docs/537 §34 J9
+    C.jitYbOn = g_jitYb ? 1 : 0, C.jitYbRows = g_jitYb ? g_jitYbRowCnt : 0, g_jitYbRun = true;
     C.clOn = g_jitClauseLazy ? 1 : 0;
     C.jitDirect = g_jitLazy ? (g_jitLeafOnly ? 1 : 2) : 0;
     if (g_jitLazy && GetPrivateProfileIntW(L"MonoJit", L"Trap", 0, ini)) {
@@ -3253,6 +3320,8 @@ static bool ApplyMonoJit(const wchar_t* ini) {
     C.jitOn = mode;
     g_ilpPost = JitPostPass;
     Log("OK   mono jit (docs/527): Mode=%d, %d templates (Groups=%d), %d list rows%s, VerifyEvery=%lu, code region %lu KB (CodeKB), %d methods (MaxMethods), Direct=%ld (docs/537), Trap=%d, VtOps=%d, CallExit=%d, NewVt=%d, Count=%d, FastCopy=%d, Ldsflda=%d, BoundCall=0x%lX, ClauseLazy=%d, RetTeardown=%d, FaultRecover=%d, YRows=%d", mode, templates, g_jitGroups, g_jitRowN, g_jitUserN ? " narrowed by List=" : "", g_jitEvery, (unsigned long)(g_jitCodeBytes >> 10), g_jitMethCap, C.jitDirect, g_jitTrap ? 1 : 0, g_jitVtOps ? 1 : 0, g_jitCallExit ? 1 : 0, g_jitNewVt ? 1 : 0, g_jcn ? 1 : 0, g_jitFastCopy ? 1 : 0, g_jitLdsflda ? 1 : 0, (unsigned long)C.bcOn, g_jitClauseLazy ? 1 : 0, g_jitRtOn ? 1 : 0, g_jitFrOn ? 1 : 0, g_jitYRows ? g_jitYRowCnt : 0);
+    // its own line: the OK line above stays as it is (queues read its end)
+    if (g_jitYb) Log("OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, %d rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified", g_jitYbRowCnt);
     if (g_jt) Log("OK   mono jit time (docs/handoff/jit-paired-timing.md): Time=1, VerifyEvery=%lu, Count=%d, %d rows, report every 10 min, after saves and at exit", g_jitEvery, g_jcn ? 1 : 0, g_jtCap);  // a separate line: the OK line above stays as it is
     return true;
 }

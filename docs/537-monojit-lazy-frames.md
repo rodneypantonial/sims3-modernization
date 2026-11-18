@@ -958,3 +958,75 @@ Convention, read again in the Steam 1.67 bytes [verified, disassembly `0xE525C0`
 - ctx+8 (current frame) is not touched by `0xE525C0`; the caller sets and restores it (EA's `ves_exec` at the call path, `JitBoundCall` in ours, §22.2).
 
 What is still open is the scope, not the convention: §22.4 allows only `String.GetHashCode()` and `String.Equals(string)`. Any other bound body needs its own row (byte hash, purity proof, corpus case), and which native callees still bail after BoundCall is I-484-2, answered by one `Count=1` game run (`jitcallee ... native=1 bound=0` lines). Until that count names a callee with a real share, a third row has no measured target [inferred, I-507-1]. No code change from this check.
+
+## 34. J9: `[MonoJit] YieldBodies`, region compile inside yielding methods (2026-11-18, branch `feature/jit-yieldbodies-1118`, ts3native 0.36.286-yb1118, built + native selftest, NOT RUN, ledger §529)
+
+Contributor task J9 (Dalexlol's list, 2026-11-18): the compiler skips class-Y methods (they can reach a yield). Compile their straight stretches and leave to EA's handler at every call and yield opcode. §31 (YRows) already does this for one method whose yield sits behind a virtual call; this section covers bodies that hold a yield opcode themselves or call yielding methods directly.
+
+### 34.1 R-0: static run-length split [measured, static]
+
+`node tools/jit-hot.ts --yield-runs game-copy/assemblies` splits each body's IL at `call`, `callvirt`, `newobj`, `calli`, `ret`, `throw` and `rethrow` and counts the instructions in runs of 8+ and 16+. Branches do not split a run. Data: `docs/data/jit-yield-runs.csv` (the top 20 Y rows of `jit-hot.csv`; there is no class-D row in the top 20).
+
+| Set | IL instructions | In runs >= 8 | Weighted by ms/s |
+|---|---|---|---|
+| Top-10 Y (29.4 ms/s) | 3,930 | **39.8%** | 33.1% |
+| Top-20 Y (38.1 ms/s) | 5,711 | 38.7% | 33.5% |
+| Top-10 Y without the 4 clause bodies (14.5 ms/s) | 1,026 | 23.6% | - |
+
+- **The go gate (>= 40% of the top-10 Y IL in runs >= 8) fails by 0.2 points.** The number is unweighted and overstates the gain: the sampler has method names, no IL offsets.
+- The four clause bodies (`SimUpdate.Simulate` 9.2 ms/s, `Motive.UpdateMotiveWithDecay`, `Motive.UpdateMotiveBuffs`, `Lot.UpdateReactions`) hold most of the long runs (44.6%, 47.1%, 42.7%, 37.5%). The task excludes clause bodies at first, so the first rows are the short-run ones: `Lot.Simulate` 11.1%, `Sim.DoInteraction` 16.6%, `CommonTests` 17.2%, `Sim.WaitForExitReason` 31.3%, `IdleManager.DistressIdle` 75.6%.
+- Reading: with calls every ~4-6 instructions, a compiled stretch saves little against the exit it ends in. The realistic gain of the five rows is below the 3 ms/s default-on bar [inferred]; the count run (34.5) decides.
+
+### 34.2 R-1: the yield save and the resume do not read opcode words [verified, disassembly of Steam 1.67]
+
+The question: a compiled body's instruction-start words hold `0x1A9`. Does the yield save `0xE53620`, the may-yield test `0xE53550` or the resume read those words, and does a resume always land on an instruction start?
+
+| Piece | Finding | Evidence |
+|---|---|---|
+| Save `0xE53620` | Arithmetic on the ip only: cell `+8` = (record `+4` - `[RuntimeMethod+0]`) >> 1. No read through an ip | `0xE53693`-`0xE536A0` |
+| May-yield `0xE53550` | Reads state `+0x148`, `+0x140`, record `+0x128` and the method name. No ip | `0xE53554`-`0xE535CC` |
+| `0x1A6` (sleep) | One word. Pops the ticks, ip += 2, calls `0xD70820`, stores ip + 2 in the record, then saves. On a refusal the ip is the sleep word's own | `0xE59758`, `0xE597A3`, `0xE597AC`, `0xE593B7` |
+| `0x1A7`, `0x1A8` | ip += 2 and back to the dispatch head | `0xE54512`, `0xE5455D` |
+| Suspended callers | Their record holds the ip after the call (the push stores it) | `0xE562B6`, return `0xE543F1`, save call `0xE544C2` |
+| Resume `0xE53F18` | ip = `[RuntimeMethod]` + index x 2. The top frame goes to the dispatch head (reads the word at ip: `0x1A9` enters `JitEnter`); a pending exception goes to the clause search, which uses the index. Parents take the ordinary return path and dispatch at their saved ip. Nothing decodes ip - N | `0xE53FE2`-`0xE54004`, `0xE5407C`, `0xE540F4`, `0xE54486`-`0xE544D5` |
+| Other readers by frame ip | Only the stack-trace text builder `0xE529A0` (opcode name from table `0x11949E0`; entry `0x1A9` is the empty string). Cell free `0xE535E0` and the stack walks only subtract | `0xE52A0F`-`0xE52A19` |
+
+**Verdict: safe without changes. No shadow-array read is needed** (the original words are in `g_jitOrigW` as before). Every resumed ip is an instruction start: after a one-word sleep, or after a call. Two things the handlers rely on were checked in our code: `EmitExit` loads the original opcode into `eax` / `edx` before the jump (the shared `0xEA` / `0xEB` handler tells them apart by `ax`), and every position has its own `JitEnter` entry that takes its state from the interpreter frame. Not read: `0x5BFB90` (IL-offset mapping fed with the word index). Cosmetic, as for every compiled body today: a script-error stack trace shows an empty opcode name for a frame whose ip word is `0x1A9`.
+
+Game saves do not hold interpreter frames, so "save-safety" here is the yield save; a `.sims3` file is not touched by this switch.
+
+### 34.3 Built
+
+- **Rows.** `tools/jit-hot.ts` `YB_ADMIT` (5 keys) with the verdict `opt-in Y body ([MonoJit] YieldBodies=1)`; `--emit-native` writes them to `kJitYbRows` in `monojit-list.h` (10 bodies: EA's and the simler90 UPDATE242 token twins of `Lot.Simulate`, `Sim.DoInteraction`, `Sim.WaitForExitReason`, `InteractionDefinitionUtilities.CommonTests`, `IdleManager.DistressIdle`) and throws on a body with exception clauses. The IL-hash gate is unchanged, so a mod rewrite (NRaas `DoInteraction`) stays interpreted.
+- **Switch.** `[MonoJit] YieldBodies` (default 0). Its own log line: `OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, 10 rows; ...`; the main OK line is unchanged.
+- **Region code only (R-3).** For a yield-body row `JitCompile` makes no lazy body, no direct or guarded call site, no inlining, no icall shortcut and no RetTeardown: every call, `ret` and yield opcode is a plain exit to EA's handler on EA's frame. A row with clauses is refused (`a yield body with exception clauses`).
+- **Swap stubs.** ts3fixes swaps `Sim.DoInteraction` and `Sim.WaitForExitReason` (WakePark, LoopSkip632), so EA's body transforms as `Sim.DoOrig` / `Sim.WaitOrig`; `kJitYAlias` maps both [inferred from `Fixes.SwapMethod`, as `Motive.DecayOrig` was; the count run confirms].
+- **Verify rule (R-2).** `JitMeth.yld` marks a yield-body row and any body that holds `0x1A6`-`0x1A8`. Such a body is never a verify root (`verifyOk` false: running it twice would sleep twice), and when a verified activation reaches one, every pass of that activation ends as after a collection in pass 1 (`jitAbandoned`, `jitYbAbandon`). Limit: a yield in an *interpreted* callee of a verified body is not seen; class-N rows cannot reach one by the class closure.
+- **HotReserve.** With YieldBodies=1 the reserve (§32) also holds one method slot per yield-body key, 1024 positions and the bound for them, so the rows still compile after the ~4k general bodies.
+- **Run-time arm.** Counter `jitYbOn` (0x69C8) starts as the switch; `--ab yieldbodies` flips it. Off puts EA's words back in the yield bodies only (`JitTick`, between ticks); a frame suspended in one resumes on whatever word its ip holds.
+- **Counters v217 (0x69C8-0x69E7, R-4):** `jitYbOn`, `jitYbRows`, `jitYbMeth`, `jitYbEntries`, `jitYbPos`, `jitYbExits`, `jitYbYieldExits`, `jitYbAbandon`. Entries / Pos / Exits / YieldExits count only with `Count=1` (an inc per position). Per row, with Count=1: `jitcount ybrow <name>: entries N, positions run N, ret exits N, other exits N, yield exits N, exits per position 0.xxx`.
+- **Household.** No scope gate: a compiled stretch runs the same instructions in the same order for every Sim, and every call, sleep and return is EA's own handler. The switch changes no deadline, skip or answer.
+- ts3native `0.36.286-yb1118`, builds.json `ts3native.asi.jit-yieldbodies-1118` (sha256 `1f4daf4d…`) + `ts3native.ini.jit-yieldbodies-1118`.
+
+### 34.4 Native selftest
+
+- YieldBodies=0: the row is not listed, its hash not known, no reserve.
+- YieldBodies=1: listed with the right size only; the swap-stub names match on `Sim` only; a clause body is refused with its own reason; the reserve holds the yield bodies' room and is released when the row compiles.
+- The body `{ldc, sleep, ret}` compiles to 1 native position and 2 exits with no lazy body. A run stops in EA's sleep handler with the ip at the sleep word; entering at the word after it (the resume) reaches the ret exit.
+- Count mode: counters 1 entry, 3 positions, 2 exits, 1 yield exit and the `jitcount ybrow` line.
+- A yield opcode in any other body: compiled as before, never verified.
+- Mode=2: no pass starts on a yield body; two active passes of the activation end, one of another activation stays; the compiled ret takes EA's ret with no pass.
+- Run-time arm: off restores the yield body's words and leaves another body compiled; on patches them again.
+
+### 34.5 Queues (NOT RUN) and gates
+
+- `jit-yieldbodies-correct-1118` (RUN FIRST): BP / IP / SV count runs (10 min, YieldBodies=1, Mode=2, Count=1; requires the OK line with 10 rows, >= 3 yield bodies compiled, >= 3 `ybrow` lines with entries, `jitYbYieldExits >= 1`, 0 mismatches, 0 faults, 0 script errors; forbids a region / table full refusal of a row), then `bp-yb-reload` (save-matrix reload case with YieldBodies=1: households compared across save, quit and reload).
+- `jit-yieldbodies-time-1118` (needs quiet machine): smoke, then BP / IP / SV 45 min in-load ABBAABBA `--ab yieldbodies`, Mode=1, Count=0.
+- **Go gates.** R-0 >= 40%: **39.8%, fail by 0.2 points** (static). Exits per executed position <= 0.25: from the count run's `ybrow` lines. Host speedup >= 1.10x per method: **not measured** (monohost has no YieldBodies port). Default-on: >= 3 ms/s per world, 0 script errors, clean reload.
+- **Stop rule.** Park (YieldBodies stays 0) when the count run shows more than 0.25 exits per position on the rows that carry the time (`Lot.Simulate`, `Sim.DoInteraction`), or when the A/B gain is under 3 ms/s on every world.
+
+### 34.6 Open
+
+- The clause bodies carry the long runs and 14.9 of the 29.4 ms/s. §31 already runs one (`UpdateMotiveWithDecay`, normal body, EA's clause handling). Admitting `SimUpdate.Simulate` the same way needs the may-yield rule checked for a compiled frame with a finally running (`+0x128`), which EA's handlers keep; not built, by the task's "excluded at first".
+- No monohost port, so no host corpus case and no host speedup number for these rows.
+- The yield bodies are never verified in game (Mode=2 skips them); their templates are the ones Mode=2 verifies in every other body.
