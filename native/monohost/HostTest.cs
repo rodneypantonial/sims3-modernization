@@ -44,6 +44,61 @@ namespace MonoHostTest
         // docs/537 §31: the M2 yield task (monohost-jit.cpp JitMotiveYieldTask)
         public static int JitMotiveYield(int n) { return JitAcc.MotiveYieldTask(n); }
         public static int JitMotiveStat(int k) { return JitAcc.MotiveStat(k); }
+        // docs/537 §35: the clause yield body of the host (monohost-jit.cpp JitYbClauseTask, MONOHOST_JITYBC=1). One body with
+        // catch and finally clauses: sleeps inside a try and inside a catch handler, throws out of compiled stretches (array bound,
+        // null receiver, a callee, the throw opcode), an exception that passes a finally to an outer catch, leave across two
+        // finallys (continue / break), a throw right after a resume, and a sleep in a finally (EA refuses it by a throw).
+        public static int YbcThrown, YbcFinally, YbcSlept;
+        static int YbcCallee(int i) { if ((i & 7) == 5) throw new InvalidOperationException("callee"); return i * 3 + 1; }
+        public static int JitYbClauseBody(int n)
+        {
+            int h = 17;
+            int[] arr = new int[5];
+            for (int i = 0; i < n; i++)
+            {
+                try
+                {
+                    try
+                    {
+                        h = unchecked(h * 31 + i);
+                        arr[i % 5] = h ^ i;
+                        if (i % 4 == 1) { Simulator.Sleep(1); YbcSlept++; }
+                        h = unchecked(h + arr[(i * 3) % 7]);
+                        h = unchecked(h + YbcCallee(i));
+                        if (i % 9 == 8) { string s = null; h += s.Length; }
+                        if (i % 13 == 12) throw new ArgumentException("thrown");
+                        try
+                        {
+                            h = unchecked(h * 3 + arr[i % 5]);
+                            if (i % 6 == 4) continue;
+                            if (i == n - 2) break;
+                        }
+                        finally { h = unchecked(h ^ 0x5A5A); YbcFinally++; }
+                        h = unchecked(h + 11);
+                    }
+                    catch (IndexOutOfRangeException) { h = unchecked(h * 7 + 1); YbcThrown++; if (i % 2 == 0) { Simulator.Sleep(1); YbcSlept++; } }
+                    catch (InvalidOperationException e) { h = unchecked(h * 13 + e.Message.Length); YbcThrown++; }
+                    catch (NullReferenceException) { h = unchecked(h * 17 + 2); YbcThrown++; }
+                    finally { h = unchecked(h * 5 + 4); YbcFinally++; }
+                }
+                catch (ArgumentException e) { h = unchecked(h * 37 + e.Message.Length); YbcThrown++; }
+            }
+            try
+            {
+                try { Simulator.Sleep(1); YbcSlept++; h = unchecked(h + arr[9]); }
+                finally { h = unchecked(h + 7); YbcFinally++; }
+            }
+            catch (IndexOutOfRangeException) { h = unchecked(h * 23 + 5); YbcThrown++; }
+            try
+            {
+                try { h++; }
+                finally { YbcFinally++; Simulator.Sleep(1); h = unchecked(h + 1000000); }
+            }
+            catch (Exception e) { h = unchecked(h * 29 + e.GetType().Name.Length); YbcThrown++; }
+            return h;
+        }
+        public static int JitYbClause(int n) { YbcThrown = YbcFinally = YbcSlept = 0; return JitYbClauseBody(n); }
+        public static int JitYbClauseStat(int k) { return k == 0 ? YbcThrown : k == 1 ? YbcFinally : YbcSlept; }
         // ---- docs/139: interpreter workload for the mint dispatch A/B. The game's own mscorlib does the work
         // (List/Dictionary generics, struct and interface enumerators, boxed Enum.Equals, GetType), the shapes add
         // monomorphic and two-type callvirt sites. The result is a checksum: every dispatch variant must return the same.

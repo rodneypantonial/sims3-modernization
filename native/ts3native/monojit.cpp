@@ -113,11 +113,28 @@ static bool g_jitYb, g_jitYbNow;     // the switch; JitOne -> JitCompile: the me
 static bool g_jitYbRun = true;       // the run-time arm (counter jitYbOn, --ab yieldbodies): false = the yield bodies run on EA's words
 static const JitRow* g_jitYbRowP = kJitYbRows;
 static int g_jitYbRowCnt = kJitYbRowN;
+// docs/537 §35, default 0 (needs YieldBodies=1): [MonoJit] YieldBodiesClauses=1 adds kJitYbcRows (tools/jit-hot.ts YBC_ADMIT), the
+// yield bodies WITH exception clauses (SimUpdate.Simulate, Motive.UpdateMotiveBuffs, Lot.UpdateReactions). EA's clause search
+// (0xE540C4) and finally walk (0xE54198) read only the frame's ip (inv+0x1C), which every EA handler that can throw, call or leave
+// writes itself from edi / [ebp-4], the two an exit sets [verified, docs/537 §35.1]. Rules here on top of §34's region code:
+// - handler positions (catch and finally bodies) are not compiled: their words stay EA's, the interpreter runs them (JitYbClauseMap);
+// - a native run never crosses a clause boundary: at a try start / range end the run ends, ip is stored and the dispatcher
+//   re-enters at that word (EmitYbSplit), so the last ip compiled code stored is always in the region it is running in;
+// - leave, endfinally, throw, rethrow and every faulting path are exits, as in every compiled body.
+static bool g_jitYbc;
+static JitRow g_jitYbAll[64];        // the table in force: kJitYbRows, then kJitYbcRows with the sub-switch
+static void JitYbRowsSet() {
+    int n = 0;
+    for (int i = 0; i < kJitYbRowN && n < 64; i++) g_jitYbAll[n++] = kJitYbRows[i];
+    for (int i = 0; g_jitYbc && i < kJitYbcRowN && n < 64; i++) g_jitYbAll[n++] = kJitYbcRows[i];
+    g_jitYbRowP = g_jitYbAll, g_jitYbRowCnt = n;
+}
 // ts3fixes' body swaps (Fixes.SwapMethod keeps each method's own name) move EA's body of a Y key into the hook's stub, on the key's
 // class: with motivemultonce (docs/589 B11 §2, default on) EA's UpdateMotiveWithDecay runs as Motive.DecayOrig and the key name never
 // transforms (hotres2 BP 1117: no Motive line, jitHotKB 1800 to the end). The IL hash still has to be EA's.
 // §34: the same for the yield-body keys ts3fixes swaps (WakePark, LoopSkip632) [inferred from Fixes.SwapMethod, as DecayOrig was]
-static const char* const kJitYAlias[][2] = {{"Motive.UpdateMotiveWithDecay", "Motive.DecayOrig"}, {"Sim.DoInteraction", "Sim.DoOrig"}, {"Sim.WaitForExitReason", "Sim.WaitOrig"}};
+static const char* const kJitYAlias[][2] = {{"Motive.UpdateMotiveWithDecay", "Motive.DecayOrig"}, {"Sim.DoInteraction", "Sim.DoOrig"}, {"Sim.WaitForExitReason", "Sim.WaitOrig"},
+                                             {"Lot.UpdateReactions", "Lot.ReactOrig"}};  // §35: WakePark swaps it too [inferred, as the others]
 static bool JitYEnds(const char* full, const char* key) {  // full is the Y key, or its swap stub's name on the same class
     if (JitEndsWith(full, key)) return true;
     for (const auto& a : kJitYAlias) if (!strcmp(a[0], key) && JitEndsWith(full, a[1])) return true;
@@ -131,6 +148,8 @@ static bool JitYEnds(const char* full, const char* key) {  // full is the Y key,
 static const int JIT_HOT_POS = 1792, JIT_HOT_WORDS = 4096;  // Motive.UpdateMotiveWithDecay: 1686 positions, 3931 mint words (monohost dump), + ~6%
 // §34: all yield-body keys together (5 keys, 819 IL instructions, docs/data/jit-yield-runs.csv; mint positions are of that order) + 25%
 static const int JIT_YB_POS = 1024, JIT_YB_WORDS = 4096;
+// §35: the three clause keys (1194 IL instructions) + 25%
+static const int JIT_YBC_POS = 1536, JIT_YBC_WORDS = 6144;
 static int g_jitHotPos;              // positions held with the reserve
 static const char* JitYbKey(const char* full) {  // the yield-body row key this method name ends in (YieldBodies=1), else NULL
     for (int i = 0; g_jitYb && i < g_jitYbRowCnt; i++) if (JitYEnds(full, g_jitYbRowP[i].key)) return g_jitYbRowP[i].key;
@@ -139,7 +158,7 @@ static const char* JitYbKey(const char* full) {  // the yield-body row key this 
 static size_t g_jitHotBytes;         // the code reserve while any Y key is pending (0: off or released)
 static int g_jitHotPend;             // Y keys not settled yet
 static bool g_jitHotNow;             // JitOne -> JitCompile: the method being compiled is a Y row (it may use the reserve)
-static const char* g_jitHotSettled[8];
+static const char* g_jitHotSettled[16];
 static const char* JitHotKey(const char* full) {  // the Y row key this method name ends in, else NULL
     for (int i = 0; i < g_jitYRowCnt; i++) if (JitYEnds(full, g_jitYRowP[i].key)) return g_jitYRowP[i].key;
     return JitYbKey(full);
@@ -430,7 +449,7 @@ static LONG g_jitRefSave = -1, g_jitRefLogged;  // JitTick: saveCount and jitRef
 struct JitMeth { u8* rm; unsigned short* code; int words; int pos0, posN; char name[96]; int nativeOps, exitOps, bytes; u8* native0; bool verifyOk, dead, yld, yb; DWORD tick; };  // docs/537 §34: yb = a yield-body row; yld = that, or a body holding a yield opcode: never run twice
 struct JitFix { u8* rel; int targetW; bool abs; };  // abs: a switch table slot takes the label itself
 // posReal: an EA instruction start (dispatch can land there), not a superop's inner position
-struct JitScratch { int posW[JIT_MAX_POS + 64]; unsigned short posOp[JIT_MAX_POS + 64]; bool posReal[JIT_MAX_POS + 64], posCold[JIT_MAX_POS + 64], posProt[JIT_MAX_POS + 64]; u8* label[JIT_MAX_POS + 64]; JitFix fix[JIT_MAX_POS + 64]; int wordToPos[JIT_MAX_WORDS]; };
+struct JitScratch { int posW[JIT_MAX_POS + 64]; unsigned short posOp[JIT_MAX_POS + 64]; bool posReal[JIT_MAX_POS + 64], posCold[JIT_MAX_POS + 64], posProt[JIT_MAX_POS + 64], posHnd[JIT_MAX_POS + 64], posSplit[JIT_MAX_POS + 64]; u8* label[JIT_MAX_POS + 64]; u8* entry[JIT_MAX_POS + 64]; JitFix fix[JIT_MAX_POS + 64]; int wordToPos[JIT_MAX_WORDS]; };
 static JitEnt* g_jitTab;                 // JIT_TAB_N entries + a 4096-entry overflow tail (no wrap in the probe loop)
 static JitMeth* g_jitMeth;
 static int g_jitMethN;
@@ -746,6 +765,16 @@ static void EmitExit(Em& e, const unsigned short* ip, DWORD op, bool ret) {
     e.movRI(EAX, op);
     e.rr(0x8B, EAX, EDX);                    // mov edx, eax (rr: r/m operand first, reg operand second)
     e.b(0xFF); e.b(0x25); e.d((DWORD)(uintptr_t)(g_jitTableP + op));  // jmp dword ptr [table + op*4]: the live entry (Satb's stub in a span)
+}
+// docs/537 §35: the end of a native run at a clause boundary. ip is stored as an exit stores it and the dispatch goes through the
+// live JIT_OP entry (JitEnter), which starts the next run at this word's own entry (behind this stub)
+static void EmitYbSplit(Em& e, const unsigned short* ip) {
+    e.incAbs(&ts3native_counters.jitYbcSplitRuns);
+    e.b(0xBF); e.d((DWORD)(uintptr_t)ip);    // mov edi, ip
+    e.op(0x89, EDI, EBP, -4);                // mov [ebp-4], edi
+    e.movRI(EAX, JIT_OP);
+    e.rr(0x8B, EAX, EDX);                    // mov edx, eax
+    e.b(0xFF); e.b(0x25); e.d((DWORD)(uintptr_t)(g_jitTableP + JIT_OP));
 }
 // the value-type moves' pieces: the vt cursor ([ebp-0xC], or the block's B_VT in a lazy body), a memcpy through EA's CRT thunk
 // (cdecl: eax, ecx, edx go). The block reads happen with esp at the body's entry value, so the opEsp offsets hold.
@@ -1323,6 +1352,31 @@ static bool JitClauseMark(const u8* rm, int n, const int* posW, int words, bool*
     }
     return true;
 }
+// docs/537 §35: a clause yield body's map. hnd = the position is inside a handler range (stays EA's); split = a clause range starts
+// or ends at the position (a native run ends there). NULL = ok, else why the body stays interpreted. Clause table as JitClauseMark
+// reads it; the handler length at +0x10 is [verified]: EA's leave tests ip against [clause+0xC] .. +[clause+0x10] (0xE59367-0xE59386).
+static const char* JitYbClauseMap(const u8* rm, int n, const int* posW, const bool* posReal, int words, bool* hnd, bool* split) {
+    for (int k = 0; k < n; k++) hnd[k] = split[k] = false;
+    const DWORD* cl = *(const DWORD* const*)(rm + 0x18);
+    if (!cl) return "a yield body without its clause table";
+    for (int i = 0; i < rm[0x41]; i++, cl += 6) {
+        if (cl[0] != 0 && cl[0] != 2) return "a yield body clause that is not a catch or a finally";
+        for (int r = 1; r <= 3; r += 2) {
+            if (cl[r] > (DWORD)words || cl[r + 1] > (DWORD)words - cl[r]) return "a yield body clause range past the code";
+            const DWORD lo = cl[r], hi = cl[r] + cl[r + 1];
+            bool atLo = false, atHi = hi == (DWORD)words;
+            for (int k = 0; k < n; k++) {
+                const DWORD w = (DWORD)posW[k];
+                if (r == 3 && w >= lo && w < hi) hnd[k] = true;
+                if (w != lo && w != hi) continue;
+                if (!posReal[k]) return "a clause boundary inside a superop";
+                split[k] = true, atLo |= w == lo, atHi |= w == hi;
+            }
+            if (!atLo || !atHi) return "a clause boundary that is not an instruction start";
+        }
+    }
+    return NULL;
+}
 // before a listed method is compiled: EA's transform for its listed direct callees that are not transformed yet (a lazy
 // site bakes in the callee's frame sizes, and a callee compiled first has its lazy body when the caller is emitted). Only
 // listed callees: nothing else gets a lazy body. Transform builds code only; a failure returns its exception and is left
@@ -1388,9 +1442,10 @@ static const char* JitCompile(u8* rm) {
     const bool hotHold = JitHotHold();  // docs/537 §32: a general body leaves the Y rows' room alone (until the deadline)
     if (hotHold && g_jitMethN >= g_jitMethCap - g_jitHotPend) return JitHotHeld("method table full (HotReserve)");
     if (g_jcn) g_jcn->meth = g_jitMethN;  // count mode: the index this method gets if it compiles
-    if (rm[0x41] && !g_jitWide) return "exception clauses";
     const bool yb = g_jitYbNow;  // docs/537 §34: region code only
-    if (yb && rm[0x41]) return "a yield body with exception clauses";
+    const bool ybc = yb && rm[0x41] && g_jitYbc;  // docs/537 §35: a clause yield body (no Wide needed: no S5 template is asked for)
+    if (rm[0x41] && !g_jitWide && !ybc) return "exception clauses";
+    if (yb && rm[0x41] && !ybc) return "a yield body with exception clauses";
     g_jitFrTestNow = false;
     if (g_jitFrTestN > 0 && !g_jitFrTestRm) { char nm[96]; g_jitFrTestNow = JitEndsWith(JitMethodName(rm, nm, sizeof(nm)), g_jitFrTestName); }
     unsigned short* code = *(unsigned short**)rm;
@@ -1424,6 +1479,10 @@ static const char* JitCompile(u8* rm) {
             posW[n] = i, posOp[n] = (unsigned short)op, posReal[n++] = true;
         i += len;
     }
+    bool* const posHnd = g_js->posHnd;
+    bool* const posSplit = g_js->posSplit;
+    int ybcHnd = 0, ybcSplit = 0;
+    if (ybc) if (const char* no = JitYbClauseMap(rm, n, posW, posReal, words, posHnd, posSplit)) return ts3native_counters.jitYbcRefused++, no;
     // 2. emit. With lazy frames, a method whose every position is native, ret / ret.void or a call this compiler makes lazily
     // (a target with no lazy body at run time means JitLazyMat, then EA's call; DirectLeaf: no call at all) first gets its
     // lazy body, then the normal one; label[] and fix[] end as the normal body's. A leaf or chain body with exit-free templates
@@ -1460,6 +1519,7 @@ static const char* JitCompile(u8* rm) {
     u8* const start = g_jitCode + g_jitCodeUsed;
     JitProt(start, need, PAGE_READWRITE);  // from the end of the last method on: no finished code lives here (its last page flips below)
     u8** const label = g_js->label;
+    u8** const entry = g_js->entry;  // JitEnter's address of a position: label[k], or behind the §35 split stub
     JitFix* const fix = g_js->fix;
     int* const wordToPos = g_js->wordToPos;
     for (int k = 0; k < words; k++) wordToPos[k] = -1;
@@ -1482,6 +1542,8 @@ static const char* JitCompile(u8* rm) {
     }
     for (int k = 0; k < n; k++) {
         label[k] = e.p;
+        if (ybc && posSplit[k] && !posHnd[k]) EmitYbSplit(e, code + posW[k]), ybcSplit++;  // §35: native arrivals end their run here
+        entry[k] = e.p;
         if (g_jcn) {  // count mode: positions run; entering the normal body at word 0 is a call
             // shortcut: a branch back to word 0 counts as a call too (rare: M.verifyOk names those methods), fine for a census
             if (!k && !g_jitLazyPass) e.incAbs(&g_jcn->calls[g_jitMethN]);
@@ -1498,6 +1560,8 @@ static const char* JitCompile(u8* rm) {
         DWORD op = posOp[k];
         JitOpInfo t = op < 0x1C1 ? g_opInfo[op] : JitOpInfo{K_EXIT, 0, 0};
         if (g_jitLazyPass && posProt[k]) { EmitExit(e, ip, op, false); ex++; continue; }  // ClauseLazy: EA runs the region on its frame
+        // §35: a handler position has no entry and keeps EA's word; a native arrival (not legal IL) hands the word to EA's handler
+        if (ybc && posHnd[k]) { EmitExit(e, ip, op, false); ex++, ybcHnd++; continue; }
         int w = t.width, o16 = (short)ip[1];
         unsigned u16 = ip[1];
         u8* exitRel[3] = {NULL, NULL, NULL};
@@ -1915,9 +1979,10 @@ static const char* JitCompile(u8* rm) {
     for (int k = 0; k < n; k++) M.yld |= posOp[k] >= 0x1A6 && posOp[k] <= 0x1A8;
     M.verifyOk = !rm[0x41] && !branch0 && !M.yld;
     for (int k = 0; k < n; k++) {
+        if (ybc && posHnd[k]) continue;  // §35: never patched, never entered: EA interprets the handler bodies
         JitEnt* en = JitAdd((DWORD)(uintptr_t)(code + posW[k]));
         if (!en) return "ip table full";
-        en->native = label[k], en->orig = code[posW[k]], en->m = &M;
+        en->native = entry[k], en->orig = code[posW[k]], en->m = &M;
         g_jitPos[g_jitPosN] = (unsigned short)posW[k];
         g_jitOrigW[g_jitPosN++] = code[posW[k]];
     }
@@ -1945,6 +2010,10 @@ static const char* JitCompile(u8* rm) {
     }
     // docs/537 §32: a YRows body's line is outside the 256-line cap (it compiles after ~4k others; the M2 queues require it)
     if (yb) ts3native_counters.jitYbMeth++;
+    if (ybc) {
+        ts3native_counters.jitYbcMeth++, ts3native_counters.jitYbcHnd += ybcHnd, ts3native_counters.jitYbcSplits += ybcSplit;
+        Log("jit: clause yield body %s (docs/537 §35): %d clauses, %d of %d positions in handlers stay EA's, %d split sites", M.name, rm[0x41], ybcHnd, n, ybcSplit);
+    }
     if (g_jitLogN++ < 256 || ((g_jitYRows || yb) && JitHotKey(M.name))) Log("jit: compiled %s: %d positions, %d native, %d exits, %d bytes%s%s%s%s", M.name, n, nat, ex, bytes, lazyEntry ? ", lazy body" : "", M.verifyOk || M.yld ? "" : ", not verified (branch to word 0)", pure ? ", pure icalls" : "", yb ? ", yield body (not verified)" : "");
     return NULL;
 }
@@ -2973,7 +3042,7 @@ static const char* JitOne(BYTE* rm, void* ctx, char* name, int nameN, char* note
     if (g_jitSimTid && GetCurrentThreadId() != g_jitSimTid) return "another thread";
     if (*g_jitForceJit != 0x75) return "MonoPatcher ForceJIT is on";
     for (int i = 0; i < g_jitMethN; i++) if (g_jitMeth[i].rm == rm) return NULL;  // a repeat transform: compiled once
-    if (rm[0x41] && !g_jitWide) return "exception clauses";  // before the hash and the callees: nothing here for a lazy site either
+    if (rm[0x41] && !g_jitWide && !(g_jitYbc && JitYbKey(name))) return "exception clauses";  // before the hash and the callees: nothing here for a lazy site either
     // PR #334 (#295 594a2df), docs/223 §1: EA bound a native body in this transform (0xE645FF, before our post-pass); its calls
     // take that body, not mint, so compiled code (and a lazy cell, set only by JitCompile) would run the wrong one
     if (*(const DWORD*)(rm + 0x24)) return "an EA native body (+0x24)";
@@ -3025,8 +3094,8 @@ static void JitRefSummary(const char* when) {
 static void JitHotSettle(const char* name, const char* why) {
     const char* key = JitHotKey(name);
     if (!key || (why && !strcmp(why, "another thread"))) return;
-    for (int i = 0; i < 8; i++) if (g_jitHotSettled[i] && !strcmp(g_jitHotSettled[i], key)) return;
-    for (int i = 0; i < 8; i++) if (!g_jitHotSettled[i]) { g_jitHotSettled[i] = key; break; }
+    for (int i = 0; i < 16; i++) if (g_jitHotSettled[i] && !strcmp(g_jitHotSettled[i], key)) return;
+    for (int i = 0; i < 16; i++) if (!g_jitHotSettled[i]) { g_jitHotSettled[i] = key; break; }
     if (--g_jitHotPend > 0) return;
     Log("jit: HotReserve released (%s %s%s) at code region %lu of %ld KB, %d methods; general compiles held back: %ld", name, why ? "refused: " : "compiled",
         why ? why : "", (unsigned long)(g_jitCodeUsed >> 10), ts3native_counters.jitRegionKB, g_jitMethN, ts3native_counters.jitHotHeld);
@@ -3049,11 +3118,12 @@ static void JitHotInit(const wchar_t* ini) {
         for (int j = 0; j < i; j++) dup |= !strcmp(g_jitYbRowP[i].key, g_jitYbRowP[j].key);
         g_jitHotPend += !dup;
     }
-    if (g_jitHotPend > 8) g_jitHotPend = 8;  // g_jitHotSettled's size; kJitYRows has one key, kJitYbRows five
+    if (g_jitHotPend > 16) g_jitHotPend = 16;  // g_jitHotSettled's size; kJitYRows has one key, kJitYbRows five, kJitYbcRows three
     if (!g_jitHotPend) return;
     const size_t per = (g_jitLazy ? 768 : 256) + (g_jcn ? 256 : 0);  // JitCompile's bound per position
     if (yKeys) g_jitHotBytes = per * JIT_HOT_POS + 2 * JIT_HOT_WORDS + 512, g_jitHotPos = JIT_HOT_POS;
-    if (g_jitHotPend > yKeys) g_jitHotBytes += per * JIT_YB_POS + 2 * JIT_YB_WORDS + 512 * (g_jitHotPend - yKeys), g_jitHotPos += JIT_YB_POS;
+    const int ybPos = JIT_YB_POS + (g_jitYbc ? JIT_YBC_POS : 0), ybWords = JIT_YB_WORDS + (g_jitYbc ? JIT_YBC_WORDS : 0);  // §35: the clause keys' room too
+    if (g_jitHotPend > yKeys) g_jitHotBytes += per * ybPos + 2 * ybWords + 512 * (g_jitHotPend - yKeys), g_jitHotPos += ybPos;
     if (g_jitHotBytes > g_jitCodeBytes / 2) g_jitHotBytes = g_jitCodeBytes / 2;
     ts3native_counters.jitHotKB = (LONG)(g_jitHotBytes >> 10);
     Log("OK   mono jit hot reserve (docs/537 §32): HotReserve=1, %lu KB of the %lu KB region, %d method slots, %d positions held for %d %s keys until they compile",
@@ -3301,7 +3371,10 @@ static bool ApplyMonoJit(const wchar_t* ini) {
     g_jitClauseLazy = GetPrivateProfileIntW(L"MonoJit", L"ClauseLazy", 0, ini) != 0;  // handoff C5, guards docs/537 §24
     g_jitYRows = GetPrivateProfileIntW(L"MonoJit", L"YRows", 0, ini) != 0;  // docs/537 §31 M2
     g_jitYb = GetPrivateProfileIntW(L"MonoJit", L"YieldBodies", 0, ini) != 0;  // docs/537 §34 J9
+    g_jitYbc = g_jitYb && GetPrivateProfileIntW(L"MonoJit", L"YieldBodiesClauses", 0, ini) != 0;  // docs/537 §35
+    JitYbRowsSet();
     C.jitYbOn = g_jitYb ? 1 : 0, C.jitYbRows = g_jitYb ? g_jitYbRowCnt : 0, g_jitYbRun = true;
+    C.jitYbcOn = g_jitYbc ? 1 : 0, C.jitYbcRows = g_jitYbc ? kJitYbcRowN : 0;
     C.clOn = g_jitClauseLazy ? 1 : 0;
     C.jitDirect = g_jitLazy ? (g_jitLeafOnly ? 1 : 2) : 0;
     if (g_jitLazy && GetPrivateProfileIntW(L"MonoJit", L"Trap", 0, ini)) {
@@ -3321,7 +3394,8 @@ static bool ApplyMonoJit(const wchar_t* ini) {
     g_ilpPost = JitPostPass;
     Log("OK   mono jit (docs/527): Mode=%d, %d templates (Groups=%d), %d list rows%s, VerifyEvery=%lu, code region %lu KB (CodeKB), %d methods (MaxMethods), Direct=%ld (docs/537), Trap=%d, VtOps=%d, CallExit=%d, NewVt=%d, Count=%d, FastCopy=%d, Ldsflda=%d, BoundCall=0x%lX, ClauseLazy=%d, RetTeardown=%d, FaultRecover=%d, YRows=%d", mode, templates, g_jitGroups, g_jitRowN, g_jitUserN ? " narrowed by List=" : "", g_jitEvery, (unsigned long)(g_jitCodeBytes >> 10), g_jitMethCap, C.jitDirect, g_jitTrap ? 1 : 0, g_jitVtOps ? 1 : 0, g_jitCallExit ? 1 : 0, g_jitNewVt ? 1 : 0, g_jcn ? 1 : 0, g_jitFastCopy ? 1 : 0, g_jitLdsflda ? 1 : 0, (unsigned long)C.bcOn, g_jitClauseLazy ? 1 : 0, g_jitRtOn ? 1 : 0, g_jitFrOn ? 1 : 0, g_jitYRows ? g_jitYRowCnt : 0);
     // its own line: the OK line above stays as it is (queues read its end)
-    if (g_jitYb) Log("OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, %d rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified", g_jitYbRowCnt);
+    if (g_jitYb && !g_jitYbc) Log("OK   mono jit yield bodies (docs/537 §34): YieldBodies=1, %d rows; region code only (calls, rets and yield opcodes exit to EA), no clause bodies, never verified", g_jitYbRowCnt);
+    if (g_jitYbc) Log("OK   mono jit yield bodies (docs/537 §34, §35): YieldBodies=1, %d rows; region code only (calls, rets and yield opcodes exit to EA), YieldBodiesClauses=1 (%d clause rows: handler bodies stay EA's, runs end at clause boundaries), never verified", g_jitYbRowCnt, kJitYbcRowN);
     if (g_jt) Log("OK   mono jit time (docs/handoff/jit-paired-timing.md): Time=1, VerifyEvery=%lu, Count=%d, %d rows, report every 10 min, after saves and at exit", g_jitEvery, g_jcn ? 1 : 0, g_jtCap);  // a separate line: the OK line above stays as it is
     return true;
 }
