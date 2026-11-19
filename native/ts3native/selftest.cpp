@@ -12835,6 +12835,9 @@ static void TestP5() {
 #include "autraces-test.h"  // TestAutRacesR2c ([AutShadow] Races bit 2 R2c drain, docs/data/races-handoff.md; release backport without R1b / R2b)
 #include "threadstack-test.h"  // TestThreadStack ([ThreadStack], docs/66 §6)
 #include "userdiag-test.h"  // TestUserDiag ([UserDiag], docs/188)
+#include "pccheck-test.h"  // TestPcCheck ([PcCheck], docs/299)
+#include "modtime-test.h"  // TestModTime ([Diag] ModTime, docs/298)
+#include "framediag-test.h"  // TestFrameDiag ([FrameDiag], docs/300)
 #include "played-test.h"    // TestPlayed (played.cpp, docs/14 section 8.6)
 #include "memdiag-test.h"   // TestMemDiag ([MemDiag], docs/190 phase 1, docs/191)
 #include "memexp-test.h"    // TestMemExp ([MemDiag] TypeGrowth, [GC] SqrtHeapLimit, docs/199)
@@ -14272,6 +14275,9 @@ int main() {
     TestThreadStack();
     TestCrashReport();
     TestUserDiag();
+    TestPcCheck();
+    TestModTime();
+    TestFrameDiag();
     TestPlayed();
     TestMemDiag();
     TestMemExp();
