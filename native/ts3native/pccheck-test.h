@@ -50,4 +50,30 @@ static void TestPcCheck() {
     bool big = false, tiny = false, p0 = false;
     for (int i = 0; i < 64; i++) big |= !strcmp(full.top[i].name, "big"), tiny |= !strcmp(full.top[i].name, "tiny"), p0 |= !strcmp(full.top[i].name, "p0");
     assert(big && !tiny && !p0);
+
+    // PDH performance %: Windows 11 laptop, boost 150% most of the time, two thermal samples at 95%
+    {
+        static LONG hist[kPcPerfBins];
+        memset(hist, 0, sizeof(hist));
+        assert(PcPerfMax(hist, kPcPerfBins) == 0 && PcPerfSlow(hist, kPcPerfBins, 0, 0.85) == 0);
+        hist[150] = 8, hist[95] = 2;
+        assert(PcPerfMax(hist, kPcPerfBins) == 150 && PcPerfMin(hist, kPcPerfBins) == 95);
+        assert(PcPerfSlow(hist, kPcPerfBins, 150, 0.85) == 2);  // 95 < 127.5
+        hist[130] = 5;
+        assert(PcPerfSlow(hist, kPcPerfBins, 150, 0.85) == 2);  // 130 is not slow
+        hist[127] = 1;
+        assert(PcPerfSlow(hist, kPcPerfBins, 150, 0.85) == 3);
+        memset(hist, 0, sizeof(hist));
+        hist[100] = 12;  // flat (no boost, no drop): nothing slow
+        assert(PcPerfSlow(hist, kPcPerfBins, PcPerfMax(hist, kPcPerfBins), 0.85) == 0);
+        // the verdict on those numbers: 3 of 16 busy = 18% -> no throttle; 4 of 16 = 25% -> throttle
+        PcFacts pf = {};
+        pf.logical = 16, pf.physical = 8, pf.affinityCpus = 16, pf.busySamples = 16, pf.slowSamples = 3, pf.maxMhz = 3456, pf.meanCurMhz = 3300, pf.minLimitMhz = 2189;
+        char pv[1024];
+        assert(!(PcVerdict(pf, pv, sizeof(pv)) & PC_THROTTLE) && strstr(pv, "no throttle seen (16 busy samples, 18% limited)"));
+        pf.slowSamples = 4;
+        assert((PcVerdict(pf, pv, sizeof(pv)) & PC_THROTTLE) && strstr(pv, "clock limited 25% of the time (limit 2189 MHz of 3456)"));
+        pf.slowSamples = 0, pf.limitSamples = 5;  // Performance Limit Flags set in 5 of 16
+        assert(PcVerdict(pf, pv, sizeof(pv)) & PC_THROTTLE);
+    }
 }

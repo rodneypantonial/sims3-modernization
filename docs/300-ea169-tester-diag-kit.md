@@ -12,7 +12,7 @@ Same code and ini as the published v0.2.12 EA files, plus three read-only sectio
 
 | Section | Source | What it measures | Writes into the game |
 |---|---|---|---|
-| `[PcCheck] Enabled` (code default changed to 0 here) | `pccheck.cpp` (docs/299, from `feature/modtime-diag-1120`) | CPU name / cores / RAM, power plan and overlay, AC or battery, affinity, priority, efficiency mode, per-core MHz vs limit every 10 s, other programs' CPU | nothing |
+| `[PcCheck] Enabled` (code default changed to 0 here) | `pccheck.cpp` (docs/299, from `feature/modtime-diag-1120`, plus the PDH fix of `feature/pccheck-1120` 9461fac2: clock from `% Processor Performance` x `Processor Frequency`, limits from `Performance Limit Flags`, PowerReadFriendlyName sized; Windows 11 reports CurrentMhz = base and MhzLimit 0) | CPU name / cores / RAM, power plan and overlay, AC or battery, affinity, priority, efficiency mode, effective clock and limit flags every 10 s, other programs' CPU | nothing |
 | `[Diag] ModTime` | `modtime.cpp` (docs/298) | sim-thread script time per mod (50 Hz stack sampler), hitch stacks | one simloop.cpp callback (code patch at the Simulate loop-back, existing site) |
 | `[FrameDiag] Enabled` (new) | `framediag.cpp` | fps, frame p50/p99, Present wait, main / sim thread CPU, sim iterations, main-thread module samples, file I/O, GPU selection; `fps-summary.txt` | Present timing wrapper (vtable), one simloop.cpp callback |
 
@@ -77,6 +77,9 @@ stop per 20 ms sample; not measured in game yet.
   goes through the kit's Mask.
 - `test-kit.ps1`: main fake game is an EA TS3.exe; new checks for the diag outputs, the Apex log and masking. 0 FAIL
   under Windows PowerShell 5.1.
+- Kit inis: the maintainer's first name in the shipped ini comments is replaced by "maintainer" (values unchanged), so the
+  normal payload ini is 6a99a849 (pinned in TS3Kit.ps1), not the published 164edf62. Kit folder `TS3Kit-ea169-diag-1120`.
+  Personal-info scan of every zip entry: no hits except the public repo URL (and the kit's fake mask fixtures).
 - README-diag.txt: install with D, play normally 15-20 min, quit, Diagnose, send the zip. No settings or mod changes.
 
 ## 5. Open

@@ -1,6 +1,6 @@
 # TS3 kit for testers: a read-only diagnostic (writes one zip report) and an optional installer / uninstaller for the
 # ts3native EA app 1.69 build that sits in ..\payload (kit 1120.e1: the published v0.2.12 EA files; payload\diag = the
-# read-only diagnostic build of test/ea169-eli-diag-1120).
+# read-only EA 1.69 diagnostic build, docs/300).
 # Why PowerShell and not Node like the rest of this repo: a player has no Node, and Windows PowerShell 5.1 ships with
 # every Windows 10/11. Windows only by nature (registry, The Sims 3 PC folders). No network, no upload, no AI.
 #   TS3Kit.bat                                   menu (1 diagnose, 2 launch and capture, 3 install, 4 uninstall, 5 quit)
@@ -38,10 +38,11 @@ $payload = Join-Path (Split-Path -Parent $here) 'payload'
 $CapBytes = 5MB          # copied text files above this are listed, not copied
 $HashCapBytes = 256MB    # Bin files above this are listed without a hash
 $Days = 14
-# The normal build of kit 1120.e1 = the published v0.2.12 EA app files (ts3native-ea169-v0.2.12.zip: asi 0.36.247, its ini;
-# ts3fixes.package rel0211b). payload\diag holds the diagnostic asi + ini (same package); its hashes are not pinned here.
+# The normal build of kit 1120.e1 = the published v0.2.12 EA app files (ts3native-ea169-v0.2.12.zip: asi 0.36.247, its ini
+# with personal names in comments replaced, values unchanged; ts3fixes.package rel0211b). payload\diag holds the diagnostic
+# asi + ini (same package); its hashes are not pinned here.
 $RcAsiSha = '3965e9a8ce87c68cb44b9a740c8c9aad0cda36ad8ecaa7b6420ea3e506f53aec'
-$RcIniSha = '164edf62c97cbe268315a5ef5a816826d380c88686bf10a0611f5c0062c27ba7'
+$RcIniSha = '6a99a84990548a698a94b07f49b7038e63f25c1ceec984896edbe75a34cf2e48'
 $RcPkgSha = '570f8845bb2dfc1e9dadc73dfb8ca0996daa5f1775a8f35ad6bd165630d9ae44'
 $RunNames = @($ProcNames) + @('Sims3Launcher', 'Sims3LauncherW')
 $Editions = @{ '52D872DA/E5B000' = 'retail 1.67'; '52DEC247/E5A000' = 'Steam 1.67'; '6707155C/EB5000' = 'EA app 1.69' }

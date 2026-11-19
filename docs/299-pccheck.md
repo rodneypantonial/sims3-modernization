@@ -26,6 +26,15 @@ docs/298 names it.
 Clock samples count only while TS3W uses at least half a core (an idle PC clocks down by design). Limited = some core's
 `MhzLimit < MaxMhz` (firmware / OS limit) or the fastest core under 90% of `MaxMhz` [inferred I-544-5].
 
+Clock source (0.36.276-modtime2): Windows 11 reports `CurrentMhz` = the base clock and `MhzLimit` 0 [verified: smoke
+2026-11-20, i7-11800H, 2304 / 0 in all 100 samples], so the clock comes from PDH when the counters answer (pdh.dll loaded at
+run time on the pccheck thread): `\Processor Information(_Total)\% Processor Performance` (effective clock in % of base,
+above 100 under boost, read with PDH_FMT_NOCAP100), `Processor Frequency` (base MHz) and `Performance Limit Flags`
+(non-zero = a firmware / OS limit). A busy sample is slow when its performance is below 85% of the session's best busy
+sample (`PcPerfSlow`, host fixtures); limited = Performance Limit Flags set. Without PDH the CallNtPowerInformation rule
+stays. Power plan name: `PowerReadFriendlyName` is now read with its own size (the stored name took 258 bytes for "High
+Performance" here, so the fixed buffer failed and printed "?"); stock schemes fall back to their GUID name, else the error.
+
 ## 3. Verdict (`PcVerdict`, pure, selftest fixtures)
 
 | Flag | Rule | Notice |

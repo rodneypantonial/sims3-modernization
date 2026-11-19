@@ -13,8 +13,12 @@
 // core < 90% of MaxMhz), power saver plan / best-efficiency overlay, battery, affinity < all cores, efficiency mode, low
 // priority class (these six are "problems": ts3fixes shows one notice per session when Notify=1), plus advice lines that are
 // not problems: other programs >= 25% CPU, few cores for the busy threads (our workers compete with the game).
-// Nothing here changes the game, a thread or a setting. [inferred]: CurrentMhz on some Intel systems stays at the base clock
-// (Windows reports the nominal value); MhzLimit is the firmware / OS limit and is the stronger signal (docs/51 I-544-5).
+// Nothing here changes the game, a thread or a setting. Windows 11 reports CurrentMhz = the base clock and MhzLimit 0
+// [verified: smoke 2026-11-20, i7-11800H: 2304 / 0 in all 100 samples], so the clock comes from PDH when it has the counters:
+// \Processor Information(_Total)\% Processor Performance (effective clock in % of base, > 100 = boost) x Processor Frequency
+// (base MHz) and Performance Limit Flags (non-zero = a firmware / OS limit is active). A busy sample is "slow" when its
+// performance is below 85% of the session's own highest busy sample (PcPerfSlow); without PDH the CallNtPowerInformation
+// rule stays (docs/51 I-544-5).
 #include <tlhelp32.h>
 
 enum { PC_THROTTLE = 1, PC_POWERSAVER = 2, PC_BATTERY = 4, PC_AFFINITY = 8, PC_EFFICIENCY = 16, PC_PRIORITY = 32,  // problems (notice)
@@ -86,6 +90,23 @@ static const char* PcHint(int fl) {
     return NULL;
 }
 
+// busy samples whose performance % is below frac x maxPct (the session's highest); hist = counts per whole %
+static LONG PcPerfSlow(const LONG* hist, int bins, int maxPct, double frac) {
+    LONG n = 0;
+    const double lim = maxPct * frac;
+    for (int i = 0; i < bins && i < lim; i++) n += hist[i];
+    return n;
+}
+// the highest bin with a count (0 = none)
+static int PcPerfMax(const LONG* hist, int bins) {
+    for (int i = bins - 1; i > 0; i--) if (hist[i]) return i;
+    return 0;
+}
+static int PcPerfMin(const LONG* hist, int bins) {
+    for (int i = 0; i < bins; i++) if (hist[i]) return i;
+    return 0;
+}
+
 // ---- live part ----
 static LONG g_pcOn, g_pcNotify = 1;
 static int g_pcFlags;  // PC_* problems of the session so far (op 62)
@@ -99,9 +120,12 @@ static PcFacts g_pcBase;           // static part of the facts
 static LONG g_pcSysMax;            // highest MaxMhz of any core
 
 struct PcProc { char name[40]; double ms; };
+enum { kPcPerfBins = 400 };  // % Processor Performance 0..399 (higher values land in the last bin)
 struct PcAcc {
     LONG samples, busy, slow, limited, minLimit, curN;
     double curSum, otherPct, ownPct, simPct, busyThr, wallS;
+    LONG perfN, perfFlagged, perfHist[kPcPerfBins];  // busy samples with a PDH reading; of those: Performance Limit Flags != 0
+    double perfSum;
     PcProc top[64];
     int topN;
 };
@@ -148,6 +172,43 @@ typedef BOOL(WINAPI* PcGetProcInfo)(HANDLE, int, LPVOID, DWORD);
 static PcCallNtPower g_pcPower;
 struct PcCore { ULONG number, maxMhz, curMhz, limitMhz, maxIdle, curIdle; };  // PROCESSOR_POWER_INFORMATION
 
+// PDH (pdh.dll, loaded at run time): % Processor Performance, Processor Frequency, Performance Limit Flags of _Total
+struct PcPdhVal { DWORD status, pad; double v; };  // PDH_FMT_COUNTERVALUE with PDH_FMT_DOUBLE (x86 layout)
+typedef LONG(WINAPI* PcPdhOpen)(LPCWSTR, DWORD_PTR, HANDLE*);
+typedef LONG(WINAPI* PcPdhAdd)(HANDLE, LPCWSTR, DWORD_PTR, HANDLE*);
+typedef LONG(WINAPI* PcPdhCollect)(HANDLE);
+typedef LONG(WINAPI* PcPdhGet)(HANDLE, DWORD, LPDWORD, PcPdhVal*);
+static PcPdhCollect g_pcPdhCollect;
+static PcPdhGet g_pcPdhGet;
+static HANDLE g_pcPdhQ, g_pcPdhPerf, g_pcPdhFreq, g_pcPdhFlags;
+static bool g_pcPdhOk;  // the performance counter answered at least once
+static void PcPdhInit() {
+    HMODULE m = LoadLibraryW(L"pdh.dll");
+    if (!m) return;
+    PcPdhOpen op = (PcPdhOpen)(void*)GetProcAddress(m, "PdhOpenQueryW");
+    PcPdhAdd add = (PcPdhAdd)(void*)GetProcAddress(m, "PdhAddEnglishCounterW");
+    g_pcPdhCollect = (PcPdhCollect)(void*)GetProcAddress(m, "PdhCollectQueryData");
+    g_pcPdhGet = (PcPdhGet)(void*)GetProcAddress(m, "PdhGetFormattedCounterValue");
+    if (!op || !add || !g_pcPdhCollect || !g_pcPdhGet || op(NULL, 0, &g_pcPdhQ) != 0) { g_pcPdhQ = NULL; return; }
+    if (add(g_pcPdhQ, L"\\Processor Information(_Total)\\% Processor Performance", 0, &g_pcPdhPerf) != 0) g_pcPdhPerf = NULL;
+    if (add(g_pcPdhQ, L"\\Processor Information(_Total)\\Processor Frequency", 0, &g_pcPdhFreq) != 0) g_pcPdhFreq = NULL;
+    if (add(g_pcPdhQ, L"\\Processor Information(_Total)\\Performance Limit Flags", 0, &g_pcPdhFlags) != 0) g_pcPdhFlags = NULL;
+    g_pcPdhCollect(g_pcPdhQ);  // rate counters need a first collect
+}
+// false = no reading this time
+static bool PcPdhRead(double* perf, double* baseMhz, double* flags) {
+    if (!g_pcPdhQ || !g_pcPdhPerf || g_pcPdhCollect(g_pcPdhQ) != 0) return false;
+    PcPdhVal v = {};
+    const DWORD fmt = 0x200 | 0x8000;  // PDH_FMT_DOUBLE | PDH_FMT_NOCAP100 (performance goes above 100 under boost)
+    if (g_pcPdhGet(g_pcPdhPerf, fmt, NULL, &v) != 0 || v.status != 0 || v.v <= 0) return false;
+    *perf = v.v;
+    *baseMhz = g_pcPdhFreq && g_pcPdhGet(g_pcPdhFreq, fmt, NULL, &v) == 0 && v.status == 0 ? v.v : 0;
+    *flags = g_pcPdhFlags && g_pcPdhGet(g_pcPdhFlags, fmt, NULL, &v) == 0 && v.status == 0 ? v.v : 0;
+    g_pcPdhOk = true;
+    return true;
+}
+static LONG g_pcBaseMhz;  // Processor Frequency (base clock) from PDH, 0 = unknown
+
 static bool PcGuidIs(const GUID& g, DWORD d1, WORD d2, WORD d3) { return g.Data1 == d1 && g.Data2 == d2 && g.Data3 == d3; }
 
 static void PcStaticFacts() {
@@ -181,13 +242,25 @@ static void PcStaticFacts() {
     PcOverlay ov = pp ? (PcOverlay)(void*)GetProcAddress(pp, "PowerGetEffectiveOverlayScheme") : NULL;
     GUID* scheme = NULL;
     char plan[80] = "?";
-    if (gs && gs(NULL, &scheme) == 0 && scheme) {
-        wchar_t wn[64] = L"";
-        DWORD wsz = sizeof(wn);
-        if (rn && rn(NULL, scheme, NULL, NULL, (UCHAR*)wn, &wsz) == 0) WideCharToMultiByte(CP_UTF8, 0, wn, -1, plan, sizeof(plan), NULL, NULL);
+    DWORD planErr = 0;
+    if (gs && (planErr = gs(NULL, &scheme)) == 0 && scheme) {
+        // sized read: the stored name can be longer than the text (258 bytes for "High Performance" here [verified 2026-11-20])
+        DWORD wsz = 0;
+        planErr = rn ? rn(NULL, scheme, NULL, NULL, NULL, &wsz) : ERROR_PROC_NOT_FOUND;
+        wchar_t* wn = planErr == 0 && wsz ? (wchar_t*)calloc(wsz + 2, 1) : NULL;
+        if (wn) planErr = rn(NULL, scheme, NULL, NULL, (UCHAR*)wn, &wsz);
+        if (wn && planErr == 0 && wn[0]) WideCharToMultiByte(CP_UTF8, 0, wn, -1, plan, sizeof(plan), NULL, NULL);
+        free(wn);
+        if (plan[0] == '?') {  // the stock schemes by GUID; else the error code
+            const GUID& g = *scheme;
+            const char* known = PcGuidIs(g, 0x381b4222, 0xf694, 0x41f0) ? "Balanced" : PcGuidIs(g, 0x8c5e7fda, 0xe8bf, 0x4a96) ? "High performance"
+                              : PcGuidIs(g, 0xa1841308, 0x3541, 0x4fab) ? "Power saver" : PcGuidIs(g, 0xe9a42b02, 0xd5df, 0x448d) ? "Ultimate Performance" : NULL;
+            if (known) strcpy_s(plan, known);
+            else _snprintf_s(plan, _TRUNCATE, "? (scheme %08lX, error %lu)", g.Data1, planErr);
+        }
         if (PcGuidIs(*scheme, 0xa1841308, 0x3541, 0x4fab)) f.powerSaver = true;  // the Power saver scheme
         LocalFree(scheme);
-    }
+    } else _snprintf_s(plan, _TRUNCATE, "? (error %lu)", planErr);
     GUID o = {};
     const char* overlay = "none";
     if (ov && ov(&o) == 0) {
@@ -365,11 +438,19 @@ static void PcSample() {
             }
             slow = g_pcSysMax && fastest * 10 < g_pcSysMax * 9;
         }
+        double perf = 0, baseMhz = 0, lflags = 0;
+        const bool pdh = PcPdhRead(&perf, &baseMhz, &lflags);
+        if (pdh && baseMhz > 0) g_pcBaseMhz = (LONG)baseMhz;
         const bool busy = ownD * 2 >= (double)dt;  // TS3W used >= half a core: clocks of an idle PC are not a verdict
         PcAcc* acc[2] = {&g_pcWin, &g_pcAll};
         for (PcAcc* a : acc) {
             a->samples++, a->wallS += dt / 1e7, a->otherPct += otherPct, a->ownPct += ownPct, a->simPct += simPct, a->busyThr += busyThr;
             if (nc && sumCur) a->curSum += (double)sumCur / nc, a->curN++;
+            if (busy && pdh) {
+                const int bin = perf >= kPcPerfBins - 1 ? kPcPerfBins - 1 : (int)perf;
+                a->perfHist[bin]++, a->perfN++, a->perfSum += perf;
+                if (lflags != 0) a->perfFlagged++;
+            }
             if (busy) {
                 a->busy++;
                 if (slow) a->slow++;
@@ -386,6 +467,16 @@ static PcFacts PcFactsOf(const PcAcc& a) {
     PcFacts f = g_pcBase;
     f.busySamples = a.busy, f.slowSamples = a.slow, f.limitSamples = a.limited, f.minLimitMhz = a.minLimit, f.maxMhz = g_pcSysMax;
     f.meanCurMhz = a.curN ? (LONG)(a.curSum / a.curN) : 0;
+    if (a.perfN > 0) {  // PDH: effective clock = base x performance %; slow = below 85% of the session's best busy sample
+        const int best = PcPerfMax(g_pcAll.perfHist, kPcPerfBins);
+        const LONG base = g_pcBaseMhz ? g_pcBaseMhz : g_pcSysMax;
+        f.slowSamples = PcPerfSlow(a.perfHist, kPcPerfBins, best, 0.85);
+        f.limitSamples = a.perfFlagged;
+        f.maxMhz = base * best / 100;
+        f.meanCurMhz = (LONG)(base * a.perfSum / a.perfN / 100);
+        f.minLimitMhz = f.slowSamples || f.limitSamples ? base * PcPerfMin(a.perfHist, kPcPerfBins) / 100 : 0;
+        f.busySamples = a.perfN;
+    }
     f.otherCpuPct = a.samples ? a.otherPct / a.samples : 0;
     f.busyThreads = a.samples ? a.busyThr / a.samples : 0;
     return f;
@@ -399,10 +490,12 @@ static int PcBlock(const PcAcc& a, const char* what, char* out, size_t cap) {
     PcTop3(a, f.logical, top, sizeof(top));
     const double n = a.samples ? a.samples : 1;
     _snprintf_s(out, cap, _TRUNCATE,
-                "PC check (%s, %ld samples of 10 s, %.0f real s)\n%s\nclock: max %ld MHz, mean current %ld MHz, %ld busy samples: fastest core < 90%% of max in %ld, "
-                "MhzLimit below max in %ld (lowest limit %ld MHz)\nCPU use: TS3W %.1f%% of all cores (sim thread %.0f%% of one core), other programs %.1f%%; "
+                "PC check (%s, %ld samples of 10 s, %.0f real s)\n%s\nclock (%s): max %ld MHz, mean %ld MHz, %ld busy samples: slow in %ld, "
+                "limited in %ld (lowest %ld MHz)\nCPU use: TS3W %.1f%% of all cores (sim thread %.0f%% of one core), other programs %.1f%%; "
                 "top other: %s\nthreads: %.1f busy TS3W threads (>= 50%% of a core), %ld started by ts3native, %ld by TS3W.exe\n%s",
-                what, a.samples, a.wallS, g_pcStatic, f.maxMhz, f.meanCurMhz, a.busy, a.slow, a.limited, a.minLimit, a.ownPct / n, a.simPct / n, f.otherCpuPct, top,
+                what, a.samples, a.wallS, g_pcStatic, a.perfN ? "PDH % Processor Performance x base, slow = < 85% of the session's best, limited = Performance Limit Flags"
+                : "CallNtPowerInformation, slow = fastest core < 90% of max, limited = MhzLimit below max",
+                f.maxMhz, f.meanCurMhz, f.busySamples, f.slowSamples, f.limitSamples, f.minLimitMhz, a.ownPct / n, a.simPct / n, f.otherCpuPct, top,
                 f.busyThreads, f.ourThreads, f.gameThreads, v);
     if (f.logical && f.busyThreads + 1 > f.logical)  // proposal only: nothing adapts yet (docs/299 §4)
         PcCat(out, cap, "proposal (not active): fewer route workers on this PC would leave a core for the game\n");
@@ -445,7 +538,7 @@ static void PcWriteSummaryLocked(bool windowEnd, LONG hour) {
             if (!sz.QuadPart) n = _snprintf_s(line, _TRUNCATE, "time,sim_hour,samples,busy_samples,slow_samples,limited_samples,min_limit_mhz,max_mhz,mean_mhz,ts3w_pct,sim_thread_pct,other_pct,busy_threads,problems,top_other\r\n");
             const double sn = win.samples;
             _snprintf_s(line + (n > 0 ? n : 0), sizeof(line) - (n > 0 ? n : 0), _TRUNCATE, "%02d-%02d %02d:%02d,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%.1f,%.1f,%.1f,%.2f,0x%X,\"%s\"\r\n",
-                        st.wMonth, st.wDay, st.wHour, st.wMinute, hour, win.samples, win.busy, win.slow, win.limited, win.minLimit, pf.maxMhz, pf.meanCurMhz,
+                        st.wMonth, st.wDay, st.wHour, st.wMinute, hour, win.samples, pf.busySamples, pf.slowSamples, pf.limitSamples, pf.minLimitMhz, pf.maxMhz, pf.meanCurMhz,
                         win.ownPct / sn, win.simPct / sn, pf.otherCpuPct, pf.busyThreads, fw & kPcProblems, top);
             DWORD cw;
             WriteFile(c, line, (DWORD)strlen(line), &cw, NULL);
@@ -466,6 +559,7 @@ static void PcWriteSummaryLocked(bool windowEnd, LONG hour) {
 static volatile LONG g_pcReq, g_pcReqHour;  // from op 62: 1 = sim hour g_pcReqHour ended, 2 = world quit
 static DWORD WINAPI PcThread(LPVOID) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    PcPdhInit();  // pdh.dll loads here, off the game start path
     PcSample();
     DWORD lastWrite = GetTickCount();
     LONG n = 0;
