@@ -27,7 +27,7 @@ static const char* const kMdtKind[4] = {"engine", "game", "ours", "mod"};
 // ---- pure parts (selftest) ----
 // the module MVID (first #GUID entry) of a .NET image somewhere in b; false = no metadata root
 static bool MdtMvidOf(const u8* b, DWORD n, u8* mvid) {
-    for (DWORD i = 0; i + 32 <= n; i += 4) {  // the metadata root is 4-aligned in the file
+    for (DWORD i = 0; i + 32 <= n; i++) {  // byte steps: in a raw S3SA body the image starts after an odd-length header
         if (memcmp(b + i, "BSJB", 4)) continue;
         const u8* r = b + i;
         const DWORD vlen = *(const DWORD*)(r + 12);
@@ -45,6 +45,41 @@ static bool MdtMvidOf(const u8* b, DWORD n, u8* mvid) {
         }
     }
     return false;
+}
+// S3SA body (s3pi ScriptResource): version, [UTF-16 string if version > 1], u32, md5 (64), u16 count, count x 8-byte table,
+// then XOR-chained 512-byte blocks (a table entry with bit 0 set = a zero block that takes no input). Returns the clear
+// image (malloc, count x 512 bytes) or NULL. Port of tools/extract-assemblies.ts decryptS3SA [verified: smoke 2026-11-20
+// found 0 MVIDs in 81 S3SA resources without it].
+static u8* MdtS3saDecrypt(const u8* b, DWORD n, DWORD* outN) {
+    DWORD p = 0;
+    if (n < 1) return NULL;
+    const u8 ver = b[p++];
+    if (ver > 1) { if (p + 4 > n) return NULL; const DWORD sl = *(const DWORD*)(b + p); if (sl > 4096) return NULL; p += 4 + sl * 2; }
+    p += 4 + 64;
+    if (p + 2 > n) return NULL;
+    const DWORD count = *(const WORD*)(b + p);
+    p += 2;
+    if (!count || p + count * 8 > n) return NULL;
+    const u8* table = b + p;
+    const DWORD tlen = count * 8;
+    p += tlen;
+    unsigned long long sum = 0;
+    for (DWORD i = 0; i < tlen; i += 8) sum += *(const unsigned long long*)(table + i);
+    DWORD seed = (DWORD)((unsigned long long)(tlen - 1) & sum);
+    u8* out = (u8*)calloc(count, 512);
+    if (!out) return NULL;
+    DWORD r = p;
+    for (DWORD blk = 0; blk < count; blk++) {
+        if (table[blk * 8] & 1) continue;
+        if (r + 512 > n) { free(out); return NULL; }
+        for (DWORD j = 0; j < 512; j++, r++) {
+            const u8 v = b[r];
+            out[blk * 512 + j] = v ^ table[seed];
+            seed = (seed + v) % tlen;
+        }
+    }
+    *outN = count * 512;
+    return out;
 }
 static bool MdtGameName(const char* a) {
     static const char* const kEa[] = {"mscorlib", "System", "System.Xml", "ScriptCore", "SimIFace", "Sims3GameplaySystems", "Sims3GameplayObjects",
@@ -341,7 +376,12 @@ static void MdtScanFile(const wchar_t* path, const wchar_t* rel) {
                         if (r > 0) data = dec, dn = (DWORD)r;
                     }
                     u8 mvid[16];
-                    if (MdtMvidOf(data, dn, mvid) && g_mdtPkgN < 4096) {
+                    bool got16 = MdtMvidOf(data, dn, mvid);
+                    if (!got16) {
+                        DWORD cn = 0;
+                        if (u8* clr = MdtS3saDecrypt(data, dn, &cn)) { got16 = MdtMvidOf(clr, cn, mvid); free(clr); }
+                    }
+                    if (got16 && g_mdtPkgN < 4096) {
                         MdtPkg& e = g_mdtPkg[g_mdtPkgN++];
                         memcpy(e.mvid, mvid, 16);
                         WideCharToMultiByte(CP_UTF8, 0, rel, -1, e.pkg, sizeof(e.pkg), NULL, NULL);
@@ -409,7 +449,10 @@ static void MdtMatchPackages() {
         MdtMod& m = g_mdtMod[i];
         if (m.pkg[0] || !m.mvidOk) continue;
         for (int j = 0; j < g_mdtPkgN; j++)
-            if (!memcmp(g_mdtPkg[j].mvid, m.mvid, 16)) { strcpy_s(m.pkg, g_mdtPkg[j].pkg); break; }
+            if (!memcmp(g_mdtPkg[j].mvid, m.mvid, 16)) {  // a game-named assembly found in Mods = a core mod that replaces the game DLL
+                _snprintf_s(m.pkg, _TRUNCATE, "%s%s", m.kind == MDT_GAME ? "core mod: " : "", g_mdtPkg[j].pkg);
+                break;
+            }
         if (!m.pkg[0]) strcpy_s(m.pkg, m.kind == MDT_GAME ? "(game files)" : "(not found in Mods)");
     }
 }

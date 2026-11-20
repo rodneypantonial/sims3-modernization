@@ -50,4 +50,51 @@ static void TestModTime() {
     for (LONG i = 1; i <= 50; i++) { MdtHitch t = {}; t.ms = (i * 37) % 51; MdtHitchAdd(t); }
     assert(g_mdtHitN == 20 && g_mdtHit[0].ms == 50 && g_mdtHit[19].ms == 31);
     g_mdtHitN = 0;
+
+    // S3SA decrypt (s3pi scheme): encrypt a fake image with the inverse chain, one flagged (zero) block, then decrypt
+    {
+        const DWORD count = 4, tlen = count * 8;
+        static u8 clear[4 * 512], body[1 + 4 + 64 + 2 + 4 * 8 + 4 * 512];
+        for (DWORD i = 0; i < sizeof(clear); i++) clear[i] = (u8)(i * 7 + 3);
+        memset(clear + 2 * 512, 0, 512);  // block 2 flagged: stays zero, takes no input
+        DWORD bp = 0;
+        body[bp++] = 1;  // version 1: no string
+        bp += 4 + 64;
+        *(WORD*)(body + bp) = (WORD)count, bp += 2;
+        u8* table = body + bp;
+        for (DWORD i = 0; i < tlen; i++) table[i] = (u8)(i * 29 + 10);
+        table[0] &= ~1, table[8] &= ~1, table[16] |= 1, table[24] &= ~1;
+        bp += tlen;
+        unsigned long long sum = 0;
+        for (DWORD i = 0; i < tlen; i += 8) sum += *(const unsigned long long*)(table + i);
+        DWORD seed = (DWORD)((unsigned long long)(tlen - 1) & sum), bw = bp;
+        for (DWORD blk = 0; blk < count; blk++) {
+            if (table[blk * 8] & 1) continue;
+            for (DWORD j = 0; j < 512; j++) { const u8 c = clear[blk * 512 + j] ^ table[seed]; body[bw++] = c; seed = (seed + c) % tlen; }
+        }
+        DWORD on = 0;
+        u8* out = MdtS3saDecrypt(body, bw, &on);
+        assert(out && on == count * 512 && !memcmp(out, clear, on));
+        free(out);
+        assert(!MdtS3saDecrypt(body, 40, &on));  // truncated header
+        assert(!MdtS3saDecrypt(body, bw - 100, &on));  // truncated data
+    }
+    // real packages (not in the repo): TS3_S3SA_FIXTURES = package paths separated by ';', each must give >= 1 MVID
+    // (2026-11-20: NRaas_ErrorTrap / NRaas_Overwatch from the test Mods folder; their S3SA bodies are encrypted)
+    {
+        wchar_t list[2048];
+        if (GetEnvironmentVariableW(L"TS3_S3SA_FIXTURES", list, 2048) && (g_mdtPkg = (MdtPkg*)calloc(4096, sizeof(MdtPkg))) != NULL) {
+            int files = 0;
+            for (wchar_t* ctx = NULL, *t = wcstok_s(list, L";", &ctx); t; t = wcstok_s(NULL, L";", &ctx)) {
+                const int before = g_mdtPkgN;
+                MdtScanFile(t, t);
+                printf("modtime fixture: %ls: %d MVID(s)\n", t, g_mdtPkgN - before);
+                assert(g_mdtPkgN > before);
+                files++;
+            }
+            printf("modtime: %d real S3SA fixture package(s) ok\n", files);
+            g_mdtPkgN = g_mdtPkgFiles = g_mdtPkgS3sa = 0;
+            free(g_mdtPkg), g_mdtPkg = NULL;
+        }
+    }
 }
