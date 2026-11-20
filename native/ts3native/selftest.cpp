@@ -14923,6 +14923,7 @@ int main() {
     TestBoatProbe();
     TestReplanDedupe();
     TestPlanDeadline();
+    TestKdScopeTable();
     TestTaskServe();  // docs/637
     TestTaskSeam();   // docs/308
     TestUncutCeil();   // docs/264: [RouteAsync] KdUncutCeilMs

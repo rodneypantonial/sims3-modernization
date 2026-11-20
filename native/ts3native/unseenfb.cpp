@@ -108,7 +108,7 @@ static u8 GvuMsg(DWORD handle, DWORD kind) {
     Ts3nCounters& k = ts3native_counters;
     if (k.gvuMode != 1) return 0;
     InterlockedIncrement(&k.gvuAsks);
-    if (!handle || kind > 3 || g_ufH != handle || g_kdScopeH != handle || g_kdScope != 2) return GvuNo(GVU_SCOPE);
+    if (!handle || kind > 3 || g_ufH != handle || KdScopeExact(handle) != 2) return GvuNo(GVU_SCOPE);
     if (!UfOn()) return GvuNo(GVU_NOFB);
     if (GetCurrentThreadId() != g_async.owner || g_async.state != A_RUNNING || !g_async.lock || g_async.handle == handle) {
         GvuEnd(handle);
