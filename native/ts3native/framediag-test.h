@@ -72,6 +72,9 @@ static void TestFrameDiag() {
     assert(FdD3dKindOf(dxvkDll, sizeof(dxvkDll), false) == FDK_DXVK && FdD3dKindOf(dxvkDll, sizeof(dxvkDll), true) == FDK_DXVK);
     assert(FdD3dKindOf(sysDll, sizeof(sysDll), true) == FDK_SYSTEM && FdD3dKindOf(sysDll, sizeof(sysDll), false) == FDK_OTHER);
     assert(FdD3dKindOf(dxvkDll, 8, false) == FDK_OTHER && !strcmp(kFdD3dName[FDK_DXVK], "d3d9 (DXVK)"));  // marker past the end
+    // in world: the userdiag world count when [UserDiag] is on (frames do not matter), else sim iterations + frames
+    assert(FdInWorld(true, 1, 0, 0, 0) && !FdInWorld(true, 1, 1, 1800, 900) && FdInWorld(true, 2, 1, 0, 0) && !FdInWorld(true, 0, 0, 1800, 900));
+    assert(FdInWorld(false, 0, 0, 60, 1) && !FdInWorld(false, 5, 0, 60, 0) && !FdInWorld(false, 0, 0, 59, 900));
     // GPU preference: the first candidate (this exe, Bin\TS3W.exe, Bin\TS3.exe) with one set
     const int noPref[3] = {-1, -1, -1}, onTs3[3] = {-1, 2, -1}, onHost[3] = {0, 2, 1};
     assert(FdPickPref(noPref, 3) == -1 && FdPickPref(onTs3, 3) == 1 && FdPickPref(onHost, 3) == 0 && FdPickPref(onTs3, 1) == -1);

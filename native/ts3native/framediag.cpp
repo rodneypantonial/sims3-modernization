@@ -149,6 +149,9 @@ static int FdD3dKindOf(const u8* b, size_t n, bool systemDir) {
     if (FdHas(b, n, "dxvk.conf") || FdHas(b, n, "DXVK_")) return FDK_DXVK;
     return systemDir ? FDK_SYSTEM : FDK_OTHER;
 }
+static bool FdInWorld(bool worldLines, LONG worlds, LONG quits, LONG simIters, LONG frames) {
+    return worldLines ? worlds > quits : simIters >= 60 && frames > 0;
+}
 // the first candidate with a GPU preference set; -1 = none set
 static int FdPickPref(const int* pref, int n) {
     for (int i = 0; i < n; i++) if (pref[i] >= 0) return i;
@@ -662,7 +665,9 @@ static DWORD WINAPI FdThread(LPVOID) {
         EnterCriticalSection(&g_fdCs);
         mn = g_fdMin, g_fdMin = {};
         LeaveCriticalSection(&g_fdCs);
-        const bool inWorld = mn.simIters >= 60 && mn.frames > 0;  // the sim loop runs at least once a second
+        // in world = ts3fixes "world:" lines outnumber its "world quit" lines (userdiag.cpp, as ModTime); frames are no test
+        // (EA smoke 1: Present untimed, every minute "not in world"). Without [UserDiag]: the sim loop ran once a second + frames.
+        const bool inWorld = FdInWorld(g_udOn != 0, g_udWorlds, g_udQuits, mn.simIters, mn.frames);
         if (inWorld) g_fdAllMin += wallS / 60, g_fdAllWall += wallS, g_fdAllMainCpu += mainMs, g_fdAllSimCpu += simMs, g_fdAllRd += rd, g_fdAllWr += wr, g_fdAllOps += ops;
         const FdFacts f = FdFactsOf(mn, wallS, mainMs, simMs, wallS / 60);
         char v[640];
