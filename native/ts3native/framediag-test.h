@@ -1,6 +1,38 @@
 // TestFrameDiag ([FrameDiag], framediag.cpp, docs/300). Included by selftest.cpp. Host checks of the histogram quantiles, the
-// bottleneck verdict, the GPU-preference parse and the GPU verdict with fixture adapters.
+// bottleneck verdict, the GPU-preference parse and the GPU verdict with fixture adapters, the d3d9 IAT search by value,
+// and the device-vtable check + Present wrapper on fake vtables.
+static LONG g_fdTestCalls;
+static HRESULT __stdcall FdTestPresent(void*, const RECT*, const RECT*, HWND, const void*) { g_fdTestCalls++; return 0; }
+static void* g_fdTestVt[18], *g_fdTestBadVt[18];  // in this image's .data: "inside a loaded module"
+static void TestFrameDiagHooks() {
+    // EA IAT run: Direct3DCreate9 followed by 0 or another d3d9 address; a lone match with a foreign neighbour is skipped
+    const DWORD lo = 0x6AA00000, hi = 0x6AC00000, want = 0x6AAF1610;
+    DWORD a[] = {1, want, 0x12345678, want, 0}, b2[] = {want, 0x6AA01000}, c[] = {5, want}, d[] = {0, 0, 0};
+    assert(FdFindSlot(a, 5, want, lo, hi) == &a[3] && FdFindSlot(b2, 2, want, lo, hi) == &b2[0]);
+    assert(FdFindSlot(c, 2, want, lo, hi) == NULL && FdFindSlot(d, 3, want, lo, hi) == NULL);
+
+    if (!g_fdQf) { LARGE_INTEGER fq; QueryPerformanceFrequency(&fq); g_fdQf = fq.QuadPart; InitializeCriticalSection(&g_fdCs); }
+    for (int i = 0; i < 18; i++) g_fdTestVt[i] = g_fdTestBadVt[i] = (void*)FdTestPresent;
+    g_fdTestBadVt[17] = (void*)&g_fdTestVt;  // data, not code
+    void** heapVt = (void**)malloc(18 * sizeof(void*));
+    memcpy(heapVt, g_fdTestVt, 18 * sizeof(void*));
+    assert(FdVtCheck(g_fdTestVt, 17) == NULL && FdVtCheck(g_fdTestVt, 16) == NULL);
+    assert(FdVtCheck(heapVt, 17) && strstr(FdVtCheck(heapVt, 17), "not inside a loaded module") && FdVtCheck(NULL, 17));
+    assert(strstr(FdVtCheck(g_fdTestBadVt, 17), "executable") && FdVtCheck(g_fdTestBadVt, 16) == NULL);
+    free(heapVt);
+    // refused vtable: nothing written, remembered so it is logged once
+    assert(!FdHookDevVt(g_fdTestBadVt, "selftest") && !g_fdDevVt && g_fdBadVt == g_fdTestBadVt && g_fdTestBadVt[17] == (void*)&g_fdTestVt);
+    // good vtable: slot 17 wrapped, the original still called, frames counted
+    assert(FdHookDevVt(g_fdTestVt, "selftest") && g_fdDevVt == g_fdTestVt && g_fdTestVt[17] == (void*)FdPresentHook && g_fdPresent == FdTestPresent);
+    assert(FdHookDevVt(g_fdTestVt, "selftest again"));  // same vtable: already timed
+    const FdPresentFn call = (FdPresentFn)g_fdTestVt[17];
+    call(NULL, NULL, NULL, NULL, NULL), Sleep(2), call(NULL, NULL, NULL, NULL, NULL);
+    assert(g_fdTestCalls == 2 && g_fdMin.frames == 1 && g_fdAll.frames == 1 && g_fdMin.frameMsSum > 0);
+    assert(!FdHookDevVt(g_fdTestBadVt, "second device"));  // a second vtable is not timed
+    g_fdDevVt = NULL, g_fdBadVt = NULL, g_fdPresent = NULL, g_fdLastPresent = 0, g_fdMin = {}, g_fdAll = {};
+}
 static void TestFrameDiag() {
+    TestFrameDiagHooks();
     static LONG h[FD_BINS];
     memset(h, 0, sizeof(h));
     assert(FdPct(h, 0.5) == 0);

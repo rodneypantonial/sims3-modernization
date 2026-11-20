@@ -3,10 +3,15 @@
 //
 // "Where does the frame time go, seen from the game side?" With the RTX Remix bridge the frame is drawn in another process
 // (NvRemixBridge.exe); TS3 only sees its own frame loop and how long each d3d9 Present call takes to come back.
-//  - Present: TS3's import of d3d9!Direct3DCreate9 is wrapped (IAT slot, at load), then IDirect3D9::CreateDevice (vtable
-//    slot 16) and IDirect3DDevice9::Present (slot 17, the call `Device_Present 0x611680` makes, docs/538 §4.2). The wrapper
-//    only times the call (QPC before / after) and passes everything through: frame time = Present-to-Present interval,
-//    present wait = time inside Present (bridge round trip + whatever the bridge client blocks on).
+//  - Present: IDirect3DDevice9::Present (vtable slot 17, the call `Device_Present 0x611680` makes, docs/538 §4.2) is
+//    wrapped on the device's vtable, found two ways: (a) the game's own device, [GraphicsDevice 0x11CECC8] +0x0C (the
+//    pointer Device_Present reads; same code on Steam 1.67 and EA 1.69 [verified, decrypted EA image]), polled by the
+//    minute thread until it exists, so a device made before the asi starts is timed too; (b) the exe's d3d9!Direct3DCreate9
+//    import slot (Steam: the import table; EA: its import table is the DRM stub, so the slot is found by value in .rdata /
+//    .data once the loader filled it, retried every second) -> IDirect3D9::CreateDevice (slot 16) for later devices.
+//    The vtable must sit in a loaded module and slots 0-2, 16, 17 must point at executable code, else a logged stand-down.
+//    The wrapper only times the call (QPC before / after) and passes everything through: frame time = Present-to-Present
+//    interval, present wait = time inside Present (bridge round trip + whatever the bridge client blocks on).
 //  - Main thread: a 50 Hz sampler stops the main thread for a few microseconds, reads eip and the top 16 stack words, and
 //    counts which module it is in (TS3, d3d9 labelled from its file: system, DXVK, bridge client or other; system / wait,
 //    Apex, S3PP, other asi). "wait in d3d9" =
@@ -187,6 +192,30 @@ static HRESULT __stdcall FdPresentHook(void* dev, const RECT* a, const RECT* b, 
     return hr;
 }
 
+static bool FdExec(const void* p) {
+    MEMORY_BASIC_INFORMATION mbi;
+    return p && VirtualQuery(p, &mbi, sizeof(mbi)) && mbi.State == MEM_COMMIT &&
+           (mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY));
+}
+// a COM vtable we may patch: inside a loaded module, slots 0-2 (IUnknown) and `hi` executable (16 = CreateDevice on
+// IDirect3D9, 17 = Present on the device); NULL = ok, else why not
+static const char* FdVtCheck(void** vt, int hi) {
+    HMODULE m = NULL;
+    if (!vt || !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)(void*)vt, &m))
+        return "vtable not inside a loaded module";
+    void* s[4] = {};
+    __try { s[0] = vt[0], s[1] = vt[1], s[2] = vt[2], s[3] = vt[hi]; } __except (EXCEPTION_EXECUTE_HANDLER) { return "vtable unreadable"; }
+    for (void* f : s) if (!FdExec(f)) return "a vtable slot does not point at executable code";
+    return NULL;
+}
+static void FdModName(const void* a, char* out, int cap) {
+    HMODULE m = NULL;
+    wchar_t p[MAX_PATH] = L"?";
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)a, &m)) GetModuleFileNameW(m, p, MAX_PATH);
+    const wchar_t* n = wcsrchr(p, L'\\');
+    WideCharToMultiByte(CP_UTF8, 0, n ? n + 1 : p, -1, out, cap, NULL, NULL);
+}
+
 // one vtable slot -> hook; *orig gets what it held (another plugin's wrapper is chained, not replaced)
 static bool FdVtSlot(void** vt, int slot, void* hook, void** orig) {
     if (vt[slot] == hook) return true;
@@ -194,23 +223,54 @@ static bool FdVtSlot(void** vt, int slot, void* hook, void** orig) {
     return Write(&vt[slot], &hook, sizeof(hook));
 }
 
+// device vtable -> Present timed, once. The main thread's CreateDevice wrapper and the minute thread's poll both call it;
+// a refused or second vtable is logged once per vtable.
+static volatile LONG g_fdHookBusy;
+static void** g_fdBadVt;
+static bool FdHookDevVt(void** vt, const char* via) {
+    if (vt == g_fdDevVt) return true;
+    if (InterlockedCompareExchange(&g_fdHookBusy, 1, 0)) return false;  // the other caller is at it; the poll retries
+    bool ok = false;
+    if (g_fdDevVt) {
+        if (vt != g_fdBadVt) Log("framediag: another device vtable 0x%08X (%s) not timed", (DWORD)(uintptr_t)vt, via), g_fdBadVt = vt;
+    } else if (const char* why = FdVtCheck(vt, 17)) {
+        if (vt != g_fdBadVt) Log("framediag: Present NOT timed, device vtable 0x%08X (%s) refused: %s", (DWORD)(uintptr_t)vt, via, why), g_fdBadVt = vt;
+    } else if (!FdVtSlot(vt, 17, (void*)FdPresentHook, (void**)&g_fdPresent)) {
+        if (vt != g_fdBadVt) Log("framediag: Present NOT timed, device vtable 0x%08X (%s): slot 17 not writable", (DWORD)(uintptr_t)vt, via), g_fdBadVt = vt;
+    } else {
+        char vm[64], pm[64];
+        FdModName(vt, vm, sizeof(vm)), FdModName((const void*)g_fdPresent, pm, sizeof(pm));
+        g_fdDevVt = vt, ok = true;
+        Log("framediag: Present timed via %s (device vtable 0x%08X in %s, slot 17 was 0x%08X in %s)", via, (DWORD)(uintptr_t)vt, vm, (DWORD)(uintptr_t)g_fdPresent, pm);
+    }
+    g_fdHookBusy = 0;
+    return ok;
+}
+
 static HRESULT __stdcall FdCreateDevHook(void* d3d, UINT ad, DWORD type, HWND w, DWORD fl, void* pp, void** out) {
     const HRESULT hr = g_fdCreateDev(d3d, ad, type, w, fl, pp, out);
-    if (SUCCEEDED(hr) && out && *out) {
-        void** vt = *(void***)*out;
-        if (!g_fdDevVt && FdVtSlot(vt, 17, (void*)FdPresentHook, (void**)&g_fdPresent)) {
-            g_fdDevVt = vt;
-            Log("framediag: Present timed (device vtable 0x%08X slot 17 was 0x%08X, adapter %u)", (DWORD)(uintptr_t)vt, (DWORD)(uintptr_t)g_fdPresent, ad);
-        } else if (g_fdDevVt && g_fdDevVt != vt) Log("framediag: another device vtable 0x%08X not timed", (DWORD)(uintptr_t)vt);
-    }
+    if (SUCCEEDED(hr) && out && *out) FdHookDevVt(*(void***)*out, "IDirect3D9::CreateDevice");
     return hr;
+}
+
+// the game's own device: [GraphicsDevice] +0x0C, the pointer Device_Present 0x611680 calls through (docs/37 §1). EA 1.69:
+// Device_Present 0x612760 has the same bytes and GraphicsDevice_Get returns this row's [0x01228D78] [verified, decrypted
+// EA image]. NULL = no device yet.
+static u8* const* g_fdGfxDev = (u8* const*)(uintptr_t)TS3A(0x011CECC8);
+static void** FdGameDevVt() {
+    __try {
+        const u8* w = *g_fdGfxDev;
+        void* dev = w ? *(void* const*)(w + 0x0C) : NULL;
+        return dev ? *(void***)dev : NULL;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return NULL; }
 }
 
 static void* __stdcall FdCreate9Hook(UINT sdk) {
     void* d3d = g_fdCreate9(sdk);
     if (d3d && !g_fdCreateDev) {
         void** vt = *(void***)d3d;
-        if (!FdVtSlot(vt, 16, (void*)FdCreateDevHook, (void**)&g_fdCreateDev)) Log("framediag: CreateDevice slot not writable, Present not timed");
+        if (const char* why = FdVtCheck(vt, 16)) Log("framediag: IDirect3D9 vtable refused (%s), CreateDevice not wrapped", why);
+        else if (!FdVtSlot(vt, 16, (void*)FdCreateDevHook, (void**)&g_fdCreateDev)) Log("framediag: CreateDevice slot not writable, not wrapped");
     }
     return d3d;
 }
@@ -230,6 +290,41 @@ static void** FdIatSlot() {
                 return (void**)&iat->u1.Function;
     }
     return NULL;
+}
+
+// EA 1.69: the import directory is the DRM stub (Core/Activation.dll only); the real d3d9 IAT slot sits in .rdata (RVA
+// 0xBDFB00 [verified, decrypted EA image]) and is filled at run time. Found by value: a 4-byte aligned word in an
+// initialized non-code section that holds d3d9!Direct3DCreate9, followed by 0 or another d3d9 address (an IAT run).
+static DWORD* FdFindSlot(DWORD* p, DWORD n, DWORD want, DWORD lo, DWORD hi) {
+    for (DWORD k = 0; k + 1 < n; k++)
+        if (p[k] == want && (p[k + 1] == 0 || (p[k + 1] >= lo && p[k + 1] < hi))) return &p[k];
+    return NULL;
+}
+static void** FdIatByValue() {
+    HMODULE d3d = GetModuleHandleW(L"d3d9.dll");
+    const DWORD want = d3d ? (DWORD)(uintptr_t)GetProcAddress(d3d, "Direct3DCreate9") : 0;
+    MODULEINFO mi = {};
+    if (!want || !K32GetModuleInformation(GetCurrentProcess(), d3d, &mi, sizeof(mi))) return NULL;
+    const DWORD lo = (DWORD)(uintptr_t)mi.lpBaseOfDll, hi = lo + mi.SizeOfImage;
+    u8* b = (u8*)GetModuleHandleW(NULL);
+    const IMAGE_NT_HEADERS* nt = (const IMAGE_NT_HEADERS*)(b + ((const IMAGE_DOS_HEADER*)b)->e_lfanew);
+    const IMAGE_SECTION_HEADER* sec = IMAGE_FIRST_SECTION(nt);
+    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; i++, sec++) {
+        if ((sec->Characteristics & IMAGE_SCN_MEM_EXECUTE) || !(sec->Characteristics & IMAGE_SCN_CNT_INITIALIZED_DATA)) continue;
+        __try {
+            if (DWORD* s = FdFindSlot((DWORD*)(b + sec->VirtualAddress), sec->Misc.VirtualSize / 4, want, lo, hi)) return (void**)s;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+    return NULL;
+}
+// slot -> FdCreate9Hook (it held d3d9's export, or another plugin's wrapper of it: chained)
+static bool FdHookCreate9(void** slot) {
+    void* hook = (void*)FdCreate9Hook;
+    if (!slot || !*slot || *slot == hook) return false;
+    g_fdCreate9 = (FdCreate9Fn)*slot;
+    if (Write(slot, &hook, sizeof(hook))) return true;
+    g_fdCreate9 = NULL;
+    return false;
 }
 
 static void __cdecl FdSimIter() {
@@ -521,13 +616,39 @@ static DWORD WINAPI FdThread(LPVOID) {
     LONGLONG lastMainCpu = FdThreadCpu(mainH), lastSimCpu = -1, lastQ = FdQpc();
     IO_COUNTERS io0 = {};
     GetProcessIoCounters(GetCurrentProcess(), &io0);
-    DWORD next = GetTickCount() + 60000;
+    DWORD next = GetTickCount() + 60000, tick = 0;
+    bool iatDone = g_fdCreate9 != NULL, told = false;
     for (;;) {
         Sleep(20);  // 50 Hz main-thread samples
         if (mainH) FdSampleMain(mainH);
+        tick++;
+        if (!g_fdDevVt) {  // the game's device, also one made before the asi started (each refused vtable is logged once)
+            void** vt = FdGameDevVt();
+            if (vt && vt != g_fdBadVt) FdHookDevVt(vt, "the game device");
+        }
+        if (!iatDone && tick % 50 == 0) {  // EA: the d3d9 IAT slot, filled at run time; once a second for 5 min
+            void** slot = FdIatByValue();
+            if (FdHookCreate9(slot)) {
+                iatDone = true;
+                Log("framediag: d3d9!Direct3DCreate9 slot found by value at exe+0x%X, CreateDevice wrapped for later devices",
+                    (DWORD)((uintptr_t)slot - (uintptr_t)GetModuleHandleW(NULL)));
+            } else if (tick >= 50 * 300) {
+                iatDone = true;
+                Log("framediag: no d3d9!Direct3DCreate9 slot found by value in 300 s (d3d9 %s); only the game device path is left", GetModuleHandleW(L"d3d9.dll") ? "loaded" : "not loaded");
+            }
+        }
+        if (!told && !g_fdDevVt && tick == 50 * 120) {
+            told = true;
+            Log("framediag: Present still NOT timed after 120 s: game device %s, Direct3DCreate9 import %s; fps reads 0 until it is",
+                FdGameDevVt() ? "refused (line above)" : "not created yet", g_fdCreate9 ? "wrapped" : "not found yet");
+        }
         if ((LONG)(GetTickCount() - next) < 0) continue;
         next += 60000;
         FdModsInit();  // d3d9 / Apex may load after the thread started
+        if (g_fdDevVt) {  // a new device with another vtable (logged once, not timed)
+            void** vt = FdGameDevVt();
+            if (vt && vt != g_fdDevVt && vt != g_fdBadVt) FdHookDevVt(vt, "the game device");
+        }
         if (!simH && g_fdSimTid) { simH = OpenThread(THREAD_QUERY_INFORMATION, FALSE, g_fdSimTid); lastSimCpu = FdThreadCpu(simH); }
         const LONGLONG q = FdQpc(), mc = FdThreadCpu(mainH), sc = FdThreadCpu(simH);
         const double wallS = FdMs(q - lastQ) / 1000, mainMs = mc >= 0 && lastMainCpu >= 0 ? (mc - lastMainCpu) / 1e4 : 0, simMs = sc >= 0 && lastSimCpu >= 0 ? (sc - lastSimCpu) / 1e4 : 0;
@@ -590,18 +711,15 @@ static bool ApplyFrameDiag(const wchar_t* ini) {
     wcscat_s(g_fdSum, L"fps-summary.txt");
     wcscat_s(g_fdCsv, L"framediag.csv");
     InitializeCriticalSection(&g_fdCs);
-    void** slot = FdIatSlot();
-    void* hook = (void*)FdCreate9Hook;
-    if (slot && *slot && *slot != hook) {
-        FdCreate9Fn was = (FdCreate9Fn)*slot;  // d3d9's export, or another plugin's wrapper of it (chained)
-        g_fdCreate9 = was;
-        if (!Write(slot, &hook, sizeof(hook))) g_fdCreate9 = NULL;
-    }
+    void** slot = FdIatSlot();  // Steam: the import table; EA: the minute thread finds it by value
+    const bool imp = FdHookCreate9(slot);
     const bool iter = SimLoopAdd(FdSimIter, "framediag: sim iteration times");
     HANDLE t = CreateThread(NULL, 64 * 1024, FdThread, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
     if (t) CloseHandle(t);
     g_fdOn = t ? 1 : 0;
-    Log("%s framediag ([FrameDiag] Enabled=1, docs/300): Present %s, sim iterations %s, main-thread sampler 50 Hz, fps-summary.txt + framediag.csv next to this log",
-        t ? "OK  " : "FAIL", g_fdCreate9 ? "timed through the d3d9!Direct3DCreate9 import" : "NOT timed (no d3d9!Direct3DCreate9 import slot)", iter ? "timed" : "not timed");
+    Log("%s framediag ([FrameDiag] Enabled=1, docs/300): Present through the game device's vtable (polled) and %s, sim iterations %s, main-thread sampler 50 Hz, "
+        "fps-summary.txt + framediag.csv next to this log", t ? "OK  " : "FAIL",
+        imp ? "the d3d9!Direct3DCreate9 import" : slot ? "no import wrapper (the import slot is empty or wrapped already)" : "the d3d9!Direct3DCreate9 slot searched by value (no import entry)",
+        iter ? "timed" : "not timed");
     return g_fdOn != 0;
 }
