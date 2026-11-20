@@ -104,7 +104,8 @@ static MdtMeth g_mdtMeth[8192];
 static int g_mdtMethN;
 static int g_mdtMethHash[16384];  // index + 1
 static double g_mdtTotalW, g_mdtGcW, g_mdtHourTotal;
-static LONG g_mdtSamples, g_mdtActive, g_mdtFramesBad;
+static LONG g_mdtSamples, g_mdtActive, g_mdtFramesBad, g_mdtWithFrame;
+static volatile LONG g_mdtNoCtx;  // samples whose Mono TLS slot held no context (MdtGrab)
 static LONGLONG g_mdtOverheadUs, g_mdtStartUs;
 static CRITICAL_SECTION g_mdtCs;
 static LONG g_mdtOn, g_mdtHz = 50;
@@ -212,6 +213,7 @@ static int MdtGrab(HANDLE h, DWORD* eip, DWORD* m, int n) {
             DWORD ctx = 0;
             if (idx < 64) ctx = *(const DWORD*)(uintptr_t)(teb + 0xE10 + idx * 4);
             else if (idx < 1088) { const DWORD ext = *(const DWORD*)(uintptr_t)(teb + 0xF94); ctx = ext ? *(const DWORD*)(uintptr_t)(ext + (idx - 64) * 4) : 0; }
+            if (!ctx) g_mdtNoCtx++;  // our own counter: no lock, heap or log while the sim thread is stopped
             for (const DWORD* f = ctx ? *(const DWORD* const*)(uintptr_t)(ctx + 8) : NULL; f && got < n; f = (const DWORD*)(uintptr_t)f[0]) {
                 const DWORD info = f[1];
                 m[got++] = info ? *(const DWORD*)(uintptr_t)(info + 8) : 0;
@@ -269,6 +271,19 @@ static void MdtIterEnd(MdtIterBuf& b, LONG ms) {
 }
 
 static void MdtWriteSummary(bool hourEnd, LONG hour);
+// one line on the Mono stack walk (TLS slot -> context +8 frame chain, docs/04 F6a; not yet proven on EA 1.69)
+static void MdtWalkVerdict(LONG samples, LONG withFrame, LONG noCtx, LONG bad, DWORD tlsIdx, char* out, size_t cap) {
+    if (withFrame > 0) {
+        _snprintf_s(out, cap, _TRUNCATE, "stack walk ok: %ld of %ld live-world samples with a script frame (%ld without a Mono context, %ld unreadable)", withFrame, samples, noCtx, bad);
+        return;
+    }
+    const char* why = tlsIdx >= 1088 ? "the Mono TLS index is not a valid slot (wrong TLS row for this exe?)"
+                      : noCtx * 2 >= samples ? "the Mono TLS slot of the sim thread held no context (wrong TLS row or sim thread?)"
+                      : bad * 2 >= samples   ? "reading the frame chain faulted (context / frame layout differs on this exe?)"
+                                             : "the frame chain was empty or held no readable method";
+    _snprintf_s(out, cap, _TRUNCATE, "stack walk FAIL: 0 of %ld live-world samples with a script frame, TLS index %lu, %ld without a Mono context, %ld unreadable: %s; "
+                "every share reads 'engine'", samples, tlsIdx, noCtx, bad, why);
+}
 static bool MdtWorldLive() { return g_udWorlds > g_udQuits; }  // userdiag.cpp ts3fixes lines (every ts3fixes since docs/188)
 static volatile LONG g_mdtReq, g_mdtReqHour;  // from op 61: 1 = sim hour g_mdtReqHour ended, 2 = world quit
 static DWORD WINAPI MdtSampler(LPVOID) {
@@ -279,6 +294,7 @@ static DWORD WINAPI MdtSampler(LPVOID) {
     Log("modtime: sampling the sim thread (tid %lu) at %ld Hz", g_mdtSimTid, g_mdtHz);
     g_mdtStartUs = MdtUs();
     static MdtIterBuf buf;
+    bool walkTold = false;
     LONG seenSeq = g_mdtSeq, seenQuits = g_udQuits;
     ULONG64 lastCyc = 0;
     QueryThreadCycleTime(h, &lastCyc);
@@ -321,6 +337,15 @@ static DWORD WINAPI MdtSampler(LPVOID) {
             meths[k] = mi, kinds[k++] = g_mdtMod[g_mdtMeth[mi].mod].kind;
         }
         const int pick = MdtPick(kinds, k);
+        if (k) g_mdtWithFrame++;
+        if (!walkTold && g_mdtSamples >= g_mdtHz * 30) {  // 30 s of live-world samples: say once whether the stack walk works
+            walkTold = true;
+            DWORD idx = 0xFFFFFFFF;
+            MdtRead((DWORD)(uintptr_t)g_mdtTlsIdx, &idx, 4);
+            char v[320];
+            MdtWalkVerdict(g_mdtSamples, g_mdtWithFrame, g_mdtNoCtx, g_mdtFramesBad, idx, v, sizeof(v));
+            Log("modtime: %s", v);
+        }
         const int mi = pick >= 0 ? meths[pick] : -1, mod = mi >= 0 ? g_mdtMeth[mi].mod : MDT_ENGINE;
         const bool gc = eip >= MDT_GC_LO && eip < MDT_GC_HI;
         if (w > 0) g_mdtActive++;
@@ -538,8 +563,8 @@ static void MdtWriteSummaryLocked(bool hourEnd, LONG hour) {
     MdtPut(f, "Shares are of the sim thread's CPU time (the thread that runs all script mods). A sample goes to the innermost mod on the");
     MdtPut(f, "script call stack, else to ts3fixes (ours), else to the game; 'engine' = no script on the stack (native game work).");
     MdtPut(f, "");
-    MdtPut(f, "sampled %.0f real s, %ld samples at %ld Hz, %ld with the sim thread on the CPU, %ld unreadable stacks; package scan %s (%d packages, %d script resources)",
-          realS, samples, g_mdtHz, active, bad, g_mdtScan == 2 ? "done" : "running", g_mdtPkgFiles, g_mdtPkgS3sa);
+    MdtPut(f, "sampled %.0f real s, %ld samples at %ld Hz, %ld with the sim thread on the CPU, %ld with a script frame, %ld unreadable stacks; package scan %s (%d packages, %d script resources)",
+          realS, samples, g_mdtHz, active, g_mdtWithFrame, bad, g_mdtScan == 2 ? "done" : "running", g_mdtPkgFiles, g_mdtPkgS3sa);
     MdtPut(f, "overhead (measured): the sim thread was stopped %.1f us per sample on average, %.2f ms per real second = %.3f%% of one core",
           samples ? (double)ovUs / samples : 0, realS > 0 ? ovUs / 1000.0 / realS : 0, realS > 0 ? ovUs / 1e4 / realS : 0);
     MdtPut(f, "gc/alloc (Boehm collector code on the CPU) %.1f%% of sim-thread CPU", total > 0 ? gcTotal * 100 / total : 0);

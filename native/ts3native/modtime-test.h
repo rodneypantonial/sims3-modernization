@@ -97,4 +97,16 @@ static void TestModTime() {
             free(g_mdtPkg), g_mdtPkg = NULL;
         }
     }
+    // stack-walk verdict: ok with any frame; else the reason (bad TLS index, no context, faults, empty chains)
+    char wv[320];
+    MdtWalkVerdict(1500, 900, 10, 0, 7, wv, sizeof(wv));
+    assert(strstr(wv, "stack walk ok: 900 of 1500"));
+    MdtWalkVerdict(1500, 0, 0, 0, 2000, wv, sizeof(wv));
+    assert(strstr(wv, "stack walk FAIL") && strstr(wv, "TLS index 2000") && strstr(wv, "not a valid slot"));
+    MdtWalkVerdict(1500, 0, 1500, 0, 7, wv, sizeof(wv));
+    assert(strstr(wv, "held no context") && strstr(wv, "1500 without a Mono context"));
+    MdtWalkVerdict(1500, 0, 0, 1400, 7, wv, sizeof(wv));
+    assert(strstr(wv, "faulted"));
+    MdtWalkVerdict(1500, 0, 100, 100, 7, wv, sizeof(wv));
+    assert(strstr(wv, "frame chain was empty") && strstr(wv, "every share reads 'engine'"));
 }
