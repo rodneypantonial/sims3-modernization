@@ -474,6 +474,7 @@ namespace Ts3Fixes
             ApplyEpBatch5b();   // docs/587 EP5 §11.2
             ApplyEpBatch6();   // docs/587 EP6 §12.1
             ApplyStoreBatch1();   // docs/587 store §13
+            ApplyEaBugs500();   // docs/500, all off by default (playpenflags, voodoobindwait, saunawoohoopreg, lotentrypet, horselotentry)
             ApplyAwardKeep();  // docs/546 §11, off by default
             ApplyEventRouteRetry();  // docs/546 §11, docs/548, off by default (ceremonyspot, eventcrowdring, eventrouteretry)
             ApplySimFestKeep();  // docs/546 §11, off by default
@@ -1557,6 +1558,8 @@ namespace Ts3Fixes
         // unknown-scope asks the flag let through to a realistic-only path (worker answers, exact go-live); 0 with the flag off
         // [1230-1240] envlistmemoapply / envlistmemoverify (EnvBcProbes.cs EnvListApply, docs/274 §9): scans tried, memo reuse, live listed,
         // game's call (actor / other Sim out of scope, not indoor, seq overflow), errors, verify checks, differences, reorder-only differences
+        // [4017-4029] EaBugs500.cs (docs/500): playpenflags marks cleared after an aborted run / left set (off) / errors; voodoobindwait sleeping-target waits ended on cancel or gone / waits on EA's body (off) / errors; saunawoohoopreg pregnant targets refused / offered (off) / unused; lotentrypet caches left unvalidated after a non-human's failed plan / validated (off) / errors / lots unvalidated at world load.
+        // [4030-4035] EaBugs500b.cs (docs/500 §6): horselotentry doomed horse door plans skipped / seen (off) / mispredicted (off arm) / errors / ms in PlanRouteIntoLot off arm / on arm.
         // [1376-1377] bouncermemo (RouteSources.cs, docs/801): townie bouncer WatchDoor loops skipped / routed
         // [1370-1373] festivalhidden (FestivalHidden.cs, docs/856): see the list there.
         // [1328-1344] spawnfix / spawnoffworld (SpawnFix.cs, docs/857): see the list there.
@@ -2542,6 +2545,11 @@ namespace Ts3Fixes
                 case "deadrefcooking": return Instantiator.kDeadRefCooking;  // EA bug fix, off (DeadRefs.cs phase 14, docs/205 §4)
                 case "deadrefconvo": return Instantiator.kDeadRefConvo;  // EA bug fix, off (DeadRefs.cs phase 15, docs/517 §4)
                 case "takeariskguard": return Instantiator.kTakeARiskGuard;  // EA bug fix, off (TakeARiskGuard.cs, docs/529 §4)
+                case "playpenflags": return Instantiator.kPlaypenFlags;  // EA bug fix, off (EaBugs500.cs, docs/500)
+                case "voodoobindwait": return Instantiator.kVoodooBindWait;  // EA bug fix, off (EaBugs500.cs, docs/500)
+                case "saunawoohoopreg": return Instantiator.kSaunaWooHooPreg;  // EA bug fix, off (EaBugs500.cs, docs/500)
+                case "lotentrypet": return Instantiator.kLotEntryPet;  // EA bug fix, off (EaBugs500.cs, docs/500)
+                case "horselotentry": return Instantiator.kHorseLotEntry;  // EA bug fix, off (EaBugs500b.cs, docs/500)
                 case "minihomelot": return Instantiator.kMiniHomeLot;  // EA bug fix, on (MiniHomeLot.cs, docs/266)
                 case "dancefloorlistguard": return Instantiator.kDanceFloorListGuard;  // EA bug fix, ON in release (Rodney 2026-11-09; DanceFloorDiag.cs, docs/253 §12)
                 case "compactionfail": return false;  // test only (Compaction.cs, docs/204 §6): the reload throws after the screen is up
