@@ -1,5 +1,5 @@
 # TS3 kit for testers: a read-only diagnostic (writes one zip report) and an optional installer / uninstaller for the
-# ts3native EA app 1.69 build that sits in ..\payload (kit 1120.e3: the published v0.2.12 EA files; payload\diag = the
+# ts3native EA app 1.69 build that sits in ..\payload (kit 1120.e4: the published v0.2.12 EA files; payload\diag = the
 # read-only EA 1.69 diagnostic build, docs/300).
 # Why PowerShell and not Node like the rest of this repo: a player has no Node, and Windows PowerShell 5.1 ships with
 # every Windows 10/11. Windows only by nature (registry, The Sims 3 PC folders). No network, no upload, no AI.
@@ -30,7 +30,7 @@ param(
   [string]$DocsDir = ''   # tests only: stands in for the Documents known folder (with -NoSystem)
 )
 $ErrorActionPreference = 'Stop'
-$KitVersion = '1120.e3'  # e3: payload\diag asi 0.36.247-elidiag3 (ModTime frame walk checks, docs/300 §7; e2 = EA smoke 1 fixes, §6)
+$KitVersion = '1120.e4'  # e4: payload\diag asi 0.36.247-elidiag4 (ModTime checked name reads, relaxed frame walk, docs/300 §8; e3 §7, e2 §6)
 # Kit target: the EA app 1.69 exe (Game\Bin\TS3.exe). Kit 1119.2 (retail) used 'retail 1.67' / TS3W.exe / ts3native-retail167.asi.
 $KitEdition = 'EA app 1.69'; $KitExe = 'TS3.exe'; $KitAsi = 'ts3native-ea169.asi'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -38,7 +38,7 @@ $payload = Join-Path (Split-Path -Parent $here) 'payload'
 $CapBytes = 5MB          # copied text files above this are listed, not copied
 $HashCapBytes = 256MB    # Bin files above this are listed without a hash
 $Days = 14
-# The normal build of kit 1120.e3 = the published v0.2.12 EA app files (ts3native-ea169-v0.2.12.zip: asi 0.36.247, its ini
+# The normal build of kit 1120.e4 = the published v0.2.12 EA app files (ts3native-ea169-v0.2.12.zip: asi 0.36.247, its ini
 # with personal names in comments replaced, values unchanged; ts3fixes.package rel0211b). payload\diag holds the diagnostic
 # asi + ini (same package); its hashes are not pinned here.
 $RcAsiSha = '3965e9a8ce87c68cb44b9a740c8c9aad0cda36ad8ecaa7b6420ea3e506f53aec'
