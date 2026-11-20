@@ -546,8 +546,8 @@ export function parseQueue(json: unknown): Job[] {
     if (j.releaseDefaults !== undefined && typeof j.releaseDefaults !== 'boolean') throw new Error(`${at}: releaseDefaults must be true or false`);
     // fixesPackage: a shipped ts3fixes.package (path from the repo root) installed over cycle.ts's build/ copy before each start (repro jobs: the start-path controls, release-validate *-v016)
     // matrix too: its reload restarts reinstall the package (release-followup-1111 ran reload on a pinned pair)
-    if (j.fixesPackage !== undefined && (typeof j.fixesPackage !== 'string' || !j.fixesPackage || j.fixesBuild !== undefined || !(j.run?.profile || j.run?.soak || j.run?.repro || j.run?.script || j.run?.matrix || j.run?.rewindGames)))
-      throw new Error(`${at}: fixesPackage must be a path, only on profile/soak/repro/script/matrix/rewindGames jobs, not with fixesBuild`);
+    if (j.fixesPackage !== undefined && (typeof j.fixesPackage !== 'string' || !j.fixesPackage || j.fixesBuild !== undefined || !(j.run?.profile || j.run?.soak || j.run?.repro || j.run?.script || j.run?.matrix || j.run?.rewindGames || j.run?.saveReload)))
+      throw new Error(`${at}: fixesPackage must be a path, only on profile/soak/repro/script/matrix/rewindGames/saveReload jobs, not with fixesBuild`);
     if (j.iniBase !== undefined && (typeof j.iniBase !== 'string' || !j.iniBase)) throw new Error(`${at}: iniBase must be a path from the repo root`);
     if (j.dogfood !== undefined && typeof j.dogfood !== 'boolean') throw new Error(`${at}: dogfood must be true or false`);
     if (j.pinReason !== undefined && (typeof j.pinReason !== 'string' || !j.pinReason.trim())) throw new Error(`${at}: pinReason must be a non-empty text (why this job pins its asi/package)`);
@@ -2173,7 +2173,7 @@ if (values['self-check']) {
   assert.throws(() => parseQueue([{ id: 'f5', asi: 'x', save: 'S', fixesPackage: 'p', fixesBuild: 'b', run: { soak: { minutes: 1 } } }]), /fixesPackage/);
   assert.equal(parseQueue([{ id: 'ib', asi: 'x', save: 'S', iniBase: 'game-copy/asi-v027/ts3native.ini', fixesPackage: 'game-copy/p', run: { script: ['idle-watch.ts'] } }])[0].iniBase, 'game-copy/asi-v027/ts3native.ini'); // idle-watch queue
   assert.equal(parseQueue([{ id: 'f6', asi: 'x', save: 'S', fixesPackage: 'game-copy/p', run: { matrix: ['--cases', 'reload'] }, saveMatrix: { fixes: 'shipped' } }])[0].fixesPackage, 'game-copy/p'); // reload on a pinned pair
-  assert.throws(() => parseQueue([{ id: 'f6b', asi: 'x', save: 'S', fixesPackage: 'p', run: { saveReload: [] } }]), /fixesPackage/);
+  assert.equal(parseQueue([{ id: 'f6b', asi: 'x', save: 'S', fixesPackage: 'p', run: { saveReload: [] } }])[0].fixesPackage, 'p'); // save-reload on a pinned pair
   assert.equal(parseQueue([{ id: 'f7', asi: 'x', save: 'menu', fixesPackage: 'game-copy/p', run: { repro: 'r' } }])[0].fixesPackage, 'game-copy/p'); // start-path controls
   const bdb = loadDb();
   assert.ok(bdb.some(b => b.name === 'ts3fixes.v0.1.5' && b.kind === 'ts3fixes'), 'build DB has the v0.1.5 release package');

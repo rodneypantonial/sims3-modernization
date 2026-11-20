@@ -12,6 +12,7 @@
 //   node tools/harness/save-reload.ts --control --world BP [--after 10]
 //     (d) full-restart reference: queue.ts started the game fresh and loaded --name; mark sr-ctl; play --after min; mark sr-ctl10;
 //     restart ms = now - TS3W.exe start (upper bound: includes the queue's menu wait and settle)
+//   --no-marks: skip the agent mem_mark (only the probe /memory read), for release-ini correctness runs with [MemDiag] off
 //   node tools/harness/save-reload.ts --self-check
 // Marks: agent mem_mark (one "diag: mem #N mark ev=<tag>" line in ts3native.log, needs [MemDiag] Enabled=1 + [UserDiag]) plus the
 // probe's /memory (commit, private, largest free, mapped, Boehm heap). Output probe-out/save-reload/<world>-<mode>-<UTC>.json;
@@ -60,7 +61,7 @@ function selfCheck() {
 
 const { values } = parseArgs({ options: {
   world: { type: 'string' }, play: { type: 'string', default: '25' }, after: { type: 'string', default: '10' }, name: { type: 'string' },
-  control: { type: 'boolean' }, 'no-visits': { type: 'boolean' }, 'no-direct': { type: 'boolean' }, port: { type: 'string', default: '47891' },
+  control: { type: 'boolean' }, 'no-marks': { type: 'boolean' }, 'no-visits': { type: 'boolean' }, 'no-direct': { type: 'boolean' }, port: { type: 'string', default: '47891' },
   cycles: { type: 'string', default: '1' }, // menu-route reloads in a row (memory stress; marks sr-reload, sr-reload-2 ...)
   'self-check': { type: 'boolean' },
 } });
@@ -107,12 +108,18 @@ async function gcState() {
   return { spacingKB: rd?.hex ? Buffer.from(rd.hex, 'hex').readUInt32LE(0) >> 10 : null, ...Object.fromEntries(keys.map(k => [k, n?.[k] ?? null])) };
 }
 async function mark(tag: string) {
-  const r = await ag('mem_mark', { tag });
+  const r = values['no-marks'] ? { ok: true, result: { accepted: true } } : await ag('mem_mark', { tag });
   if (!r.ok || !r.result?.accepted) throw new Error(`mem_mark ${tag}: ${r.error ?? 'not accepted ([MemDiag] / [UserDiag] off?)'}`);
   out.marks[tag] = { at: new Date().toISOString(), memory: await get('memory'), gc: await gcState() };
   const m = out.marks[tag].memory, g = out.marks[tag].gc;
   log(`mark ${tag}: commit ${m?.commitMB} private ${m?.privateMB} largest free ${m?.largestFreeMB} MB; bl spacing ${g.spacingKB} KB, strict/lenient ${g.gcStrictN}/${g.gcLenientN}, black ok ${g.gcBlackOk}, streak max ${g.gcExpandStreakMax}`);
   flush();
+}
+// every dialog autopilot answered since the last call (the agent hands the list over once): an unexpected accept can
+// change the world (EA laptop 2026-11-20: Sunset Valley quit 22 s into play, Isla Paradiso loaded with no household)
+async function logDialogs() {
+  const c = (await ag('autopilot')).result?.cleared ?? [];
+  for (const d of c) { log(`dialog: ${d}`); (out.dialogs ??= []).push({ at: new Date().toISOString(), d }); }
 }
 // realistic play: autopilot x3 (dialogs cleared), requests declined every 30 s; Buy + CAS visits at the given minutes
 async function play(min: number, visitsAt: number[] = []) {
@@ -123,6 +130,7 @@ async function play(min: number, visitsAt: number[] = []) {
     if (why) throw new Error(why);
     if (todo.length && Date.now() - t0 >= todo[0] * 60000) { todo.shift(); await visit(); }
     await ag('decline_requests');
+    await logDialogs();
     await sleep(Math.min(30000, Math.max(1000, min * 60000 - (Date.now() - t0))));
   }
 }
@@ -171,8 +179,9 @@ async function save(label: string) {
   const off = logSize();
   const stop = await sampler();
   const t0 = Date.now(), r = await ag('save_game', { name: NAME }); // always by name: after a load SaveName can be empty (EA then opens the Save As dialog); the same name overwrites, as EA's AutoSave does
-  if (!r.ok) throw new Error(`save ${label}: ${r.error}`);
+  if (!r.ok) { await stop(); throw new Error(`save ${label}: ${r.error}`); }
   let seen = false;
+  // a throw must stop the sampler loop too, or the process never exits and the queue hangs (EA laptop 2026-11-20)
   const wallMs = await until(`save ${label}`, 900, async () => {
     const st = await ag('game_state');
     if (st.ok && st.result.save_in_progress) seen = true;
@@ -181,7 +190,7 @@ async function save(label: string) {
     // The agent's async_log line is not: its task can finish before the game's save state runs (08:41: wall 49 ms on a
     // 9.7 s save, then the mem_mark hit the busy sim thread), so it is not read here.
     return saveEnds(logFrom(off)).length > 0 || (seen && st.ok && !st.result.save_in_progress);
-  });
+  }).catch(async e => { await stop(); throw e; });
   await sleep(2000); // the save: end line follows the script side by a moment
   const peak = await stop();
   const end = saveEnds(logFrom(off)).at(-1) ?? null;

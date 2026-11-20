@@ -369,6 +369,9 @@ namespace Ts3Agent
             // sending it away leaves the household as it is, so take send to homeworld.
             new[] { new[] { "raise the alien baby" }, new[] { "send to homeworld" } },
             new[] { new[] { "mod scripts found" }, new[] { "accept", "ok", "continue" } },
+            // a long-distance move offer at load: "yes" quits the world and loads another town with no active household
+            // (EA laptop 2026-11-20, Sunset Valley -> Isla Paradiso 1 s after load); never move the family
+            new[] { new[] { "move to a new town", "long-distance move", "prior to moving your sims" }, new[] { "no", "cancel", "don't" } },
         };
 
         // A World Adventures trip asks to name its travel save, and cancelling that dialog drops the trip (2026-11-04 #208 save
