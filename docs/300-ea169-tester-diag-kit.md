@@ -5,7 +5,7 @@ asi 0.36.247). A player-report build for one Discord tester (EA app 1.69, TS3.ex
 Turbo, about 18 fps on an RTX 4080). Never a release. The goal: the kit names the bottleneck by itself while she plays
 normally for 15-20 minutes; she is not asked to toggle effects, change settings or remove mods.
 
-## 1. What is in the build (asi 0.36.247-elidiag1)
+## 1. What is in the build (asi 0.36.247-elidiag1; elidiag2 = the EA smoke 1 fixes, §6)
 
 Same code and ini as the published v0.2.12 EA files, plus three read-only sections. All three are off in the shipped
 `ts3native.ini` and in the code defaults; only the kit's diagnostic ini turns them on.
@@ -34,7 +34,7 @@ tree's registry has no op table.
   KernelBase with a d3d9 return address in those words), system/wait, Apex, S3PP, ts3native, other.
 - **Sim thread.** One simloop.cpp callback: iterations/s and iteration ms (histogram); the sim thread id for its CPU.
 - **Per minute:** `framediag:` log line, `framediag.csv` row, `fps-summary.txt` rewritten. A minute counts as "in
-  world" with >= 60 sim iterations and frames.
+  world" with >= 60 sim iterations and frames (elidiag2: by the userdiag world count, §6).
 - **Verdict (FdVerdict, selftest fixtures):** fps >= 50 = none; Present >= 350 ms/s or >= 50% of main samples in d3d9
   = BRIDGE / GPU side; main CPU >= 750 ms/s = main (render) thread; sim CPU >= 800 ms/s = sim thread (top script mods
   from ModTime follow); main waits >= 400 ms/s outside Present = WAITS; else mixed. Thresholds [inferred] docs/51 §545.
@@ -104,3 +104,33 @@ stop per 20 ms sample; not measured in game yet.
   (`NvRemixBridge` / `bridge.conf` only in the bridge client, `dxvk.conf` in DXVK and the bridge client, neither in system).
 - GPU preference looked up `Sims3Launcher.exe` because the laptop harness runs TS3.exe swapped over that name (docs/230):
   look up TS3.exe / TS3W.exe in Bin too.
+
+## 6. elidiag2 / kit 1120.e2: EA smoke 1 fixes (2026-11-20, branch `eli-diag-fix`)
+
+asi 0.36.247-elidiag2, built for EA (/DTS3A_TABLE) with the laptop's portable MSVC, native selftest ok. NOT RUN in game.
+- **Present** (framediag.cpp): the device vtable is now found from the game's own device, `[GraphicsDevice 0x11CECC8]
+  +0x0C`, the pointer `Device_Present` calls through (docs/37 §1). EA 1.69 `Device_Present 0x612760` has the same bytes
+  as Steam `0x611680`, and EA `GraphicsDevice_Get 0x60F340` returns `[0x01228D78]` = the existing TS3A row [verified,
+  decrypted EA image]. The minute thread polls it every 20 ms until a device exists (a device made before the asi starts
+  is covered). The d3d9 import path stays: Steam's import table slot, else the slot found by value (d3d9!Direct3DCreate9
+  in an initialized non-code section followed by 0 or another d3d9 address; EA expects exe+0xBDFB00), once a second
+  for 5 min, then `CreateDevice` is wrapped for later devices. Before any write: the vtable must sit inside a loaded
+  module and slots 0-2 and 17 (16 for IDirect3D9) must point at executable code. Stand-down lines: `framediag: Present
+  NOT timed, device vtable ... refused: <why>`, `... slot 17 not writable`, `framediag: another device vtable ... not
+  timed`, and after 120 s without a timed Present `framediag: Present still NOT timed after 120 s: game device ...,
+  Direct3DCreate9 import ...`. Only the vtable slot is used, so stock d3d9, DXVK and the Remix bridge client are alike.
+- **In world:** with `[UserDiag]` on, a minute is in world when the ts3fixes `world:` lines outnumber `world quit`
+  (userdiag.cpp, the count ModTime uses since 298da6c1); without it, the old test.
+- **d3d9 label:** the loaded d3d9.dll's file is read once: `NvRemixBridge` / `bridge.conf` = bridge client, `dxvk.conf`
+  / `DXVK_` = DXVK, else system (System32 / SysWOW64 folder) or other. Log `framediag: d3d9.dll from <folder>, N KB:
+  d3d9 (DXVK)`; the main-thread class uses the same name.
+- **GPU preference:** looked up for this exe, Bin\TS3W.exe and Bin\TS3.exe (when present) and the bridge server; the
+  verdict names the first one with a preference set.
+- **ModTime:** sampling without op 61 and the per-minute summary came with 298da6c1. New: after 30 s of live-world
+  samples one line `modtime: stack walk ok: N of M live-world samples with a script frame` or `modtime: stack walk FAIL:
+  ... TLS index i, x without a Mono context, y unreadable: <reason>`; the summary's first line counts samples with a frame.
+- Kit 1120.e2 = 1120.e1 with the elidiag2 asi in `payload\diag`; ini, package and normal payload unchanged.
+- To confirm on the EA laptop: `OK   framediag`, `framediag: Present timed via the game device` (or `via
+  IDirect3D9::CreateDevice`), `framediag: d3d9.dll from outside the system folder, ... KB: d3d9 (DXVK)`, per-minute
+  `framediag:` lines with fps > 0 and no `(not in world)` while in live mode, `framediag: d3d9!Direct3DCreate9 slot found
+  by value at exe+0xBDFB00`, `modtime: stack walk ok`, `Windows graphics preference: Sims3Launcher.exe ..., TS3.exe ...`.
