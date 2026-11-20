@@ -176,22 +176,11 @@ unreachable code), and tools/ea-ini.ts zeroes them in the EA inis (KEY_ADDRS per
 tools/ini-sections.json gained [Binder], [Crash2Diag], [EqualsFast], [ThumbStall], [ThumbCallers]). Map them on the EA laptop with
 `node tools/port-run.ts --exe <decrypted exe> --allow-inferred`, then drop the rows' guard, KEY_ADDRS entry and this table's row.
 
-| feature | file | rows | Steam addresses | on EA now |
-|---|---|---|---|---|
-| [AutShadow] Races bits 0-1 (R1b pre-warm, R2b / R3a witness) | autraces.cpp | 56 | 0x4D9AD0 0x7935B0 0x8A79B0 0x9B0530 0xC88D80 0xD79CA0 0x114C908 0x114CA08 0x114CA0C 0x11AF670 0x11C7984 0x11CB928 0x11CC928 0x11CC964 0x11CDD00 0x11CE2D0 0x11CF490 0x11D3E28 0x11D4068 0x11D4BC0 0x11D6A78 0x11D7518 0x11D8888 0x11D9848 0x11DA058 0x11E8FA8 0x11E8FC0 0x11E8FC4 0x11E90F8 0x11E9290 0x11E92A8 0x11E94F8 0x11E96C1 0x11EB490 0x11EBAE0 0x11ECEED 0x11ED780 0x11EE140 0x11EE520 0x11EE528 0x11EE54C 0x11EE550 0x11EE554 0x11EE558 0x11EE55C 0x11EE560 0x11EE564 0x11EE568 0x11EE56C 0x11EE570 0x11EE574 0x11EE578 0x11EE57C 0x11EE580 0x11EE584 0x11EE588 | bits masked to 4 (R2c stays), SKIP line; rc ini Races=4 (EA_SET) |
-| [AutShadow] Satb cold park (docs/206 §18) | satb.cpp | 4 | 0x11F4130 0x11F43E4 0x11F4574 0x11F45A0 | no park (cold call runs as before the park), one SKIP line |
-| [MonoThread] QuitStop (Mono shutdown entry) | monothread-m5.cpp | 1 | 0xE534D0 | QuitStop forced 0, SKIP line; rc ini QuitStop=0 |
-| [MonoJit] BoundCall | monojit-bound.h | 5 | 0xDA4200 0xDBFAE0 0xDBFBF0 0xDDD880 0xDDD900 | BoundCall not installed, SKIP line; rc ini BoundCall=0 |
-| [RouteAsync] FbApplyLog | ts3native.cpp | 2 | 0x631A60 0xC68960 | FbApplyLog forced 0, SKIP line; rc ini (shipped 0) |
-| [ResourceCache] TrimAfterCleanup / TrimEveryMin | rctrim.cpp | 1 | 0xFFE2F0 | both forced 0, SKIP line; rc ini 0 |
-| [EaCrashFixes] HeightsInfLoop | wastar.cpp | 4 | 0x64CEBA 0x64CEC0 0x64CF55 0x64D275 | SKIP line; rc ini HeightsInfLoop=0 |
-| [EaCrashFixes] BridgeHeightNaN | wastar.cpp | 10 | 0xB745A0 0xC6133B 0xC61342 0xC6137B 0xC6A46B 0xC6A472 0xC6A4B3 0xC6A709 0xC6A710 0xC6A772 | SKIP line; rc ini BridgeHeightNaN=0 |
-| [EaCrashFixes] LotLevelPastEnd (docs/67 §40) | eafix.cpp | 2 | 0xAB70B0 0x10652D4 | SKIP line; rc ini LotLevelPastEnd=0 (shipped 0) |
-| [EaCrashFixes] FglStaleObject (docs/67 §41) | wastar.cpp | 3 | 0xB11A95 0xB11A9C 0xB11ABF | SKIP line; rc ini FglStaleObject=0 (shipped 0) |
-| [Binder] TypeHandleDirect | bindertd.cpp | 2 | 0xDB0940 0xDB095E | SKIP line; rc ini section zeroed |
-| [Crash2Diag] | c2diag.cpp | 12 | 0x74A830 0x74FC30 0x750400 0x751450 0x756EAE 0x756FB8 0x7646F8 0x1004148 0x10041C8 0x100421C 0x100423C 0x100425C | SKIP line; rc ini section zeroed (shipped 0) |
-| [EqualsFast] | equalsfast.cpp | 2 | 0xE70180 0xE7A590 | SKIP line; rc ini section zeroed (shipped 0) |
-| [ThumbStall] / [ThumbCallers] (5 of them are the inline-asm literals, 0 on EA) | thumbstall.cpp | 17 | 0x44C470 0x5A80A0 0x5A80A9 0x5A9E90 0x5EDB30 0x5F12A3 0xD5A9C8 0xD5A9D2 0xD5A9DD 0xD5AA25 0xD5C830 0xD614E0 0xD61670 0xFE514C 0x1088F48 0x11CEB88 0x11CEB8C | SKIP line each; rc ini both sections zeroed |
+All rows of the former table (AutShadow Races bits 0-1 and Satb cold park, MonoThread QuitStop, MonoJit BoundCall, RouteAsync
+FbApplyLog, ResourceCache Trim*, EaCrashFixes HeightsInfLoop / BridgeHeightNaN / LotLevelPastEnd / FglStaleObject, Binder, Crash2Diag,
+EqualsFast, ThumbStall / ThumbCallers) and the later ones (UnseenAnim / AnimPhase Split, Startup DxDiagCache, StallWatch, saveframes,
+yielddiag, taskserve) have EA 1.69 rows since 2026-11-20 (docs/294: per-row evidence, overrides); their guards, KEY_ADDRS entries and
+EA_SET Races=4 are gone. Still 0 on EA: gcgate.cpp ([GC] IdleGate, SubTimers) and gcmark.cpp ([GC] MarkHelpers).
 
 Left: EA laptop correctness runs of the folded EA asi (A alone, B + S3SS, E + Apex bridge, as #391), the address mapping above, and a
 Steam smoke of the folded master asi (same code as master by the proof; data placement differs).
