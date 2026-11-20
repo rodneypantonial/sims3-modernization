@@ -88,3 +88,19 @@ stop per 20 ms sample; not measured in game yet.
   `OK   modtime`, `OK   pccheck`, a `framediag:` line per minute, `fps-summary.txt` written, scriptErrors 0.
 - Whether the Remix bridge client blocks inside Present or in other d3d9 calls: the main-thread classes answer it.
 - ModTime package names: the v0.2.12 package has no ModTime.cs; the native package scan still names the packages.
+
+## EA smoke 1 (2026-11-20, Lenovo, DXVK, no bridge): FAIL, causes
+- [verified, log + code] ModTime 0 samples: the sampler only ran while ts3fixes op 61 had a sim hour open; the v0.2.12 EA
+  ts3fixes has no ModTime.cs, so op 61 never came (the EA rows for TLS 0x11F4160 / GC range / sim loop exist and the sim
+  loop ran at 30 it/s). Fixed: a live world is also userdiag.cpp's `world:` count above its `world quit` count; summary
+  every real minute and at each world quit (it was every 10 min, so the 10:25 write was the last before the 10:31 exit).
+  S3SA XOR decrypt + byte-step MVID scan ported from feature/modtime-diag-1120 1360853cc (0 MVIDs from 20 resources).
+- [verified, static] FrameDiag Present not timed: EA TS3.exe's import directory is the OOA stub (`Core/Activation.dll`
+  only); the real import table sits plain in .rdata (d3d9 descriptor RVA 0xD96A94, IAT slot RVA 0xBDFB00) and is filled
+  at run time. Fix left to the EA laptop session: find the slot by value (d3d9!Direct3DCreate9) in non-code sections,
+  retried until filled, vtable target checks.
+- FrameDiag "(not in world)": follows from frames = 0 (`simIters >= 60 && frames > 0`); use the same userdiag world count.
+- "d3d9 (bridge client)" is a fixed label; DXVK, the bridge client and system d3d9 differ by strings in the file
+  (`NvRemixBridge` / `bridge.conf` only in the bridge client, `dxvk.conf` in DXVK and the bridge client, neither in system).
+- GPU preference looked up `Sims3Launcher.exe` because the laptop harness runs TS3.exe swapped over that name (docs/230):
+  look up TS3.exe / TS3W.exe in Bin too.

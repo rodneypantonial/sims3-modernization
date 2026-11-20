@@ -18,7 +18,7 @@
 // stream, matched to the loaded image's MVID.
 // Files next to ts3native.log: modtime-summary.txt (top 20 owners, top 10 methods of the top 5 mods, worst 20 hitch
 // stacks, PC check block, measured overhead) and modtime.csv (top 30 owners per sim hour), written at each sim hour
-// (ts3fixes op 61 hi 1), at world quit (hi 2) and every 10 real minutes. Nothing here changes the game.
+// (ts3fixes op 61 hi 1), at world quit (hi 2 or a userdiag "world quit" line) and every real minute. Nothing here changes the game.
 
 static const DWORD kMdtType = 0x073FAA07;  // S3SA
 enum { MDT_ENGINE, MDT_GAME, MDT_OURS, MDT_MOD };
@@ -269,6 +269,7 @@ static void MdtIterEnd(MdtIterBuf& b, LONG ms) {
 }
 
 static void MdtWriteSummary(bool hourEnd, LONG hour);
+static bool MdtWorldLive() { return g_udWorlds > g_udQuits; }  // userdiag.cpp ts3fixes lines (every ts3fixes since docs/188)
 static volatile LONG g_mdtReq, g_mdtReqHour;  // from op 61: 1 = sim hour g_mdtReqHour ended, 2 = world quit
 static DWORD WINAPI MdtSampler(LPVOID) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);  // a saturated PC must not starve the sampler (sampling bias)
@@ -278,7 +279,7 @@ static DWORD WINAPI MdtSampler(LPVOID) {
     Log("modtime: sampling the sim thread (tid %lu) at %ld Hz", g_mdtSimTid, g_mdtHz);
     g_mdtStartUs = MdtUs();
     static MdtIterBuf buf;
-    LONG seenSeq = g_mdtSeq;
+    LONG seenSeq = g_mdtSeq, seenQuits = g_udQuits;
     ULONG64 lastCyc = 0;
     QueryThreadCycleTime(h, &lastCyc);
     DWORD lastWrite = GetTickCount();
@@ -287,8 +288,10 @@ static DWORD WINAPI MdtSampler(LPVOID) {
         Sleep(sleepMs);
         const LONG req = InterlockedExchange(&g_mdtReq, 0);
         if (req & 1) MdtWriteSummary(true, g_mdtReqHour), lastWrite = GetTickCount();
-        else if (req & 2 || GetTickCount() - lastWrite >= 600000) MdtWriteSummary(false, -1), lastWrite = GetTickCount();
-        if (g_mdtHour < 0) {  // no live world (menu, load screen, after a quit): not sampled
+        else if (req & 2 || g_udQuits != seenQuits || GetTickCount() - lastWrite >= 60000) MdtWriteSummary(false, -1), lastWrite = GetTickCount(), seenQuits = g_udQuits;
+        // live world = ts3fixes op 61 hour open, or (a ts3fixes without ModTime.cs, the v0.2.12 EA kit) userdiag.cpp's
+        // "world:" lines outnumber its "world quit" lines (EA smoke 1120: op 61 never came, 0 samples in 600 s)
+        if (g_mdtHour < 0 && !MdtWorldLive()) {  // no live world (menu, load screen, after a quit): not sampled
             QueryThreadCycleTime(h, &lastCyc);
             seenSeq = g_mdtSeq, buf.n = 0;
             continue;
