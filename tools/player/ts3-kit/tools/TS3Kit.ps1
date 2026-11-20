@@ -30,7 +30,7 @@ param(
   [string]$DocsDir = ''   # tests only: stands in for the Documents known folder (with -NoSystem)
 )
 $ErrorActionPreference = 'Stop'
-$KitVersion = '1120.e4'  # e4: payload\diag asi 0.36.247-elidiag4 (ModTime checked name reads, relaxed frame walk, docs/300 §8; e3 §7, e2 §6)
+$KitVersion = '1120.e5'  # e5: EA 1.69 matched on the link timestamp (other image sizes), unknown builds install with a note; e4: payload\diag asi 0.36.247-elidiag4 (ModTime checked name reads, relaxed frame walk, docs/300 §8; e3 §7, e2 §6)
 # Kit target: the EA app 1.69 exe (Game\Bin\TS3.exe). Kit 1119.2 (retail) used 'retail 1.67' / TS3W.exe / ts3native-retail167.asi.
 $KitEdition = 'EA app 1.69'; $KitExe = 'TS3.exe'; $KitAsi = 'ts3native-ea169.asi'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -111,7 +111,10 @@ function PeInfo([string]$p) {
   if ($e -lt 0 -or $e + 84 -gt $n -or $b[$e] -ne 0x50 -or $b[$e + 1] -ne 0x45) { throw 'no PE header' }
   $ts = [BitConverter]::ToUInt32($b, $e + 8); $ch = [BitConverter]::ToUInt16($b, $e + 22); $soi = [BitConverter]::ToUInt32($b, $e + 24 + 56)
   $key = ('{0:X8}/{1:X}' -f $ts, $soi)
-  $ed = $Editions[$key]; if (-not $ed) { $ed = 'unknown build' }
+  $ed = $Editions[$key]
+  # same link timestamp, other image size (e.g. EA app DRM wrapper 0xEB7000 vs 0xEB5000): same game code, so match on the timestamp
+  if (-not $ed) { $tsKey = ('{0:X8}' -f $ts); $hit = @($Editions.Keys | Where-Object { $_.Split('/')[0] -eq $tsKey }); if ($hit.Count -eq 1) { $ed = $Editions[$hit[0]] } }
+  if (-not $ed) { $ed = 'unknown build' }
   [ordered]@{ peTimestamp = ('{0:X8}' -f $ts); sizeOfImage = ('0x{0:X}' -f $soi); largeAddressAware = [bool]($ch -band 0x20); edition = $ed }
 }
 function CanOpenWrite([string]$p) {   # opens an existing file for writing and closes it again: nothing is changed
@@ -895,7 +898,10 @@ function CheckGameForInstall([string]$game) {
   $exe = Join-Path $game "Game\Bin\$KitExe"
   if (-not (Test-Path -LiteralPath $exe)) { throw "No Game\Bin\$KitExe in $game" }
   $pe = PeInfo $exe
-  if ($pe.edition -ne $KitEdition) { throw "This $KitExe is '$($pe.edition)' (PE $($pe.peTimestamp)/$($pe.sizeOfImage)). This build is for the $KitEdition exe only. Nothing was changed." }
+  if ($pe.edition -eq 'unknown build') {
+    # ts3native checks the bytes at every patch site and stands down on a mismatch, so an unknown build is safe to try
+    Write-Host "Note: this $KitExe is an unknown build (PE $($pe.peTimestamp)/$($pe.sizeOfImage)). Installing anyway; any fix that does not match it switches itself off (see ts3native.log)." -ForegroundColor Yellow
+  } elseif ($pe.edition -ne $KitEdition) { throw "This $KitExe is '$($pe.edition)' (PE $($pe.peTimestamp)/$($pe.sizeOfImage)). This build is for the $KitEdition exe only. Nothing was changed." }
   if (@(Get-Process -Name $RunNames -ErrorAction SilentlyContinue).Count) { throw 'The game or its launcher is running. Close it first. Nothing was changed.' }
 }
 # The game's usual Mods\Resource.cfg (Mod The Sims): loads .package files up to 5 folders deep under Mods\Packages.
@@ -1070,7 +1076,11 @@ function SelfTest {
   $b = New-Object byte[] 4096; $b[0] = 0x4D; $b[1] = 0x5A; $b[0x3C] = 0x80; $b[0x80] = 0x50; $b[0x81] = 0x45
   [BitConverter]::GetBytes([uint32]0x52D872DA).CopyTo($b, 0x88); [BitConverter]::GetBytes([uint16]0x0122).CopyTo($b, 0x96); [BitConverter]::GetBytes([uint32]0xE5B000).CopyTo($b, 0x80 + 24 + 56)
   [System.IO.File]::WriteAllBytes($tmp, $b)
-  try { $pe = PeInfo $tmp; Check ($pe.edition -eq 'retail 1.67' -and $pe.largeAddressAware) 'exe header: retail 1.67 with Large Address Aware' } finally { Remove-Item -LiteralPath $tmp -Force }
+  try { $pe = PeInfo $tmp; Check ($pe.edition -eq 'retail 1.67' -and $pe.largeAddressAware) 'exe header: retail 1.67 with Large Address Aware'
+    [BitConverter]::GetBytes([uint32]0x6707155C).CopyTo($b, 0x88); [BitConverter]::GetBytes([uint32]0xEB7000).CopyTo($b, 0x80 + 24 + 56); [System.IO.File]::WriteAllBytes($tmp, $b)
+    Check ((PeInfo $tmp).edition -eq 'EA app 1.69') 'exe header: EA 1.69 timestamp with another image size (0xEB7000)'
+    [BitConverter]::GetBytes([uint32]0x11111111).CopyTo($b, 0x88); [System.IO.File]::WriteAllBytes($tmp, $b)
+    Check ((PeInfo $tmp).edition -eq 'unknown build') 'exe header: unknown timestamp stays unknown' } finally { Remove-Item -LiteralPath $tmp -Force }
   Check ((@('Sims 3 Backup', 'The Sims 3 Backup', 'The Sims 3 - Copy', 'The Sims 3 (2)', 'The Sims 3 old', 'Copia de The Sims 3', 'The Sims 3 bak') | Where-Object { -not (IsCopyName $_) }).Count -eq 0 -and
     (@('The Sims 3', 'Die Sims 3', 'Sims 3', 'The Sims 3 Gold') | Where-Object { IsCopyName $_ }).Count -eq 0) 'copy / backup folder names'
   $fx = Join-Path ([System.IO.Path]::GetTempPath()) "ts3kit-selftest-$PID"
