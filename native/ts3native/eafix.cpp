@@ -530,9 +530,6 @@ static bool LlPatch(DWORD* slot) {
 
 static bool ApplyLotLevelPastEnd(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"EaCrashFixes", L"LotLevelPastEnd", 0, ini)) return false;
-#ifdef TS3A_TABLE
-    if (ts3a_noaddr) { Log("SKIP ea fix LotLevelPastEnd ([EaCrashFixes] LotLevelPastEnd): no EA 1.69 address, docs/232 §8"); return false; }
-#endif
     DWORD* slot = (DWORD*)(uintptr_t)LL_SLOT;
     if (!Readable(slot, 4) || *slot != LL_GET || !LlPatch(slot)) {
         Log("SKIP ea fix: LotLevelPastEnd: vtable slot 0x%08X or the getter bytes differ: not installed", LL_SLOT);

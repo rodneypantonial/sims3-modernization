@@ -31,34 +31,17 @@ export const RC_ZERO_KEYS: Record<string, string[]> = {};
 const rcZeroKey = (sec: string, key: string) => (RC_ZERO_KEYS[sec] ?? []).includes(key);
 // One key of a section that is clean otherwise: its unresolved rows zero that key on EA instead of flagging the whole file (eafix.cpp, wastar.cpp,
 // rtoro.cpp and idlero.cpp hold other, working features). The key comes back by itself once port-run resolves its addresses.
-export const KEY_ADDRS: Record<string, number[]> = {
-    "EaCrashFixes.ThumbPoseBones": [0x00D5B708, 0x00D5B768, 0x00D5B7A1, 0x00FC2D30], "EaCrashFixes.LotGridMiss": [0x0082B608, 0x0082B7F4],
-    "RouteToObjRO.Tail": [0x00686A90, 0x0082A780, 0x01003D7C],
-    "IdleCheckRO.SiteC": [0x00620D20, 0x00624F70, 0x00652470, 0x0075598B, 0x00755A12, 0x00755A6D, 0x00755A82, 0x00755A97],
-    // master fold 2026-11-15 (docs/232 §8): master code newer than rc1111g, no EA 1.69 rows yet; each feature also SKIPs in the EA
-    // asi. RacesBits01 and SatbColdPark name no ini key (the code masks Races to bit 2, EA_SET ships Races=4; the cold park is not
-    // switched): they only keep autraces.cpp and satb.cpp from zeroing the whole [AutShadow]
-    "AutShadow.RacesBits01": [0x004D9AD0, 0x007935B0, 0x008A79B0, 0x009B0530, 0x00C88D80, 0x00D79CA0, 0x0114C908, 0x0114CA08, 0x0114CA0C, 0x011AF670, 0x011C7984, 0x011CB928, 0x011CC928, 0x011CC964, 0x011CDD00, 0x011CE2D0, 0x011CF490, 0x011D3E28, 0x011D4068, 0x011D4BC0, 0x011D6A78, 0x011D7518, 0x011D8888, 0x011D9848, 0x011DA058, 0x011E8FA8, 0x011E8FC0, 0x011E8FC4, 0x011E90F8, 0x011E9290, 0x011E92A8, 0x011E94F8, 0x011E96C1, 0x011EB490, 0x011EBAE0, 0x011ECEED, 0x011ED780, 0x011EE140, 0x011EE520, 0x011EE528, 0x011EE54C, 0x011EE550, 0x011EE554, 0x011EE558, 0x011EE55C, 0x011EE560, 0x011EE564, 0x011EE568, 0x011EE56C, 0x011EE570, 0x011EE574, 0x011EE578, 0x011EE57C, 0x011EE580, 0x011EE584, 0x011EE588],
-    "AutShadow.SatbColdPark": [0x011F4130, 0x011F43E4, 0x011F4574, 0x011F45A0],
-    "MonoThread.QuitStop": [0x00E534D0],
-    "MonoJit.BoundCall": [0x00DA4200, 0x00DBFAE0, 0x00DBFBF0, 0x00DDD880, 0x00DDD900],
-    "RouteAsync.FbApplyLog": [0x00631A60, 0x00C68960],
-    "ResourceCache.TrimAfterCleanup": [0x00FFE2F0],
-    "ResourceCache.TrimEveryMin": [0x00FFE2F0],
-    "EaCrashFixes.HeightsInfLoop": [0x0064CEBA, 0x0064CEC0, 0x0064CF55, 0x0064D275],
-    "EaCrashFixes.BridgeHeightNaN": [0x00B745A0, 0x00C6133B, 0x00C61342, 0x00C6137B, 0x00C6A46B, 0x00C6A472, 0x00C6A4B3, 0x00C6A709, 0x00C6A710, 0x00C6A772],
-    "EaCrashFixes.LotLevelPastEnd": [0x00AB70B0, 0x010652D4],
-    "EaCrashFixes.FglStaleObject": [0x00B11A95, 0x00B11A9C, 0x00B11ABF],
-};
-const keyed = new Set(Object.values(KEY_ADDRS).flat());
+export const KEY_ADDRS: Record<string, number[]> = {};
+const keyedSet = (ka: Record<string, number[]>) => new Set(Object.values(ka).flat());
 const unresolvedRows = (addrHdr: string) => [...addrHdr.matchAll(/^\/\/ unresolved: (\S+) \S+ (?:native\/ts3native\/)?([\w-]+\.(?:cpp|h))/gm)];
 // "Section.Key" of every key with an unresolved address
-export const keysOff = (addrHdr: string) => { const un = new Set(unresolvedRows(addrHdr).map((m) => parseInt(m[1], 16))); return new Set(Object.keys(KEY_ADDRS).filter((k) => KEY_ADDRS[k].some((a) => un.has(a)))); };
+export const keysOff = (addrHdr: string, ka = KEY_ADDRS) => { const un = new Set(unresolvedRows(addrHdr).map((m) => parseInt(m[1], 16))); return new Set(Object.keys(ka).filter((k) => ka[k].some((a) => un.has(a)))); };
 // EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
 // ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
 // ThreadStack.Skip: SimulatorThread_Proc, a runtime string the address table cannot rewrite; the Steam value left the EA sim thread capped.
-// AutShadow.Races: bit 2 (R2c) only, as v0.2.12 EA shipped it; bits 0-1 have no EA 1.69 rows (docs/232 §8)
-export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360", "AutShadow.Races": "4" };
+// RouteSnap.DoorMemoX: -1 (off) as the release ini, until bugfix/doormemox-privacy-1117 is merged and verified (memo mismatch on
+// privacy-handler lots); the Steam ini base carries 3
+export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360", "RouteSnap.DoorMemoX": "-1" };
 // EA-port-only keys (TS3N_EA_PORT in ts3addr.h: compiled into the EA asi only, so the Steam ts3native.ini has no line for them):
 // appended to the end of their section; a section ts3native.ini lacks goes at the end of the file. Values as the v0.2.10 EA
 // rc ini shipped them: SimNoTexture on (player crash, deterministic repro, the fix passes it, docs/67 §34.5), ImageGuard off
@@ -116,7 +99,8 @@ export const DEPENDS: Record<string, string[]> = {
 export type Row = { section: string; shipped: string; state: "kept" | "zeroed"; reason: string };
 
 // files whose table has a problem: `// unresolved: 0x.. kind native/ts3native/f.cpp:12` and `// bytes-bad: kind 0x.. f.cpp:12`; a flagged .h flags the cpp files including it
-export function badFiles(addrHdr: string, bytesHdr: string, includes: Map<string, string[]>): Map<string, string> {
+export function badFiles(addrHdr: string, bytesHdr: string, includes: Map<string, string[]>, ka = KEY_ADDRS): Map<string, string> {
+    const keyed = keyedSet(ka);
     const bad = new Map<string, string>();
     const add = (f: string, why: string) => { for (const g of [f, ...(includes.get(f) ?? [])]) if (!bad.has(g)) bad.set(g, why); };
     for (const m of unresolvedRows(addrHdr)) if (!keyed.has(parseInt(m[1], 16))) add(m[2], "unresolved row");
@@ -172,7 +156,8 @@ function selfCheck() {
     const bad = badFiles("// unresolved: 0x00000001 missing native/ts3native/a.cpp:3\n// unresolved: 0x2 xref-none native/ts3native/h.h:1\n", "// bytes-bad: mismatch 0x3 b.cpp:9\n", new Map([["h.h", ["c.cpp"]]]));
     ok([...bad.keys()].sort().join() === "a.cpp,b.cpp,c.cpp,h.h", "badFiles " + [...bad.keys()]);
     const kh = "// unresolved: 0x0082B608 no-ea-evidence native/ts3native/wastar.cpp:197\n";
-    ok(badFiles(kh, "", new Map()).size === 0 && [...keysOff(kh)].join() === "EaCrashFixes.LotGridMiss" && keysOff("").size === 0, "keyed row");
+    const ka = { "EaCrashFixes.LotGridMiss": [0x0082B608] };
+    ok(badFiles(kh, "", new Map(), ka).size === 0 && [...keysOff(kh, ka)].join() === "EaCrashFixes.LotGridMiss" && keysOff("", ka).size === 0, "keyed row");
     const map = { A: ["a.cpp"], B: ["ok.cpp"], E: ["b.cpp", "ok.cpp"], RouteGate: ["ok.cpp"], RouteAsync: ["a.cpp"], AvoidRO: ["ok.cpp"], GC: ["memexp.cpp", "ok.cpp"] };
     const r = rcPlan(["A", "B", "EaDiag", "E", "RouteGate", "RouteAsync", "AvoidRO", "GC"], { A: "1", B: "1" }, map, new Map([...bad, ["memexp.cpp", "unresolved row"]]));
     const st = Object.fromEntries(r.map((x) => [x.section, x.state]));
@@ -181,6 +166,7 @@ function selfCheck() {
     ok(!["SteerRO", "FpRebuildLock", "Watchpoint", "RouteToObjRO", "MemDiag"].some((s) => ALWAYS_OFF[s]), "docs/238 sections allowed");
     ok(render(["[GC]", "Enabled=1", "BlackListCapKB=0", "[Z]", "BlackListCapKB=0"], () => false, () => false, undefined, EA_SET) === "[GC]\r\nEnabled=1\r\nBlackListCapKB=1024\r\n[Z]\r\nBlackListCapKB=0", "render set");
     ok(/^BlackListCapKB=1024\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini must carry BlackListCapKB=1024");
+    { const s = render(addEaKeys(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/)), () => false, () => false, rcZeroKey, EA_SET).split("\r\n"), at = s.indexOf("[RouteSnap]"), end = s.findIndex((l, i) => i > at && /^\[/.test(l)); ok(at >= 0 && s.slice(at, end).includes("DoorMemoX=-1"), "EA rc ini: [RouteSnap] DoorMemoX=-1 (off until the privacy fix)"); }
     ok(/^Skip=0x76C360\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini exempts the EA sim thread");
     const rc = render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET);
     ok(/^Light=(\d)/m.exec(rc.slice(rc.indexOf("\r\n[MemDiag]\r\n")))?.[1] === "1", "EA rc ini keeps [MemDiag] Light=1");
