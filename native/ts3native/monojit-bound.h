@@ -17,9 +17,9 @@
 struct JitBoundCallee { const char* name; DWORD inv, invN, body, bodyN, extra, extraN, fnv; };
 static const JitBoundCallee kJitBound[] = {
     // hash loop over the chars; [0x11EF7BC] (OffsetToStringData's icall, 8) under the IC-nesting setjmp; null this = NRE in +0x20
-    {"System.String.GetHashCode()", TS3A(0x00DBFBF0), 0x28, TS3A(0x00DBFAE0), 0x104, 0, 0, 0x958D9EA6},
+    {"System.String.GetHashCode()", TS3A(0x00DBFBF0), 0x28, TS3A(0x00DBFAE0), 0x104, 0, 0, TS3A_PICK(0x958D9EA6, 0x99FCCCFF, 0x958D9EA6)},
     // [0x11F06E0] = Equals(string,string)'s RuntimeMethod: its bound body 0xDA4200 (compare lengths, then the chars) when +0x28 != 0
-    {"System.String.Equals(string)", TS3A(0x00DDD900), 0x2E, TS3A(0x00DDD880), 0x78, TS3A(0x00DA4200), 0x10A, 0x8B23206C},
+    {"System.String.Equals(string)", TS3A(0x00DDD900), 0x2E, TS3A(0x00DDD880), 0x78, TS3A(0x00DA4200), 0x10A, TS3A_PICK(0x8B23206C, 0x687F6D46, 0x8B23206C)},
 };
 enum { JIT_BOUND_N = sizeof(kJitBound) / sizeof(kJitBound[0]) };
 // counters v194 (docs/registry.md), 12 int32; ts3native points g_jitBc at its block, the host keeps its own

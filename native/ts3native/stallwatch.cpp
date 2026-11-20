@@ -103,9 +103,6 @@ static DWORD WINAPI SsMain(LPVOID) {
 // [StallWatch] Enabled=1 (default 0 until a correctness run; the design wants it in every run)
 static bool ApplyStallWatch(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"StallWatch", L"Enabled", 0, ini)) return false;
-#ifdef TS3A_TABLE
-    if (ts3a_noaddr) { Log("SKIP stall watch ([StallWatch]): no EA 1.69 address, docs/232 §8"); return false; }
-#endif
     const int stallS = (int)GetPrivateProfileIntW(L"StallWatch", L"StallS", 5, ini);
     const int everyS = (int)GetPrivateProfileIntW(L"StallWatch", L"EveryS", 10, ini);
     const int lines = (int)GetPrivateProfileIntW(L"StallWatch", L"Lines", 6, ini);

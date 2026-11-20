@@ -21,7 +21,9 @@ static const u8 kC2DDtorSa[6] = {0x56, 0x8B, 0xF1, 0x8B, 0x46, 0x30};  // push e
 static const u8 kC2Destroy[6] = {0x8B, 0x0D, 0xC4, 0x40, 0x1D, 0x01};  // mov ecx,[0x11D40C4] (RouteManager)
 // destination vtables [verified .rdata scan: slot 2 = 0x74A830 or 0x751450]: base, point, slot array, radial range, lot
 static const DWORD kC2DestVt[5] = {TS3A(0x01004148), TS3A(0x010041C8), TS3A(0x0100421C), TS3A(0x0100423C), TS3A(0x0100425C)};
-static const DWORD C2_TEXT_LO = 0x00401000, C2_TEXT_HI = 0x00F95000, C2_RDATA_LO = 0x00F95000, C2_RDATA_HI = 0x01146000;
+// section bounds per build (EA 1.69.47: .rdata at 0xFDF000, .data at 0x119B000; retail keeps the Steam values as before)
+static const DWORD C2_TEXT_LO = 0x00401000, C2_TEXT_HI = TS3A_PICK(0x00F95000, 0x00FDF000, 0x00F95000), C2_RDATA_LO = C2_TEXT_HI,
+                   C2_RDATA_HI = TS3A_PICK(0x01146000, 0x0119B000, 0x01146000);
 
 struct C2Free {
     volatile LONG seq;  // written last
@@ -224,9 +226,6 @@ static __declspec(naked) void C2DestroyHook() {  // cdecl, [esp+4] = route handl
 
 static bool ApplyCrash2Diag(const wchar_t* ini) {
     if (GetPrivateProfileIntW(L"Crash2Diag", L"Enabled", 0, ini) <= 0) return false;
-#ifdef TS3A_TABLE
-    if (ts3a_noaddr) { Log("SKIP crash2 diag ([Crash2Diag]): no EA 1.69 address, docs/232 §8"); return false; }
-#endif
     g_c2MaxLines = Clamp(GetPrivateProfileIntW(L"Crash2Diag", L"MaxLines", 200, ini), 0, 100000);
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f), g_c2Freq = f.QuadPart;

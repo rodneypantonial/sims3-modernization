@@ -59,9 +59,6 @@ static bool ApplyDxDiagCache(const wchar_t* ini) {
     int mode = Clamp(GetPrivateProfileIntW(L"Startup", L"DxDiagCache", 0, ini), 0, 3);
     if (GetPrivateProfileIntW(L"Rewind", L"Park", 0, ini)) mode = 2;  // test-only rewind runs: never the ping loop
     if (!mode) { Log("DxDiag cache off (DxDiagCache=0)"); return false; }
-#ifdef TS3A_TABLE
-    if (ts3a_noaddr) { Log("SKIP DxDiag cache ([Startup] DxDiagCache): no EA 1.69 address, docs/232 §8; the game runs its own DxDiag query"); return false; }
-#endif
     u8* fn = (u8*)(uintptr_t)TS3A(0x00612640);
     if (!Matches(fn, kDdcPrologue, sizeof(kDdcPrologue))) { Log("SKIP DxDiag cache: VRAM_DxDiag 0x612640 bytes differ, nothing written"); return false; }
     wcscpy_s(g_ddcPath, ini);

@@ -1497,11 +1497,6 @@ static void SatbParkLog(const char* what, int site, LONG us) {
 }
 // worker, act, at a cold-site entry after the give-up
 static void SatbColdPark(int site) {
-#ifdef TS3A_TABLE
-    // 4 of the 5 Mono locks it checks have no EA row: no park, the cold call runs as before the park (docs/206 §18)
-    static volatile LONG s_said;
-    if (ts3a_noaddr) { if (!InterlockedExchange(&s_said, 1)) Log("SKIP autshadow satb cold park (site %d): no EA 1.69 address, docs/232 §8", site); return; }
-#endif
     if (g_satbColdPark == 2) return;  // the sim waits at AsSimLeave for this job: it runs nothing meanwhile
     if (SatbOwnsMonoLock()) { InterlockedIncrement(&g_satbParkNested); return; }
     InterlockedIncrement(&g_satbParkN);
