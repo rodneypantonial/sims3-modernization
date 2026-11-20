@@ -39,7 +39,9 @@ export const keysOff = (addrHdr: string, ka = KEY_ADDRS) => { const un = new Set
 // EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
 // ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
 // ThreadStack.Skip: SimulatorThread_Proc, a runtime string the address table cannot rewrite; the Steam value left the EA sim thread capped.
-export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360" };
+// RouteSnap.DoorMemoX: -1 (off) as the release ini, until bugfix/doormemox-privacy-1117 is merged and verified (memo mismatch on
+// privacy-handler lots); the Steam ini base carries 3
+export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360", "RouteSnap.DoorMemoX": "-1" };
 // EA-port-only keys (TS3N_EA_PORT in ts3addr.h: compiled into the EA asi only, so the Steam ts3native.ini has no line for them):
 // appended to the end of their section; a section ts3native.ini lacks goes at the end of the file. Values as the v0.2.10 EA
 // rc ini shipped them: SimNoTexture on (player crash, deterministic repro, the fix passes it, docs/67 §34.5), ImageGuard off
@@ -164,6 +166,7 @@ function selfCheck() {
     ok(!["SteerRO", "FpRebuildLock", "Watchpoint", "RouteToObjRO", "MemDiag"].some((s) => ALWAYS_OFF[s]), "docs/238 sections allowed");
     ok(render(["[GC]", "Enabled=1", "BlackListCapKB=0", "[Z]", "BlackListCapKB=0"], () => false, () => false, undefined, EA_SET) === "[GC]\r\nEnabled=1\r\nBlackListCapKB=1024\r\n[Z]\r\nBlackListCapKB=0", "render set");
     ok(/^BlackListCapKB=1024\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini must carry BlackListCapKB=1024");
+    { const s = render(addEaKeys(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/)), () => false, () => false, rcZeroKey, EA_SET).split("\r\n"), at = s.indexOf("[RouteSnap]"), end = s.findIndex((l, i) => i > at && /^\[/.test(l)); ok(at >= 0 && s.slice(at, end).includes("DoorMemoX=-1"), "EA rc ini: [RouteSnap] DoorMemoX=-1 (off until the privacy fix)"); }
     ok(/^Skip=0x76C360\s*$/m.test(render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET)), "EA rc ini exempts the EA sim thread");
     const rc = render(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/), () => false, () => false, rcZeroKey, EA_SET);
     ok(/^Light=(\d)/m.exec(rc.slice(rc.indexOf("\r\n[MemDiag]\r\n")))?.[1] === "1", "EA rc ini keeps [MemDiag] Light=1");
