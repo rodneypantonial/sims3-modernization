@@ -13,7 +13,6 @@ import { focusGame, giveFocusBack } from './focus-game.ts';
 import { captureHang, hangDir, launchGuard, stallGuard } from './game-alive.ts';
 import { BIN, GAME_EXE, killLeftovers } from './game-exe.ts';
 import { defaultSpec, problems, vanilla } from './vanilla.ts';
-import { loadSplitLine, peakPrivateMB } from './load-split.ts';
 
 const { values } = parseArgs({ options: { save: { type: 'string' }, restart: { type: 'boolean' }, port: { type: 'string', default: '47891' } } });
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -23,20 +22,9 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(11, 19);
 const log = (m: string) => console.log(`${stamp()} ${m}`);
 
-// connect-level failures (ETIMEDOUT / ECONNREFUSED) mean the request never reached ts3probe, so a retry cannot send it twice;
-// timing-v030-1120 smoke rerun 2026-11-20: the probe did not accept for ~21 s at the menu right after "agent answering", job FAILed
-export const connectFailed = (e: any) => ['ETIMEDOUT', 'ECONNREFUSED'].includes(e?.cause?.code);
 async function get(path: string, timeoutMs = 30000): Promise<any> {
-  for (let i = 0; ; i++) {
-    try {
-      const r = await fetch(`${base}/${path}`, { signal: AbortSignal.timeout(timeoutMs) });
-      return r.json();
-    } catch (e: any) {
-      if (i >= 2 || !connectFailed(e)) throw e;
-      log(`probe connect ${e.cause.code} on /${path.split('?')[0]}: retry ${i + 1} of 2 in 5 s`);
-      await sleep(5000);
-    }
-  }
+  const r = await fetch(`${base}/${path}`, { signal: AbortSignal.timeout(timeoutMs) });
+  return r.json();
 }
 async function agent(cmd: string, args?: object): Promise<any> {
   const q = new URLSearchParams({ cmd, timeout: '5000' });
@@ -115,8 +103,6 @@ if (values.restart) {
 
 // load a save, ending in live mode (a save can come back in Edit Town, which pauses the clock)
 if (values.save) {
-  const tStart = Date.now(); // load split (docs/17 M1, docs/302 §6.3): the probe launches the game right before this process starts
-  let tMenu = 0;
   // game start: the probe launches TS3W.exe; only "process gone for ~1 min" fails before the agent exists
   // and a launch stuck before the agent loads (flat committed MB, docs/236 round 4) fails in ~60-90 s: probe detached, the game and the
   // EA per-launch helpers killed (never the EA app), the reason named
@@ -141,7 +127,7 @@ if (values.save) {
     const d = await agent('auto_dialog');
     if (d.ok && d.result.open) {
       log(`menu dialog "${d.result.title}" -> ${d.result.clicked}`);
-      if (/mod scripts/i.test(d.result.title ?? '')) { if (!sawWarning) tMenu = Date.now(); sawWarning = true; }
+      if (/mod scripts/i.test(d.result.title ?? '')) sawWarning = true;
       quietSince = Date.now();
     }
     await sleep(2000);
@@ -166,7 +152,6 @@ if (values.save) {
       log(`agentArm ${arm}: ${st?.reads} of ${st?.want} done`);
     }
   }
-  const tLoad = Date.now();
   let r = await agent('load_save', { file: values.save });
   const loadGuard = stallGuard('world load', { port: Number(values.port) }); // the agent is silent while loading: heartbeat, flag, commit, log
   // still pending: the last menu poll has no answer yet (sim busy), so this load_save was not sent
@@ -236,7 +221,6 @@ if (values.save) {
     }, 1000, stallGuard('enter live mode', { port: Number(values.port) }));
   }
   // never leave the game in front (the game takes focus at launch): return it to the window saved by queue.ts
-  log(loadSplitLine(tStart, tMenu, tLoad, Date.now(), peakPrivateMB(GAME_EXE.replace(/\.exe$/i, ''))));
   log(`ready: ${JSON.stringify((await agent('game_state')).result)}; focus: ${giveFocusBack()}; window ${focusGame() ? 'focused' : 'NOT focused'}`);
   // record the change set this run uses, so a later crash can be tied to it (crash-ledger.ts triage)
   log(execFileSync(process.execPath, [join(ROOT, 'tools', 'harness', 'crash-ledger.ts'), 'snapshot']).toString().trim());

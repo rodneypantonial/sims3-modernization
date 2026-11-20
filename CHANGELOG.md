@@ -4,7 +4,24 @@ Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub r
 
 ## Unreleased
 
-- **Fix for a rare crash while Sims and objects come and go (`[HostMapIterFix]`, EA bug; Steam and EA app).** The game could keep a stale position in one of its internal lists after the list grew, and crash (`0xD71E7D` on Steam, `0xD71EBD` on the EA app) when it later removed an entry with it. The plugin now finds the right position first. On by default; `Enabled=0` under `[HostMapIterFix]` switches it off.
+Nothing yet: changes after v0.3.0 are listed here once they are built.
+
+## v0.3.1 (hotfix)
+
+A small fix release on top of v0.3.0: a crash fix, an EA app start-up fix found by EA app testers, and a fix that keeps the script speed-up on with Apex Radiance; nothing else changed. If v0.3.0 runs fine for you, this update is still worth taking: the crash it fixes can happen on any edition.
+
+### Download
+
+- `ts3native-v0.3.1.zip` (Steam 1.67): `ts3native.asi` and `ts3native.ini`; replace both. The log shows `ts3native 0.36.295a`.
+- `ts3native-ea169-v0.3.1.zip` (EA app 1.69.47, `TS3.exe`): `ts3native.asi` and `ts3native.ini`; replace both.
+- `ts3fixes.package`: the same file as v0.3.0 (sha256 starts `3f894ade`); if you already have it, keep it.
+- Everything else is as in v0.3.0: same settings switched on, same setup (Apex Radiance with its RTX Remix bridge recommended), and nothing of ours is written into your save.
+
+### Fixed
+
+- **A rare crash while Sims and objects come and go (`0xD71E7D` on Steam, `0xD71EBD` on the EA app).** This is a bug in the game itself, so it can hit any edition, with or without mods. While the game handles its list of scripted objects, adding an object at the wrong moment can make the list grow and move, and the game then removes an entry using a position in the old, freed copy, which crashes. It is rare, and more likely on busy lots with many objects. The plugin now finds the right position before the game removes the entry. In our test we forced the bad moment 20 times: with the fix the game kept running all 20 times; without it, it crashed. On by default; `Enabled=0` under `[HostMapIterFix]` in `ts3native.ini` switches it off. Thanks to Eli for the crash report.
+- **With Apex Radiance: our script speed-up no longer switches itself off when Apex Radiance handles its own internal errors (`[MonoJit]`, Steam 1.67).** Apex Radiance catches and handles a few thousand of its own harmless internal errors per session. When one of those happened while a compiled script method was further up the call chain, the plugin could take it for a fault in that method and send the method back to the slower game interpreter for the rest of the session. We saw it in a test build; our v0.3.0 test sessions with Apex showed no such case, so this is a safety fix. Errors that Apex handles itself are now left to Apex; a real fault in compiled code is still caught as before.
+- **EA app: the plugin switched itself off on some EA app installs.** Some EA app copies of The Sims 3 1.69.47 have a slightly larger copy-protection part in `TS3.exe` (the game code is the same). v0.3.0 saw the different size, decided it was a different game version, and installed nothing: the game ran without any of our fixes, and `ts3native.log` showed `SKIP all: host is not EA app 1.69.47 (pe 6707155C size 0xEB7000)`. The plugin now accepts that copy-protection size. It still checks every place it changes before changing it, so a really different game version is still left alone. If your log shows `host build: EA app 1.69.47`, you were not affected.
 
 ## v0.3.0 (2026-11-21)
 
@@ -14,7 +31,7 @@ The biggest release so far. On Steam the game's busiest script methods now run a
 
 - `ts3native-v0.3.0.zip` (Steam 1.67): `ts3native.asi` and `ts3native.ini`; replace both. The log shows `ts3native 0.36.295-rc1119b` (the release candidate we tested is the release; ini sha256 starts `d399d7c9`).
 - `ts3fixes.package`: new in this release; replace the old one. Use it together with this `ts3native` (sha256 starts `3f894ade`).
-- `ts3native-ea169-v0.3.0.zip` (EA app 1.69.47, `TS3.exe`): `ts3native.asi` and `ts3native.ini`, same `ts3fixes.package` as Steam. Tested on our EA app laptop (play, save, CAS and Buy, restart and load: all passed, no crash; asi sha256 starts `b37557e6`, ini `3c5133ca`).
+- `ts3native-ea169-v0.3.0.zip` (EA app 1.69.47, `TS3.exe`): `ts3native.asi` and `ts3native.ini`, same `ts3fixes.package` as Steam. It is being tested on our EA app laptop and is added to this release from there once that test passes; until it is listed, keep v0.2.12 on the EA app.
 - **Recommended setup:** [Apex Radiance](https://github.com/loinyx/Sims3-ApexRadiance) with its RTX Remix bridge, plus this release. Plain DXVK still works but is best effort: no DXVK test run for this release.
 - Old saves load, and saves made with v0.3.0 load in v0.2.12 and in the unmodded game (tested, see below). Nothing of ours is written into your save.
 
@@ -72,7 +89,7 @@ The biggest release so far. On Steam the game's busiest script methods now run a
 - **Faster door answers for townies' background routes are off (`[RouteSnap] DoorMemoX=-1`; by Dalexlol, PR #430).** Our test found a wrong door answer on lots with privacy doors; the fix is built and goes on in a later release once it is verified in game.
 - **Apex Radiance: a rare freeze between two of Apex's own locks and the game's drawing (Apex issue #90).** Seen once in our Apex test runs (the rerun passed); Apex has a partial fix. If your game freezes with Apex, please send your `ts3native.log` and report it to Apex too.
 - **Plain DXVK without Apex:** best effort. Not tested for this release; a DXVK-only problem is a known issue until someone reports it.
-- **EA app:** townies you can't see are animated every frame again on the EA app (`[UnseenAnim]` off there, unlike v0.2.12 on the EA app); the next release brings it back to match Steam. If you use the RTX Remix bridge there, set `client.targetProcess = TS3.exe` in both `bridge.conf` files.
+- **EA app:** the EA app zip follows after its laptop test (see Download). If you use the RTX Remix bridge there, set `client.targetProcess = TS3.exe` in both `bridge.conf` files.
 
 ### Tested
 

@@ -927,7 +927,7 @@ static void TestMonoJitClauseLazy() {
     static JtMeth m0, m1, mF, mP, mE;
     const LONG bodies0 = C.jitLazyBodies;
     static_assert(offsetof(Ts3nCounters, clOn) == 0x62A8 && offsetof(Ts3nCounters, clVerRuns) == 0x62BC && offsetof(Ts3nCounters, clSpare) == 0x62C0 &&
-                      sizeof(Ts3nCounters) == 6866 * 4, "counters v195 layout after v194 (docs/registry.md)");
+                      sizeof(Ts3nCounters) == 6722 * 4, "counters v195 layout after v194 (docs/registry.md)");
     g_jitClauseOk = true;  // JitOne's allow-list answer (tested below)
     g_jitClauseLazy = false;
     assert(make(m0, c0, 4, cl, 1) && C.jitLazyBodies == bodies0);  // ClauseLazy=0: as before
@@ -1279,7 +1279,7 @@ static void TestMonoJitBoundCall() {
     g_jtLen[0xEC] = 4;
     g_jitBc = (JitBoundStats*)&C.bcOn;
     static_assert(offsetof(Ts3nCounters, bcOn) == 0x6278 && offsetof(Ts3nCounters, bcSpare) == 0x62A0 && sizeof(JitBoundStats) == 12 * 4 &&
-                      sizeof(Ts3nCounters) == 6866 * 4, "counters v194 layout after the v193 hold (docs/registry.md)");
+                      sizeof(Ts3nCounters) == 6722 * 4, "counters v194 layout after the v193 hold (docs/registry.md)");
     const JitBoundEntryFn entry0 = g_jitBoundEntry;
     g_jitBoundEntry = JtE525C0, g_jitBoundInv[0] = (DWORD)(uintptr_t)JtBoundInv, g_jitBoundInv[1] = 0, C.bcOn = 1, g_jitBoundMask = 1;
     // the cache's class and target: a transformed instance method with an EA native body, no lazy body, one int result
@@ -1450,11 +1450,24 @@ static void TestMonoJitFaultRecover() {
     mb.dead = false, JitPatchMeth(mb, true);
     u8* w = NULL;
     for (u8* q = mb.native0 + 6; q < mb.native0 + mb.bytes && !w; q++) if (JitFrRetAddr(mb, q)) w = q;
-    if (w) {  // only a body with a call (or bytes that read like one) has a return address to find
-        stk[1] = (DWORD)(uintptr_t)w;
-        er.ExceptionCode = EXCEPTION_ACCESS_VIOLATION, cx.Eip = (DWORD)(uintptr_t)fake, cx.Esp = (DWORD)(uintptr_t)stk;
-        assert(JitFrVeh(&xp) == EXCEPTION_CONTINUE_SEARCH && C.frPassed == 3 && mb.dead);
-    }
+    // no call in the body: an E8 rel32 written over 5 of its last 6 bytes (the body does not run again; bytes restored) gives a return address
+    u8 save5[5];
+    u8* const tail = mb.native0 + mb.bytes - 6;  // w = tail + 5 stays inside the body
+    DWORD op = 0;
+    const bool wrote = !w && VirtualProtect(tail, 5, PAGE_EXECUTE_READWRITE, &op);
+    if (wrote) memcpy(save5, tail, 5), tail[0] = 0xE8, memset(tail + 1, 0, 4), w = tail + 5;
+    assert(w && JitFrMethAt((DWORD)(uintptr_t)w) == &mb);
+    stk[1] = (DWORD)(uintptr_t)w;
+    er.ExceptionCode = EXCEPTION_ACCESS_VIOLATION, cx.Eip = (DWORD)(uintptr_t)fake, cx.Esp = (DWORD)(uintptr_t)stk;
+    // docs/537 §29a: eip in another module (no own image range set): untouched, the method stays on, counted
+    memset(g_jitFrImg, 0, sizeof(g_jitFrImg)), g_jitFrForeignN = 0;
+    assert(JitFrVeh(&xp) == EXCEPTION_CONTINUE_SEARCH && C.frPassed == 2 && !mb.dead && g_jitFrForeignN == 1 && g_jitFrForeignEip == (LONG)cx.Eip);
+    // eip in an own image (the test exe stands in for TS3W.exe): a helper fault, passed on, the method off
+    JitFrImgRange(GetModuleHandleW(NULL), g_jitFrImg[0]);
+    assert(JitFrOwnImage(cx.Eip) && !JitFrOwnImage(0x10));
+    assert(JitFrVeh(&xp) == EXCEPTION_CONTINUE_SEARCH && C.frPassed == 3 && mb.dead && g_jitFrForeignN == 1);
+    if (wrote) memcpy(tail, save5, 5), VirtualProtect(tail, 5, op, &op);
+    memset(g_jitFrImg, 0, sizeof(g_jitFrImg)), g_jitFrForeignN = 0, g_jitFrForeignEip = 0;
     // the lazy body: passed on
     g_jitLazy = true, g_jitLeafOnly = true, g_jitForceJit = &g_jtForceByte, g_jitProxyClassP = (const void* const*)&g_jtProxy;
     static unsigned short l[] = {JT_LDC3, JT_RET};
@@ -1465,7 +1478,7 @@ static void TestMonoJitFaultRecover() {
     const LONG passed0 = C.frPassed;
     er.ExceptionCode = EXCEPTION_ACCESS_VIOLATION, cx.Eip = (DWORD)(uintptr_t)lc->entry;
     assert(JitFrVeh(&xp) == EXCEPTION_CONTINUE_SEARCH && C.frPassed == passed0 + 1 && g_jitMeth[g_jitMethN - 1].dead && !JitLazyCellFor(mL.rm)->entry);
-    printf("monojit: FaultRecover: a real fault resumed at word 0; %ld recovered, %ld passed on%s\n", C.frRecovered, C.frPassed, w ? ", return-address case run" : "");
+    printf("monojit: FaultRecover: a real fault resumed at word 0; %ld recovered, %ld passed on%s\n", C.frRecovered, C.frPassed, ", return-address case run (own image and foreign)");
     RemoveVectoredExceptionHandler(g_jitFrVeh);
     g_jitFrVeh = NULL, g_jitFrOn = false, g_jitFrTestN = 0, g_jitFrTestRm = NULL, g_jitFrBadN = 0, g_jitFrLogN = 0, g_jitLazy = false;
     C.frRecovered = C.frPassed = C.frTestCalls = 0;
@@ -1555,7 +1568,7 @@ static void TestMonoJit() {
     assert(JitTemplates(511) == 29);  // Groups bit 256: the nine C5 rows above and two float compares
     assert(g_opInfo[JT_RET].kind == K_RET && g_opInfo[JT_MYSTERY].kind == K_EXIT);
     {  // T4096 (docs/537 §26): MaxMethods clamp, the fallback to 2048 / 4096 KB when the asked region does not fit, and the counters' place
-        static_assert(offsetof(Ts3nCounters, jitTableFull) == 0x62CC && offsetof(Ts3nCounters, jitMethCap) == 0x62D0 && sizeof(Ts3nCounters) == 6866 * 4,
+        static_assert(offsetof(Ts3nCounters, jitTableFull) == 0x62CC && offsetof(Ts3nCounters, jitMethCap) == 0x62D0 && sizeof(Ts3nCounters) == 6722 * 4,
                       "counters v196 layout after the v189-v195 / v918 gap (docs/registry.md)");
         assert(JitMaxMethods(0) == 512 && JitMaxMethods(3000) == 3000 && JitMaxMethods(1 << 20) == JIT_METH_MAX);
         const size_t code0 = g_jitCodeBytes;

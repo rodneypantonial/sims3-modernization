@@ -57,13 +57,6 @@ The file is in our test install, so every game test of ours ran with it loaded.
 - **simler90 + fixes** (a player's own build): we have no copy.
 - **Sims3MonoModder (S3MM, ASI)** (added 2026-11-18, source read, docs/291): shares the Mono call paths with our JIT, fast call path and AutShadow. ts3native stands those three down by itself when `Sims3MonoModder.asi` is installed (`[Compat] S3mmStandDown=1`, default); not tested together in game yet. **S3MM's profiler is not compatible with ts3native:** S3MM always installs it at start and it hooks Mono functions we also hook, so a crash depends on which mod loads first, it overlaps our `[Verify]` probe, and its numbers are wrong under our JIT. S3MM has no setting to turn it off yet (we proposed one upstream). The rest of S3MM works with the stand-down. We do not ship or install S3MM.
 
-### Tools that rewrite your Mods folder
-
-- **SmellyMods CC String Merge** (MTS, offline tool, added 2026-11-19, source read, docs/304): compatible, no overlap. It runs while the game is closed. It moves the string tables of your CC into one table per language, and with `--merge` it also packs the CC into a few big packages. It leaves script mods (ours included) alone. Nothing of ours hooks what it changes, and none of our caches depend on your CC files.
-  - Text can change in two rare cases. A package that replaces one of the game's own string tables (some translations and text edits) still shows its text, but the keys it leaves out now show the game's text instead of nothing. When two CC packages give the same string different text, the tool picks by file name, which may not match the game's own pick for files in different subfolders.
-  - `compat-scan.ts` names the tool's output files and flags packages that replace a game string table. Our diagnostics log names the tool's output once that build ships.
-  - After merge mode, known-bad checks by file name no longer work; checks by resource key still do.
-
 ### Not scanned yet
 
 - **GoHere** and **Story Progression**: they build on trip types we patch.
@@ -75,15 +68,6 @@ node tools/compat-scan.ts "<your Mods folder>" --matrix my-compat.csv
 ```
 
 It needs Node 22.18 or newer and your game folder (set `TS3_GAME` if it is not in the default Steam path). It only reads files. Run `node tools/compat-scan.ts --self-check` to see that it works.
-
-## Is my PC throttled?
-
-Our fixes move work to other CPU threads. On a PC that slows its CPU (heat, power limit, power-saver plan, battery), runs
-other heavy programs, or limits the game to a few cores, those gains get smaller. Builds with `[PcCheck]` (docs/299) check this
-while you play and write `pccheck-summary.txt` in `Game\Bin`: one line says "CPU: no throttle seen" or "CPU: clock limited X% of
-the time", plus power plan, battery, other programs' CPU and the game's affinity / priority / efficiency mode. With [PcCheck] Notify=1 (off by default) a notice appears
-in the game only when it finds a real problem, with a one-line fix. The tester kit prints the same short check before it
-installs (warnings only). The check reads Windows numbers only; it changes nothing.
 
 ## Report
 

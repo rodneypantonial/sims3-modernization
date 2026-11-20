@@ -2084,6 +2084,45 @@ static void JitFrBan(JitMeth& m) {
     if (!m.dead) m.dead = true, JitPatchMeth(m, false), JitLazyOff(m.rm);
     if (!JitFrBanned(m.name) && g_jitFrBadN < 32) strcpy_s(g_jitFrBad[g_jitFrBadN++], m.name);
 }
+// The images whose faults can be a compiled body's helper: TS3W.exe (EA's helpers), MSVCR80, this module (JitFrInstall). A
+// first-chance fault in any other module, such as ApexRadiance.asi, which probes pointers and catches its own AVs (thousands per
+// session), belongs to that module: a return address into the region further up the stack does not make the body the cause, so
+// such a fault is never touched and the method stays on (docs/537 §29a). Counted; the tick names the first one's module.
+static DWORD g_jitFrImg[3][2];
+static volatile LONG g_jitFrForeignN;
+static volatile LONG g_jitFrForeignEip;
+static bool JitFrOwnImage(DWORD eip) {
+    for (int i = 0; i < 3; i++) if (eip >= g_jitFrImg[i][0] && eip < g_jitFrImg[i][1]) return true;
+    return false;
+}
+static void JitFrImgRange(HMODULE m, DWORD* r) {
+    if (!m) return;
+    const u8* b = (const u8*)m;
+    r[0] = (DWORD)(uintptr_t)b, r[1] = r[0] + ((const IMAGE_NT_HEADERS*)(b + ((const IMAGE_DOS_HEADER*)b)->e_lfanew))->OptionalHeader.SizeOfImage;
+}
+// the tick's line (not the handler: module lookups take the loader lock): every 5 min while the count grows
+static void JitFrForeignTick() {
+    static DWORD last;
+    static LONG logged;
+    const DWORD now = GetTickCount();
+    const LONG n = g_jitFrForeignN;
+    if (!n || n == logged || (last && now - last < 300000)) return;
+    last = now, logged = n;
+    const DWORD eip = (DWORD)g_jitFrForeignEip;
+    HMODULE m = NULL;
+    wchar_t w[MAX_PATH] = L"?";
+    char nm[MAX_PATH] = "?";
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)(uintptr_t)eip, &m) && m &&
+        GetModuleFileNameW(m, w, MAX_PATH)) {
+        const wchar_t* b = w;
+        for (const wchar_t* q = w; *q; q++) if (*q == L'\\' || *q == L'/') b = q + 1;
+        int i = 0;
+        for (; b[i] && i < MAX_PATH - 1; i++) nm[i] = (char)b[i];
+        nm[i] = 0;
+    }
+    Log("jit: foreign faults left alone: %ld first-chance faults in other modules with a compiled body further up the stack, first at %s+0x%lX (docs/537 §29a)",
+        n, nm, m ? eip - (DWORD)(uintptr_t)m : eip);
+}
 // shortcut: no g_jitCs here (a compile on another thread could race the ban); compiles run on the sim thread, the faulting one
 static LONG CALLBACK JitFrVeh(EXCEPTION_POINTERS* x) {
     const DWORD code = x->ExceptionRecord->ExceptionCode;
@@ -2108,6 +2147,10 @@ static LONG CALLBACK JitFrVeh(EXCEPTION_POINTERS* x) {
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
         if (!m) return EXCEPTION_CONTINUE_SEARCH;  // not ours: untouched
+        if (!JitFrOwnImage(eip)) {  // another module's own first-chance fault: untouched, the method stays on
+            if (InterlockedIncrement(&g_jitFrForeignN) == 1) InterlockedExchange(&g_jitFrForeignEip, (LONG)eip);
+            return EXCEPTION_CONTINUE_SEARCH;
+        }
     }
     const JitEnt* at = NULL;
     const char* why = !m ? "no compiled method there (a shared stub)"
@@ -2139,6 +2182,11 @@ static LONG CALLBACK JitFrVeh(EXCEPTION_POINTERS* x) {
 }
 static void JitFrInstall(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"MonoJit", L"FaultRecover", 1, ini)) return;
+    {
+        HMODULE self = NULL;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)(void*)JitFrOwnImage, &self);
+        JitFrImgRange(GetModuleHandleW(NULL), g_jitFrImg[0]), JitFrImgRange(GetModuleHandleW(L"msvcr80.dll"), g_jitFrImg[1]), JitFrImgRange(self, g_jitFrImg[2]);
+    }
     if (!(g_jitFrVeh = AddVectoredExceptionHandler(1, JitFrVeh))) { Log("SKIP mono jit FaultRecover: AddVectoredExceptionHandler (err %lu)", GetLastError()); return; }
     g_jitFrOn = true, ts3native_counters.frOn = 1;
     wchar_t w[96] = L"";
@@ -3041,6 +3089,7 @@ static void __cdecl JitTick() {
         if (first || ts3native_counters.jitRefused != g_jitRefLogged) JitRefSummary(first ? "first tick" : "save"), g_jitRefLogged = ts3native_counters.jitRefused;
         LeaveCriticalSection(&g_jitCs);
     }
+    if (g_jitFrOn) JitFrForeignTick();
     const bool on = ts3native_counters.jitSwitch != 0;
     if (on != g_jitPatched) JitSetPatched(on);
     if (g_jitTrap) JitTrapTick();
