@@ -33,6 +33,17 @@ static void TestFrameDiag() {
     assert(FdPrefOf(L"GpuPreference=2;") == 2 && FdPrefOf(L"SwapEffectUpgradeEnable=1;GpuPreference=1;") == 1);
     assert(FdPrefOf(L"SwapEffectUpgradeEnable=1;") == -1 && FdPrefOf(NULL) == -1 && FdPrefOf(L"GpuPreference=") == -1);
 
+    // which d3d9.dll: file-content markers first (the bridge client also has dxvk.conf), then the folder
+    static const u8 bridgeDll[] = "MZ..dxvk.conf..NvRemixBridge.exe..", bridgeDll2[] = "MZ..DXVK_HUD..bridge.conf..", dxvkDll[] = "MZ..DXVK_CONFIG_FILE..dxvk.conf",
+                    sysDll[] = "MZ..Direct3DCreate9..d3d9.pdb";
+    assert(FdD3dKindOf(bridgeDll, sizeof(bridgeDll), false) == FDK_BRIDGE && FdD3dKindOf(bridgeDll2, sizeof(bridgeDll2), false) == FDK_BRIDGE);
+    assert(FdD3dKindOf(dxvkDll, sizeof(dxvkDll), false) == FDK_DXVK && FdD3dKindOf(dxvkDll, sizeof(dxvkDll), true) == FDK_DXVK);
+    assert(FdD3dKindOf(sysDll, sizeof(sysDll), true) == FDK_SYSTEM && FdD3dKindOf(sysDll, sizeof(sysDll), false) == FDK_OTHER);
+    assert(FdD3dKindOf(dxvkDll, 8, false) == FDK_OTHER && !strcmp(kFdD3dName[FDK_DXVK], "d3d9 (DXVK)"));  // marker past the end
+    // GPU preference: the first candidate (this exe, Bin\TS3W.exe, Bin\TS3.exe) with one set
+    const int noPref[3] = {-1, -1, -1}, onTs3[3] = {-1, 2, -1}, onHost[3] = {0, 2, 1};
+    assert(FdPickPref(noPref, 3) == -1 && FdPickPref(onTs3, 3) == 1 && FdPickPref(onHost, 3) == 0 && FdPickPref(onTs3, 1) == -1);
+
     char g[1024];
     FdGpu one[1] = {{"NVIDIA GeForce RTX 4080", 0x10DE, 16048, 16000, 1, 0, 1, false}};
     FdGpuVerdict(one, 1, "NvRemixBridge.exe", -1, "TS3.exe", -1, g, sizeof(g));

@@ -8,12 +8,14 @@
 //    only times the call (QPC before / after) and passes everything through: frame time = Present-to-Present interval,
 //    present wait = time inside Present (bridge round trip + whatever the bridge client blocks on).
 //  - Main thread: a 50 Hz sampler stops the main thread for a few microseconds, reads eip and the top 16 stack words, and
-//    counts which module it is in (TS3, d3d9 = the bridge client, system / wait, Apex, S3PP, other asi). "wait in d3d9" =
+//    counts which module it is in (TS3, d3d9 labelled from its file: system, DXVK, bridge client or other; system / wait,
+//    Apex, S3PP, other asi). "wait in d3d9" =
 //    eip in a system dll with a d3d9 return address in those 16 words [inferred heuristic, docs/51 §545].
 //  - Sim thread: one simloop.cpp callback per Simulate iteration (QPC only): iterations/s and iteration ms; its CPU time
 //    and the main thread's from GetThreadTimes; process file I/O from GetProcessIoCounters (no per-file wait time).
 //  - GPU selection (once, on the minute thread): DXGI adapters (name, VRAM, LUID, outputs), the Windows per-app GPU
-//    preference (HKCU\Software\Microsoft\DirectX\UserGpuPreferences) for this exe and for Bin\.trex\NvRemixBridge.exe.
+//    preference (HKCU\Software\Microsoft\DirectX\UserGpuPreferences) for this exe, Bin\TS3W.exe, Bin\TS3.exe (the EA
+//    laptop harness runs TS3.exe under another name) and Bin\.trex\NvRemixBridge.exe.
 // Per minute: one `framediag:` log line, a framediag.csv row, and fps-summary.txt (verdicts: bottleneck, GPU, CPU/power
 // from [PcCheck], disk / OneDrive, top script mods from [Diag] ModTime) next to ts3native.log. Nothing here changes a game
 // value, a thread priority or a setting.
@@ -126,7 +128,27 @@ struct FdAcc {
     LONG smpN, smpCls[8];  // main-thread samples per class
 };
 enum { FDC_GAME, FDC_D3D, FDC_D3DWAIT, FDC_SYS, FDC_APEX, FDC_S3PP, FDC_OURS, FDC_OTHER };
-static const char* const kFdCls[8] = {"TS3", "d3d9 (bridge client)", "wait under d3d9", "system/wait", "Apex", "S3PP", "ts3native", "other"};
+static const char* kFdCls[8] = {"TS3", "d3d9", "wait under d3d9", "system/wait", "Apex", "S3PP", "ts3native", "other"};  // [FDC_D3D]: FdD3dKind
+
+// which d3d9.dll is loaded, from its file contents: the RTX Remix bridge client names its server and config file, DXVK
+// its config file and DXVK_ variables (the bridge client carries dxvk.conf too, so it is tested first), else by folder
+enum { FDK_NONE, FDK_SYSTEM, FDK_DXVK, FDK_BRIDGE, FDK_OTHER };
+static const char* const kFdD3dName[5] = {"d3d9", "d3d9 (system)", "d3d9 (DXVK)", "d3d9 (bridge client)", "d3d9 (other)"};
+static bool FdHas(const u8* b, size_t n, const char* s) {
+    const size_t k = strlen(s);
+    for (size_t i = 0; i + k <= n; i++) if (b[i] == (u8)s[0] && !memcmp(b + i, s, k)) return true;
+    return false;
+}
+static int FdD3dKindOf(const u8* b, size_t n, bool systemDir) {
+    if (FdHas(b, n, "NvRemixBridge") || FdHas(b, n, "bridge.conf")) return FDK_BRIDGE;
+    if (FdHas(b, n, "dxvk.conf") || FdHas(b, n, "DXVK_")) return FDK_DXVK;
+    return systemDir ? FDK_SYSTEM : FDK_OTHER;
+}
+// the first candidate with a GPU preference set; -1 = none set
+static int FdPickPref(const int* pref, int n) {
+    for (int i = 0; i < n; i++) if (pref[i] >= 0) return i;
+    return -1;
+}
 static FdAcc g_fdMin, g_fdAll;
 static CRITICAL_SECTION g_fdCs;
 static LONG g_fdOn;
@@ -230,10 +252,35 @@ static void FdModRange(int cls, int k, const wchar_t* name) {
     MODULEINFO mi = {};
     if (m && K32GetModuleInformation(GetCurrentProcess(), m, &mi, sizeof(mi))) g_fdMods[cls][k] = {(DWORD)(uintptr_t)mi.lpBaseOfDll, (DWORD)(uintptr_t)mi.lpBaseOfDll + mi.SizeOfImage};
 }
+static HMODULE g_fdD3dMod;
+static void FdD3dKind() {  // once per loaded d3d9.dll: read its file and name it
+    HMODULE m = GetModuleHandleW(L"d3d9.dll");
+    if (!m || m == g_fdD3dMod) return;
+    g_fdD3dMod = m;
+    wchar_t p[MAX_PATH], sys[MAX_PATH] = L"", wow[MAX_PATH] = L"";
+    if (!GetModuleFileNameW(m, p, MAX_PATH)) return;
+    GetSystemDirectoryW(sys, MAX_PATH), GetSystemWow64DirectoryW(wow, MAX_PATH);
+    const wchar_t* slash = wcsrchr(p, L'\\');
+    const size_t dn = slash ? (size_t)(slash - p) : 0;
+    const bool sysDir = dn && ((wcslen(sys) == dn && !_wcsnicmp(p, sys, dn)) || (wcslen(wow) == dn && !_wcsnicmp(p, wow, dn)));
+    int kind = sysDir ? FDK_SYSTEM : FDK_OTHER;
+    LARGE_INTEGER sz = {};
+    HANDLE h = CreateFileW(p, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        u8* buf = GetFileSizeEx(h, &sz) && sz.QuadPart > 0 && sz.QuadPart < (64 << 20) ? (u8*)malloc((size_t)sz.QuadPart) : NULL;
+        DWORD got = 0;
+        if (buf && ReadFile(h, buf, (DWORD)sz.QuadPart, &got, NULL) && got == sz.QuadPart) kind = FdD3dKindOf(buf, got, sysDir);
+        free(buf);
+        CloseHandle(h);
+    }
+    kFdCls[FDC_D3D] = kFdD3dName[kind];
+    Log("framediag: d3d9.dll from %s, %lld KB: %s", sysDir ? "the Windows system folder" : "outside the system folder", sz.QuadPart >> 10, kFdD3dName[kind]);
+}
 static void FdModsInit() {
     memset(g_fdMods, 0, sizeof(g_fdMods));
     FdModRange(FDC_GAME, 0, NULL);
     FdModRange(FDC_D3D, 0, L"d3d9.dll");
+    FdD3dKind();
     FdModRange(FDC_SYS, 0, L"ntdll.dll"), FdModRange(FDC_SYS, 1, L"win32u.dll"), FdModRange(FDC_SYS, 2, L"KernelBase.dll");
     FdModRange(FDC_APEX, 0, L"ApexRadiance.asi");
     FdModRange(FDC_S3PP, 0, L"Sims3Performance.asi");
@@ -303,13 +350,22 @@ static void FdGpuCheck() {
         f->Release();
     }
     if (dx) FreeLibrary(dx);
-    // Windows per-app GPU preference: value name = full exe path
-    wchar_t exe[MAX_PATH] = L"", bridge[MAX_PATH] = L"";
-    GetModuleFileNameW(NULL, exe, MAX_PATH);
-    wcscpy_s(bridge, exe);
+    // Windows per-app GPU preference: value name = full exe path. Candidates: this exe, then Bin\TS3W.exe and Bin\TS3.exe
+    // (the EA laptop harness runs TS3.exe as Sims3Launcher.exe; a player sets the preference on the real name)
+    wchar_t cand[3][MAX_PATH] = {}, bridge[MAX_PATH] = L"";
+    GetModuleFileNameW(NULL, cand[0], MAX_PATH);
+    int nc = 1;
+    for (const wchar_t* n : {L"TS3W.exe", L"TS3.exe"}) {
+        wcscpy_s(cand[nc], cand[0]);
+        wchar_t* s = wcsrchr(cand[nc], L'\\');
+        if (!s) continue;
+        wcscpy_s(s + 1, MAX_PATH - (s + 1 - cand[nc]), n);
+        if (_wcsicmp(cand[nc], cand[0]) && GetFileAttributesW(cand[nc]) != INVALID_FILE_ATTRIBUTES) nc++;
+    }
+    wcscpy_s(bridge, cand[0]);
     if (wchar_t* s = wcsrchr(bridge, L'\\')) wcscpy_s(s + 1, MAX_PATH - (s + 1 - bridge), L".trex\\NvRemixBridge.exe");
     const bool haveBridge = GetFileAttributesW(bridge) != INVALID_FILE_ATTRIBUTES;
-    int gamePref = -1, bridgePref = -1, bridgeElsewhere = -1;
+    int pref[3] = {-1, -1, -1}, bridgePref = -1, bridgeElsewhere = -1;
     char global[96] = "";
     HKEY k;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\DirectX\\UserGpuPreferences", 0, KEY_READ, &k) == ERROR_SUCCESS) {
@@ -321,16 +377,26 @@ static void FdGpuCheck() {
             if (r != ERROR_SUCCESS || type != REG_SZ) continue;
             data[dl / sizeof(wchar_t)] = 0;
             const int p = FdPrefOf(data);
-            if (!_wcsicmp(name, exe)) gamePref = p;
+            int c = 0;
+            while (c < nc && _wcsicmp(name, cand[c])) c++;
+            if (c < nc) pref[c] = p;
             else if (!_wcsicmp(name, bridge)) bridgePref = p;
             else if (wcslen(name) >= 18 && !_wcsicmp(name + wcslen(name) - 18, L"\\NvRemixBridge.exe")) bridgeElsewhere = p;  // another install's bridge
             else if (!_wcsicmp(name, L"DirectXUserGlobalSettings")) WideCharToMultiByte(CP_UTF8, 0, data, -1, global, sizeof(global), NULL, NULL);
         }
         RegCloseKey(k);
     }
-    const wchar_t* en = wcsrchr(exe, L'\\');
-    char gameExe[64], bridgeExe[] = "NvRemixBridge.exe";
-    WideCharToMultiByte(CP_UTF8, 0, en ? en + 1 : exe, -1, gameExe, sizeof(gameExe), NULL, NULL);
+    // the game named in the verdict: the first candidate with a preference, else this exe when it is TS3(W).exe, else Bin's
+    char names[3][64], prefs[256] = "", bridgeExe[] = "NvRemixBridge.exe";
+    for (int c = 0; c < nc; c++) {
+        const wchar_t* en = wcsrchr(cand[c], L'\\');
+        WideCharToMultiByte(CP_UTF8, 0, en ? en + 1 : cand[c], -1, names[c], sizeof(names[c]), NULL, NULL);
+        PcCat(prefs, sizeof(prefs), "%s%s %s", c ? ", " : "", names[c], FdPrefName(pref[c]));
+    }
+    int pick = FdPickPref(pref, nc);
+    if (pick < 0) pick = !_strnicmp(names[0], "TS3", 3) || nc == 1 ? 0 : 1;
+    const char* gameExe = names[pick];
+    const int gamePref = pref[pick];
     FdGpuVerdict(g_fdGpu, g_fdGpuN, haveBridge ? bridgeExe : NULL, bridgePref, gameExe, gamePref, g_fdGpuVerdict, sizeof(g_fdGpuVerdict));
     char* t = g_fdGpuText;
     t[0] = 0;
@@ -339,7 +405,7 @@ static void FdGpuCheck() {
         PcCat(t, sizeof(g_fdGpuText), "adapter %d: %s, vendor 0x%04X, %ld MB dedicated, %ld MB shared, LUID %08lX:%08lX, %d output(s)%s\n", i, g.name, g.vendor, g.vramMB,
               g.sharedMB, g.luidHi, g.luidLo, g.outputs, g.software ? ", software" : FdIntegrated(g) ? ", integrated" : ", discrete");
     }
-    PcCat(t, sizeof(g_fdGpuText), "Windows graphics preference: %s %s; bridge server %s%s%s%s; global settings \"%s\"\n", gameExe, FdPrefName(gamePref),
+    PcCat(t, sizeof(g_fdGpuText), "Windows graphics preference: %s; bridge server %s%s%s%s; global settings \"%s\"\n", prefs,
           haveBridge ? "Bin\\.trex\\NvRemixBridge.exe " : "not found in Bin\\.trex", haveBridge ? FdPrefName(bridgePref) : "",
           bridgeElsewhere >= 0 ? "; another NvRemixBridge.exe path has " : "", bridgeElsewhere >= 0 ? FdPrefName(bridgeElsewhere) : "", global);
     Log("framediag: %d adapter(s); %s", g_fdGpuN, g_fdGpuVerdict);
