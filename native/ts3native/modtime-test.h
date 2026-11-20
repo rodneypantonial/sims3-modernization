@@ -97,6 +97,16 @@ static void TestModTime() {
             free(g_mdtPkg), g_mdtPkg = NULL;
         }
     }
+    // frame-walk pointer checks (before any read): heap pointers in the user range and aligned; frames on the stack,
+    // both words inside, strictly above the child
+    assert(MdtPtrOk(0x10000) && MdtPtrOk(0x7FFEFFFC) && !MdtPtrOk(0) && !MdtPtrOk(0xFFFC) && !MdtPtrOk(0x7FFF0000) && !MdtPtrOk(0x12345679));
+    const DWORD slo = 0x00300000, shi = 0x00400000;
+    assert(MdtFrameOk(0x003FF000, 0, slo, shi) && MdtFrameOk(0x003FFFF8, 0x003FF000, slo, shi) && MdtFrameOk(slo, 0, slo, shi));
+    assert(!MdtFrameOk(0x003FFFFC, 0, slo, shi));                                        // second word past the stack top
+    assert(!MdtFrameOk(shi, 0, slo, shi) && !MdtFrameOk(slo - 4, 0, slo, shi));          // outside the stack
+    assert(!MdtFrameOk(0x003FF002, 0, slo, shi));                                        // misaligned
+    assert(!MdtFrameOk(0x003FF000, 0x003FF000, slo, shi) && !MdtFrameOk(0x003FE000, 0x003FF000, slo, shi));  // not upward (loop)
+    assert(!MdtFrameOk(0x003FF000, 0, 0, 0));                                            // stack range unknown: nothing read
     // stack-walk verdict: ok with any frame; else the reason (bad TLS index, no context, faults, empty chains)
     char wv[320];
     MdtWalkVerdict(1500, 900, 10, 0, 7, wv, sizeof(wv));

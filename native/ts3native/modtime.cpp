@@ -198,8 +198,34 @@ static int MdtMethOf(DWORD method) {
     return r;
 }
 
-// suspended read of the sim thread: eip + up to n method pointers, innermost first; -1 = no context
-static int MdtGrab(HANDLE h, DWORD* eip, DWORD* m, int n) {
+// pointer checks of the frame walk, before any read (EA smoke e2: 14 first-chance AVs inside the __try used up the crash
+// log's first-chance slots). A heap pointer (context, method info, TLS expansion) is non-null, dword-aligned and in the
+// user range; a Mono interpreter frame lies on the sim thread's stack [lo, hi) with its two words, and each parent sits
+// strictly above the child (the interpreter's frames are locals of nested calls).
+static bool MdtPtrOk(DWORD p) { return p >= 0x10000 && p < 0x7FFF0000 && !(p & 3); }
+static bool MdtFrameOk(DWORD f, DWORD child, DWORD lo, DWORD hi) { return !(f & 3) && f >= lo && f < hi && hi - f >= 8 && f > child; }
+// the sim thread's stack: TEB from NtQueryInformationThread(ThreadBasicInformation), bottom = DeallocationStack
+// (TEB +0xE0C, the reservation start: fixed while StackLimit moves down as the stack grows), top = StackBase (TEB +4);
+// read once per thread id
+static DWORD g_mdtStkTid, g_mdtStkLo, g_mdtStkHi;
+static void MdtStackRange(HANDLE h, DWORD tid) {
+    if (tid == g_mdtStkTid) return;
+    typedef LONG(NTAPI * Qit)(HANDLE, int, void*, ULONG, ULONG*);
+    static Qit q = (Qit)(void*)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread");
+    DWORD tbi[7] = {};  // THREAD_BASIC_INFORMATION (x86): ExitStatus, TebBaseAddress, ClientId, AffinityMask, priorities
+    DWORD teb = q && q(h, 0, tbi, sizeof(tbi), NULL) == 0 ? tbi[1] : 0, lo = 0, hi = 0;
+    if (!teb) teb = g_mdtTeb;  // fallback: the TEB the sim thread reported itself (MdtIter)
+    if (!MdtRead(teb + 0xE0C, &lo, 4) || !MdtRead(teb + 4, &hi, 4) || lo >= hi) lo = hi = 0;
+    g_mdtStkTid = tid, g_mdtStkLo = lo, g_mdtStkHi = hi;
+    Log("modtime: sim thread %lu stack 0x%08lX-0x%08lX%s", tid, lo, hi, hi ? "" : " unknown: every stack walk counts as unreadable");
+}
+
+// suspended read of the sim thread: eip + up to n method pointers, innermost first; -1 = no context, -2 = unreadable
+// (a pointer failed its check before any frame, or the __try caught a fault anyway); *cut = stopped at a bad pointer later
+static int MdtGrab(HANDLE h, DWORD* eip, DWORD* m, int n, bool* cut) {
+    *cut = false;
+    MdtStackRange(h, g_mdtSimTid);
+    const DWORD lo = g_mdtStkLo, hi = g_mdtStkHi;
     if (SuspendThread(h) == (DWORD)-1) return -1;
     CONTEXT c = {};
     c.ContextFlags = CONTEXT_CONTROL;
@@ -207,17 +233,29 @@ static int MdtGrab(HANDLE h, DWORD* eip, DWORD* m, int n) {
     if (GetThreadContext(h, &c)) {  // also makes sure the suspend took effect
         *eip = c.Eip;
         got = 0;
-        __try {
+        __try {  // last guard: every pointer below is checked before it is read
             const DWORD idx = *g_mdtTlsIdx;
             const DWORD teb = g_mdtTeb;
             DWORD ctx = 0;
-            if (idx < 64) ctx = *(const DWORD*)(uintptr_t)(teb + 0xE10 + idx * 4);
-            else if (idx < 1088) { const DWORD ext = *(const DWORD*)(uintptr_t)(teb + 0xF94); ctx = ext ? *(const DWORD*)(uintptr_t)(ext + (idx - 64) * 4) : 0; }
-            if (!ctx) g_mdtNoCtx++;  // our own counter: no lock, heap or log while the sim thread is stopped
-            for (const DWORD* f = ctx ? *(const DWORD* const*)(uintptr_t)(ctx + 8) : NULL; f && got < n; f = (const DWORD*)(uintptr_t)f[0]) {
-                const DWORD info = f[1];
-                m[got++] = info ? *(const DWORD*)(uintptr_t)(info + 8) : 0;
+            bool bad = !MdtPtrOk(teb);
+            if (bad) {
+            } else if (idx < 64) ctx = *(const DWORD*)(uintptr_t)(teb + 0xE10 + idx * 4);
+            else if (idx < 1088) {
+                const DWORD ext = *(const DWORD*)(uintptr_t)(teb + 0xF94);
+                if (ext && !MdtPtrOk(ext)) bad = true;
+                else ctx = ext ? *(const DWORD*)(uintptr_t)(ext + (idx - 64) * 4) : 0;
             }
+            if (!bad && !ctx) g_mdtNoCtx++;  // our own counter: no lock, heap or log while the sim thread is stopped
+            if (ctx && !MdtPtrOk(ctx)) bad = true, ctx = 0;
+            DWORD f = ctx ? *(const DWORD*)(uintptr_t)(ctx + 8) : 0, child = 0;
+            while (f && got < n) {
+                if (!MdtFrameOk(f, child, lo, hi)) { bad = true; break; }
+                const DWORD info = ((const DWORD*)(uintptr_t)f)[1];
+                if (info && !MdtPtrOk(info)) { bad = true; break; }
+                m[got++] = info ? *(const DWORD*)(uintptr_t)(info + 8) : 0;
+                child = f, f = ((const DWORD*)(uintptr_t)f)[0];
+            }
+            if (bad) { if (got) *cut = true; else got = -2; }
         } __except (EXCEPTION_EXECUTE_HANDLER) { got = -2; }
     }
     ResumeThread(h);
@@ -324,11 +362,12 @@ static DWORD WINAPI MdtSampler(LPVOID) {
         lastCyc = cyc;
         DWORD eip = 0, m[48];
         const LONGLONG t0 = MdtUs();
-        const int n = MdtGrab(h, &eip, m, 48);
+        bool cut = false;
+        const int n = MdtGrab(h, &eip, m, 48, &cut);
         g_mdtOverheadUs += MdtUs() - t0;
         if (n == -1) continue;
         g_mdtSamples++;
-        if (n == -2) g_mdtFramesBad++;
+        if (n == -2 || cut) g_mdtFramesBad++;
         int kinds[48], meths[48], k = 0;
         for (int i = 0; i < n; i++) {
             if (!m[i]) continue;

@@ -134,3 +134,18 @@ asi 0.36.247-elidiag2, built for EA (/DTS3A_TABLE) with the laptop's portable MS
   IDirect3D9::CreateDevice`), `framediag: d3d9.dll from outside the system folder, ... KB: d3d9 (DXVK)`, per-minute
   `framediag:` lines with fps > 0 and no `(not in world)` while in live mode, `framediag: d3d9!Direct3DCreate9 slot found
   by value at exe+0xBDFB00`, `modtime: stack walk ok`, `Windows graphics preference: Sims3Launcher.exe ..., TS3.exe ...`.
+
+## 7. elidiag3 / kit 1120.e3: ModTime frame walk without first-chance faults (2026-11-20)
+
+The EA live smoke of e2 passed every check, but `MdtGrab` raised 14 first-chance AVs inside its `__try` (no crash).
+They took 14 of the crash log's 16 first-chance slots and would hide a real crash. elidiag3 checks every pointer of the
+Mono frame walk before reading it: the TEB, the TLS expansion array, the context and each method info must be non-null,
+dword-aligned and in 0x10000..0x7FFF0000 (`MdtPtrOk`); each frame must lie dword-aligned on the sim thread's stack with
+both of its words inside, and strictly above the frame before it (`MdtFrameOk`). The stack range comes from
+`NtQueryInformationThread(ThreadBasicInformation)` -> TEB: DeallocationStack (+0xE0C) .. StackBase (+4), read once per
+sim thread id (log `modtime: sim thread <tid> stack 0x...-0x...`). A pointer that fails stops the walk without a read and
+counts as an unreadable stack (frames read before it are kept). The `__try` stays as the last guard. Selftest fixtures
+for both checks. [inferred] interpreter parent frames sit above their child (docs/04 F6a frame chain); if not, walks cut
+after the first frame and the summary's unreadable count rises: check it in the next EA smoke.
+To confirm: `modtime: sim thread ... stack`, `modtime: stack walk ok`, and no first-chance AV at modtime RVAs in the
+crash log's first-chance list.
