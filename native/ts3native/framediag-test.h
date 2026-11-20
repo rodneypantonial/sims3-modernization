@@ -12,7 +12,7 @@ static void TestFrameDiag() {
     FdFacts f = {};
     assert(FdVerdict(f, v, sizeof(v)) == FDV_NODATA);
     f.minutes = 15, f.fps = 18, f.frameP50 = 55, f.frameP99 = 75, f.mainD3dPct = -1, f.simIterS = 18, f.simP50 = 55;
-    FdFacts b = f;  // Eli-like: main thread mostly inside Present
+    FdFacts b = f;  // tester-like: main thread mostly inside Present
     b.presentMsS = 600, b.mainCpuMsS = 300, b.simCpuMsS = 400;
     assert(FdVerdict(b, v, sizeof(v)) == FDV_BRIDGE && strstr(v, "BRIDGE / GPU") && strstr(v, "600 ms"));
     b.presentMsS = 100, b.mainD3dPct = 60;  // the wait shows in other d3d9 calls, not Present
