@@ -111801,6 +111801,986 @@
     ]
   },
   {
+    "id": "pie-menu-cost",
+    "bug": "docs/302 §3 #8: pie-menu / autonomy Test cost with MasterController + many interaction mods is unmeasured after the STBL fix",
+    "fix": "measuring only (docs/302 §9.4); no memo is built from this",
+    "save": "ManyMods-IP-aged",
+    "note": "UNVERIFIED (static only, 2026-11-20): never run. MEASUREMENT (labelled stress: 120 menu builds in ~3 min, a player opens a few per minute). 20 rounds over 6 targets every world has (the active Sim itself, terrain, its home lot, the nearest mailbox, fridge, toilet). Read the per-call ms from the repro log and the hitches + owner stacks around them from modtime-summary.txt (the queue keeps a copy per job). No other Sim as target yet: the agent has no target form for a non-selected Sim without its name.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 30,
+        "note": "lead-in: ModTime samples the live world first (baseline seconds before the first menu)"
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1,
+        "note": "one pie menu build: GetAllInteractionsForActor + every Test + picker, as PieMenu.TestAndBringUpPieMenu (agent ControlHandlers BuildMenu); nothing is pushed"
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1,
+        "note": "one pie menu build: GetAllInteractionsForActor + every Test + picker, as PieMenu.TestAndBringUpPieMenu (agent ControlHandlers BuildMenu); nothing is pushed"
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1,
+        "note": "one pie menu build: GetAllInteractionsForActor + every Test + picker, as PieMenu.TestAndBringUpPieMenu (agent ControlHandlers BuildMenu); nothing is pushed"
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1,
+        "note": "one pie menu build: GetAllInteractionsForActor + every Test + picker, as PieMenu.TestAndBringUpPieMenu (agent ControlHandlers BuildMenu); nothing is pushed"
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1,
+        "note": "one pie menu build: GetAllInteractionsForActor + every Test + picker, as PieMenu.TestAndBringUpPieMenu (agent ControlHandlers BuildMenu); nothing is pushed"
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1,
+        "note": "one pie menu build: GetAllInteractionsForActor + every Test + picker, as PieMenu.TestAndBringUpPieMenu (agent ControlHandlers BuildMenu); nothing is pushed"
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "self",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "terrain",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "home",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Mailbox",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Fridge",
+          "include_disabled": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "list_interactions",
+        "args": {
+          "target": "@type:Toilet",
+          "include_disabled": true
+        },
+        "waitS": 1
+      }
+    ]
+  },
+  {
     "id": "sweep-ep1",
     "bug": "docs/267: EP1 World Adventures has 286 script types, 271 never seen in our runs; their interactions never ran under our routing / Mono changes",
     "fix": "measurement only: forced interaction sweep of every definition the pack brings (docs/268)",
