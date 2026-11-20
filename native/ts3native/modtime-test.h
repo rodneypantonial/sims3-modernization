@@ -97,16 +97,33 @@ static void TestModTime() {
             free(g_mdtPkg), g_mdtPkg = NULL;
         }
     }
-    // frame-walk pointer checks (before any read): heap pointers in the user range and aligned; frames on the stack,
-    // both words inside, strictly above the child
+    // pointer checks (before any read): struct pointers in the user range and aligned, strings any alignment; a frame is
+    // an aligned user pointer other than the one just read, on or off the stack, either order (e3 rejected real frames)
     assert(MdtPtrOk(0x10000) && MdtPtrOk(0x7FFEFFFC) && !MdtPtrOk(0) && !MdtPtrOk(0xFFFC) && !MdtPtrOk(0x7FFF0000) && !MdtPtrOk(0x12345679));
-    const DWORD slo = 0x00300000, shi = 0x00400000;
-    assert(MdtFrameOk(0x003FF000, 0, slo, shi) && MdtFrameOk(0x003FFFF8, 0x003FF000, slo, shi) && MdtFrameOk(slo, 0, slo, shi));
-    assert(!MdtFrameOk(0x003FFFFC, 0, slo, shi));                                        // second word past the stack top
-    assert(!MdtFrameOk(shi, 0, slo, shi) && !MdtFrameOk(slo - 4, 0, slo, shi));          // outside the stack
-    assert(!MdtFrameOk(0x003FF002, 0, slo, shi));                                        // misaligned
-    assert(!MdtFrameOk(0x003FF000, 0x003FF000, slo, shi) && !MdtFrameOk(0x003FE000, 0x003FF000, slo, shi));  // not upward (loop)
-    assert(!MdtFrameOk(0x003FF000, 0, 0, 0));                                            // stack range unknown: nothing read
+    assert(MdtUserPtr(0x12345679) && !MdtUserPtr(0x309) && !MdtUserPtr(0x2A) && !MdtUserPtr(0xA3D5569E));  // e3's faulting sources
+    assert(MdtFrameOk(0x003FF000, 0) && MdtFrameOk(0x003FE000, 0x003FF000) && MdtFrameOk(0x05000000, 0x003FF000));  // downward, heap
+    assert(!MdtFrameOk(0x003FF000, 0x003FF000) && !MdtFrameOk(0x003FF002, 0) && !MdtFrameOk(0x8000, 0));
+    // readable regions: committed RW yes, reserved-only / no-access / past the region end no; strings stop at the region end
+    g_mdtRgnN = 0;
+    u8* pg = (u8*)VirtualAlloc(NULL, 0x3000, MEM_RESERVE, PAGE_NOACCESS);
+    assert(pg && VirtualAlloc(pg, 0x1000, MEM_COMMIT, PAGE_READWRITE) && VirtualAlloc(pg + 0x2000, 0x1000, MEM_COMMIT, PAGE_NOACCESS));
+    const DWORD a0 = (DWORD)(uintptr_t)pg;
+    assert(MdtReadable(a0, 0x1000) && MdtReadable(a0 + 0xFFC, 4) && !MdtReadable(a0 + 0xFFC, 8));
+    assert(!MdtReadable(a0 + 0x1000, 4) && !MdtReadable(a0 + 0x2000, 4) && !MdtReadable(0x2A, 4) && !MdtReadable(0xA3D5569E, 1));
+    memset(pg, 'A', 0x1000);  // no NUL up to the reserved page
+    char sb[64];
+    assert(MdtStr((const char*)(pg + 0x1000 - 5), sb, sizeof(sb)) && !strcmp(sb, "AAAAA"));
+    assert(!MdtStr((const char*)(uintptr_t)0x309, sb, sizeof(sb)) && !sb[0] && !MdtStr((const char*)(pg + 0x2000), sb, sizeof(sb)));
+    DWORD rv = 0;
+    *(DWORD*)(pg + 8) = 0x11223344;
+    assert(MdtRead(a0 + 8, &rv, 4) && rv == 0x11223344 && !MdtRead(a0 + 9, &rv, 4) && !MdtRead(a0 + 0xFFE, &rv, 4) && !MdtRead(0x2A, &rv, 4));
+    u8 g16[16];
+    assert(MdtRead(a0 + 3, g16, 16) && g16[0] == 'A');  // a GUID run: any alignment
+    VirtualFree(pg, 0, MEM_RELEASE);
+    g_mdtRgnN = 0;
+    char rs[200];
+    MdtBadReasons(rs, sizeof(rs));
+    assert(strstr(rs, "bad pointer") && strstr(rs, "frame loop") && strstr(rs, "off the sim stack"));
     // stack-walk verdict: ok with any frame; else the reason (bad TLS index, no context, faults, empty chains)
     char wv[320];
     MdtWalkVerdict(1500, 900, 10, 0, 7, wv, sizeof(wv));

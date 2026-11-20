@@ -106,6 +106,8 @@ static int g_mdtMethHash[16384];  // index + 1
 static double g_mdtTotalW, g_mdtGcW, g_mdtHourTotal;
 static LONG g_mdtSamples, g_mdtActive, g_mdtFramesBad, g_mdtWithFrame;
 static volatile LONG g_mdtNoCtx;  // samples whose Mono TLS slot held no context (MdtGrab)
+// why a walk stopped (unreadable) and what the accepted frames looked like (MdtGrab, sampler thread only)
+static LONG g_mdtBadPtr, g_mdtBadFrame, g_mdtBadLoop, g_mdtBadFault, g_mdtOffStack, g_mdtDown, g_mdtCapHit;
 static LONGLONG g_mdtOverheadUs, g_mdtStartUs;
 static CRITICAL_SECTION g_mdtCs;
 static LONG g_mdtOn, g_mdtHz = 50;
@@ -139,17 +141,47 @@ static void __cdecl MdtIter() {
     InterlockedIncrement(&g_mdtSeq);
 }
 
-// printable ASCII up to cap-1 from a game string pointer; false = unreadable / empty
+// Every game pointer the sampler thread reads is checked first (EA smokes e2 / e3: first-chance AVs inside the __try blocks
+// used up the crash log's first-chance slots): in the user range, dword-aligned when it is a struct, and inside a committed
+// readable region (VirtualQuery, a syscall: safe while the sim thread is suspended; regions cached, sampler thread only,
+// the cache is cleared at each summary). The __try blocks stay as the last guard.
+static bool MdtPtrOk(DWORD p) { return p >= 0x10000 && p < 0x7FFF0000 && !(p & 3); }
+static bool MdtUserPtr(DWORD p) { return p >= 0x10000 && p < 0x7FFF0000; }  // a string or byte run: any alignment
+struct MdtRgn { DWORD lo, hi; };
+static MdtRgn g_mdtRgn[32];
+static int g_mdtRgnN, g_mdtRgnNext;
+static DWORD MdtRegionEnd(DWORD p) {  // end of the committed readable region that holds p; 0 = not readable
+    if (!MdtUserPtr(p)) return 0;
+    for (int i = 0; i < g_mdtRgnN; i++) if (p >= g_mdtRgn[i].lo && p < g_mdtRgn[i].hi) return g_mdtRgn[i].hi;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery((const void*)(uintptr_t)p, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
+        !(mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)))
+        return 0;
+    const DWORD lo = (DWORD)(uintptr_t)mbi.BaseAddress, hi = lo + (DWORD)mbi.RegionSize;
+    g_mdtRgn[g_mdtRgnNext] = {lo, hi};
+    g_mdtRgnNext = (g_mdtRgnNext + 1) % 32;
+    if (g_mdtRgnN < 32) g_mdtRgnN++;
+    return hi;
+}
+static bool MdtReadable(DWORD p, DWORD n) {
+    const DWORD end = MdtRegionEnd(p);
+    return end && n <= end - p;
+}
+// printable ASCII up to cap-1 from a game string pointer, never past its region; false = unreadable / empty
 static bool MdtStr(const char* s, char* d, int cap) {
     int n = 0;
+    const DWORD p = (DWORD)(uintptr_t)s, end = MdtRegionEnd(p);
+    const int lim = !end ? 0 : end - p < (DWORD)cap - 1 ? (int)(end - p) : cap - 1;
     __try {
-        for (; s && n < cap - 1 && s[n] >= 0x20 && s[n] < 0x7F; n++) d[n] = s[n];
+        for (; n < lim && s[n] >= 0x20 && s[n] < 0x7F; n++) d[n] = s[n];
     } __except (EXCEPTION_EXECUTE_HANDLER) { n = 0; }
     d[n] = 0;
     return n > 0;
 }
+// a checked, bounded copy (no memcpy of an unchecked source); a 4-byte read is a struct field: aligned source only
 static bool MdtRead(DWORD at, void* d, int n) {
-    __try { memcpy(d, (const void*)(uintptr_t)at, n); return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    if (n <= 0 || (n == 4 && (at & 3)) || !MdtReadable(at, (DWORD)n)) return false;
+    __try { for (int i = 0; i < n; i++) ((u8*)d)[i] = ((const u8*)(uintptr_t)at)[i]; return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 
 static int MdtModOf(DWORD image) {
@@ -158,7 +190,7 @@ static int MdtModOf(DWORD image) {
     MdtMod m = {};
     m.image = image;
     DWORD an = 0, mn = 0, guid = 0;
-    MdtRead(image + 0x18, &an, 4), MdtRead(image + 0x1C, &mn, 4), MdtRead(image + 0x50, &guid, 4);
+    if (MdtPtrOk(image)) MdtRead(image + 0x18, &an, 4), MdtRead(image + 0x1C, &mn, 4), MdtRead(image + 0x50, &guid, 4);
     if (!MdtStr((const char*)(uintptr_t)an, m.name, sizeof(m.name))) {
         if (!MdtStr((const char*)(uintptr_t)mn, m.name, sizeof(m.name))) _snprintf_s(m.name, _TRUNCATE, "image@%08lX", image);
         else if (char* dot = strrchr(m.name, '.')) if (!_stricmp(dot, ".dll")) *dot = 0;
@@ -184,7 +216,7 @@ static int MdtMethOf(DWORD method) {
     m.key = method;
     DWORD klass = 0, mname = 0, image = 0, cname = 0, cns = 0;
     char c[64] = "", ns[64] = "", mn[48] = "";
-    if (MdtRead(method + 8, &klass, 4) && klass && MdtRead(klass, &image, 4) && image) {
+    if (MdtPtrOk(method) && MdtRead(method + 8, &klass, 4) && MdtPtrOk(klass) && MdtRead(klass, &image, 4) && MdtPtrOk(image)) {
         MdtRead(klass + 0x34, &cname, 4), MdtRead(klass + 0x38, &cns, 4), MdtRead(method + 0x18, &mname, 4);
         MdtStr((const char*)(uintptr_t)cns, ns, sizeof(ns)), MdtStr((const char*)(uintptr_t)cname, c, sizeof(c)), MdtStr((const char*)(uintptr_t)mname, mn, sizeof(mn));
         m.mod = MdtModOf(image);
@@ -202,8 +234,11 @@ static int MdtMethOf(DWORD method) {
 // log's first-chance slots). A heap pointer (context, method info, TLS expansion) is non-null, dword-aligned and in the
 // user range; a Mono interpreter frame lies on the sim thread's stack [lo, hi) with its two words, and each parent sits
 // strictly above the child (the interpreter's frames are locals of nested calls).
-static bool MdtPtrOk(DWORD p) { return p >= 0x10000 && p < 0x7FFF0000 && !(p & 3); }
-static bool MdtFrameOk(DWORD f, DWORD child, DWORD lo, DWORD hi) { return !(f & 3) && f >= lo && f < hi && hi - f >= 8 && f > child; }
+// a frame: an aligned user pointer, not the frame just read (a 1-loop), on or off the sim thread's stack, either order.
+// e3's "on the stack, strictly upward" rejected real frames (360 of 1500 samples unreadable vs 18 in e2) [inferred: script
+// tasks run on their own stacks, not the sim thread's TEB range]; off-stack and downward frames are only counted
+// (g_mdtOffStack / g_mdtDown), and the caller caps the walk (48 frames).
+static bool MdtFrameOk(DWORD f, DWORD child) { return MdtPtrOk(f) && f != child; }
 // the sim thread's stack: TEB from NtQueryInformationThread(ThreadBasicInformation), bottom = DeallocationStack
 // (TEB +0xE0C, the reservation start: fixed while StackLimit moves down as the stack grows), top = StackBase (TEB +4);
 // read once per thread id
@@ -237,26 +272,30 @@ static int MdtGrab(HANDLE h, DWORD* eip, DWORD* m, int n, bool* cut) {
             const DWORD idx = *g_mdtTlsIdx;
             const DWORD teb = g_mdtTeb;
             DWORD ctx = 0;
-            bool bad = !MdtPtrOk(teb);
-            if (bad) {
-            } else if (idx < 64) ctx = *(const DWORD*)(uintptr_t)(teb + 0xE10 + idx * 4);
+            LONG* why = NULL;  // the counter of the reason the walk stopped
+            if (!MdtPtrOk(teb) || !MdtReadable(teb + 0xE10, 0x188)) why = &g_mdtBadPtr;  // TLS slots +0xE10, expansion pointer +0xF94
+            else if (idx < 64) ctx = *(const DWORD*)(uintptr_t)(teb + 0xE10 + idx * 4);
             else if (idx < 1088) {
                 const DWORD ext = *(const DWORD*)(uintptr_t)(teb + 0xF94);
-                if (ext && !MdtPtrOk(ext)) bad = true;
+                if (ext && !(MdtPtrOk(ext) && MdtReadable(ext + (idx - 64) * 4, 4))) why = &g_mdtBadPtr;
                 else ctx = ext ? *(const DWORD*)(uintptr_t)(ext + (idx - 64) * 4) : 0;
             }
-            if (!bad && !ctx) g_mdtNoCtx++;  // our own counter: no lock, heap or log while the sim thread is stopped
-            if (ctx && !MdtPtrOk(ctx)) bad = true, ctx = 0;
+            if (!why && !ctx) g_mdtNoCtx++;  // our own counters: no lock, heap or log while the sim thread is stopped
+            if (ctx && !(MdtPtrOk(ctx) && MdtReadable(ctx + 8, 4))) why = &g_mdtBadPtr, ctx = 0;
             DWORD f = ctx ? *(const DWORD*)(uintptr_t)(ctx + 8) : 0, child = 0;
-            while (f && got < n) {
-                if (!MdtFrameOk(f, child, lo, hi)) { bad = true; break; }
+            while (f && !why) {
+                if (got == n) { g_mdtCapHit++; break; }
+                if (!MdtFrameOk(f, child)) { why = MdtPtrOk(f) ? &g_mdtBadLoop : &g_mdtBadFrame; break; }
+                if (!MdtReadable(f, 8)) { why = &g_mdtBadFrame; break; }
+                if (lo >= hi || f < lo || hi - f < 8) g_mdtOffStack++;
+                if (child && f < child) g_mdtDown++;
                 const DWORD info = ((const DWORD*)(uintptr_t)f)[1];
-                if (info && !MdtPtrOk(info)) { bad = true; break; }
+                if (info && !(MdtPtrOk(info) && MdtReadable(info + 8, 4))) { why = &g_mdtBadPtr; break; }
                 m[got++] = info ? *(const DWORD*)(uintptr_t)(info + 8) : 0;
                 child = f, f = ((const DWORD*)(uintptr_t)f)[0];
             }
-            if (bad) { if (got) *cut = true; else got = -2; }
-        } __except (EXCEPTION_EXECUTE_HANDLER) { got = -2; }
+            if (why) { (*why)++; if (got) *cut = true; else got = -2; }
+        } __except (EXCEPTION_EXECUTE_HANDLER) { got = -2, g_mdtBadFault++; }
     }
     ResumeThread(h);
     return got;
@@ -309,6 +348,11 @@ static void MdtIterEnd(MdtIterBuf& b, LONG ms) {
 }
 
 static void MdtWriteSummary(bool hourEnd, LONG hour);
+// unreadable by reason + the shape of accepted frames
+static void MdtBadReasons(char* out, size_t cap) {
+    _snprintf_s(out, cap, _TRUNCATE, "unreadable: %ld bad pointer, %ld bad frame pointer, %ld frame loop, %ld fault; frames: %ld off the sim stack, %ld downward, %ld walks at the 48 cap",
+                g_mdtBadPtr, g_mdtBadFrame, g_mdtBadLoop, g_mdtBadFault, g_mdtOffStack, g_mdtDown, g_mdtCapHit);
+}
 // one line on the Mono stack walk (TLS slot -> context +8 frame chain, docs/04 F6a; not yet proven on EA 1.69)
 static void MdtWalkVerdict(LONG samples, LONG withFrame, LONG noCtx, LONG bad, DWORD tlsIdx, char* out, size_t cap) {
     if (withFrame > 0) {
@@ -341,6 +385,7 @@ static DWORD WINAPI MdtSampler(LPVOID) {
     for (;;) {
         Sleep(sleepMs);
         const LONG req = InterlockedExchange(&g_mdtReq, 0);
+        if (req || GetTickCount() - lastWrite >= 60000) g_mdtRgnN = 0;  // region cache: re-query once a minute (a freed region)
         if (req & 1) MdtWriteSummary(true, g_mdtReqHour), lastWrite = GetTickCount();
         else if (req & 2 || g_udQuits != seenQuits || GetTickCount() - lastWrite >= 60000) MdtWriteSummary(false, -1), lastWrite = GetTickCount(), seenQuits = g_udQuits;
         // live world = ts3fixes op 61 hour open, or (a ts3fixes without ModTime.cs, the v0.2.12 EA kit) userdiag.cpp's
@@ -383,7 +428,9 @@ static DWORD WINAPI MdtSampler(LPVOID) {
             MdtRead((DWORD)(uintptr_t)g_mdtTlsIdx, &idx, 4);
             char v[320];
             MdtWalkVerdict(g_mdtSamples, g_mdtWithFrame, g_mdtNoCtx, g_mdtFramesBad, idx, v, sizeof(v));
-            Log("modtime: %s", v);
+            char r[200];
+            MdtBadReasons(r, sizeof(r));
+            Log("modtime: %s; %s", v, r);
         }
         const int mi = pick >= 0 ? meths[pick] : -1, mod = mi >= 0 ? g_mdtMeth[mi].mod : MDT_ENGINE;
         const bool gc = eip >= MDT_GC_LO && eip < MDT_GC_HI;
@@ -604,6 +651,11 @@ static void MdtWriteSummaryLocked(bool hourEnd, LONG hour) {
     MdtPut(f, "");
     MdtPut(f, "sampled %.0f real s, %ld samples at %ld Hz, %ld with the sim thread on the CPU, %ld with a script frame, %ld unreadable stacks; package scan %s (%d packages, %d script resources)",
           realS, samples, g_mdtHz, active, g_mdtWithFrame, bad, g_mdtScan == 2 ? "done" : "running", g_mdtPkgFiles, g_mdtPkgS3sa);
+    {
+        char r[200];
+        MdtBadReasons(r, sizeof(r));
+        MdtPut(f, "stack walk %s", r);
+    }
     MdtPut(f, "overhead (measured): the sim thread was stopped %.1f us per sample on average, %.2f ms per real second = %.3f%% of one core",
           samples ? (double)ovUs / samples : 0, realS > 0 ? ovUs / 1000.0 / realS : 0, realS > 0 ? ovUs / 1e4 / realS : 0);
     MdtPut(f, "gc/alloc (Boehm collector code on the CPU) %.1f%% of sim-thread CPU", total > 0 ? gcTotal * 100 / total : 0);

@@ -149,3 +149,24 @@ for both checks. [inferred] interpreter parent frames sit above their child (doc
 after the first frame and the summary's unreadable count rises: check it in the next EA smoke.
 To confirm: `modtime: sim thread ... stack`, `modtime: stack walk ok`, and no first-chance AV at modtime RVAs in the
 crash log's first-chance list.
+
+## 8. elidiag4 / kit 1120.e4: name reads checked, frame walk relaxed, unreadable reasons (2026-11-20)
+
+The e3 EA smoke passed (stack line `modtime: sim thread 33888 stack 0x32C20000-0x32CA0000`, FrameDiag about 59.5 fps), with
+two leftovers: 3 first-chance AVs, all in the name reads after the resume (2 in `MdtStr`, source 0x309 / 0xA3D5569E; 1 in
+the `memcpy` of `MdtRead`, source 0x2A), and 3958 of 29491 samples unreadable (one-time line: 836 of 1500 with a script
+frame, 642 without a Mono context, 360 unreadable; e2 had 18).
+- **Reads:** every pointer the sampler thread reads goes through `MdtRegionEnd`: user range (0x10000..0x7FFF0000), then
+  a committed, readable, non-guard region (VirtualQuery; 32 regions cached, cleared once a minute, sampler thread only).
+  Struct pointers (MonoMethod, MonoClass, MonoImage, context, method info, frames) must also be dword-aligned; strings may
+  be unaligned and are read up to the end of their region at most. `MdtRead` is a checked byte copy (no memcpy of an
+  unchecked source); a 4-byte field read needs an aligned source. The `__try` blocks stay as the last guard.
+- **Frame walk:** stock Mono 1.2's interpreter keeps each `MonoInvocation` as a local of its caller's C frame, so on one
+  native stack the chain would run upward [inferred from the Mono 1.2 interpreter's structure, not reread in the EA
+  binary]. e3's check (on the sim thread's TEB stack, strictly upward) still rejected about 24% of samples, so some frames
+  live elsewhere or in another order [inferred: script tasks on their own stacks]. elidiag4 accepts any aligned, readable
+  frame other than the one just read, caps the walk at 48 frames, and only counts off-stack and downward frames.
+- **Reasons:** the one-time line and the summary add `unreadable: N bad pointer, N bad frame pointer, N frame loop,
+  N fault; frames: N off the sim stack, N downward, N walks at the 48 cap`.
+- To confirm on EA: 0 first-chance AVs at modtime RVAs; `modtime: stack walk ok` with unreadable back near e2 (18 per
+  1500); the off-stack / downward counts tell where the frames live.
