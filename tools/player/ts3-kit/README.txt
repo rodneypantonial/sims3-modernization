@@ -1,11 +1,11 @@
-TS3 kit 1120.e1: ts3native for the EA app (TS3.exe 1.69) + diagnostic tool
+TS3 kit 1120.e2: ts3native for the EA app (TS3.exe 1.69) + diagnostic tool
 ===========================================================================
 
 What is in this kit
 - payload\            the published ts3native v0.2.12 for the EA app (ts3native-ea169.asi 0.36.247, its
                       ts3native.ini) and ts3fixes.package (v0.2.12).
 - payload\diag\       the diagnostic build: the same v0.2.12 code plus read-only measurements (frame timing,
-                      PC check, mod timing; asi 0.36.247-elidiag1), its ini, the same ts3fixes.package.
+                      PC check, mod timing; asi 0.36.247-elidiag2), its ini, the same ts3fixes.package.
                       See README-diag.txt.
 - TS3Kit.bat          the tool: 1 diagnose (read-only report zip on your Desktop), 2 launch the game your usual
                       way and capture, 3 install (asks N = normal or D = diagnostic; backs up first),
