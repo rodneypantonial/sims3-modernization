@@ -76,6 +76,7 @@ namespace Ts3Fixes
                 case "buffupdate": return EpLive(typeof(BuffUpdateHook), 1);
                 case "burglaridle": return EpLive(typeof(BiHook), 1);
                 case "burnttilefloor": return EpLive(typeof(BurntTileHook), 0);
+                case "busyflagreset": return EpJoin(EpJoin(EpLive(typeof(BfFountainHook), 1), EpLive(typeof(BfLightHook), 1)), EpLive(typeof(BfLitterHook), 1));
                 case "buycellrecycle": return EpLive(typeof(BcrHook), 0, "sBcrCatalogGrid", sBcrCatalogGrid, null);
                 case "buyclearrecycle": return EpLive(typeof(BcrHook), 0, "sBcrCatalogGrid", sBcrCatalogGrid, null);
                 case "buyiconleak": return EpLive(typeof(BilHook), 1);
@@ -132,6 +133,7 @@ namespace Ts3Fixes
                 case "djcleanup": return EpJoin(EpLive(typeof(DjPlayHook), 0), EpLive(typeof(DjRequestHook), 1));
                 case "dnpdisposelistener": return EpLive(typeof(LfDnp), 0);
                 case "dnpupdateguard": return EpLive(typeof(WlMgr), 1);
+                case "dollhouseslots": return EpJoin(EpLive(typeof(DhHook), 1, "sDhSlots", sDhSlots, null), EpLive(typeof(DhSmashHook), 0, "sDhSmashing", sDhSmashing, typeof(bool), "sDhSmashing", sDhSmashing, null));
                 case "doorgen": return EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpLive(typeof(DoorGenBuffHook), 2), EpLive(typeof(DoorGenBuffHook2), 2)), EpLive(typeof(DoorGenDescHook), 3)), EpLive(typeof(DoorGenDoorHook), 5)), EpLive(typeof(DoorGenFireHook), 2)), EpLive(typeof(DoorGenHouseholdHook), 4)), EpLive(typeof(DoorGenLotHook), 2)), EpLive(typeof(DoorGenOccultHook), 1)), EpLive(typeof(DoorGenResortHook), 6)), EpLive(typeof(DoorGenRoleHook), 2)), EpLive(typeof(DoorGenRoleTaskHook), 1)), EpLive(typeof(DoorGenSimHook), 1)), EpLive(typeof(DoorGenVipHook), 2));
                 case "doorlockowner": return EpLive(typeof(BDlHook), 2);
                 case "doormirror": return EpJoin(EpLive(typeof(DoorImportHook), 0), EpLive(typeof(RouteBackoffHook), 4));
