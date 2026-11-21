@@ -3434,6 +3434,7 @@ static void CnLogCounters();   // connro.cpp (docs/670 §15)
 static void GvhLogCounters();   // gvhits.cpp (docs/670 §11)
 static void DsLogCounters();   // doorshare.cpp (docs/674)
 static void PfaLogCounters();  // discourage.cpp (docs/670 §16)
+static void ScLogCounters();   // smoothcut.cpp (docs/676 §15)
 
 static void DiscRfLog();  // discourage.cpp (docs/89 §18)
 // docs/183 §7 (jobyield.cpp): [RouteAsync] JobYieldFollowed and the minute line's counts (the sim thread writes them)
@@ -3496,6 +3497,7 @@ static void MaybeLogCounters(ULONGLONG now) {
     if (c.ufcReady) UfcLogCounters();  // docs/202 §3.4
     DsLogCounters();   // docs/674 (nothing until [RouteSnap] DoorShare is installed)
     PfaLogCounters();  // docs/670 §16 (nothing until DeferPrivateFpAdd is installed)
+    ScLogCounters();   // docs/676 §15 (nothing until [WorldPrecompute] SmoothCut is installed)
     if (c.asyncReady)  // docs/183: n / ms / yieldable per site
         Log("route jobs sim waits: runplan %ld/%ld/%ld rtwait %ld/%ld/%ld disc %ld/%ld/%ld collect %ld/%ld/%ld drop %ld/%ld/%ld "
             "other %ld/%ld/%ld, max %ld ms; job yield mode %ld asks %ld busy %ld, records parked %ld back %ld dropped %ld lost %ld, "
@@ -6636,6 +6638,7 @@ static bool CostStubsWanted(bool routeBudget, int asyncMode) {
 #include "syncphases.cpp"  // docs/164: [RouteJobPhases] SyncPlans (needs routephases.cpp)
 #include "cellmemo.cpp"
 #include "routespeed.cpp"  // docs/663: [RouteSpeed] NeighbourMemo (after routesnap.cpp: g_snTreeSeq; plandeadline.cpp: t_pd.scope)
+#include "smoothcut.cpp"   // docs/676 §15: [WorldPrecompute] SmoothCut (no dependencies beyond the helpers above)
 #include "doorshare.cpp"   // docs/674: [RouteSnap] DoorShare (before hostcalls.cpp: the door stub calls it)
 #include "hostcalls.cpp"
 #include "fgrender.cpp"  // docs/162 §7: [Harness] ForegroundRender (TEST ONLY)
@@ -6908,6 +6911,7 @@ static void Run(HMODULE self) {
         keepLog = ApplyHitchSum(ini) || keepLog;        // docs/666 §5: after [RouteJobPhases] (SyncPlans) and [HitchAttr] Holders (log only, off)
         keepLog = ApplyAdaptDiag(ini) || keepLog;       // docs/316: after hitch summary / stall watch / ModTime / PcCheck (turns their thresholds; off)
         InstallRouteSpeed(ini);  // docs/663: after [RouteSnap] (tree-write sequence) and [RouteGate] (the Q table clear stub)
+        InstallSmoothCut(ini);   // docs/676 §15: one call site of its own (0x6676CE), nobody else's
         keepLog = ApplyHostCalls(ini) || keepLog;       // docs/159: after [RouteJobPhases] (rjpReady) and P4 / [ProbeValues] (door chain)
         keepLog = ApplyVerify(ini) || keepLog;  // last: probes skip whatever another section already hooked
         P5Snapshot();                           // P5 M2-1: the code bytes of every site the clone run passes, after every install
