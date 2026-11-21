@@ -292,6 +292,7 @@ namespace Ts3Agent
                 r["hhsearch_sims"] = d.GetData("ts3fixes.hhsearch");
             }
             if (c.Length > 1140) { r["burnttile_dropped"] = c[1135]; r["burnttile_lists"] = c[1136]; r["burnttile_empty"] = c[1137]; r["burnttile_err"] = c[1138]; r["burnttile_learned"] = c[1139]; r["burnttile_repeat"] = c[1140]; } // BurntTileFloor.cs (docs/277 §4.1)
+            if (c.Length > 1546) { r["burnttile_levelcut"] = c[1545]; r["burnttile_levelempty"] = c[1546]; } // BurntTileFloor.cs level rule (docs/277 §9)
             if (c.Length > 1134)
             {
                 string[] hx = { "hhsearch_scope_hh", "hhsearch_scope_unknown", "hhsearch_scope_gone", "hhsearch_scope_notlive",

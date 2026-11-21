@@ -9478,6 +9478,16 @@
       "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
     },
     {
+      "id": "fixes-1545",
+      "kind": "fixes",
+      "from": 1545,
+      "to": 1546,
+      "by": "burnt-tile-floor-1121",
+      "what": "burnttilefloor level rule (BurntTileFloor.cs)",
+      "at": "2026-11-21T08:00:00.000Z",
+      "worktree": "C:\\Users\\<user>\\AppData\\Local\\Temp\\claude\\<session>\\scratchpad\\wburnt"
+    },
+    {
       "id": "doc-313",
       "kind": "doc",
       "from": 313,

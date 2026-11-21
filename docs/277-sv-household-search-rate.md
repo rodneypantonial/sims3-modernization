@@ -338,3 +338,70 @@ Hook points (all read-only; household Sims are only counted):
   `burnttile-reach-1117b`, same agent).
 - Seen in the list step: all 80 burnt tiles are L2, room 0 at their world position, with a solid floor (ledger I-497-1: an
   outdoor L2 floor, e.g. a deck or roof floor, with no route up; still inferred).
+
+## 9. `burnttilefloor` design 3: the §4.1 level rule (2026-11-21, branch `bugfix/burnt-tile-floor`, NOT RUN)
+
+### 9.1 Why now [measured, existing logs]
+
+- The player sees NRaas Overwatch "Unroutable Sim Found" notices for household Sims. In the running SV soak (`bsoak1121`,
+  fixes `beta1121c`, the Keatons made jobless by `quit_jobs`), Justine and Marty Keaton had 676 + 175 failed
+  `MopBurnt -> Terrain, Plan async FailedBecauseNoDestinationSpecified` plans in one run. Overwatch's stuck check resets a Sim
+  after more than 10 failed plans without moving for 30 sim-minutes.
+- `burnttilefloor` is **off** in that soak (its `settings on` list has no `kBurntTileFloor`). The default stayed off
+  after rerun3 passed (PLAN.md: "default-on decision open").
+- The §3 facts still hold in the six `etl14v1-3` SV runs (2026-11-20/21): same Sims (`0x713C`, `0x71AF`), same lot
+  `0x6C11001B8B52BB30`. 56 of 59 MopBurnt routefail lines aim at goal 1064.7,52.8,1243.2, 2 at 1063.8,52.8,1243.5. The one
+  other line (1061.1,49.8,1255.4) is a `LookOutWindow` NoPath line that only shares the lot.
+- Those runs had the switch **on** and show 2-5 tries per run. They are not comparable with the soak: the Keatons kept
+  their jobs there, and the queue rows filter the `burnttile_*` counters out (`fixesReport` prefixes), so they do not show
+  whether the memo learned anything.
+- Gap in design 2 [inferred from §8.3 and EA's code]: it learns one tile per failed try. `MopFloor.Run` always takes the
+  first valid tile in list order, so a Sim at home walks the lot's unreachable tiles one try at a time (rerun2 saw 6
+  different L2 tiles fail in 12 min). On the Keaton lot that is up to 80 tries per load, about one per Sim every 5
+  sim-minutes, which is Overwatch's pattern.
+
+### 9.2 Design as built
+
+- Same switch and hook (`kBurntTileFloor`, default off; `GetMoppableLocations` via `Patch`). No new swap. The learned
+  memo of §8 stays as the backstop.
+- Before the memo, the hook now cuts a tile when all three hold:
+  - the tile is on level 2 or higher. Levels 0 and 1 are never cut: ground floors, and foundations with their steps;
+  - EA's Run would send a Sim to it (`PuddleManager.IsValidPuddleLocation`);
+  - no possible level changer stands on that level, the one below or the one above.
+- Level changer = any object on the lot that is `IHasPortalComponent`, `IPortalConnectionObject` or `IElevatorObject`,
+  except a `Door`. That covers stairs, spiral stairs, ladders, elevator doors and interiors, tube elevators, fire poles
+  and platforms. Every `Route.AddPortal` / `Add*Portals` caller in the three script DLLs is one of these, a door, or a
+  same-level object [verified, decompiled].
+- An unknown portal owner counts as a link. An object level outside -8..55 counts as a link on every level. So an odd
+  lot keeps EA's answer.
+- The census is cached per lot and cleared with the memo: build/buy object events and world quit.
+- §4.1's other half, "no solid floor", is left to EA. EA's `MopFloor.Run` already un-burns every tile that fails
+  `IsValidPuddleLocation` (no solid floor, an object on it, a diagonal wall) without planning [verified, decompiled].
+  Cutting those tiles would only keep them burnt.
+- Household rule: every Sim, as an EA bug fix. A cut tile has no route from another level, so EA's planner fails it
+  anyway; the tile is never mopped either way. A player click on the tile runs `Terrain.MopBurnt` directly and is never
+  filtered. Nothing is saved: the tiles stay burnt.
+- Risks [inferred]:
+  - A level changer of a custom or unknown kind that implements none of the three interfaces would make the rule cut a
+    reachable upper-floor tile.
+  - The census does not ask which part of the level a stair reaches. An isolated roof deck on a level that has stairs
+    elsewhere is not cut; design 2 still learns it.
+- Counters `fixes-1545`:
+  - [1545] `burnttile_levelcut`: tiles cut;
+  - [1546] `burnttile_levelempty`: lists the rule alone left empty.
+  - 1547-1549 were offered and left free.
+
+### 9.3 Check and repro
+
+- `BurntTileFloorCheck` (`BurntTileFloorChecks.cs`) calls the hook body directly, with no reflection on the swapped
+  method (docs/312). It replays MopFloor Test's offer loop (`CanMopPuddle`) on EA's list, on the list after the rule and
+  on the hooked list, and prints the lot's level changers. Control: it burns one unburnt floor tile next to the active
+  Sim with `World.SetBurnt`, checks that the tile stays listed and offered, and clears it in the same call. Pure cases
+  cover `BtCut` / `BtLinked`.
+- Repro `burnttilefloor-live` (Baseline-SV-Spring, one load):
+  - off: `BROKEN`, plus a real push that makes MopBurnt routefail lines;
+  - on: `FIXED`, plus a push with no new MopBurnt line;
+  - control kept in both arms.
+- N/A when the lot has a level changer on levels 1-3. That would mean the Keaton L2 is linked after all, and design 2
+  stays the only cut. The check names the objects.
+- Not run: the game soak occupies the machine. The default-on decision still waits for this repro.
