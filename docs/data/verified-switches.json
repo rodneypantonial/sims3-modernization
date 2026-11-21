@@ -1111,6 +1111,44 @@
       "reason": "NOT passed in game yet (needs a firefighter who steps off the emergency lot mid-job); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). The firefighter is greeted on the emergency lot again after EA drops the greeting (a child carried out, a step outside, a save loaded mid-emergency), so its doors stay open, with EA's own greeting."
     },
     {
+      "id": "aptgasleak",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kAptGasLeak": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kAptGasLeak": "False"
+        }
+      },
+      "evidence": [
+        "docs/863 §2 (FireFightingJob.SetupTask GasLeak picks the lot's first stove with no room test)",
+        "selftest aptjobtargets; repro apt-job-targets"
+      ],
+      "reason": "NOT passed in game yet (needs an earthquake job on an apartment lot whose first stove is in a hidden neighbour unit); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A firefighter earthquake job no longer waits out its time limit on a gas leak in a hidden apartment unit nobody can enter: the leak is stopped and that task is dropped (no pay for it)."
+    },
+    {
+      "id": "aptpossess",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kAptPossess": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kAptPossess": "False"
+        }
+      },
+      "evidence": [
+        "docs/863 §3 (GhostHunterJob.GetPossessableObjectInRange: any object on the level within 8 m, no room test)",
+        "selftest aptjobtargets; repro apt-job-targets"
+      ],
+      "reason": "NOT passed in game yet (needs a ghost hunter job on an apartment lot); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). After a failed exorcism the spirit no longer hops into an object inside a hidden neighbour unit the ghost hunter cannot reach; it picks with EA's own rule among the reachable objects."
+    },
+    {
       "id": "splashroof",
       "status": "verified",
       "on": {
