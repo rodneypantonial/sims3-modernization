@@ -11395,7 +11395,9 @@ static u8 __fastcall PcFakePlan(void* world, void*, int* outList, int*, int*, DW
         assert(w[0x918 + 0x24] == 1 && *(LONG*)(w + 0x918 + 0x20) == 0);  // the copy's own unlocked +0x918
         assert(P == g_rpClone->p);
     }
-    const float y = (float)(h % 997);  // the world's content decides the inner node's y
+    // the world's content decides the inner node's y; h mixes the fake footprint vtables' addresses (this image's layout), so
+    // with h % 997 alone one build in 997 gave two different worlds the same y (M0 for M1); 10 more exact bits: 1 in ~10^6
+    const float y = (float)(h % 997) + (float)(h / 997 % 1024) / 1024.0f;
     P4AddPath(outList, w[0x9F0] ? 7 : 2, 3, y);
     *out1 = 0, *out2 = 1;
     return !w[0x9F0];
