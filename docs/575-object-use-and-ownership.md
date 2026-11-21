@@ -115,3 +115,17 @@ Player report (2026-11-20): "I'm getting notifications from other Sims playing i
 - Fix: a hook on `NotificationSystem.ShowWithAutomaticGender` drops only these two notices, and only when the Sim is not exempt (`Fixes.HouseholdExempt`: household, selected and unknown-scope Sims still get them). The find, the reward and the bury run as EA's.
 - Counters [2174] notices dropped, [2175] errors. The slots were free in the source and in this registry (the `registry.ts` reservation read a stale main checkout and offered used slots, so the row was added by hand).
 - Repro `sandboxtns-live`: `SandboxTnsCheck run` (pure, with controls), then `live`: EA's call for a Sim outside the household and for the active Sim, switch off then on. Expect off BROKEN / townie shown=True, on FIXED / townie shown=False, active Sim shown both times.
+
+## §11 Tomb-complete sting plays as a 2D sound: `tombsting` (tuning `kTombSting`, default off, `TombSting.cs`, counters 2176-2177, repro `tombsting-live`)
+
+Player report (2026-11-21): "Sometimes I get the 'tomb complete' notice but no sound when a Sim reaches the final room."
+
+- [verified, decompiled] `TombRoomManager.OnSimsRoomChanged` calls `actor.ShowTNSAndPlayStingIfSelectable(text, kGameMessagePositive, ObjectGuid.InvalidObjectGuid, actor.ObjectId, "sting_tomb_complete")` (`kTombCompletionSoundName`).
+- [verified, decompiled] That overload of `Sim.ShowTNSAndPlayStingIfSelectable` (string, NotificationStyle, ObjectGuid, ObjectGuid, string) checks `IsSelectable`, builds the `StyledNotification.Format`, plays the sting with `Audio.StartObjectSound(ObjectId, stingName, false)` and returns `StyledNotification.Show(format)`. The method is not virtual.
+- [verified, decompiled] EA plays its other UI stings with the 2D `Audio.StartSound("sting_...")`, e.g. `sting_adv_opp_complete` in `Opportunity.OnCompletion`.
+- [inferred] The notice shows, so the call is made. `StartObjectSound` is a 3D sound at the Sim, so it is inaudible when the Sim is far from the camera, underground, or other sounds compete.
+- Fix: a hook on that overload. If `stingName` is not exactly `sting_tomb_complete` it calls EA's at once (the string is compared before the switch is read). Otherwise, with the switch on, it runs EA's body with one change: `Audio.StartSound(stingName)` instead of `Audio.StartObjectSound(ObjectId, stingName, false)`. Same `IsSelectable` gate, same `Format`, same `StyledNotification.Show`, same return value. Any exception falls back to EA's (`ResetException` is rethrown).
+- Household rule: not a Sim decision: only which audio call plays the player's own notice sting; the notice, its text and the gate are EA's.
+- Virtual check [verified]: the method is not virtual. `SwapMethod` keeps a virtual original's flags and slot anyway (`KeepVirtual`, docs/67 §33), so nothing extra is needed.
+- Counters: [2176] stings played as 2D, [2177] errors. Check: `TombStingCheck` (run / live / result).
+- Repro `tombsting-live`: off, the tomb sting call leaves counter 2176 at +0 (EA's 3D sting); on, +1; a call with another sting name stays +0 in both states. Not run in game yet.

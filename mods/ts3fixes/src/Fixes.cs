@@ -225,6 +225,7 @@ namespace Ts3Fixes
             ApplyHoverTrainTest();   // docs/598 §5 (HoverTrain598.cs)
             ApplyNewCarTest();   // docs/598 §6 (NewCar598.cs)
             ApplySandboxTns();   // docs/575 §10 (SandboxTns.cs)
+            ApplyTombSting();   // docs/575 §11 (TombSting.cs)
             ApplyOuterwearAutoLoop();   // docs/596 §1 (SeasonsWeather596.cs)
             ApplyOuterwearRestore();   // docs/596 §2 (SeasonsWeather596.cs)
             ApplyQueueProximity();   // docs/597 §2 (SleepQueue597.cs); spoonslavechecks rides spoonreset's SrHook
@@ -864,6 +865,7 @@ namespace Ts3Fixes
         // [2747-2752] newcartest (NewCar598.cs, docs/598 §6): TestHasNewCar / TestHasExpensiveNewCar answered from the new-car memo / tests that ran EA's (switch off: every call) / memo forgets / check mismatches (must be 0) / errors / ImportContent forgets.
         // [2119] travelcarnew (TravelCarNew.cs, docs/598 §6.3): cars rebuilt by a travel import made old (errors: [2751]).
         // [2174-2175] sandboxtns (SandboxTns.cs, docs/575 §10): sand notices of Sims outside the household dropped / errors.
+        // [2176-2177] tombsting (TombSting.cs, docs/575 §11): tomb-complete stings played as 2D / errors.
         // [2163-2166] spoonslavechecks (SpoonSlaveChecks.cs via SpoonReset.cs SrHook, docs/543 §1): slave ticks given EA's per-sleeper checks / light-sleeper wakes / slave ticks skipped (switch off) / errors.
         // [2167-2169] petwakebed (PetWakeBed.cs, docs/543 §4): bed parts cleared / left holding the pet (switch off) / errors. [2170-2173] slavewakereason (§5): slave waits handled / waits of more than one pass (EA loses the reason) / slave waits seen (switch off) / errors or ceiling.
         // [2679-2680] handsetreset (ObjectUseLogic.cs, docs/575 §2): handsets put back / errors.
@@ -1308,6 +1310,7 @@ namespace Ts3Fixes
         // [2747-2752] newcartest (NewCar598.cs, docs/598 §6): TestHasNewCar / TestHasExpensiveNewCar answered from the new-car memo / tests that ran EA's (switch off: every call) / memo forgets / check mismatches (must be 0) / errors / ImportContent forgets.
         // [2119] travelcarnew (TravelCarNew.cs, docs/598 §6.3): cars rebuilt by a travel import made old (errors: [2751]).
         // [2174-2175] sandboxtns (SandboxTns.cs, docs/575 §10): sand notices of Sims outside the household dropped / errors.
+        // [2176-2177] tombsting (TombSting.cs, docs/575 §11): tomb-complete stings played as 2D / errors.
         // [3229-3231] firefightercount (Batch593Logic.cs, B13 §13, docs/593 V8): extra firefighters not sent / sent (switch off) / errors.
         // [3232-3234] repairmanskill (Batch593Logic.cs, B13 §14, docs/593 V9): levels set to the roll / stacked (switch off) / errors.
         // [3235-3237] roundupreturn (Batch593Logic.cs, B13 §15, docs/593 V3): inits ended / run on (switch off) / errors.
@@ -2198,6 +2201,7 @@ namespace Ts3Fixes
                 case "newcartest": return Instantiator.kNewCarTest;
                 case "travelcarnew": return Instantiator.kTravelCarNew;
                 case "sandboxtns": return Instantiator.kSandboxTns;
+                case "tombsting": return Instantiator.kTombSting;
                 case "outerwearautoloop": return Instantiator.kOuterwearAutoLoop;
                 case "outerwearrestore": return Instantiator.kOuterwearRestore;
                 case "spoonslavechecks": return Instantiator.kSpoonSlaveChecks;
