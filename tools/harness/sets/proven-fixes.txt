@@ -80,3 +80,5 @@ tombsting
 #   hecklefix hecklefixhh
 # EA bug fix: prom date boards the limo or is sent to prom; the limo picks up at the current home (docs/861, 2026-11-21), default off, NOT RUN:
 #   promdatelimo promlimolot
+# EA bug fix: firefighter emergency ends when its last rescue / window-fire task cannot be done any more (docs/862, 2026-11-21), default off, NOT RUN:
+#   fireleftover
