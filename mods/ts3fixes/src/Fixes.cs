@@ -1345,6 +1345,7 @@ namespace Ts3Fixes
         // [3944-3946] bodysculptorweight (EpBatch3Logic.cs, docs/587 EP3 §8.12): weights corrected / mirrored with switch off / errors.
         // [3947-3949] nectarconsignvalue (EpBatch3Logic.cs, docs/587 EP3 §8.13): values re-rolled / minimum with switch off / errors.
         // [3950-3952] straygnometns (EpBatch3Logic.cs, docs/587 EP3 §8.14): runs with right notice / stale notices with switch off / errors.
+        // [4036-4039] RouteFixes.cs watchdog: watchdogocean Sims in EA's ocean play loop not route-checked / seen with the switch off; watchdogfailcap rule-49 resets refused after 2 with no successful plan since / seen with the switch off.
         // [4058-4061, 4084-4089] UnseenFallback.cs docs/202 §3.10 (townies only; unseenfbghost and unseenfbnosync default ON since the 2026-11-20 import, the rest per kUnseenFallback*): unseenfbghost holds with a ghost line (4058) / last legs planned after a ghost or
         //   G3 hold (4059) / of those, failed or cut (4060) / G3 recoveries refused, no async start or colour not proven (4061); unseenhouseboatview sightings asked at the shown
         //   spot (4084) / answered otherwise than the hidden-spot rule (4085); unseenfbnosync asked / recovered (4086-4087, refused = asked - recovered);
@@ -1772,6 +1773,8 @@ namespace Ts3Fixes
                 case "failreplan": return Instantiator.kNoRouteFailWalkOffscreen;
                 case "watchdog": return Instantiator.kStuckWatchdog;
                 case "watchdogidle": return Instantiator.kStuckWatchdogIdle;
+                case "watchdogocean": return Instantiator.kStuckWatchdogOcean;
+                case "watchdogfailcap": return Instantiator.kStuckWatchdogFailCap;
                 case "backoff": return Instantiator.kRouteFailureBackoff;
                 case "stations": return Instantiator.kNoStationDetourOffscreen;
                 case "portaladaptorleak": return Instantiator.kPortalAdaptorLeak;
