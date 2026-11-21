@@ -71,3 +71,5 @@
 # contributor experimental build 2026-11-21 (PRs #583 #584 #496 #619 #620), default off here, no in-game off/on verdict recorded in this repo:
 #   watchdogocean watchdogfailcap fakemetaseen fakemetabackoff placeholderunseen travelcarnew
 #   playpenflags voodoobindwait saunawoohoopreg lotentrypet horselotentry sandboxtns
+# EA bug fix: autonomous Heckle only at a performing target + stale Heckled flags (docs/860, 2026-11-21), default off, NOT RUN:
+#   hecklefix hecklefixhh

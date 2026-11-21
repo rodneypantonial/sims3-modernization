@@ -115054,6 +115054,100 @@
     ]
   },
   {
+    "id": "hecklefix-live",
+    "bug": "EA's Sim.Heckle Test lets any Sim with a heckling trait heckle any other Sim autonomously, performing or not (player report: heckling spam at random Sims; docs/860)",
+    "fix": "ts3fixes HeckleFix.cs: hecklefix / hecklefixhh (both default off), docs/860",
+    "save": "any world with instantiated townies (a trait heckler and a second townie); N/A when EA allows no pair",
+    "note": "HeckleFixCheck 'run' finds a townie pair EA's own Test lets heckle autonomously and runs the Test hook for: that pair, the same target standing in as a performer, the pair player-ordered, and a household or selected actor. Read-only: nothing is pushed. 'result' shows counters 1530-1534.",
+    "expect": "off: 'verdict: BROKEN' (townie autonomous=True). hecklefix on: 'verdict: FIXED' (townie autonomous=False, at a performer=True, player-ordered=True, household actor unchanged). hecklefix + hecklefixhh on: 'verdict: FIXED' (household actor autonomous=False). Never UNEXPECTED; 'swap live'.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "hecklefix": false,
+          "hecklefixhh": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.HeckleFixCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 2,
+        "note": "off: EA's Test"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "hecklefix": true
+        },
+        "note": "on, NPC actors only",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.HeckleFixCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 2,
+        "note": "on: refused for the townie pair, unchanged otherwise"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "hecklefixhh": true
+        },
+        "note": "household actors too",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.HeckleFixCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 2,
+        "note": "on + hh: the household actor refused as well"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.HeckleFixCheck",
+          "args": [
+            "result"
+          ]
+        }
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "hecklefix": false,
+          "hecklefixhh": false
+        },
+        "note": "back to the default"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "hecklefix": false,
+          "hecklefixhh": false
+        }
+      }
+    ]
+  },
+  {
     "id": "sweep-ep1",
     "bug": "docs/267: EP1 World Adventures has 286 script types, 271 never seen in our runs; their interactions never ran under our routing / Mono changes",
     "fix": "measurement only: forced interaction sweep of every definition the pack brings (docs/268)",

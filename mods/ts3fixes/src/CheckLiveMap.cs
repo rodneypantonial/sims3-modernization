@@ -205,6 +205,8 @@ namespace Ts3Fixes
                 case "harvestregion": return EpLive(typeof(B13HrHook), 1);
                 case "hauntedumbrella": return EpLive(typeof(HauntedUmbrellaHook), 0, "sHuFlag", sHuFlag, typeof(bool));
                 case "heartbrokenbcast": return EpLive(typeof(HbBcastHook), 1);
+                case "hecklefix": return EpLive(typeof(HfTestHook), 1);
+                case "hecklefixhh": return EpLive(typeof(HfTestHook), 1);
                 case "hhcleanupdup": return EpLive(typeof(BHhCleanupHook), 1, "sHdNpc", sHdNpc, null, "sHdNpc", sHdNpc, "static", "sHdLotHome", sHdLotHome, null, "sHdTourist", sHdTourist, null, "sHdTourist", sHdTourist, "static");
                 case "hhsearchprobe": return EpJoin(EpLive(typeof(AutPushHook), 0), EpLive(typeof(AutQueueHook), 0));
                 case "hiddenroomspawn": return EpJoin(EpJoin(EpLive(typeof(HrCornersHook), 1), EpLive(typeof(HrCreateHook), 1)), EpLive(typeof(HrResetHook), 1));

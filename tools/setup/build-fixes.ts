@@ -690,6 +690,8 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kBarOrderLog value="False" />
     <kPetPutDownWait value="True" />
     <kPuddleReach value="True" />
+    <kHeckleFix value="False" />
+    <kHeckleFixHousehold value="False" />
     <kPushWaitSkip value="True" />
     <kRoutableAsync value="True" />
     <kRouteCauseLog value="False" />
