@@ -35,22 +35,17 @@ namespace Ts3Fixes
         {
             public StyledNotification StingHook(string message, StyledNotification.NotificationStyle style, ObjectGuid thumbnailObject1, ObjectGuid thumbnailObject2, string stingName)
             {
-                if (stingName != kTombStingName) return StingOrig(message, style, thumbnailObject1, thumbnailObject2, stingName);
-                try
-                {
-                    if (TsgPlay2D(ShortcutOn("tombsting"), stingName))
-                    {
-                        Sim sim = (Sim)(object)this;
-                        if (!sim.IsSelectable) return null;
-                        StyledNotification.Format format = new StyledNotification.Format(message, thumbnailObject1, thumbnailObject2, style);
-                        Audio.StartSound(stingName);
-                        PatchCounters()[2176]++;
-                        return StyledNotification.Show(format);
-                    }
-                }
+                if (stingName != kTombStingName || !TsgPlay2D(ShortcutOn("tombsting"), stingName))
+                    return StingOrig(message, style, thumbnailObject1, thumbnailObject2, stingName);
+                // EA's body with the 2D sting; only the sound call is guarded, so a throw in Show behaves as in EA's
+                // (no second sting or notice from a fallback)
+                Sim sim = (Sim)(object)this;
+                if (!sim.IsSelectable) return null;
+                StyledNotification.Format format = new StyledNotification.Format(message, thumbnailObject1, thumbnailObject2, style);
+                try { Audio.StartSound(stingName); PatchCounters()[2176]++; }
                 catch (ResetException) { throw; }
                 catch (Exception) { PatchCounters()[2177]++; }
-                return StingOrig(message, style, thumbnailObject1, thumbnailObject2, stingName);
+                return StyledNotification.Show(format);
             }
             public StyledNotification StingOrig(string message, StyledNotification.NotificationStyle style, ObjectGuid thumbnailObject1, ObjectGuid thumbnailObject2, string stingName) { return null; } // Sim.ShowTNSAndPlayStingIfSelectable (5 args)
         }
