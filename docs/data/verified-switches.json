@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-11-20",
+  "updated": "2026-11-21",
   "about": "Switch evidence for experimental builds (tools/release/experimental.ts). status verified = correctness gate PASSED: its on values go into the experimental ini/package; blocked = force its off values; unverified = master default stays. Agents update an entry when a correctness job passes or fails, with the result page as evidence.",
   "switches": [
     {
@@ -519,6 +519,206 @@
         "docs/67-crash-triage.md (§43, the EA tester crash 0xD71EBD = Steam 0xD71E7D)"
       ],
       "reason": "rare-crash rule met: crash seen (EA tester, EA 1.69), forced repro crashes with the fix off and never with it on; EA bug fix on a host map, not Sim behaviour, so no household question. Release ini Enabled=1 Repair=1 since 2026-11-20; TestRehash stays 0 (repro only)."
+    },
+    {
+      "id": "fakemetaseen",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kFakeMetaSeen": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kFakeMetaSeen": "False"
+        }
+      },
+      "evidence": [
+        "PR #496 comment 2026-11-19 (soak etl14k-etl14p: 17 fresh loads, 6 worlds, 493.5 min, all 17 PASS; fakemetaseen on in all: assignments asked 8,106, allowed 1,110, skipped with no seen lot 6,996, fell back to EA 0)",
+        "PR #496 maintainer review 2026-11-19 (\"Results for fakemetaseen look clean (it fired, soak clean)\")",
+        "docs/854-fake-meta-placeholder.md"
+      ],
+      "reason": "natural-play soak gate, the same evidence main used to turn on the other PRs of that soak (#603 imports); no forced repro. Acts only on FakeMetaAutonomy service-pool NPCs: lots that hold an active-household or selected Sim always stay in the pick list, and no household Sim is created, moved or destroyed. fakemetabackoff and placeholderunseen (same PR) never ran and stay off."
+    },
+    {
+      "id": "watchdogocean",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kStuckWatchdogOcean": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kStuckWatchdogOcean": "False"
+        }
+      },
+      "evidence": [
+        "PR #584 (draft) comment 2026-11-20: job p584-ip-on-32101-r2 (PR package, master asi) PASS 26.9 min, 26 ocean Sims skipped (4036), no crash; off arm PASS",
+        "PR #584 body: local always-on build, [46] unroutable resets 0-2 per IP job vs 0-18 before, more [48] resets",
+        "h4core selftest, build-fixes.ts builds"
+      ],
+      "reason": "NOT passed in game yet (no correctness repro, one on-arm job); on for tester feedback (user request 2026-11-21). Draft PR #584. Policy change in our idle watchdog: a Sim in EA's ocean play loop is not reset as idle on an unroutable spot. Household and selected Sims stay exempt (watchdog's IsPlayerSim checks, unchanged). Needs watchdogidle (kStuckWatchdogIdle, on in master)."
+    },
+    {
+      "id": "watchdogfailcap",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kStuckWatchdogFailCap": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kStuckWatchdogFailCap": "False"
+        }
+      },
+      "evidence": [
+        "PR #584 (draft): fired 0 times in p584-ip-on-32101-r2 (PASS); fired twice in the local always-on build (an Appaloosa Plains townie horse, one Isla Paradiso Sim)",
+        "h4core selftest (WdFailCapRefuses, WdFailResetClears), build-fixes.ts builds"
+      ],
+      "reason": "NOT passed in game yet; on for tester feedback (user request 2026-11-21). Draft PR #584. A Sim reset twice by rule [49] \"route plans failing\" with no successful plan since is not reset a third time. Household and selected Sims stay exempt (watchdog's IsPlayerSim checks, unchanged)."
+    },
+    {
+      "id": "horselotentry",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kHorseLotEntry": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kHorseLotEntry": "False"
+        }
+      },
+      "evidence": [
+        "PR #583 (draft) comment 2026-11-19: natural run as19-ap-31452-c (local build, same code, local slots) PASS 41.8 min, fired 20 times",
+        "PR #583 comment 2026-11-20: pr1120-local Appaloosa Plains on arm (all five #583 switches) PASS 26.6 min",
+        "tools/selftest/eabugs500 PASS (128 HlDoomed rows), build-fixes.ts builds"
+      ],
+      "reason": "NOT passed in game yet (no forced check for this switch); on for tester feedback (user request 2026-11-21). Draft PR #583. A non-player horse on the ground skips Lot.PlanRouteIntoLot's doomed door plan and takes EA's mailbox fallback at once; player Sims are left out in code (IsPlayerSim in EaBugs500b.cs)."
+    },
+    {
+      "id": "smoothcut",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "WorldPrecompute": {
+            "SmoothCut": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "WorldPrecompute": {
+            "SmoothCut": "0"
+          }
+        }
+      },
+      "evidence": [
+        "PR #622: in game on the contributor combo branch; this port not yet run (Isla Paradiso 2-minute route storms ip-smoothcut-storm, every proven fix on, Steam Deck Wine + DXVK, single runs): s216 shadow, 218,969 lot segment queries compared, mismatch 0; s217 / s222 serve, post pass 5,248 / 4,887 ms vs 5,634 ms (-13%), 0 hitches >= 300 ms",
+        "PR #622 checks: smoothcut-host-test.cpp, TestSmoothCut in selftest.exe, fork CI build (native, native-ea169, native-retail167)",
+        "docs/676-world-precompute.md §15"
+      ],
+      "reason": "serve mode (1) as the PR describes; user decision 2026-11-21. Returns the game's own answer for every query (shadow-equal), so no household question. The port finds its site from the post pass row itself (the combo branch used [WorldPrecompute] Probe / SmoothMemo), so the in-game evidence is in game on the contributor combo branch; this port not yet run."
+    },
+    {
+      "id": "fglinside",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "FglInside": {
+            "Enabled": "1"
+          }
+        },
+        "tunables": {
+          "kFglInBound": "True"
+        }
+      },
+      "off": {
+        "ini": {
+          "FglInside": {
+            "Enabled": "0"
+          }
+        },
+        "tunables": {
+          "kFglInBound": "False"
+        }
+      },
+      "evidence": [
+        "PR #623: in game on the contributor combo branch; this port not yet run (Isla Paradiso route storms, Steam Deck Wine + DXVK, single runs): s227 shadow ([FglInside] Shadow=1, kFglInBoundShadow) mismatch 0, forced compares live:big 3/3 same, small house 3/3 same tile; s228 serve, live:big EA 193-197 ms -> 40-41 ms with the same answer x3, no FindGoodLocation hitch frame",
+        "PR #623 checks: fglprof-host-test.cpp (TestFglInsideCore), selftest.exe FglInside stubs, fork CI build",
+        "docs/682-fgl-indoor-bound.md §9"
+      ],
+      "reason": "user decision 2026-11-21. Exact: the same tiles in the same order as EA's IsInside check. ts3fixes fglinbound skips household, selected and unknown-scope Sims (Fixes.HouseholdExempt, HouseholdToo stays 0); fglinboundhh (kFglInBoundHousehold) stays off. Needs [UserDiag] (on). The managed half has its own FindGoodLocationNearby swap here (the combo branch used RouteRelax.cs), so the in-game evidence is in game on the contributor combo branch; this port not yet run."
+    },
+    {
+      "id": "outfitfirst",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "OutfitFirst": {
+            "Enabled": "1",
+            "Mode": "2"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "OutfitFirst": {
+            "Enabled": "0"
+          }
+        }
+      },
+      "evidence": [
+        "PR #625: in game on the contributor combo branch; this port not yet run (Isla Paradiso 6-minute calm natural-play soaks, Linux Wine + DXVK, actdelay probe, single runs): s233 / s234 Mode 1 vs 2, time swaps sat ready 6,327 -> 3,988 ms, other jobs built past a ready swap 8 -> 0, household max outfit wait 1,449 -> 804 ms; s236 / s237 with [JobYield] on, 7,255 -> 2,472 ms (-66%)",
+        "PR #625 checks: outfitfirst-host-test.cpp, TestOutfitFirstCore / TestOutfitFirstPick in selftest.exe, fork CI build"
+      ],
+      "reason": "Mode 2 (a pending live outfit swap's ready job is built first) as the PR recommends; user decision 2026-11-21. Exact for every Sim, household included: the same build jobs in a different order, nothing skipped or faked. Timing evidence only, no correctness assertion; the combo branch's actdelay probe is not in this port, so the in-game evidence is in game on the contributor combo branch; this port not yet run."
+    },
+    {
+      "id": "travelcarnew",
+      "status": "unverified",
+      "on": {
+        "tunables": {
+          "kTravelCarNew": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kTravelCarNew": "False"
+        }
+      },
+      "evidence": [
+        "PR #619 (draft) comment 2026-11-20: repro travelcar-live PASS (off new=True BROKEN, on new=False FIXED, 2119=1); a real trip not run"
+      ],
+      "reason": "held off: EA bug fix that acts on household cars on purpose (a car bought less than 4 days before a trip loses its last New Car Smell days). No household / selected-Sim exemption in code, so the user's household rule keeps it off in this build (it was asked on for tester feedback 2026-11-21)."
+    },
+    {
+      "id": "eabugs500-household",
+      "status": "unverified",
+      "on": {
+        "tunables": {
+          "kPlaypenFlags": "True",
+          "kVoodooBindWait": "True",
+          "kSaunaWooHooPreg": "True",
+          "kLotEntryPet": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kPlaypenFlags": "False",
+          "kVoodooBindWait": "False",
+          "kSaunaWooHooPreg": "False",
+          "kLotEntryPet": "False"
+        }
+      },
+      "evidence": [
+        "PR #583 (draft) comment 2026-11-20: in-game checks voodoobindwait and saunawoohoopreg off BROKEN / on FIXED (BP), playpenflags marks cleared (gap1b run); lotentrypet fired 32 times in as19-ap-31452-c",
+        "tools/selftest/eabugs500 PASS"
+      ],
+      "reason": "held off: exact EA bug fixes that include household Sims by design (PR #583: playpen, voodoo bind, sauna WooHoo test, lot-entry cache). No household / selected-Sim exemption in code, so the user's household rule keeps it off in this build (it was asked on for tester feedback 2026-11-21)."
     }
   ],
   "knownIssues": [
