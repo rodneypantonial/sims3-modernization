@@ -478,6 +478,7 @@ namespace Ts3Fixes
                 case "tempforecast": return EpLive(typeof(B13TfHook), 1, "sTfMin", sTfMin, null, "sTfMin", sTfMin, "static", "sTfMax", sTfMax, null, "sTfMax", sTfMax, "static", "sTfWeight", sTfWeight, 1, "sTfGet", sTfGet, 2);
                 case "timeralarmleak": return EpLive(typeof(W86TimerHook), 2);
                 case "tipsnpcend": return EpLive(typeof(TneLoopHook), 1);
+                case "tombsting": return EpLive(typeof(TsgHook), 1);
                 case "tooltipthrottle": return EpLive(typeof(TooltipThrottleHook), 0);
                 case "trainboost": return EpLive(typeof(TbHook), 1, "sTbShape", sTbShape, typeof(float), "sTbSkillMult", sTbSkillMult, typeof(float), "sTbSkillMult", sTbSkillMult, "static", "sTbShapeMult", sTbShapeMult, typeof(float), "sTbShapeMult", sTbShapeMult, "static");
                 case "trainsimgone": return EpLive(typeof(BTgHook), 1);

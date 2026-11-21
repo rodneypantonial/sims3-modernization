@@ -79066,6 +79066,100 @@
     ]
   },
   {
+    "id": "tombsting-live",
+    "bug": "Sim.ShowTNSAndPlayStingIfSelectable plays sting_tomb_complete (TombRoomManager.OnSimsRoomChanged) with the 3D Audio.StartObjectSound at the Sim; the notice shows but the sting is sometimes silent (player report 2026-11-21)",
+    "fix": "ts3fixes TombSting.cs: tombsting (default off)",
+    "save": "any world with an active Sim",
+    "note": "'live' calls EA's ShowTNSAndPlayStingIfSelectable(msg, kGameMessagePositive, InvalidObjectGuid, sim.ObjectId, ...) on the active Sim once with sting_tomb_complete and once with another sting name (control); it shows two notices. The counter delta says which path ran.",
+    "expect": "off: 'run' BROKEN, live tomb sting counter 2176 +0 (BROKEN, EA's 3D sting), control +0. on: 'run' FIXED, tomb sting +1 (FIXED), control +0.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "tombsting": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.TombStingCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.TombStingCheck",
+          "args": [
+            "live"
+          ]
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.TombStingCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "tombsting": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.TombStingCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.TombStingCheck",
+          "args": [
+            "live"
+          ]
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.TombStingCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "tombsting": false
+        },
+        "note": "back to default",
+        "waitS": 1
+      }
+    ]
+  },
+  {
     "id": "newcartest-check",
     "bug": "SocialTest.TestHasNewCar / TestHasExpensiveNewCar (ProcTests of four autonomous Friendly 'Enthuse About ... Car' socials) list every car in the world (Queries.GetObjects<CarOwnable>()) for each actor / target pair each time a conversation's socials are tested (docs/598 §6)",
     "fix": "ts3fixes NewCar598.cs: newcartest (default off)",
