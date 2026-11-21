@@ -19,6 +19,7 @@ namespace Ts3Fixes
                 case "alarmtime": return EpJoin(EpJoin(EpLive(typeof(AzTimerHook), 1), EpLive(typeof(HcLotHook), 0)), EpLive(typeof(SpkPlaceHook), 2));
                 case "alarmzeroperiod": return EpLive(typeof(AzTimerHook), 1);
                 case "aptleave": return EpJoin(EpLive(typeof(AlLeaveHook), 1), EpLive(typeof(AlRoomHook), 1));
+                case "aptpossess": return EpLive(typeof(AppHook), 1, "sAppList", sAppList, null, "sAppRange", sAppRange, typeof(float), "sAppRange", sAppRange, "static");
                 case "artsellnoartist": return EpLive(typeof(ArtSellHook), 1);
                 case "asyncreplan": return EpLive(typeof(RouteBackoffHook), 4);
                 case "asyncreplanforeign": return EpLive(typeof(RouteBackoffHook), 4);
@@ -164,6 +165,8 @@ namespace Ts3Fixes
                 case "failrepeat": return EpLive(typeof(RouteBackoffHook), 4);
                 case "failreplan": return EpLive(typeof(RouteOptionsHook), 2);
                 case "fairyauratimer": return EpLive(typeof(FairyAuraHook), 1);
+                case "fakemetabackoff": return EpLive(typeof(FakeMetaFindHook), 1);
+                case "fakemetaseen": return EpLive(typeof(FakeMetaFindHook), 1);
                 case "famcursorleak": return EpLive(typeof(CplHook), 0, "sCplDashRemove", sCplDashRemove, 1, "sBilDict", sBilDict, null, "sBilDict", sBilDict, "static", "sBilHandle", sBilHandle, "get", "sBilDeregister", sBilDeregister, 1);
                 case "familyinvghost": return EpLive(typeof(FigHook), 1);
                 case "farthestsorted": return EpLive(typeof(FarthestLotHook), 1);
@@ -340,6 +343,7 @@ namespace Ts3Fixes
                 case "photosubjectstars": return EpLive(typeof(BPsHook), 1);
                 case "picnicants": return EpLive(typeof(B12PaHook), 3, "sPaFx", sPaFx, null);
                 case "picniccamera": return EpLive(typeof(PcHook), 1);
+                case "placeholderunseen": return EpLive(typeof(PhCheckHook), 1);
                 case "plantdormantflip": return EpLive(typeof(B13PfHook), 1, "sPfLeafless", sPfLeafless, 0, "sPfFrost", sPfFrost, typeof(float), "sPfFrost", sPfFrost, "static", "sPfLeaves", sPfLeaves, typeof(float), "sPfLeaves", sPfLeaves, "static", "sPfDormant", sPfDormant, typeof(bool), "sPfDormant", sPfDormant, null, "sPfFrosted", sPfFrosted, 0, "sPfDelete", sPfDelete, 0);
                 case "plantdormanttime": return EpLive(typeof(B13PtHook), 1, "sPfDormant", sPfDormant, typeof(bool), "sPtLast", sPtLast, null);
                 case "playpenflags": return EpJoin(EpJoin(EpLive(typeof(E500OutsideHook), 0), EpLive(typeof(E500SocialHook), 0)), EpLive(typeof(E500TakeOutHook), 0, "sE5Pick1", sE5Pick1, typeof(ulong)));
@@ -400,6 +404,7 @@ namespace Ts3Fixes
                 case "rummagebcast": return EpJoin(EpLive(typeof(RmbCleanupHook), 1), EpLive(typeof(RmbCreateHook), 1));
                 case "safelocunhide": return EpLive(typeof(HrResetHook), 1);
                 case "safespotcap": return EpLive(typeof(SafeSpotCapHook), 1);
+                case "sandboxtns": return EpLive(typeof(SbtHook), 1);
                 case "sandscoins": return EpLive(typeof(SandsCoinsHook), 0, "sScFlag", sScFlag, typeof(bool), "sScWeights", sScWeights, null, "sScWeights", sScWeights, "static", "sScLocalize", sScLocalize, 3, "sScFlag", sScFlag, null);
                 case "sandwichalarm": return EpLive(typeof(SaHook), 1, "sSaShow", sSaShow, null, "sSaHandle", sSaHandle, null);
                 case "sarcmummynpc": return EpLive(typeof(SmHook), 1, "sSmMummy", sSmMummy, null);
