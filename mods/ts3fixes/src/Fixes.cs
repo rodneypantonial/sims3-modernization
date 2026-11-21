@@ -1570,6 +1570,7 @@ namespace Ts3Fixes
         // [1073-1084] hhsearchprobe (HhSearchProbe.cs, HhSearchRec in AutLocalProbeCore.cs, docs/276 §2.3 A): household searches,
         // local, pushed, no pick, not pushed under a user / autonomous head, same pick again, short gap, no-push runs, Sims, max per Sim, exceptions
         // [1135-1138] burnttilefloor (BurntTileFloor.cs, docs/277 §4.1): burnt tiles left out (no floor), lists that lost one, lists left empty, errors
+        // [1545-1546] burnttilefloor level rule (BurntTileFloor.cs, docs/277 §9): tiles cut on a level 2+ with no level changer near it, lists the rule alone emptied
         // [1115-1134] hhsearchprobe docs/277 §5: scope, why enqueued (immediate ok/fail, empty <5/5-10/10-60/>60 sim-min, none), gap ms bins, no pick after >60, L0 pairs, active lot, pets
         // [1158-1181] autt2local (AutShadowLocal.cs, docs/276 rank 5 piece 3): post gate codes, posts refused by the session, reference /
         // worker runs done, worker results dropped, pairs walked / dup / lpcap / skip / pass / fail / abort / exc, H8 local no-op / abort, sim-thread exc, reference pairs

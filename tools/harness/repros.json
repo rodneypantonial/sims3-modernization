@@ -69998,6 +69998,111 @@
     ]
   },
   {
+    "id": "burnttilefloor-live",
+    "bug": "Sim+MopBurntTiles offers and runs mopping for every burnt tile World.GetBurntTiles returns. On the SV-Spring Keaton lot all 80 burnt tiles are on level 2 (solid floor, room 0) with no way up; Justine and Marty Keaton keep failing Terrain.MopBurnt (Plan FailedBecauseNoDestinationSpecified, goal 1064.7,52.8,1243.2): 676 + 175 failed plans in one jobless soak run, and NRaas Overwatch's stuck check resets them ('Unroutable Sim Found') (docs/277 §3, §9)",
+    "fix": "ts3fixes BurntTileFloor.cs: burnttilefloor (default off), design 3 level rule (docs/277 §9) on top of design 2's learned memo (§8): GetMoppableLocations leaves out a tile EA would route to (IsValidPuddleLocation) on level 2+ when no level changer (any portal owner but a door: stairs, ladder, elevator, pole, platform) stands on that level or the one below or above. Every Sim (EA bug fix, outcome as vanilla: the tile is never mopped either way); nothing is saved. Check: BurntTileFloorCheck (BurntTileFloorChecks.cs)",
+    "save": "Baseline-SV-Spring",
+    "note": "One load, Keatons active on their lot. BurntTileFloorCheck 'run' calls the hook body directly (docs/312: no reflection on the swapped method) and replays MopFloor Test's offer loop on EA's list, on the list after the level rule and on the hooked list. Control: it burns one unburnt floor tile next to the active Sim, reads the hooked list and the offer, and clears the tile again in the same call. It prints the lot's level changers (type and level). 'push' (BurntTileCheck) queues EA's MopBurntTiles autonomous for the household humans on the lot: off it makes real MopBurnt routefail lines, on it should make none. The hook calls of the check add to the counters.",
+    "expect": "off: 'verdict: BROKEN' (offered EA=True after the rule=False hooked=True, level rule cuts >= 1); push -> MopBurnt NoDestination routefail lines for the Keatons. on: 'verdict: FIXED' (hooked=False); push -> no new MopBurnt routefail line; burnttile_levelcut (1545) > 0. Control 'ok ... kept' in both arms. Never UNEXPECTED; 'swap live', pure=True. N/A with level changers listed on levels 1-3 = the rule does not match this lot (design 2 stays the only cut).",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "burnttilefloor": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.BurntTileCheck",
+          "args": [
+            "list"
+          ]
+        },
+        "note": "burnt tiles on the active lot: levels, floor, first 12"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.BurntTileFloorCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 2,
+        "note": "off: EA's list offered (BROKEN)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.BurntTileCheck",
+          "args": [
+            "push"
+          ]
+        },
+        "note": "off: a real try, expect MopBurnt routefail lines",
+        "waitS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "burnttilefloor": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.BurntTileFloorCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 2,
+        "note": "on: nothing left to offer (FIXED), control tile kept"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.BurntTileCheck",
+          "args": [
+            "push"
+          ]
+        },
+        "note": "on: expect no MopBurnt plan",
+        "waitS": 45
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.BurntTileFloorCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "counters 1135-1140, 1545-1546"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "burnttilefloor": false
+        },
+        "note": "back to the default"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "burnttilefloor": false
+        }
+      }
+    ]
+  },
+  {
     "id": "apartment-leave-farewell",
     "bug": "Sim.RoomChanged on a lot with virtual residential slots (Late Night apartment) calls VisitSituation.OnSimLeavingLot whenever a Sim walks on the same lot from a room that is not public (the household's unmarked apartment, or a hidden room) into a public one (PublicRoomMarker hallway/lobby), without checking that it is leaving. A visitor who only walks through the hallway gets the farewell ('time to leave' TNS or the party's leaving message) and is removed from the party as left early (liking change, -50 early-departure mood in the party score, no longer a guest), yet keeps visiting; its real departure later shows no farewell (docs/553)",
     "fix": "ts3fixes AptLeave.cs: aptleave (default off), NPCs only: that room-change call is skipped while the Sim is not leaving (current interaction targets this lot and is not GoHome/GoOutside, no GoHome/GoOutside queued, no visit leave reason, does not live on the lot). GoHome/GoOutside/commute calls are never touched; household Sims run EA's code. Check: ApartmentLeaveCheck (AptLeaveChecks.cs)",

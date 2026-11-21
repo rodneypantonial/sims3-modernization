@@ -2,9 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
+using Sims3.Gameplay.Abstracts;
 using Sims3.Gameplay.Actors;
+using Sims3.Gameplay.Controllers;
 using Sims3.Gameplay.Core;
 using Sims3.Gameplay.Interactions;
+using Sims3.Gameplay.Interfaces;
+using Sims3.Gameplay.ObjectComponents;
 using Sims3.Gameplay.Utilities;
 using Sims3.SimIFace;
 
@@ -34,9 +38,24 @@ namespace Ts3Fixes
     // Counters (registry fixes-1135, fixes-1139): [1135] tiles left out, [1136] lists that lost a tile, [1137] lists left
     // empty, [1138] errors, [1139] tiles learned unreachable, [1140] NoDestination fails on a tile already learned (0 = the
     // memo held). Harness check: BurntTileCheck ("list", "push", "result"), repro burnt-tile-floor.
+    //
+    // Design 3 (2026-11-21, docs/277 §9): design 2 learns one tile per failed try, so a Sim at home walks every unreachable
+    // tile of the lot once (SV Keaton: 80 tiles, all L2 room 0; 676 + 175 failed plans in one jobless soak run with the
+    // switch off). The §4.1 level rule now cuts, before any try, a tile on level 2 or higher when no possible level changer
+    // stands on that level or the one below or above (BtLinkMask: every portal owner except a door; stairs, spiral stairs,
+    // ladders, elevators, tube elevators, fire poles and platforms are all IHasPortalComponent / IPortalConnectionObject /
+    // IElevatorObject [verified, decompiled], and an unknown portal kind counts as a link, so an odd lot keeps EA's answer).
+    // Levels 0 and 1 are never cut (foundation steps, ground floors). Only tiles EA's Run would send a Sim to are cut
+    // (PuddleManager.IsValidPuddleLocation): Run itself un-burns an invalid one (no solid floor, an object on it, a diagonal
+    // wall) without a plan [verified, decompiled], so §4.1's no-floor half is already EA's and is left to EA. The learned
+    // memo stays as the backstop. Counters (fixes-1545): [1545] tiles cut on an unlinked level, [1546] lists the level rule
+    // alone left empty. Check: BurntTileFloorCheck (BurntTileFloorChecks.cs), repro burnttilefloor-live.
     public static partial class Fixes
     {
         const int kCBtDropped = 1135, kCBtLists = 1136, kCBtEmpty = 1137, kCBtErr = 1138, kCBtLearned = 1139, kCBtRepeat = 1140;
+        const int kCBtNoLink = 1545, kCBtStaticEmpty = 1546;
+        // lot -> levels with a possible level changer, bit (level + 8); cleared with the memo (build/buy, world quit)
+        static readonly Dictionary<ulong, ulong> sBtLinks = new Dictionary<ulong, ulong>();
         // 7 sim-days: 24 sim-hours expired within ~2 real minutes at ultra speed (rerun2 on arm: every learned tile failed again
         // 122-155 s after it was learned, docs/277 §8.3); build/buy object changes on the lot still forget at once
         const float kBtMemoHours = 168f;
@@ -93,8 +112,40 @@ namespace Ts3Fixes
         // RouteFailLog.RflObjectEvent in build/buy, and world quit (lot null = all)
         static void BtForget(ulong lot)
         {
-            if (sBtUnreach.Count == 0) return;
-            if (lot == 0) sBtUnreach.Clear(); else sBtUnreach.Remove(lot);
+            if (sBtUnreach.Count == 0 && sBtLinks.Count == 0) return;
+            if (lot == 0) { sBtUnreach.Clear(); sBtLinks.Clear(); } else { sBtUnreach.Remove(lot); sBtLinks.Remove(lot); }
+        }
+
+        // Pure §4.1 level rule: cut a tile EA would route to (valid) on level 2+ with no level changer on L-1..L+1
+        internal static bool BtCut(int level, bool valid, bool linked) { return level >= 2 && valid && !linked; }
+
+        internal static ulong BtBit(int level) { return level >= -8 && level < 56 ? 1UL << (level + 8) : 0UL; }
+
+        // Pure: does a level changer stand on level - 1, level or level + 1?
+        internal static bool BtLinked(ulong mask, int level) { return (mask & (BtBit(level - 1) | BtBit(level) | BtBit(level + 1))) != 0; }
+
+        // Levels of the lot's possible level changers: any portal owner but a door (doors and gates stay on one level)
+        static ulong BtLinkMask(ulong lotId)
+        {
+            ulong m;
+            if (sBtLinks.TryGetValue(lotId, out m)) return m;
+            Lot lot = LotManager.GetLot(lotId);
+            if (lot == null) return ~0UL;  // unknown: linked everywhere (keep EA)
+            foreach (GameObject o in lot.GetObjects<GameObject>())
+            {
+                if (o == null || o is Door || !(o is IHasPortalComponent || o is IPortalConnectionObject || o is IElevatorObject)) continue;
+                ulong b = BtBit(o.Level);
+                m |= b != 0 ? b : ~0UL;  // a level out of the mask's range: count every level linked
+            }
+            sBtLinks[lotId] = m;
+            return m;
+        }
+
+        static bool BtStaticCut(ulong lotId, LotLocation l)
+        {
+            int level = l.mLevel;
+            if (level < 2 || BtLinked(BtLinkMask(lotId), level)) return false;  // cheap tests first
+            return BtCut(level, PuddleManager.IsValidPuddleLocation(lotId, l), false);
         }
 
         public class BurntTileHook
@@ -102,19 +153,25 @@ namespace Ts3Fixes
             public LotLocation[] LocHook(ulong lotId)
             {
                 LotLocation[] all = LocOrig(lotId);
-                if (!sBtReady || all == null || all.Length == 0 || sBtUnreach.Count == 0 || OnWorker() || !ShortcutOn("burnttilefloor")) return all;
+                if (!sBtReady || all == null || all.Length == 0 || OnWorker() || !ShortcutOn("burnttilefloor")) return all;
                 int[] c = PatchCounters();
                 try
                 {
-                    if (!sBtUnreach.ContainsKey(lotId)) return all;
-                    int keep = 0;
+                    bool memo = sBtUnreach.ContainsKey(lotId);
+                    int keep = 0, cut = 0;
                     bool[] drop = new bool[all.Length];
-                    for (int i = 0; i < all.Length; i++) { drop[i] = BtLearned(lotId, all[i]); if (!drop[i]) keep++; }
+                    for (int i = 0; i < all.Length; i++)
+                    {
+                        if (BtStaticCut(lotId, all[i])) { drop[i] = true; cut++; c[kCBtNoLink]++; }
+                        else if (memo && BtLearned(lotId, all[i])) { drop[i] = true; c[kCBtDropped]++; }
+                        if (!drop[i]) keep++;
+                    }
                     if (keep == all.Length) return all;
                     LotLocation[] r = new LotLocation[keep];
                     for (int i = 0, k = 0; i < all.Length; i++) if (!drop[i]) r[k++] = all[i];  // EA's order kept
-                    c[kCBtDropped] += all.Length - keep; c[kCBtLists]++;
+                    c[kCBtLists]++;
                     if (keep == 0) c[kCBtEmpty]++;
+                    if (cut == all.Length) c[kCBtStaticEmpty]++;
                     return r;
                 }
                 catch (Exception) { c[kCBtErr]++; return all; }
