@@ -854,10 +854,30 @@
         }
       },
       "evidence": [
-        "bugfix/heckle-spam (local branch 12f4a141): HeckleFixChecks.cs pure checks, build-fixes.ts builds; in-game check hfx-ip-32214 running 2026-11-21, verdict pending",
+        "queue heckle1121-local 2026-11-21, job hfx-ip-32214 (Isla Paradiso, 8 min, PASS, no crash, branch package 12f4a141): repro hecklefix-live on live Sims. Off: townie -> townie autonomous allowed (BROKEN). hecklefix on: refused (FIXED); at a performer, player-ordered and household actor unchanged. hecklefixhh on: household actor refused as well. Counters refused 1530=2, would refuse (off) 1531=1, household refused (hh) 1532=1, errors 1534=0. Not measured: how often heckling happens in normal play.",
+        "HeckleFixChecks.cs pure checks",
         "docs/860"
       ],
-      "reason": "NOT passed in game yet; on for tester feedback (user request 2026-11-21). EA bug fix: an autonomous Heckle is refused unless the target is performing, and stale Heckled flags are cleared. Player-ordered heckles keep EA's test; household, selected and unknown-scope actors keep EA's test (Fixes.HouseholdExempt); hecklefixhh (kHeckleFixHousehold) stays off."
+      "reason": "in-game repro passed (off BROKEN / on FIXED). EA bug fix: an autonomous Heckle is refused unless the target is performing, and stale Heckled flags are cleared. Player-ordered heckles keep EA's test. Household, selected and unknown-scope actors are covered by hecklefixhh (below)."
+    },
+    {
+      "id": "hecklefixhh",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kHeckleFixHousehold": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kHeckleFixHousehold": "False"
+        }
+      },
+      "evidence": [
+        "queue heckle1121-local 2026-11-21, job hfx-ip-32214 (Isla Paradiso, 8 min, PASS, no crash, branch package 12f4a141): repro hecklefix-live on live Sims. Off: townie -> townie autonomous allowed (BROKEN). hecklefix on: refused (FIXED); at a performer, player-ordered and household actor unchanged. hecklefixhh on: household actor refused as well. Counters refused 1530=2, would refuse (off) 1531=1, household refused (hh) 1532=1, errors 1534=0. Not measured: how often heckling happens in normal play.",
+        "docs/860"
+      ],
+      "reason": "in-game repro passed (household actor refused with hecklefixhh on). User decision 2026-11-21 (\"hecklefixhh on household sims too, it's annoying the spam\"): an EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay); [Experimental] HouseholdToo stays 0. What changes for players: their own Sims no longer heckle non-performers on their own; player-ordered heckles still work on anyone. Needs hecklefix. Not in the smoke-tested package: the smoke ran the pass-5 files, and pass 6 differs only by this tuning value."
     },
     {
       "id": "stiltremove",
