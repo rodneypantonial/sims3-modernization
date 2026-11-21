@@ -414,6 +414,9 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kKitArmNotice value="" />
     <kKitArmSwitches value="" />
     <kTrainBoost value="True" />
+    <kFakeMetaSeen value="False" />
+    <kFakeMetaBackoff value="False" />
+    <kPlaceholderUnseen value="False" />
     <kEatOutsideCount value="True" />
     <kQueueProximity value="True" />
     <kSubRouteFail value="True" />

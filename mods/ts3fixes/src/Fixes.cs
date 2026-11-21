@@ -112,6 +112,8 @@ namespace Ts3Fixes
             Patch(typeof(GameObject), "UpdateCommodityInteractionMap", Type.EmptyTypes, typeof(FestivalHiddenHook), "CimHook", "CimOrig");
             // commodmapfast / commodmapshadow (CommodMapFast.cs, docs/313), default off: exact one-pass RemoveObject
             Patch(typeof(Sims3.Gameplay.Autonomy.CommodityInteractionMap), "RemoveObject", new Type[] { typeof(Sims3.Gameplay.Interfaces.IGameObject) }, typeof(CmfHook), "RemoveHook", "RemoveOrig");
+            ApplyFakeMetaSeen();  // docs/854: fakemetaseen / fakemetabackoff (opt-in): fake meta-autonomy NPCs only onto seen / not failing lots
+            ApplyPlaceholderUnseen();  // docs/854: placeholderunseen (opt-in, NPC households): children stay placeholders on unseen home lots
             ApplyRefTable();
             ApplyCachedReflection();
             ApplyUiCaches();
@@ -848,6 +850,7 @@ namespace Ts3Fixes
         // [2564-2565] free (released).
         // [2704-2707] tagunseen (TagUnseen.cs, docs/60 §3): Tag laps checked / laps run without a route / errors or members not found / a player seen (EA's lap).
         // [2566-2567] trainboost (TrainBoost.cs, docs/569 §1): Train Sim boosts undone after an unwound session / errors.
+        // [1508-1519] fakemetaseen (1508-1511), fakemetabackoff (1512-1515), placeholderunseen (1516-1519) (FakeMetaSeen.cs, PlaceholderUnseen.cs, docs/854): see the lists there.
         // [2568-2569] eatoutsidecount (EatOutsideCount.cs, docs/569 §2): Bistro eat-outside double decrements undone / errors.
         // [2570-2588] unseenoutfitdefer (UnseenOutfitDefer.cs, issue #451, docs/586): 2570 instant sets deferred, 2571 of those replacing a waiting one, 2572 applied: Sim seen, 2573 applied: selected / not a townie now, 2574 applied before a delayed set or model, 2575 applied: flush (switch off, not live, travel, save), 2576 dropped: Sim gone, 2577 dropped: EA's own set ran, 2578 dropped: model set, 2579 waiting now, 2580 most waiting, 2581 not deferred: first set after instantiate, 2582 not deferred: delayed swap open, 2583 not deferred: category or not a Sim outfit path, 2584 apply threw, 2585 not deferred: within the 40 m margin, 2586 applied: entered the margin, 2587 worst seen-to-apply ms (an upper bound), 2588 seen applies later than 250 ms.
         // [2702-2703] spotcheck (docs/560 §7): GoHome spot in view -> walk / lot-trip spot in view -> game's own trip.
@@ -2052,6 +2055,9 @@ namespace Ts3Fixes
                 case "commodmapshadow": return Instantiator.kCommodMapShadow;
                 case "trainboost": return Instantiator.kTrainBoost;
                 case "tagunseen": return Instantiator.kTagUnseen;
+                case "fakemetaseen": return Instantiator.kFakeMetaSeen;
+                case "fakemetabackoff": return Instantiator.kFakeMetaBackoff;
+                case "placeholderunseen": return Instantiator.kPlaceholderUnseen;
                 case "eatoutsidecount": return Instantiator.kEatOutsideCount;
                 case "spawnfix": return Instantiator.kSpawnFix;
                 case "spawnoffworld": return Instantiator.kSpawnOffWorld;
