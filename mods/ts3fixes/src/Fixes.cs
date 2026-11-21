@@ -544,6 +544,7 @@ namespace Ts3Fixes
             ApplyUnseenLoopSkipStep();   // docs/632 option (a), after WakePark: its WaitForExitReason hook chains under ours
             ApplyAutLiveB14();
             ApplyHitchCause();
+            ApplyHeckleFix();   // docs/860 (HeckleFix.cs)
             try { Alloc87Sync(); } catch (Exception) { }  // docs/625: before any save loads, when the tuning turns them on
         }
 
@@ -1129,6 +1130,7 @@ namespace Ts3Fixes
         // [1382-1391] houseboatgangwayrescue (HouseboatGangwayRescue.cs, docs/853 §3): NPC Sims marked by a no-path gangway leg to their Docked houseboat / placed by EA's PlaceSimAtEntrance after GoHome failed / refused / errors; refusals: exempt / no, another or undocked houseboat / once-per-hour rule / busy / on the lot, far or stale / no spot.
         // [1392-1399] boatroamcap (BoatRoamCap.cs, docs/853 §4): NPC BoatAround runs capped (no roam) / ReturnToShore pushed / returns failed (precheck, push, run or never ran; EA roams) / exempt runs / errors / returns that reached the shore / service, role or AlarmOneShot-task boating logged / caps by night or low motive.
         // [3979-3981] puddlereach (PuddleReach.cs, docs/578 §3): splash tests withheld after a failed run / seen with switch off / errors.
+        // [1530-1534] hecklefix / hecklefixhh (HeckleFix.cs, docs/860): autonomous heckles of a non-performer refused / seen with switch off / exempt actors refused (hecklefixhh) / stale Heckled flags cleared / errors.
         // [2709-2710] routecauselog (RouteCauseLog.cs, docs/580): lines / dropped by the caps.
         // [3541-3543] scarepriority (ScarePriority.cs, docs/580 §14): receivers raised / seen with switch off / errors.
         // [3841-3844] groupchatpriority (GroupChatPriority.cs, docs/638 §3): GroupChatB receivers raised / seen with switch off / errors / spare.
@@ -2107,6 +2109,8 @@ namespace Ts3Fixes
                 case "barorderlog": return Instantiator.kBarOrderLog;
                 case "petputdownwait": return Instantiator.kPetPutDownWait;
                 case "puddlereach": return Instantiator.kPuddleReach;
+                case "hecklefix": return Instantiator.kHeckleFix;
+                case "hecklefixhh": return Instantiator.kHeckleFixHousehold;
                 case "mopunreachable": return Instantiator.kMopUnreachable;
                 case "petpuddletile": return Instantiator.kPetPuddleTile;
                 case "initstacktrace": return Instantiator.kInitStackTrace;

@@ -661,6 +661,8 @@ namespace Ts3Fixes
         [Tunable] public static bool kBarOrderLog = false;    // barorderlog (docs/578 §1): log only: times the bar customer side of a bartender conversation (OrderConversation.RunOrderBehavior)
         [Tunable] public static bool kPetPutDownWait = true;    // petputdownwait (docs/578 §2): a carried pet waits 30 sim-min for a carrier whose PutDownPet already failed (no FinishLinkedInteraction on its early returns)
         [Tunable] public static bool kPuddleReach = true;    // puddlereach (docs/578 §3): autonomy stops re-picking a rain-puddle splash whose run just reached no puddle on the same lot and puddle set
+        [Tunable] public static bool kHeckleFix = false;    // hecklefix (docs/860): autonomous Heckle only at a performing target (NPC actors); stale Heckled flags cleared
+        [Tunable] public static bool kHeckleFixHousehold = false;    // hecklefixhh (docs/860): hecklefix for household, selected and unknown-scope actors too
         [Tunable] public static bool kMopUnreachable = true;    // mopunreachable (s58 lead, MopUnreachable.cs): a mop run skips a puddle it cannot reach or that is blocked and mops the rest; a per-Sim memo stops autonomy re-picking unreachable puddles (household-visible)
         [Tunable] public static bool kPetPuddleTile = true;    // petpuddletile (MopUnreachable.cs): a pet drinking from or playing in the closest puddle removes that puddle, not the clicked one
         [Tunable] public static bool kTreasureSpawnInvDup = true; // tspawninvdup (docs/607 §2): TreasureSpawnPoint keeps one add-to-inventory subscription per treasure (EA adds one per setup, so a vacation arrival fires the tomb RemovedItem trigger twice)

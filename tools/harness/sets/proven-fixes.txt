@@ -67,3 +67,5 @@
 #   doorshare
 # perf: exact one-pass CommodityInteractionMap.RemoveObject (docs/313, 2026-11-21), default off, NOT RUN:
 #   commodmapfast commodmapshadow
+# EA bug fix: autonomous Heckle only at a performing target + stale Heckled flags (docs/860, 2026-11-21), default off, NOT RUN:
+#   hecklefix hecklefixhh
