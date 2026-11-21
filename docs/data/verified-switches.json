@@ -217,7 +217,7 @@
     },
     {
       "id": "gvunseen",
-      "status": "unverified",
+      "status": "verified",
       "on": {
         "ini": {
           "GoalValidRO": {
@@ -237,11 +237,11 @@
         "docs/data/results/2026-11-12-queue-master1112b-verify.md (bundle --ab gvunseen PASS)",
         "PLAN.md (H4 B2 gvunseen entry)"
       ],
-      "reason": "closest candidate: loop and bundle jobs PASS with gvuN > 0 and household never asked, but the loop ended on its cap with the firing rule not met and no snap-back check; one clean loop run needed."
+      "reason": "NOT passed in game yet (the loop run ended on its cap); on for tester feedback (user decision 2026-11-21). Unseen Sims only: household, selected and unknown-scope Sims are never deferred (no MARK). An unseen Sim's plan that would wait behind another route job fails at once and the unseen fallback recovers it. Was unverified: closest candidate: loop and bundle jobs PASS with gvuN > 0 and household never asked, but the loop ended on its cap with the firing rule not met and no snap-back check; one clean loop run needed."
     },
     {
       "id": "l4memos",
-      "status": "unverified",
+      "status": "verified",
       "on": {
         "tunables": {
           "kPermaMoodletMemo": "True",
@@ -262,11 +262,11 @@
         "docs/data/results/2026-11-15-queue-lane-l4-1115-memos-1115b.md (bp-lane-l4-memos-check, bp-autonomy-memo-check PASS)",
         "docs/data/results/2026-11-15-queue-lane-l4-1115-memos.md (first run FAIL)"
       ],
-      "reason": "rerun PASS, but the page shows none of the pass counters (permamemo_hits, *_mismatches, autroommemo_hits): hits >= 1 and 0 mismatches not proven."
+      "reason": "NOT passed in game yet (the result page shows no hit or mismatch counters); on for tester feedback (user decision 2026-11-21). Exact memo (same answer as EA's code for every Sim, mismatch counters in the log), so household Sims get vanilla results. Faster moodlet, buff, catalog-name and room-permission lookups. Was unverified: rerun PASS, but the page shows none of the pass counters (permamemo_hits, *_mismatches, autroommemo_hits): hits >= 1 and 0 mismatches not proven."
     },
     {
       "id": "invcache",
-      "status": "unverified",
+      "status": "verified",
       "on": {
         "tunables": {
           "kPortalInvocationCache": "True"
@@ -280,11 +280,11 @@
       "evidence": [
         "docs/data/results/2026-11-15-queue-lane-l4-1115-memos-1115b.md (bp-event59-invcache-check PASS)"
       ],
-      "reason": "PASS but invcache_hits / invcache_mismatches are not in the result page; exactness not shown."
+      "reason": "NOT passed in game yet (exactness counters not on the result page); on for tester feedback (user decision 2026-11-21). Exact memo (same answer as EA's code for every Sim, mismatch counters in the log), so household Sims get vanilla results. The lot's portal (event 59) handler list is reused while it is unchanged. Was unverified: PASS but invcache_hits / invcache_mismatches are not in the result page; exactness not shown."
     },
     {
       "id": "spawncapcount",
-      "status": "unverified",
+      "status": "verified",
       "on": {
         "tunables": {
           "kSpawnCapCount": "True"
@@ -298,7 +298,7 @@
       "evidence": [
         "docs/data/results/2026-11-15-queue-lane-l6-1115.md (bp-spawncap-check PASS)"
       ],
-      "reason": "PASS but no spawncap counters on the page (mismatch 0 and check count not shown); under-cap share docs/147 §5 asks for not read."
+      "reason": "NOT passed in game yet (no spawncap counters on the result page); on for tester feedback (user decision 2026-11-21). Exact: spawner cap checks, not Sim behaviour. Spawner cap checks (minor pets, wildflowers) answer from the native object count while the world is under the cap. Was unverified: PASS but no spawncap counters on the page (mismatch 0 and check count not shown); under-cap share docs/147 §5 asks for not read."
     },
     {
       "id": "deadrefcooking",
@@ -359,7 +359,7 @@
     },
     {
       "id": "ilpatch-b80",
-      "status": "unverified",
+      "status": "verified",
       "on": {
         "ini": {
           "IlPatch": {
@@ -376,9 +376,12 @@
         }
       },
       "evidence": [
-        "docs/data/results/2026-11-15-queue-ilpatch-b80-b87.md (bp-ilp-b80-off/on PASS)"
+        "docs/data/results/2026-11-15-queue-ilpatch-b80-b87.md (bp-ilp-b80-off/on PASS)",
+        "docs/506 §2",
+        "docs/526",
+        "selftest TestIlPatch"
       ],
-      "reason": "off arm PASSed too and the page has no 'il patch: applied' line or counters, so neither the bug nor the fix is shown; b87 still rerunning."
+      "reason": "NOT passed in game yet (the off arm passed too, no \"il patch: applied\" line on the page); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A phone chat with a Sim who has no everyday outfit no longer throws. Was unverified: off arm PASSed too and the page has no 'il patch: applied' line or counters, so neither the bug nor the fix is shown; b87 still rerunning."
     },
     {
       "id": "smallenums",
@@ -451,7 +454,7 @@
     },
     {
       "id": "vaclistenerpad",
-      "status": "unverified",
+      "status": "verified",
       "on": {
         "tunables": {
           "kVacListenerPad": "True",
@@ -467,11 +470,11 @@
         "docs/data/results/2026-11-15-queue-lane-l6-1115.md (bp-vacation-listener-pad PASS)",
         "docs/210-free-vacation-fixes.md (§6)"
       ],
-      "reason": "check PASSed (probe line only), but it needs vaclistenernull, which like the other vacation fixes has no repro run."
+      "reason": "NOT passed in game yet (no repro run for the vacation fixes); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A travel opportunity with more listeners than its 3 stored states no longer throws on import. Needs vaclistenernull (vacation-fixes). Was unverified: check PASSed (probe line only), but it needs vaclistenernull, which like the other vacation fixes has no repro run."
     },
     {
       "id": "vehicle-leaks",
-      "status": "unverified",
+      "status": "verified",
       "on": {
         "tunables": {
           "kVehParkReserve": "True",
@@ -494,7 +497,7 @@
         "docs/544-vehicle-leak-sources.md (§7)",
         "PLAN.md (off-switch audit 2026-11-14)"
       ],
-      "reason": "contributor PR was a draft, his off/on soak not done, S4/S5 never fired; no run in this repo's harness."
+      "reason": "NOT passed in game yet (the contributor's off/on soak was not done); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Leaked vehicles are released: parking and mooring reservations to destroyed or stored cars, a taxi or NPC car left after a failed get-in, a taxi whose rider was destroyed, the Frankensim intro taxi, and driverless protest cop cars. Was unverified: contributor PR was a draft, his off/on soak not done, S4/S5 never fired; no run in this repo's harness."
     },
     {
       "id": "hostmapiterfix",
@@ -1049,6 +1052,1347 @@
         "repro messclear-live runs before publish"
       ],
       "reason": "NOT passed in game yet (repro messclear-live pending); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Sims stop walking to burnt tiles and puddles they cannot reach, and those get cleaned with EA's own clear (PuddleManager.RemovePuddle, World.SetBurnt false) in a Sim.MopFloor.Run hook; saves get only EA's normal clean state. While it is on, burnttilefloor's list cut is off by design; burnttilefloor stays on for its memo of failed tiles."
+    },
+    {
+      "id": "petfireplan",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kPetFirePlan": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kPetFirePlan": "False"
+        }
+      },
+      "evidence": [
+        "docs/546 §10 (phase-20261114-1113: 1,358 failed ReactToFire plans of two household pets in one run)",
+        "PLAN.md (Dalexlol imports: still OFF, not testable or not proven in his runs: unigradkeep, bsrefund, combovenue, partyoutcome, splashroof, simfestkeep, awardkeep, petfireplan)"
+      ],
+      "reason": "NOT passed in game yet (needs a fire on a lot with pets); on for tester feedback (user decision 2026-11-21). EA bug fix with an exact answer (same nearest object, no plan), so household pets are included (CLAUDE.md household rule: EA bug fixes stay); humans unchanged. A pet reacting to a fire no longer plans a route to it that only the human reaction uses."
+    },
+    {
+      "id": "splashroof",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kSplashRoof": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kSplashRoof": "False"
+        }
+      },
+      "evidence": [
+        "docs/546 §16 (32 of 32 failed splash goals were roof puddles)",
+        "SplashRoofCheck.cs",
+        "PLAN.md (Dalexlol imports: still OFF, not testable or not proven in his runs: unigradkeep, bsrefund, combovenue, partyoutcome, splashroof, simfestkeep, awardkeep, petfireplan)"
+      ],
+      "reason": "NOT passed in game yet (needs rain); on for tester feedback (user decision 2026-11-21). NPCs only: household, selected and unknown-scope Sims run EA's code. An NPC's autonomous puddle splash no longer plans routes to rain puddles on roofs."
+    },
+    {
+      "id": "simfestkeep",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kSimFestKeep": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kSimFestKeep": "False"
+        }
+      },
+      "evidence": [
+        "docs/546 §11",
+        "PLAN.md (Dalexlol imports: still OFF, not testable or not proven in his runs: unigradkeep, bsrefund, combovenue, partyoutcome, splashroof, simfestkeep, awardkeep, petfireplan)"
+      ],
+      "reason": "NOT passed in game yet (needs a SimFest whose award pair fails to sync); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A SimFest award whose emcee and winner failed to start in sync still gives the prize and clears the SimFest."
+    },
+    {
+      "id": "unigradkeep",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kUniGradKeep": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kUniGradKeep": "False"
+        }
+      },
+      "evidence": [
+        "docs/546 §12 (GraduationKeep.cs)",
+        "PLAN.md (Dalexlol imports: still OFF, not testable or not proven in his runs: unigradkeep, bsrefund, combovenue, partyoutcome, splashroof, simfestkeep, awardkeep, petfireplan)"
+      ],
+      "reason": "NOT passed in game yet (needs a failed University graduation); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A university graduation ceremony that fails (route, too late) graduates in place instead of losing the diploma and bonus trait."
+    },
+    {
+      "id": "bsrefund",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kBsRefund": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kBsRefund": "False"
+        }
+      },
+      "evidence": [
+        "docs/546 §12 (BoardingRefund.cs)",
+        "PLAN.md (Dalexlol imports: still OFF, not testable or not proven in his runs: unigradkeep, bsrefund, combovenue, partyoutcome, splashroof, simfestkeep, awardkeep, petfireplan)"
+      ],
+      "reason": "NOT passed in game yet (needs a failed boarding-school pickup); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A failed boarding-school pickup refunds the tuition; with no car at all the student is also withdrawn instead of staying enrolled at home."
+    },
+    {
+      "id": "awardkeep",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kAwardKeep": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kAwardKeep": "False"
+        }
+      },
+      "evidence": [
+        "docs/546 §11 (AwardKeepCheck)",
+        "PLAN.md (Dalexlol imports: still OFF, not testable or not proven in his runs: unigradkeep, bsrefund, combovenue, partyoutcome, splashroof, simfestkeep, awardkeep, petfireplan)"
+      ],
+      "reason": "NOT passed in game yet (needs a failed City Hall ceremony); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A City Hall award ceremony that fails (route tantrum, no sync) keeps the award as a City Hall pickup, EA's own missed-ceremony fallback, instead of losing it."
+    },
+    {
+      "id": "combovenue",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kComboVenue": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kComboVenue": "False"
+        }
+      },
+      "evidence": [
+        "docs/551",
+        "PLAN.md (Dalexlol imports: still OFF, not testable or not proven in his runs: unigradkeep, bsrefund, combovenue, partyoutcome, splashroof, simfestkeep, awardkeep, petfireplan)"
+      ],
+      "reason": "NOT passed in game yet (needs a show at a combo theatre); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). The TheatreMusic moodlet of a show at a combo theatre reaches Sims near the building (EA put its broadcaster on the out-of-world piece)."
+    },
+    {
+      "id": "partyoutcome",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kPartyOutcome": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kPartyOutcome": "False"
+        }
+      },
+      "evidence": [
+        "docs/554 (PartyFixCheck; not provable on a simler90 core-mod install)",
+        "PLAN.md (Dalexlol imports: still OFF, not testable or not proven in his runs: unigradkeep, bsrefund, combovenue, partyoutcome, splashroof, simfestkeep, awardkeep, petfireplan)"
+      ],
+      "reason": "NOT passed in game yet (not provable on the contributor's core-mod install); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). With University Life installed, parties outside University worlds can be lame again, and a leaving guest's party verdict uses the party's own tier order."
+    },
+    {
+      "id": "trashpileimport",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kTrashPileImport": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kTrashPileImport": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 8 (built, NOT RUN; Batch582gChecks.cs) §1"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). An imported trash pile ages and smells once (no second age alarm), and an Ancient pile loads through EA's Old step instead of throwing."
+    },
+    {
+      "id": "catgymwatch",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kCatGymWatch": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kCatGymWatch": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 8 (built, NOT RUN; Batch582gChecks.cs) §2"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Sims passing a cat on the jungle gym get the gym set, so the watch reaction plays."
+    },
+    {
+      "id": "badsecretkey",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kBadSecretKey": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kBadSecretKey": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 8 (built, NOT RUN; Batch582gChecks.cs) §3"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). The bad relationship secret uses EA's right string key, so its text shows."
+    },
+    {
+      "id": "traitlistenerremove",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kTraitListenerRemove": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kTraitListenerRemove": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 8 (built, NOT RUN; Batch582gChecks.cs) §4"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A lost trait's event listeners are removed, so the Sim stops reacting as if it still had the trait."
+    },
+    {
+      "id": "portasknohome",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kPortAskNoHome": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kPortAskNoHome": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 8 (built, NOT RUN; Batch582gChecks.cs) §6"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). The ask-to-change-port social test answers false for a Sim with no home lot instead of throwing, so the social menu builds."
+    },
+    {
+      "id": "lecturebroadcaster",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kLectureBroadcaster": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kLectureBroadcaster": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 8 (built, NOT RUN; Batch582gChecks.cs) §7"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). One great-lecture broadcaster per lecturer instead of one more per lecture given."
+    },
+    {
+      "id": "residentspawnwalk",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kResidentSpawnWalk": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kResidentSpawnWalk": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 8 (built, NOT RUN; Batch582gChecks.cs) §8 (CD30 live reach)"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). NPC spawn placement only, never for a resident of the active household. An apartment resident's own door spawn slot that EA's selected-Sim test refuses (upper elevators) is judged with the resident's own door rules."
+    },
+    {
+      "id": "betrayednullsim",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kBetrayedNullSim": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kBetrayedNullSim": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 8b (built, NOT RUN; Batch582hChecks.cs) §3"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). The betrayal notice and break-up run when the betrayer is not instantiated, instead of throwing."
+    },
+    {
+      "id": "topictestnull",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kTopicTestNull": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kTopicTestNull": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 8b (built, NOT RUN; Batch582hChecks.cs) §4"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Conversation topic tests answer instead of throwing for a missing Sim or Athletic skill, so topic lists build."
+    },
+    {
+      "id": "opptrackerrelisten",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kOppTrackerRelisten": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kOppTrackerRelisten": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 8b (built, NOT RUN; Batch582hChecks.cs) §5"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). An opportunity's completion listener is not registered twice when its target Sim appears."
+    },
+    {
+      "id": "traitremovenull",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kTraitRemoveNull": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kTraitRemoveNull": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 9 (built, NOT RUN; Batch582iChecks.cs) §1"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Removing a trait missing from the trait list (missing pack or removed CC) finishes instead of throwing."
+    },
+    {
+      "id": "homeworkcopyold",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kHomeworkCopyOld": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kHomeworkCopyOld": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 9 (built, NOT RUN; Batch582iChecks.cs) §2 (user: as EA intended)"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Copying old homework uses EA's old-homework multiplier, as EA intended, so it is slower."
+    },
+    {
+      "id": "laundrymoodeach",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kLaundryMoodEach": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kLaundryMoodEach": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 9 (built, NOT RUN; Batch582iChecks.cs) §3"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Every Sim dressed from an expensive-washer load gets the mood multiplier once (EA gave it to the first Sim only)."
+    },
+    {
+      "id": "partycleanupnull",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kPartyCleanupNull": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kPartyCleanupNull": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 9 (built, NOT RUN; Batch582iChecks.cs) §4"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Party and wedding cleanup finishes when the host or a guest is gone, instead of throwing before EA's base cleanup."
+    },
+    {
+      "id": "safelocunhide",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kSafeLocUnhide": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kSafeLocUnhide": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 9 (built, NOT RUN; Batch582iChecks.cs) §5"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A Sim placed by the reset fallback is unhidden, as on EA's found-spot path."
+    },
+    {
+      "id": "midlifeuiending",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kMidlifeUiEnding": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kMidlifeUiEnding": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 9 (built, NOT RUN; Batch582iChecks.cs) §6"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Reading the midlife crisis moodlet tooltip no longer ends the crisis."
+    },
+    {
+      "id": "nemesisnoromance",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kNemesisNoRomance": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kNemesisNoRomance": "False"
+        }
+      },
+      "evidence": [
+        "docs/582 batch 9 (built, NOT RUN; Batch582iChecks.cs) §7 (user decision: option A)"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). The Imminent Nemesis spell is no longer limited to romance-eligible Sims."
+    },
+    {
+      "id": "ageupdupinst",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kAgeUpDupInst": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kAgeUpDupInst": "False"
+        }
+      },
+      "evidence": [
+        "PLAN.md (PR #564 import 2026-11-19: OFF, never exercised)",
+        "issue #553",
+        "AgeUpDupInst.cs"
+      ],
+      "reason": "NOT passed in game yet (never exercised); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A second Instantiate of a Sim during its deferred age-up returns the first call's Sim instead of EA's NullReferenceException."
+    },
+    {
+      "id": "boatroutenull",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kBoatRouteNull": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kBoatRouteNull": "False"
+        }
+      },
+      "evidence": [
+        "PLAN.md (PR #564 import 2026-11-19: OFF, never exercised)",
+        "BoatRouteNull.cs"
+      ],
+      "reason": "NOT passed in game yet (never exercised); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Routing a boat that has no routing component to land returns EA's failed-plan result instead of throwing."
+    },
+    {
+      "id": "overwatchresetgone",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kOverwatchResetGone": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kOverwatchResetGone": "False"
+        }
+      },
+      "evidence": [
+        "PLAN.md (PR #564 import 2026-11-19: OFF, never exercised)",
+        "OneOffGuards.cs"
+      ],
+      "reason": "NOT passed in game yet (never exercised); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A destroyed Sim left in an object's reset lists is skipped instead of EA's NullReferenceException."
+    },
+    {
+      "id": "motivesnohousehold",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kMotivesNoHousehold": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kMotivesNoHousehold": "False"
+        }
+      },
+      "evidence": [
+        "PLAN.md (PR #564 import 2026-11-19: OFF, never exercised)",
+        "OneOffGuards.cs MnhApplies (known scope only, 2026-11-20)"
+      ],
+      "reason": "NOT passed in game yet (never exercised); on for tester feedback (user decision 2026-11-21). EA bug fix that acts only on a household-less human of known scope (an active household exists; not the selected or a selectable Sim); anything else gets EA's code. Motives of a human NPC with no household are created with EA's NPC household standing in, instead of throwing."
+    },
+    {
+      "id": "unseenhouseboatview",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kUnseenHouseboatView": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kUnseenHouseboatView": "False"
+        }
+      },
+      "evidence": [
+        "PLAN.md (PR #591 import 2026-11-20: OFF, untested in game)",
+        "docs/202 §3.10",
+        "docs/data/results/2026-11-20-dalexlol-591-import.md"
+      ],
+      "reason": "NOT passed in game yet (its author left it untested); on for tester feedback (user decision 2026-11-21). Townies only (not the household's or the camera's lot); it can only widen what counts as seen. A townie on a houseboat lot is judged seen or unseen where its boat shows, not at the lot's hidden spot."
+    },
+    {
+      "id": "iafailmemo",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kIaFailMemo": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kIaFailMemo": "False"
+        }
+      },
+      "evidence": [
+        "PR #589",
+        "docs/registry.md (fixes 4080-4082)",
+        "PLAN.md (merge follow-up 2026-11-20: boat plans fixed by boattrip are never memoised)"
+      ],
+      "reason": "NOT passed in game yet (no ON arm run yet); on for tester feedback (user decision 2026-11-21). Townies only: household, selected and unknown-scope Sims plan as EA does (IaSim / IaNote). A townie's repeat plan for the same interaction, start lot and goal lot within 120 s gets its remembered empty-path failure instead of searching again."
+    },
+    {
+      "id": "posturepopcycle",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kPosturePopCycle": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kPosturePopCycle": "False"
+        }
+      },
+      "evidence": [
+        "issue #89",
+        "PosturePop.cs",
+        "PLAN.md (2026-10-29 static + selftest; kept off in the 11-14 audit, not run)"
+      ],
+      "reason": "NOT passed in game yet (static and selftest only); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A posture pop that EA would turn into a two-posture loop runs the setter's unwind instead."
+    },
+    {
+      "id": "ageupswap",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kAgeUpSwap": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kAgeUpSwap": "False"
+        }
+      },
+      "evidence": [
+        "docs/503 (built and self-tested; four game runs could not reach the hang)"
+      ],
+      "reason": "NOT passed in game yet (the hang was never reached in game); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). An age-up outfit swap EA refuses goes to Everyday or is released, so the age-up finishes instead of hanging."
+    },
+    {
+      "id": "socialworkeronlot",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kSocialWorkerOnLot": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kSocialWorkerOnLot": "False"
+        }
+      },
+      "evidence": [
+        "issue #87",
+        "EaFixes.cs"
+      ],
+      "reason": "NOT passed in game yet (no repro run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A social worker already on the lot starts the visit one sim-minute later from a yielding alarm instead of inside a constructor."
+    },
+    {
+      "id": "vacation-fixes",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kVacExport": "True",
+          "kVacStoreGuard": "True",
+          "kVacReturnSkip": "True",
+          "kVacTeenDelete": "True",
+          "kVacExitReturn": "True",
+          "kVacListenerNull": "True",
+          "kVacImportFix": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kVacExport": "False",
+          "kVacStoreGuard": "False",
+          "kVacReturnSkip": "False",
+          "kVacTeenDelete": "False",
+          "kVacExitReturn": "False",
+          "kVacListenerNull": "False",
+          "kVacImportFix": "False"
+        }
+      },
+      "evidence": [
+        "docs/210 (issue #97, built, not run; selftest tools/selftest/vacation)",
+        "docs/210 \"Save data\" (only EA's own fields; save matrix not run)"
+      ],
+      "reason": "NOT passed in game yet (no repro or save matrix run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Generations Free Vacation fixes: adults keep dreams, opportunities and travel moodlets; the opportunity store is guarded and stuck trips are repaired at load; dead or moved-out adults are not re-created; a deleted teen no longer runs the return; a trip exit while the parents are away brings them back; a missing listener state starts fresh; travel opportunities find their Sims again."
+    },
+    {
+      "id": "gohomeshell",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kGoHomeShell": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kGoHomeShell": "False"
+        }
+      },
+      "evidence": [
+        "docs/804 (local Bridgeport apartment games)",
+        "Instantiator.cs (off until [EaCrashFixes] LotLevelPastEnd is on: on in this build, lotlevelpastend)"
+      ],
+      "reason": "NOT passed in game yet (no off/on run); on for tester feedback (user decision 2026-11-21). Unseen townies only: household, selected and unknown-scope Sims walk as EA does. An unseen townie going home to an apartment is placed inside its rooms instead of walking there."
+    },
+    {
+      "id": "fakemetabackoff",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kFakeMetaBackoff": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kFakeMetaBackoff": "False"
+        }
+      },
+      "evidence": [
+        "docs/854 §1 (never turned on)",
+        "PR #496"
+      ],
+      "reason": "NOT passed in game yet (never turned on); on for tester feedback (user decision 2026-11-21). NPCs only: never a lot with an active-household or selected Sim; nothing persisted. A lot whose fake-autonomy Sim died within 25 sim-minutes is held out of the pick list for 3 sim-hours."
+    },
+    {
+      "id": "placeholderunseen",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kPlaceholderUnseen": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kPlaceholderUnseen": "False"
+        }
+      },
+      "evidence": [
+        "docs/854 §2 (never turned on; 23-76 child rebuilds per game in the census)",
+        "PR #496"
+      ],
+      "reason": "NOT passed in game yet (never turned on); on for tester feedback (user decision 2026-11-21). NPC households only: the active household is never kept. An NPC household's child stays EA's placeholder while its home lot is unseen, instead of a full Sim build after every adult round trip."
+    },
+    {
+      "id": "overwatchstucknotice",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kOverwatchStuckNoticeSummary": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kOverwatchStuckNoticeSummary": "False"
+        }
+      },
+      "evidence": [
+        "docs/145 §13 (Rodney: resets unchanged, notices summarised)",
+        "tools/selftest/overwatchnotice"
+      ],
+      "reason": "NOT passed in game yet (not re-run since its repro bp-owstucknotice-summary passed on the 2026-10-24 build); on for tester feedback (user decision 2026-11-21). Notices only: Overwatch's resets are unchanged for every Sim. NRaas Overwatch's per-Sim stuck-reset notices are held and shown as one summary every 2 sim-hours."
+    },
+    {
+      "id": "unseenloopskipstep",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kUnseenLoopSkipStep": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kUnseenLoopSkipStep": "False"
+        }
+      },
+      "evidence": [
+        "docs/632 (a)",
+        "docs/634 (unseenpianist / unseenjam / unseenshow need it; they are on)"
+      ],
+      "reason": "NOT passed in game yet (the stepped wait never ran in the shipped package); on for tester feedback (user decision 2026-11-21). Unseen NPCs only: household and selected Sims are counted out (3709). Installs the wait hook the on switches unseenpianist, unseenjam and unseenshow need: an unseen NPC's piano, jam or show loop passes every 10 sim-minutes instead of every minute, with the same totals."
+    },
+    {
+      "id": "writermemos",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kDecayMultMemo": "True",
+          "kZombieDanceEmptyOut": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kDecayMultMemo": "False",
+          "kZombieDanceEmptyOut": "False"
+        }
+      },
+      "evidence": [
+        "docs/data/results/2026-11-16-queue-z1-m1-correct-1116.md (bp-writer-memos-verify PASS)",
+        "docs/275 Z1 / M1"
+      ],
+      "reason": "NOT passed in game yet (its correctness run passed on the 2026-11-16 build, but the page shows no mismatch counter; no timing run); on for tester feedback (user decision 2026-11-21). Exact memo (same answer as EA's code for every Sim, mismatch counters in the log), so household Sims get vanilla results. Motive decay multipliers and the zombie-dance time-out lookups skip work that cannot change the answer."
+    },
+    {
+      "id": "hoursmemo",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kHoursMemo": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kHoursMemo": "False"
+        }
+      },
+      "evidence": [
+        "docs/data/results/2026-11-16-queue-ts3fixes-hotspots.md (bp-hoursmemo-correct PASS, 63,459 answers checked)",
+        "docs/74"
+      ],
+      "reason": "NOT passed in game yet (its correctness run passed on the 2026-11-16 build, but the page shows no mismatch counter; no timing run); on for tester feedback (user decision 2026-11-21). Exact memo (same answer as EA's code for every Sim, mismatch counters in the log), so household Sims get vanilla results. A lot's opening hours are worked out once per sim tick."
+    },
+    {
+      "id": "lotlevelpastend",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "EaCrashFixes": {
+            "LotLevelPastEnd": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "EaCrashFixes": {
+            "LotLevelPastEnd": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/67 §40",
+        "PR #449 (off until a second machine)",
+        "eafix-test.h TestEaCrashFixes (LotLevelPastEnd)"
+      ],
+      "reason": "NOT passed in game yet (off until a second machine); on for tester feedback (user decision 2026-11-21). EA crash fix on lot data, not Sim behaviour, so no household question. An object that still carries a floor level its new lot does not have no longer crashes the game (Bridgeport crashes at 0x6824D0 / 0x6824F3 / 0x8621EA)."
+    },
+    {
+      "id": "fglstaleobject",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "EaCrashFixes": {
+            "FglStaleObject": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "EaCrashFixes": {
+            "FglStaleObject": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/67 §41",
+        "PR #449 (off until a second machine)"
+      ],
+      "reason": "NOT passed in game yet (off until a second machine); on for tester feedback (user decision 2026-11-21). EA crash fix in the placement search, not Sim behaviour, so no household question. A deleted object near a FindGoodLocation spot takes the game's missing-object path instead of crashing (0xB11A9C)."
+    },
+    {
+      "id": "keepoptions",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "EaCrashFixes": {
+            "KeepOptionsOnGpuChange": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "EaCrashFixes": {
+            "KeepOptionsOnGpuChange": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/37 §12",
+        "selftest TestKeepOptions"
+      ],
+      "reason": "NOT passed in game yet (off until the game check); on for tester feedback (user decision 2026-11-21). EA bug fix in Options.ini, not Sim behaviour. When the graphics device changes (Apex bridge vs a direct start, another GPU), only the hardware-derived graphics options are re-detected; every other game option keeps the player's value."
+    },
+    {
+      "id": "placetestro",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "PlaceTestRO": {
+            "Enabled": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "PlaceTestRO": {
+            "Enabled": "0"
+          }
+        }
+      },
+      "evidence": [
+        "PLAN.md (Dalexlol 1121 imports: #613 shadow compares 0 mismatches over 47,866 / 97,950 / 11,227 / 181 / 21,752 / 141,409 for its switches; ON candidates for Rodney: PlaceTestRO, EditPathRO, GoalValidRO Hits, ConnRoomsRO)",
+        "docs/670",
+        "selftest TestPlaceTestRO"
+      ],
+      "reason": "NOT passed in game yet (shadow-checked on the contributor's machine only); on for tester feedback (user decision 2026-11-21). Exact: the game's own answer for every Sim, so no household question. The placement check under FindGoodLocation answers on the sim thread instead of waiting for a running route job."
+    },
+    {
+      "id": "editpathro",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "EditPathRO": {
+            "Enabled": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "EditPathRO": {
+            "Enabled": "0"
+          }
+        }
+      },
+      "evidence": [
+        "PLAN.md (Dalexlol 1121 imports: #613 shadow compares 0 mismatches over 47,866 / 97,950 / 11,227 / 181 / 21,752 / 141,409 for its switches; ON candidates for Rodney: PlaceTestRO, EditPathRO, GoalValidRO Hits, ConnRoomsRO)",
+        "docs/670 §8",
+        "selftest TestEditPathRO"
+      ],
+      "reason": "NOT passed in game yet (shadow-checked on the contributor's machine only); on for tester feedback (user decision 2026-11-21). Exact: the game's own answer for every Sim, so no household question. A route's path edit answers on the sim thread instead of waiting for a running route job."
+    },
+    {
+      "id": "connroomsro",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "ConnRoomsRO": {
+            "Enabled": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "ConnRoomsRO": {
+            "Enabled": "0"
+          }
+        }
+      },
+      "evidence": [
+        "PLAN.md (Dalexlol 1121 imports: #613 shadow compares 0 mismatches over 47,866 / 97,950 / 11,227 / 181 / 21,752 / 141,409 for its switches; ON candidates for Rodney: PlaceTestRO, EditPathRO, GoalValidRO Hits, ConnRoomsRO)",
+        "docs/670 §15",
+        "selftest TestConnRoomsRO"
+      ],
+      "reason": "NOT passed in game yet (shadow-checked on the contributor's machine only); on for tester feedback (user decision 2026-11-21). Exact: the game's own answer for every Sim, so no household question. Connected-room lookups answer on the sim thread instead of waiting for a running route job."
+    },
+    {
+      "id": "gvhits",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "GoalValidRO": {
+            "Hits": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "GoalValidRO": {
+            "Hits": "0"
+          }
+        }
+      },
+      "evidence": [
+        "PLAN.md (Dalexlol 1121 imports: #613 shadow compares 0 mismatches over 47,866 / 97,950 / 11,227 / 181 / 21,752 / 141,409 for its switches; ON candidates for Rodney: PlaceTestRO, EditPathRO, GoalValidRO Hits, ConnRoomsRO)",
+        "docs/670 §11",
+        "selftest TestGoalHitsRO"
+      ],
+      "reason": "NOT passed in game yet (shadow-checked on the contributor's machine only); on for tester feedback (user decision 2026-11-21). Exact: the game's own answer for every Sim, so no household question. Goal-point checks with other Sims or objects nearby also answer on the sim thread instead of waiting for a running route job."
+    },
+    {
+      "id": "cutonwait",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "RouteAsync": {
+            "CutOnWait": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "RouteAsync": {
+            "CutOnWait": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/850 (Isla Paradiso, 16 games, in-load A/B: freezes >= 1 s 106 -> 20 and 117 -> 9.4 per 10 min; costs +37% route plans, +47-52% failed plans; Bridgeport no change)",
+        "PR #476",
+        "jobyield-test.h (CutOnWait case)"
+      ],
+      "reason": "NOT passed in game yet (off until a second machine); on for tester feedback (user decision 2026-11-21). Townie jobs only: household, selected and unknown-scope jobs, stuck-check rounds and probes are never asked. When the game waits behind a townie's running route job, that job ends early (200 ms unseen, 500 ms seen NPC) and the townie plans again; fewer long freezes, more failed townie plans."
+    },
+    {
+      "id": "kdcutcamrecheck",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "RouteAsync": {
+            "KdCutCamRecheck": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "RouteAsync": {
+            "KdCutCamRecheck": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/197 §7",
+        "plandeadline-test.h"
+      ],
+      "reason": "NOT passed in game yet (its repro queue kd-cut-camera-recheck never ran); on for tester feedback (user decision 2026-11-21). Routes known unseen only; it only stops cuts. A townie route believed unseen is checked against the camera at its first cut; in view, it runs on like a seen NPC's route."
+    },
+    {
+      "id": "ufhostlate",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "UnseenFallback": {
+            "HostLate": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "UnseenFallback": {
+            "HostLate": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/202 §3.1.1 item 5 (bugfix/uf-overrun-host-wait)",
+        "selftest TestUfHostLate"
+      ],
+      "reason": "NOT passed in game yet (no game run read its minute line); on for tester feedback (user decision 2026-11-21). Unseen Sims' jobs only. An unseen Sim's route job that waited for the sim thread past its deadline no longer shrinks every unseen job's budget to 150 ms."
+    },
+    {
+      "id": "steerretry",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "SteerRO": {
+            "Retry": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "SteerRO": {
+            "Retry": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/250 H7 / §8",
+        "selftest TestSteerRO (Retry)",
+        "PLAN.md (g2pair1108c: built, NOT RUN)"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). Exact: the game's own answer for every Sim, so no household question. A dropped read-only steering answer is tried again (up to 4 times within 1 ms) before the sim thread waits for the route job."
+    },
+    {
+      "id": "pkgremovefix",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "PkgProbe": {
+            "RemoveFix": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "PkgProbe": {
+            "RemoveFix": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/549 §4 finding 2",
+        "selftest TestPkgProbe"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA race fix in the package list, not Sim behaviour. A package remove finds its list entry again after its unlock, so a list another thread changed meanwhile does not make it erase the wrong entry."
+    },
+    {
+      "id": "audiostatedup",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "AudioStateDup": {
+            "Enabled": "1",
+            "Fix": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "AudioStateDup": {
+            "Enabled": "0",
+            "Fix": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/549 §5",
+        "selftest TestAudioStateDup"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA leak fix in the audio state table, not Sim behaviour. An object's audio state added again with a key the table already holds no longer leaks a 48-byte node."
+    },
+    {
+      "id": "ilp-fixupnoinventory",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "IlPatch": {
+            "Enabled": "1",
+            "ilp_fixupnoinventory": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "IlPatch": {
+            "ilp_fixupnoinventory": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/506 §2",
+        "docs/526",
+        "core build 89",
+        "selftest TestIlPatch"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Applied only to an EA body whose IL hash matches; any other core mod's body is left alone. SimDescription.Fixup skips the trait-chip pass for a Sim with no inventory instead of throwing."
+    },
+    {
+      "id": "ilp-scavengersleep",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "IlPatch": {
+            "Enabled": "1",
+            "ilp_scavengersleep": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "IlPatch": {
+            "ilp_scavengersleep": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/506 §2",
+        "docs/526",
+        "core build 87",
+        "selftest TestIlPatch"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Applied only to an EA body whose IL hash matches; any other core mod's body is left alone. Scavenger opportunities sleep between spawns only where a script may yield, instead of throwing."
+    },
+    {
+      "id": "ilp-socialnoeffect",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "IlPatch": {
+            "Enabled": "1",
+            "ilp_socialnoeffect": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "IlPatch": {
+            "ilp_socialnoeffect": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/506 §2",
+        "docs/526",
+        "docs/589 B11 U18",
+        "selftest TestIlPatch"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Applied only to an EA body whose IL hash matches; any other core mod's body is left alone. A social with no matching social rule (modded socials) ends at EA's own early return instead of throwing."
+    },
+    {
+      "id": "ilp-jambasecleanup",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "IlPatch": {
+            "Enabled": "1",
+            "ilp_jambasecleanup": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "IlPatch": {
+            "ilp_jambasecleanup": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/506 §2",
+        "docs/526",
+        "docs/589 B11 U20",
+        "selftest TestIlPatch"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Applied only to an EA body whose IL hash matches; any other core mod's body is left alone. A Sim leaving a jam that goes on runs EA's base cleanup (use list, line, commodities)."
+    },
+    {
+      "id": "ilp-watchnoplayer",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "IlPatch": {
+            "Enabled": "1",
+            "ilp_watchnoplayer": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "IlPatch": {
+            "ilp_watchnoplayer": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/506 §2",
+        "docs/526",
+        "docs/589 B11 U20",
+        "selftest TestIlPatch"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Applied only to an EA body whose IL hash matches; any other core mod's body is left alone. Watching an instrument nobody plays any more ends instead of throwing."
+    },
+    {
+      "id": "ilp-buffbuf",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "IlPatch": {
+            "Enabled": "1",
+            "ilp_buffbuf": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "IlPatch": {
+            "ilp_buffbuf": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/506 §2",
+        "docs/526",
+        "docs/584 §5 (ts3fixes buffbufcheck counts the skips, Count vs enumeration mismatches must stay 0)",
+        "selftest TestIlPatch"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). Exact: the game's own answer for every Sim, so no household question. Applied only to an EA body whose IL hash matches. Speed: a Sim's buff update skips copying its delayed-buff list when that list is empty."
+    },
+    {
+      "id": "ilp-idleparams",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "IlPatch": {
+            "Enabled": "1",
+            "ilp_idleparams": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "IlPatch": {
+            "ilp_idleparams": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/506 §2",
+        "docs/526",
+        "docs/584 §9",
+        "selftest TestIlPatch"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). Exact: the game's own answer for every Sim, so no household question. Applied only to an EA body whose IL hash matches. Speed: idle animation tests build their parameter array only when the idle has a test."
+    },
+    {
+      "id": "ilp-autolights",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "IlPatch": {
+            "Enabled": "1",
+            "ilp_autolights": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "IlPatch": {
+            "ilp_autolights": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/506 §2",
+        "docs/526",
+        "docs/584 §11",
+        "selftest TestIlPatch"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). Exact: the game's own answer for every Sim, so no household question. Applied only to an EA body whose IL hash matches. Speed: auto lights skip fetching the lot's lights when no light can be switched off (nobody asleep in the room)."
+    },
+    {
+      "id": "editpathro-startretry",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "EditPathRO": {
+            "Enabled": "1",
+            "StartGuard": "1",
+            "Retry": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "EditPathRO": {
+            "StartGuard": "0",
+            "Retry": "0"
+          }
+        }
+      },
+      "evidence": [
+        "docs/670 §14 (s160-s166: 249-707 ms of 0x85F6CB waits per 4 min left without StartGuard)",
+        "selftest TestEditPathRO"
+      ],
+      "reason": "NOT passed in game yet (built, not run); on for tester feedback (user decision 2026-11-21). Exact: the game's own answer for every Sim, so no household question. With [EditPathRO] on, a path edit that finds no route job running holds job starts for that one call, and a dropped read-only answer is tried again (up to 4 times within 1 ms) before the sim thread waits."
     }
   ],
   "knownIssues": [

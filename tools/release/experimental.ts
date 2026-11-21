@@ -1,5 +1,6 @@
 // Daily experimental pre-release for testers (docs/279): latest master, every switch whose correctness gate PASSED on.
 //   node tools/release/experimental.ts [--dry-run] [--ref master] [--switches <json>] [--ignore-busy] [--force] [--keep 7]
+//     [--tag v0.3.2-exp.20261122b]   (a second build on one PHT day: names the tag instead of the dated one)
 //   node tools/release/experimental.ts --self-check
 // Steps: skip when a chain / queue / job / the game runs (track.ts status; the scheduled task retries hourly) unless
 // --ignore-busy; skip when the last experimental pre-release was built from the same commit and switch list (unless --force)
@@ -171,6 +172,7 @@ function main() {
     'dry-run': { type: 'boolean' }, 'self-check': { type: 'boolean' }, 'ignore-busy': { type: 'boolean' }, force: { type: 'boolean' },
     ref: { type: 'string', default: 'master' }, switches: { type: 'string' }, keep: { type: 'string', default: '7' },
     repo: { type: 'string', default: 'rodneypantonial/sims3-modernization' }, work: { type: 'string', default: join(ROOT, 'probe-out', 'experimental') },
+    tag: { type: 'string' },
   } });
   if (a['self-check']) return selfCheck();
   const work = resolve(a.work!), wt = join(work, 'wt'), dry = !!a['dry-run'];
@@ -186,7 +188,8 @@ function main() {
   const sha = run('git', ['rev-parse', a.ref!], { cwd: ROOT });
   const rels: Rel[] = JSON.parse(gh(['release', 'list', '-R', a.repo!, '-L', '100', '--json', 'tagName,isPrerelease,isDraft,createdAt']));
   const stable = newestStable(rels); if (!stable) throw new Error('no stable release found');
-  const tag = nextTag(stable, Date.now());
+  const tag = a.tag ?? nextTag(stable, Date.now());
+  if (!/^v\d+\.\d+\.\d+-exp\.\d{8}[a-z]?$/.test(tag)) throw new Error(`--tag ${tag}: want v<x.y.z>-exp.<YYYYMMDD> with one optional letter`);
   log(`source ${a.ref} = ${sha}, stable ${stable}, tag ${tag}${dry ? ' (dry run)' : ''}`);
 
   if (!existsSync(wt)) run('git', ['worktree', 'add', '-q', '--detach', wt, sha], { cwd: ROOT, timeout: 300_000 });
