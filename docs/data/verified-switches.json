@@ -799,7 +799,7 @@
     },
     {
       "id": "kdscopetable",
-      "status": "unverified",
+      "status": "verified",
       "on": {
         "ini": {
           "RouteAsync": {
@@ -815,10 +815,11 @@
         }
       },
       "evidence": [
-        "bugfix/kd-scope-slot (local branch d75657fa): selftest TestKdScopeTable; merge adds the JobYield park and PdScopeAt table reads (TestKdScopeTable checks both modes)",
-        "in-game off/on pair running 2026-11-21, verdict pending"
+        "queue beta1121-local 2026-11-21, Isla Paradiso, same seed 32209, 25 min each, both PASS, no crash: kds-ip-off-32209 (KdScopeTable=0): 10 slot-loss 'scope unknown' events ('slot empty ... cleared by op N of this route' / 'overwritten by route R'), 17 'kd exempt'; kds-ip-on-32210 (KdScopeTable=1): 0 slot-loss events, 2 'kd exempt' (seen-NPC only). Hitches >=300 ms 91 -> 5, >=1000 ms 8 -> 1 (noise high on both arms, timing indicative only). Tested on bugfix/kd-scope-slot d75657fa; the merge's PdScopeAt / JobYield park changes are not yet run in game.",
+        "selftest TestKdScopeTable (both modes, the JobYield park included)",
+        "docs/197 §7a"
       ],
-      "reason": "off (master default 0) until the in-game off/on pair has a verdict. Unknown and household scopes stay exempt either way."
+      "reason": "in-game off/on pair PASS (verdict 2026-11-21). The scope ts3fixes sends per route lives in an 8-entry table keyed by route handle, so a nested plan cannot overwrite or clear another route's scope. Unknown and household scopes stay exempt."
     }
   ],
   "knownIssues": [
