@@ -970,6 +970,66 @@
         "docs/859 (static analysis of the lot import)"
       ],
       "reason": "NOT passed in game yet (never run in game; selftests and static analysis only); on for beta tester checks (user decision 2026-11-21). A lot placed from the Library or the town bin onto a bigger lot, centred where the sizes differ by an odd number of tiles, got its terrain paint half a tile off from the house: the paint now uses the same offsets as the objects."
+    },
+    {
+      "id": "promdatelimo",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kPromDateLimo": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kPromDateLimo": "False"
+        }
+      },
+      "evidence": [
+        "PromDateLimoChecks.cs pure checks",
+        "repro promdatelimo-live (the hooks' decisions on live Sims only; nothing pushed)",
+        "docs/861"
+      ],
+      "reason": "NOT passed in game yet (the real limo needs a prom day between 16:00 and 18:00: testers verify); on for tester feedback (user decision 2026-11-21). EA bug fix; it acts only on NPC dates: a household teen's date on the lot gets into the prom limo, or is sent to prom when the teen enters it, instead of being left behind."
+    },
+    {
+      "id": "promlimolot",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kPromLimoLot": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kPromLimoLot": "False"
+        }
+      },
+      "evidence": [
+        "PromDateLimoChecks.cs pure checks",
+        "repro promdatelimo-live (PromLimoLotCheck: the pickup-lot write on a throwaway carpool, read-only on the world)",
+        "docs/861"
+      ],
+      "reason": "NOT passed in game yet (the real limo needs a prom day: testers verify); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay); it acts only on the prom limo's pickup lot: the limo picks up at the household's current home."
+    },
+    {
+      "id": "burnttilefloor",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kBurntTileFloor": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kBurntTileFloor": "False"
+        }
+      },
+      "evidence": [
+        "BurntTileFloorChecks.cs pure checks",
+        "docs/277 §9 (bsoak1121 logs: hundreds of failed MopBurnt plans per Sim in one run)",
+        "repro burnttilefloor-live runs before publish"
+      ],
+      "reason": "NOT passed in game yet (repro burnttilefloor-live pending); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Sims no longer keep trying to mop burnt tiles on an upper level they cannot reach; that loop made NRaas Overwatch reset them with \"Unroutable Sim Found\"."
     }
   ],
   "knownIssues": [
