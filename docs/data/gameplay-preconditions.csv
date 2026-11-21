@@ -29,7 +29,7 @@ quiet_ui,HarnessHandlers,Any,Options > memories off; dismissing notifications,na
 autopilot,HarnessHandlers,Live,none (harness: keeps speed and answers dialogs),harness,,handler,none
 weather,HarnessHandlers,Live,none: read only; set forces season/weather (Weather Stone changes weather in game),cheat,Seasons (EP8) installed; set: forced season/weather (docs/599),handler,live
 dialog_expect,AutopilotHandlers,Any,none (harness: tells the autopilot to leave the next dialog to auto_dialog),harness,,handler,none
-build_mode,BuildHandlers,Live;Build,Build button,natural,active household has a home lot; on = Build on the home lot; clock stops (R-MODE-2),handler + R-MODE-2,none
+build_mode,BuildHandlers,Live;Build;Buy,Build button (Buy/Build switch in the mode bar),natural,active household has a home lot; on = Build on the home lot (from Buy: the Buy -> Build switch without an exit); clock stops (R-MODE-2),handler + R-MODE-2,none
 pick,BuildHandlers,Any,none (read),harness,,handler,none
 calibrate,BuildHandlers,Any,none (harness),harness,,handler,none
 tile_info,BuildHandlers,Any,none (read),harness,,handler,none
