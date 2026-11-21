@@ -199,6 +199,13 @@ export const EXEMPT: Record<string, string> = {
   turnjigskip: 'Dalexlol: ON, performance skip for unseen townies, fired in natural play (91 games); no forced repro',
   unseenrelax: 'Dalexlol unseen route cost PR: ON (import 2026-11-20), route-cost switch for unseen townies, judged by natural games (no off arm); no forced repro',
   iafailmemo: 'Dalexlol unseen route cost PR: default off (his own advice: until a watchdog A/B), route-cost memo for townies, judged by natural games (no off arm); no forced repro',
+  // contributor PR #584 (watchdog policy, no EA bug to reproduce; contributor experimental build 2026-11-21)
+  watchdogocean: 'contributor PR #584: idle-watchdog policy (Sims in EA ocean play not reset as idle on an unroutable spot); judged by the watchdog reset counters in natural Isla Paradiso jobs, no forced repro',
+  watchdogfailcap: 'contributor PR #584: idle-watchdog policy (no third "route plans failing" reset without a successful plan); judged by its counters in natural jobs, no forced repro',
+  // contributor PR #496 (docs/854; contributor experimental build 2026-11-21)
+  fakemetaseen: 'contributor PR #496: FakeMetaAutonomy pool NPCs only onto seen / held lots; judged by its counters in the 11-19 natural soak (17 jobs PASS), no forced repro',
+  fakemetabackoff: 'contributor PR #496: lot backoff for failing FakeMetaAutonomy spawns; never run in game, no forced repro',
+  placeholderunseen: 'contributor PR #496: NPC child placeholders kept on unseen home lots; never run in game, no forced repro',
   // contributor PR post/fglinbound-1121 (docs/682 §9)
   fglinboundhh: 'contributor: default off, household variant of fglinbound (same code path, the household gate lifted); its repro is fglinbound-check, whose live / live:big compares call the path directly; turned on only after fglinbound shadow runs (docs/682 §9.8 step 3)',
 };

@@ -68,3 +68,6 @@
 #   doorshare
 # perf: exact one-pass CommodityInteractionMap.RemoveObject (docs/313, 2026-11-21), default off, NOT RUN:
 #   commodmapfast commodmapshadow
+# contributor experimental build 2026-11-21 (PRs #583 #584 #496 #619), default off here, no in-game off/on verdict recorded in this repo:
+#   watchdogocean watchdogfailcap fakemetaseen fakemetabackoff placeholderunseen travelcarnew
+#   playpenflags voodoobindwait saunawoohoopreg lotentrypet horselotentry
