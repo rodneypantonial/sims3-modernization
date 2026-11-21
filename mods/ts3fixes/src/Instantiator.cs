@@ -782,6 +782,8 @@ namespace Ts3Fixes
         [Tunable] public static bool kFireTrapCount = true;    // firetrapcount (docs/570 §5): firefighter "free N Sims" counts trapped Sims who left the lot or sit in hidden apartment units
         [Tunable] public static bool kFireActiveJob = true;    // fireactivejob (docs/570 §1): the firefighter's current emergency (a static) survives a world quit; afterwards every new emergency is dropped
         [Tunable] public static bool kFireLeftover = false;    // fireleftover (docs/862): an emergency whose last rescue / window-fire task nobody can do any more ends instead of waiting out the timeout
+        [Tunable] public static bool kAptGasLeak = false;    // aptgasleak (docs/863): an earthquake gas leak on a stove inside a hidden apartment unit (nobody can reach it) is dropped instead of holding the job open
+        [Tunable] public static bool kAptPossess = false;    // aptpossess (docs/863): a ghost-hunter spirit that hops after a failed exorcise never lands in a hidden apartment unit
         [Tunable] public static bool kFireGreet = false;    // firegreet (docs/681): the firefighter is greeted on the emergency lot again after EA drops the greeting (stepped out) or never gave it
         [Tunable] public static bool kFakeMetaSeen = false;   // opt-in until measured: FakeMetaAutonomy spawns pool Sims only onto seen lots (FakeMetaSeen.cs, docs/854)
         [Tunable] public static bool kFakeMetaBackoff = false;   // opt-in until measured: a lot whose fake-autonomy Sim died within 25 sim minutes is held out for 3 sim hours (FakeMetaSeen.cs, docs/854)
