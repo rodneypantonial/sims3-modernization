@@ -901,6 +901,75 @@
         "selftest stiltremove-test.h, docs/858"
       ],
       "reason": "NOT passed in game yet (the removal itself is not player-verified); on for tester feedback (user request 2026-11-21). Stilts of a lot placed from the Library or the town bin are keyed by their grid point at import, so they can be removed again. Changes save data once: the stilt keys an earlier import broke are repaired at load and written by the next save."
+    },
+    {
+      "id": "stiltplacekeep",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "StiltRemove": {
+            "PlaceKeep": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "StiltRemove": {
+            "PlaceKeep": "0"
+          }
+        }
+      },
+      "evidence": [
+        "selftest stiltremove-test.h (PlaceKeep: fake place frame, patch on buffers)",
+        "docs/858 §5 (static analysis of the place and delete paths)"
+      ],
+      "reason": "NOT passed in game yet (the test harness cannot place foundations; selftests and static analysis only); on for beta tester checks in Build mode (user decision 2026-11-21). Placing a foundation or deck next to a stilted foundation deleted the stilts on the shared edge: the stilt removal now runs after the cell write with the neighbour check, as delete does."
+    },
+    {
+      "id": "stiltpartclamp",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "StiltRemove": {
+            "PartClamp": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "StiltRemove": {
+            "PartClamp": "0"
+          }
+        }
+      },
+      "evidence": [
+        "selftest stiltremove-test.h (PartClamp: index math for lot sides 10-64, the four clamp stubs, patch on buffers)",
+        "docs/858 §6 (static analysis of the partition index sites)"
+      ],
+      "reason": "NOT passed in game yet (the test harness cannot place foundations; selftests and static analysis only); on for beta tester checks in Build mode (user decision 2026-11-21). A stilt on the far edge of a 40- or 64-tile lot side was filed in the wrong stilt partition (or past the array) and could not be removed: the index is clamped to the last column / row."
+    },
+    {
+      "id": "paintshift",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "PaintShift": {
+            "Enabled": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "PaintShift": {
+            "Enabled": "0"
+          }
+        }
+      },
+      "evidence": [
+        "selftest paintshift-test.h",
+        "docs/859 (static analysis of the lot import)"
+      ],
+      "reason": "NOT passed in game yet (never run in game; selftests and static analysis only); on for beta tester checks (user decision 2026-11-21). A lot placed from the Library or the town bin onto a bigger lot, centred where the sizes differ by an odd number of tiles, got its terrain paint half a tile off from the house: the paint now uses the same offsets as the objects."
     }
   ],
   "knownIssues": [
