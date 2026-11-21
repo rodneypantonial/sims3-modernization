@@ -278,6 +278,63 @@ static void TestUncutCeil() {
     printf("KdUncutCeilMs (docs/264): counters v198; ini range 0 / 5-300 s, ceiling only for a job with no deadline, switch and 0 off, "
            "hit counter + max only for a capped ceiling job ok\n");
 }
+// docs/197 §7a [RouteAsync] KdScopeTable: a nested plan's scope send / clear no longer costs the outer route its scope
+static void TestKdScopeTable() {
+    Ts3nCounters& k = ts3native_counters;
+    const LONG on0 = g_kdTabOn, ex0 = k.kdExMode, pm0 = k.pdMode, sc0 = k.kdCeilUs, nc0 = k.kdNpcCeilUs;
+    const DWORD h0 = g_kdScopeH;
+    const bool open0 = t_pd.open;
+    t_pd.open = false;
+    k.kdExMode = 1, k.pdMode = 1, k.kdCeilUs = 10000000, k.kdNpcCeilUs = 2000000;
+    const DWORD h1 = 0x25D9B68C, h2 = 0x25D9B68D;
+    char why[200];
+    for (int on = 0; on <= 1; on++) {
+        g_kdTabOn = on, g_kdScopeH = 0, memset(g_ksTab, 0, sizeof(g_ksTab)), g_kdEvN = 0;
+        // nested plan: h1 unseen, h2 household, h2 over -> h1 still unseen (on); off: h2 overwrote it, h1 unknown = exempt
+        KdScopeSet(h1, 2), KdScopeSet(h2, 1);
+        KdScopeClear(h2);
+        if (on) assert(KdSyncCeilUs(h1) == 0 && KdKnownUnseen(h1));
+        else {
+            assert(KdSyncCeilUs(h1) == 10000000 && !t_kdSeen);
+            KdScopeWhy(h1, why, sizeof(why));
+            assert(strstr(why, "slot empty") && strstr(why, "overwritten by route 25D9B68D") && strstr(why, "set "));
+        }
+        // Take(h2) leaves h1 (on)
+        KdScopeSet(h1, 2, 7), KdScopeSet(h2, 3);
+        assert(KdScopeTake(h2) == 3);
+        if (on) assert(KdScopePeek(h1) == 2 && RfIaPeek(h1) == 7 && !KdScopePeek(h2) && KdScopeHNow() == h1);
+        // clear(h1) then h1 unknown, and the diag says who ended it
+        KdScopeClear(h1);
+        assert(!KdScopePeek(h1) && KdSyncCeilUs(h1) == 10000000 && !t_kdSeen);
+        KdScopeWhy(h1, why, sizeof(why));
+        assert(on ? strstr(why, "cleared by op 12") != NULL : strstr(why, "overwritten by route 25D9B68D") != NULL);
+        // household h1 stays exempt, taken scope is gone
+        KdScopeSet(h1, 1);
+        assert(KdSyncCeilUs(h1) == 10000000 && t_kdSeen && !KdKnownUnseen(h1));
+        assert(KdScopeTake(h1) == 1 && !KdScopePeek(h1));
+        KdScopeWhy(h1, why, sizeof(why));
+        assert(strstr(why, "taken by START"));
+        KdScopeClear(h1);
+        // JobYield park (jobyield.cpp JySlots): the parked scope leaves the slot / table, so a handle-0 read cannot take it
+        KdScopeSet(h1, 2, 7);
+        LONG ps = 0, pi = 0;
+        assert(KdScopePark(h1, &ps, &pi) && ps == 2 && pi == 7 && !KdScopePeek(h1) && !KdScopeFor(0) && !KdScopePark(h1, &ps, &pi));
+        KdScopeUnpark(h1, ps, pi);
+        assert(KdScopePeek(h1) == 2 && RfIaPeek(h1) == 7 && KdScopeFor(0) == 2);
+        KdScopeClear(h1);
+    }
+    // eviction of the oldest of 9
+    g_kdTabOn = 1, memset(g_ksTab, 0, sizeof(g_ksTab));
+    for (DWORD i = 1; i <= 9; i++) KdScopeSet(0x25000000 + i, 2);
+    assert(!KdScopePeek(0x25000001) && KdScopePeek(0x25000002) == 2 && KdScopePeek(0x25000009) == 2 && KdScopeHNow() == 0x25000009);
+    KdScopeWhy(0x25000001, why, sizeof(why));
+    assert(strstr(why, "overwritten by route 25000009"));
+    memset(g_ksTab, 0, sizeof(g_ksTab));
+    g_kdTabOn = on0, g_kdScopeH = h0, t_pd.open = open0;
+    k.kdExMode = ex0, k.pdMode = pm0, k.kdCeilUs = sc0, k.kdNpcCeilUs = nc0;
+    printf("KdScopeTable (docs/197 7a): nested plan keeps the outer scope (on) / old exempt result (off), Take and Clear act on one handle, "
+           "household and unknown stay exempt, oldest of 9 evicted, JobYield park empties and refills the slot, diag line ok\n");
+}
 static void TestPlanDeadline() {
     static_assert(offsetof(Ts3nCounters, fbjdMode) == 0x440C && offsetof(Ts3nCounters, fbjdCapped) == 0x441C &&
                       offsetof(Ts3nCounters, fbjdLines) == 0x4438 && offsetof(Ts3nCounters, owReady) == 0x443C &&

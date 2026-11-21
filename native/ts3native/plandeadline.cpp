@@ -117,16 +117,125 @@ static bool KdExempt(const AsyncJob* j) {
 static LONG KdCeilUs(LONG scope) { return scope == 3 ? ts3native_counters.kdNpcCeilUs : ts3native_counters.kdCeilUs; }
 static DWORD g_kdScopeH;
 static LONG g_kdScope, g_kdScopeIa;
+// [RouteAsync] KdScopeTable (docs/197 §7a, default 0): off = the single slot above (g_kdScopeH), on = this table, keyed by route handle,
+// so a plan nested between an outer plan's scope send and its IC cannot overwrite or clear the outer route's scope. Sim thread only
+// (UdTextMsg ops 10-13, START, SyncIc, the plan hooks; the worker reads t_kdJobScope / AsyncJob::kdScope), so no lock.
+static LONG g_kdTabOn;
+struct KsEnt { DWORD h, tick, seq; LONG scope, ia; };
+static KsEnt g_ksTab[8];
+static DWORD g_kdSeq;
+// the last 16 set / take / clear events, for the "scope unknown" line (always on)
+enum { KE_SET = 1, KE_TAKE, KE_CLEAR, KE_OVER, KE_WIPE };
+struct KdEv { DWORD h, other, tick; u8 op; };
+static KdEv g_kdEv[16];
+static DWORD g_kdEvN;
+static void KdEvAdd(DWORD h, u8 op, DWORD other) { KdEv& e = g_kdEv[g_kdEvN++ & 15]; e.h = h, e.op = op, e.other = other, e.tick = GetTickCount(); }
+static KsEnt* KdTabFind(DWORD h) { if (h) for (KsEnt& e : g_ksTab) if (e.h == h) return &e; return NULL; }
+static KsEnt* KdNewest() { KsEnt* r = NULL; for (KsEnt& e : g_ksTab) if (e.h && (!r || (LONG)(e.seq - r->seq) > 0)) r = &e; return r; }
+// the handle the old slot would hold: the most recently set live one. Callers that read "the plan ts3fixes is running"
+static DWORD KdScopeHNow() { if (!g_kdTabOn) return g_kdScopeH; const KsEnt* e = KdNewest(); return e ? e->h : 0; }
+// scope of `handle`, handle 0 = the plan ts3fixes is running (most recent live). 0 = none. Same as the old inline test when off.
+static LONG KdScopeFor(DWORD handle) {
+    if (!g_kdTabOn) return g_kdScopeH && (!handle || g_kdScopeH == handle) ? g_kdScope : 0;
+    const KsEnt* e = handle ? KdTabFind(handle) : KdNewest();
+    return e ? e->scope : 0;
+}
+// scope of exactly this handle (no handle-0 reading); off keeps the old expression, stale scope with an empty slot included
+static LONG KdScopeExact(DWORD handle) {
+    if (!g_kdTabOn) return g_kdScopeH == handle ? g_kdScope : 0;
+    const KsEnt* e = KdTabFind(handle);
+    return e ? e->scope : 0;
+}
+// table on: this handle's entry (a free one, else the oldest is evicted) holds scope / ia and becomes the newest
+static void KdTabPut(DWORD handle, LONG scope, LONG ia) {
+    KsEnt* e = KdTabFind(handle);
+    if (!e) {  // free slot, else evict the oldest
+        for (KsEnt& c : g_ksTab) if (!c.h) { e = &c; break; }
+        if (!e) {
+            e = &g_ksTab[0];
+            for (KsEnt& c : g_ksTab) if ((LONG)(c.seq - e->seq) < 0) e = &c;
+            KdEvAdd(e->h, KE_OVER, handle);
+        }
+    }
+    e->h = handle, e->scope = scope, e->ia = ia, e->seq = ++g_kdSeq, e->tick = GetTickCount();
+}
 // sim thread (UdTextMsg): this route's scope, good for its next START only; ia = the routefail interaction id sent with it (RfIaName)
-static void KdScopeSet(DWORD handle, LONG scope, LONG ia) { g_kdScopeH = handle, g_kdScope = scope, g_kdScopeIa = ia, ts3native_counters.kdScopeN++; }
-static LONG RfIaPeek(DWORD handle) { return handle && g_kdScopeH == handle ? g_kdScopeIa : 0; }  // START, before KdScopeTake
-static LONG KdScopePeek(DWORD handle) { return handle && g_kdScopeH == handle ? g_kdScope : 0; }  // docs/288 §4
+static void KdScopeSet(DWORD handle, LONG scope, LONG ia) {
+    ts3native_counters.kdScopeN++;
+    if (!g_kdTabOn) {
+        if (g_kdScopeH && g_kdScopeH != handle) KdEvAdd(g_kdScopeH, KE_OVER, handle);
+        g_kdScopeH = handle, g_kdScope = scope, g_kdScopeIa = ia;
+    } else {
+        if (!handle) return;
+        KdTabPut(handle, scope, ia);
+    }
+    KdEvAdd(handle, KE_SET, 0);
+}
+// JobYield (jobyield.cpp JySlots) parks a refused route's scope while its task sleeps and puts it back after: not a new
+// answer (no kdScopeN, no SET event). With the table on, the parked entry must leave the table too, or a handle-0 read
+// (KdNewest) by another plan meanwhile would take the sleeping route's scope, which the old slot never allowed.
+static bool KdScopePark(DWORD h, LONG* scope, LONG* ia) {
+    if (!g_kdTabOn) {
+        if (g_kdScopeH != h) return false;
+        *scope = g_kdScope, *ia = g_kdScopeIa, g_kdScopeH = 0;
+        return true;
+    }
+    KsEnt* e = KdTabFind(h);
+    if (!e) return false;
+    *scope = e->scope, *ia = e->ia, e->h = 0;
+    return true;
+}
+static void KdScopeUnpark(DWORD h, LONG scope, LONG ia) {
+    if (!g_kdTabOn) g_kdScopeH = h, g_kdScope = scope, g_kdScopeIa = ia;
+    else if (h) KdTabPut(h, scope, ia);
+}
+static LONG RfIaPeek(DWORD handle) {  // START, before KdScopeTake
+    if (!g_kdTabOn) return handle && g_kdScopeH == handle ? g_kdScopeIa : 0;
+    const KsEnt* e = KdTabFind(handle);
+    return e ? e->ia : 0;
+}
+static LONG KdScopePeek(DWORD handle) { return handle ? KdScopeExact(handle) : 0; }  // docs/288 §4
 static LONG KdScopeTake(DWORD handle) {
-    const LONG s = handle && g_kdScopeH == handle ? g_kdScope : 0;
-    g_kdScopeH = 0;
+    const LONG s = handle ? KdScopeExact(handle) : 0;
+    if (!g_kdTabOn) {
+        if (g_kdScopeH && g_kdScopeH != handle) KdEvAdd(g_kdScopeH, KE_WIPE, handle);
+        else if (g_kdScopeH) KdEvAdd(handle, KE_TAKE, 0);
+        g_kdScopeH = 0;
+    } else if (KsEnt* e = KdTabFind(handle)) {
+        e->h = 0;
+        KdEvAdd(handle, KE_TAKE, 0);
+    }
     return s;
 }
-static void KdScopeClear(DWORD handle) { if (g_kdScopeH == handle) g_kdScopeH = 0; }  // the plan is over: not an answer for a later plan
+static void KdScopeClear(DWORD handle) {  // the plan is over: not an answer for a later plan
+    if (!g_kdTabOn) {
+        if (g_kdScopeH == handle) { g_kdScopeH = 0; if (handle) KdEvAdd(handle, KE_CLEAR, 0); }
+    } else if (KsEnt* e = KdTabFind(handle)) {
+        e->h = 0;
+        KdEvAdd(handle, KE_CLEAR, 0);
+    }
+}
+// "scope unknown" lines: what the slot held, and when this route's scope was set and how it ended (ring of the last 16 events)
+static void KdScopeWhy(DWORD h, char* out, size_t n) {
+    const DWORD cur = KdScopeHNow();
+    char slot[40], hist[120] = "no set of it in the last 16 events";
+    if (cur) _snprintf_s(slot, sizeof(slot), _TRUNCATE, "slot route %08lX", cur); else strcpy_s(slot, "slot empty");
+    const DWORD now = GetTickCount(), cnt = g_kdEvN < 16 ? g_kdEvN : 16;
+    const KdEv* end = NULL;
+    for (DWORD i = 0; i < cnt && h; i++) {
+        const KdEv& e = g_kdEv[(g_kdEvN - 1 - i) & 15];
+        if (e.h != h) continue;
+        if (e.op != KE_SET) { if (!end) end = &e; continue; }
+        const DWORD ago = now - e.tick;
+        char how[60] = "still held";
+        if (end && end->op == KE_CLEAR) strcpy_s(how, "cleared by op 12 of this route");
+        else if (end && end->op == KE_TAKE) strcpy_s(how, "taken by START");
+        else if (end) _snprintf_s(how, sizeof(how), _TRUNCATE, end->op == KE_OVER ? "overwritten by route %08lX" : "wiped by START of route %08lX", end->other);
+        _snprintf_s(hist, sizeof(hist), _TRUNCATE, "set %lu ms ago, %s", ago, how);
+        break;
+    }
+    _snprintf_s(out, n, _TRUNCATE, "%s, route %08lX: %s", slot, h, hist);
+}
 static __declspec(thread) bool t_kdSeen, t_kdNpc;  // this sync plan's scope was known (log only); it is a seen NPC's
 // docs/197 §7 [RouteAsync] KdCutCamRecheck: a cut of a route known unseen tests its start and goals against the camera of the last sim
 // pass, because the scope was read once, at START. The worker may not call the frustum query, so this is the reach rule only, in xz:
@@ -212,7 +321,7 @@ static bool KdCamHold(LONGLONG now, LONGLONG* dl) {
 static LONG KdSyncCeilUs(DWORD handle) {
     const Ts3nCounters& k = ts3native_counters;
     if (k.kdExMode != 1 || k.pdMode != 1 || t_pd.open) return 0;
-    const LONG s = g_kdScopeH && (!handle || g_kdScopeH == handle) ? g_kdScope : 0;
+    const LONG s = KdScopeFor(handle);
     if (s == 2) return 0;
     t_kdSeen = s != 0, t_kdNpc = s == 3;
     return KdCeilUs(s);
@@ -221,7 +330,7 @@ static LONG KdSyncCeilUs(DWORD handle) {
 // mark, t_kdJobScope). No scope answer yet = unknown = household: not known unseen (rc1110c)
 static bool KdKnownUnseen(DWORD handle) {
     if (ts3native_counters.kdExMode != 1) return true;
-    return t_kdJobScope ? t_kdJobScope == 2 : g_kdScopeH == handle && g_kdScope == 2;
+    return t_kdJobScope ? t_kdJobScope == 2 : KdScopeExact(handle) == 2;
 }
 
 // docs/264 (issue #338) [RouteAsync] KdUncutCeilMs: the never-freeze-forever guard. A route job that would run with no deadline
@@ -253,6 +362,7 @@ static void ReadKindDeadlines(const wchar_t* ini) {
     k.kdCeilUs = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdSeenCeilMs", 10000, ini), 1000, 60000) * 1000;
     k.kdNpcCeilUs = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdSeenNpcCeilMs", 2000, ini), 1000, 60000) * 1000;
     k.kdCamMode = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdCutCamRecheck", 0, ini), 0, 2);
+    g_kdTabOn = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdScopeTable", 0, ini), 0, 1);  // docs/197 §7a
     g_pfMode = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"PlayerFirst", 0, ini), 0, 1);  // docs/631
     if (g_pfMode) Log("route async: PlayerFirst=1: queued jobs of player-ordered routes (ts3fixes playerfirst) run first (docs/631)");
     g_kdUfCap = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KdUnseenForeignCap", 0, ini), 0, 2);
@@ -266,7 +376,7 @@ static void ReadKindDeadlines(const wchar_t* ini) {
         Log("route async: KindDeadlines=1 own Plan %ld Replan %ld PlanFromPoint %ld ReplanFromPosition %ld, A10 foreign %ld, foreign "
             "Plan %ld, probe %ld ms", k.kdUs[0] / 1000, k.kdUs[1] / 1000, k.kdUs[2] / 1000, k.kdUs[3] / 1000, k.kdUs[4] / 1000,
             k.kdUs[5] / 1000, k.kdUs[6] / 1000);
-    Log("route async: KdExemptSeen=%ld KdSeenCeilMs=%ld KdSeenNpcCeilMs=%ld KdCutCamRecheck=%ld", k.kdExMode, k.kdCeilUs / 1000, k.kdNpcCeilUs / 1000, k.kdCamMode);
+    Log("route async: KdExemptSeen=%ld KdSeenCeilMs=%ld KdSeenNpcCeilMs=%ld KdCutCamRecheck=%ld KdScopeTable=%ld", k.kdExMode, k.kdCeilUs / 1000, k.kdNpcCeilUs / 1000, k.kdCamMode, g_kdTabOn);
     // docs/264 (issue #338): 0 = off, else 5-300 s; the player-facing setting (ini comment and README say what a player sees)
     k.kdUncutCeilUs = UcIniUs(GetPrivateProfileIntW(L"RouteAsync", L"KdUncutCeilMs", 30000, ini));
     k.kdUncutMode = k.kdUncutCeilUs > 0 ? 1 : 0;
@@ -604,7 +714,7 @@ static LONGLONG PdNow() { LARGE_INTEGER q; QueryPerformanceCounter(&q); return q
 
 // sim thread, a session just opened: a known unseen plan's first cut asks the camera. handle 0 = non-IC plan: the plan ts3fixes runs
 static void KdCamSyncArm(DWORD handle) {
-    t_kdCam = !t_pd.ceil && (t_ufSess || (g_kdScopeH && (!handle || g_kdScopeH == handle) && g_kdScope == 2)) ? 1 : 0, t_kdCamN = 0, t_kdCamNote = 0, t_kdCamView = 0;
+    t_kdCam = !t_pd.ceil && (t_ufSess || KdScopeFor(handle) == 2) ? 1 : 0, t_kdCamN = 0, t_kdCamNote = 0, t_kdCamView = 0;
 }
 
 static void PdOpen(int entry, LONG us) {
@@ -628,7 +738,12 @@ static void KdCeilClose(const PdSess& s, LONGLONG now, bool ok) {
     InterlockedIncrement(&k.kdExempt);
     Max(&k.kdExemptMaxUs, us);
     const char* res = ok ? "succeeded" : "failed";
-    const char* scope = t_kdSeen ? "seen" : "scope unknown";
+    char scope[200] = "seen";
+    if (!t_kdSeen) {  // docs/197 §7a: what the slot held and what became of this route's scope
+        char why[160];
+        KdScopeWhy(s.handle, why, sizeof(why));
+        _snprintf_s(scope, sizeof(scope), _TRUNCATE, "scope unknown (%s)", why);
+    }
     if (s.wouldUs > 0 && us >= s.wouldUs) {
         InterlockedIncrement(&k.kdWouldCut);
         Log("kd exempt: would cut sync route %08lX, %ld ms %s, cap %ld ms, entry %s, %s", s.handle, us / 1000, res, s.wouldUs / 1000, s.ent, scope);
@@ -698,7 +813,7 @@ static LONG PdIcUs(int why, bool scLast) {
 // change it mid-plan.
 static LONG PdScopeAt(DWORD handle) {
     if (t_ufSess) return 2;
-    return g_kdScopeH && (!handle || g_kdScopeH == handle) ? g_kdScope : 0;
+    return KdScopeFor(handle);  // KdScopeTable: the table, not the old slot
 }
 static void PdIcBegin(LONG us, int kind, int why, const char* entry, DWORD handle) {
     const LONG scope = PdScopeAt(handle);
@@ -718,7 +833,7 @@ static bool PdPlanBegin() {
     const LONG scope = PdScopeAt(0);
     PdOpen(1, ceil ? ceil : k.pdUs);
     t_pd.scope = scope;
-    if (ceil) t_pd.ceil = true, t_pd.wouldUs = k.pdUs, t_pd.handle = g_kdScopeH;
+    if (ceil) t_pd.ceil = true, t_pd.wouldUs = k.pdUs, t_pd.handle = KdScopeHNow();
     else KdCamSyncArm(0);
     return true;
 }

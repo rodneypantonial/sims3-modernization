@@ -14941,6 +14941,7 @@ int main(int argc, char** argv) {
     TestBoatProbe();
     TestReplanDedupe();
     TestPlanDeadline();
+    TestKdScopeTable();
     TestTaskServe();  // docs/637
     TestTaskSeam();   // docs/308
     TestRouteSpeed();  // docs/663

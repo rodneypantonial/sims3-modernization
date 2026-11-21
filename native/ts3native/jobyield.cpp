@@ -25,11 +25,7 @@ struct JySlots {
         g_scSyncH = 0;
         return true;
     }
-    bool TakeScope(unsigned h, long* scope, long* ia) {
-        if (g_kdScopeH != h) return false;
-        *scope = g_kdScope, *ia = g_kdScopeIa, g_kdScopeH = 0;
-        return true;
-    }
+    bool TakeScope(unsigned h, long* scope, long* ia) { return KdScopePark(h, scope, ia); }  // the old slot, or the KdScopeTable entry
     bool TakeUf(unsigned h) {
         if (g_ufH != h) return false;
         g_ufH = 0;
@@ -37,7 +33,7 @@ struct JySlots {
     }
     void PutWhy(unsigned h, int why) { g_rfbHandle = h, g_rfbWhy = why; }
     void PutSc(unsigned h) { g_scSyncH = h; }
-    void PutScope(unsigned h, long scope, long ia) { g_kdScopeH = h, g_kdScope = scope, g_kdScopeIa = ia; }  // not KdScopeSet: no new answer
+    void PutScope(unsigned h, long scope, long ia) { KdScopeUnpark(h, scope, ia); }  // not KdScopeSet: no new answer
     void PutUf(unsigned h) { g_ufH = h; }
 };
 
