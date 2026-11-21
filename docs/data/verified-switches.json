@@ -1030,6 +1030,25 @@
         "repro burnttilefloor-live runs before publish"
       ],
       "reason": "NOT passed in game yet (repro burnttilefloor-live pending); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Sims no longer keep trying to mop burnt tiles on an upper level they cannot reach; that loop made NRaas Overwatch reset them with \"Unroutable Sim Found\"."
+    },
+    {
+      "id": "messclearunreach",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kMessClearUnreach": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kMessClearUnreach": "False"
+        }
+      },
+      "evidence": [
+        "docs/277 §10 (routefail lines of 1013 harness logs: MopBurnt and MopPuddle loops)",
+        "repro messclear-live runs before publish"
+      ],
+      "reason": "NOT passed in game yet (repro messclear-live pending); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). Sims stop walking to burnt tiles and puddles they cannot reach, and those get cleaned with EA's own clear (PuddleManager.RemovePuddle, World.SetBurnt false) in a Sim.MopFloor.Run hook; saves get only EA's normal clean state. While it is on, burnttilefloor's list cut is off by design; burnttilefloor stays on for its memo of failed tiles."
     }
   ],
   "knownIssues": [
