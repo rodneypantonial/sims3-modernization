@@ -11,6 +11,9 @@
 # +13 2026-11-15: phase-20261115-2218 smallfix.txt (s56), off BROKEN / on FIXED (docs/582 batches 5b-7, residentspawnslot).
 # +3 2026-11-19, moved to default ON at the 2026-11-20 import (so no longer listed: houseboatlegmemo houseboatgangwayrescue boatroamcap): s128 Isla Paradiso, one load off then on (repro-off/on, roam-off/on), off BROKEN / on FIXED, 0 errors (docs/853 §1).
 
+# +1 2026-11-21 (contributor experimental build): tomb-sting repro tombsting-live, Isla Paradiso, off BROKEN (3D sting) / on FIXED (2D sting), control unchanged.
+tombsting
+
 # ---- excluded (default off, not in the set), by reason
 # perf experiments / sim-thread offload and caching (not EA gameplay fixes):
 #   autlivelate cachedreflection caneearly casmemo detailprio disposespread doormirror drivertaskasync failrepeat farthestsorted
