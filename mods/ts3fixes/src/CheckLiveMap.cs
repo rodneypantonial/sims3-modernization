@@ -350,6 +350,8 @@ namespace Ts3Fixes
                 case "privateeyecase": return EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpLive(typeof(PeBreakHook), 0, "sPeDoor", sPeDoor, null), EpLive(typeof(PeGarbageHook), 0, "sPeGarbageOk", sPeGarbageOk, typeof(bool))), EpLive(typeof(PeMailboxHook), 0)), EpLive(typeof(PeMailHook), 0)), EpLive(typeof(PeSnoopHook), 0)), EpLive(typeof(PeStakeoutHook), 0, "sPeResult", sPeResult, null));
                 case "professorterm": return EpLive(typeof(ProfessorTermHook), 1);
                 case "promcarpool": return EpLive(typeof(PromCarpoolHook), 0, "sPcCarpool", sPcCarpool, null);
+                case "promdatelimo": return EpJoin(EpJoin(EpLive(typeof(PdlCarHook), 1), EpLive(typeof(PdlPromHook), 1)), EpLive(typeof(PllPickHook), 1));
+                case "promlimolot": return EpJoin(EpJoin(EpLive(typeof(PdlCarHook), 1), EpLive(typeof(PdlPromHook), 1)), EpLive(typeof(PllPickHook), 1));
                 case "promoteshift": return EpLive(typeof(PromoteShiftHook), 2);
                 case "protestexit": return EpLive(typeof(B12PeHook), 1);
                 case "puddlereach": return EpLive(typeof(PrTestHook), 1);

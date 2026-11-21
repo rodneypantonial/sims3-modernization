@@ -615,6 +615,8 @@ namespace Ts3Fixes
         [Tunable] public static bool kBirthdayAgers = true;    // birthdayagers (docs/571 §1): birthday party records only the first Sim who ages up
         [Tunable] public static bool kSneakOutListener = true;    // sneakoutlistener (docs/571 §2): a caught teen's left-over sneak-out listener gives Snuck Out on the next trip (school carpool)
         [Tunable] public static bool kPromCarpool = true;    // promcarpool (docs/571 §3): the prom limo carpool repeats weekly after the prom
+        [Tunable] public static bool kPromDateLimo = false;    // promdatelimo (docs/861 §1): a household teen's NPC prom date is told to board the limo, or sent to prom when left behind
+        [Tunable] public static bool kPromLimoLot = false;    // promlimolot (docs/861 §2): the prom limo picks up at the current active household's home, not the home it had when prom was announced
         [Tunable] public static bool kCurfewAlarm = true;    // curfewalarm (docs/571 §4): curfew police alarm handle survives a world quit
         [Tunable] public static bool kTrickOrTreatAlarm = true;    // trickortreatalarm (docs/571 §5): the weekly NPC trick-or-treat alarm survives a save/load (NPC trick-or-treaters every week)
         [Tunable] public static bool kSnowFightJoinWait = true;    // snowfightjoinwait (docs/571 §6): the snowball arena join-wait counter never resets, later games end at once

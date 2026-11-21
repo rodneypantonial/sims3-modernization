@@ -67,3 +67,5 @@
 #   doorshare
 # perf: exact one-pass CommodityInteractionMap.RemoveObject (docs/313, 2026-11-21), default off, NOT RUN:
 #   commodmapfast commodmapshadow
+# EA bug fix: prom date boards the limo or is sent to prom; the limo picks up at the current home (docs/861, 2026-11-21), default off, NOT RUN:
+#   promdatelimo promlimolot

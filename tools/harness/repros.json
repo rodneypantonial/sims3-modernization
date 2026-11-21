@@ -114074,6 +114074,104 @@
     ]
   },
   {
+    "id": "promdatelimo-live",
+    "bug": "EA's prom limo never tells a household teen's date to get in when the date reached the house after the limo was dispatched or is busy, and nothing sends the date to prom on its own (player report); the limo also picks up at the home the household had when prom was announced (docs/861)",
+    "fix": "ts3fixes PromDateLimo.cs: promdatelimo, promlimolot (both default off), docs/861",
+    "save": "any world with a selected Sim and an NPC on a lot that is not their home (a visitor or a townie on a community lot); no prom needed",
+    "note": "Cheap stand-in: PromDateLimoCheck 'run' runs the hooks' decisions on live Sims (an NPC visitor as the selected Sim's date: limo push and prom-entry send; a household Sim as the date and an NPC prom-goer: never); PromLimoLotCheck 'run' tries the readonly-field write on a throwaway CarpoolData and reads the scheduled prom limo's pickup lot. Read-only on the world: nothing is pushed. The real limo and prom entry need a prom day between 16:00 and 18:00: testers verify those (docs/861 §4).",
+    "expect": "Both checks 'verdict: OK' with the switches off and on (the decisions do not depend on the switch; the hooks read it), 'swap live'. Never UNEXPECTED. 'result' shows counters 1535-1542.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "promdatelimo": false,
+          "promlimolot": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PromDateLimoCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 2,
+        "note": "off: decisions and swaps"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PromLimoLotCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 2,
+        "note": "off: readonly write and pickup lot"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "promdatelimo": true,
+          "promlimolot": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PromDateLimoCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 2,
+        "note": "on"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PromLimoLotCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 2,
+        "note": "on"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PromDateLimoCheck",
+          "args": [
+            "result"
+          ]
+        }
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "promdatelimo": false,
+          "promlimolot": false
+        },
+        "note": "back to the default"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "promdatelimo": false,
+          "promlimolot": false
+        }
+      }
+    ]
+  },
+  {
     "id": "sweep-ep1",
     "bug": "docs/267: EP1 World Adventures has 286 script types, 271 never seen in our runs; their interactions never ran under our routing / Mono changes",
     "fix": "measurement only: forced interaction sweep of every definition the pack brings (docs/268)",
