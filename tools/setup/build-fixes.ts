@@ -644,6 +644,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kFireActiveJob value="True" />
     <kFireTrapCount value="True" />
     <kFireLeftover value="False" />
+    <kFireGreet value="False" />
     <kBirthdayAgers value="True" />
     <kSneakOutListener value="True" />
     <kPromCarpool value="True" />

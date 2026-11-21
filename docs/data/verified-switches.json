@@ -1073,6 +1073,44 @@
       "reason": "NOT passed in game yet (needs a fire on a lot with pets); on for tester feedback (user decision 2026-11-21). EA bug fix with an exact answer (same nearest object, no plan), so household pets are included (CLAUDE.md household rule: EA bug fixes stay); humans unchanged. A pet reacting to a fire no longer plans a route to it that only the human reaction uses."
     },
     {
+      "id": "fireleftover",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kFireLeftover": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kFireLeftover": "False"
+        }
+      },
+      "evidence": [
+        "docs/862 (player report 2026-11-21: \"trying to find the last person to be rescued, but there's nobody left ... that one took 12h\")",
+        "selftest fireleftover (decisions with controls); repro fire-leftover-stuck"
+      ],
+      "reason": "NOT passed in game yet (needs a firefighter emergency whose last rescue or window task nobody can do); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). A firefighter emergency no longer waits hours for its time limit when a rescue was done by another firefighter or the window fires went out another way: after 15 sim-minutes with nothing left, the leftover task is marked done."
+    },
+    {
+      "id": "firegreet",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kFireGreet": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kFireGreet": "False"
+        }
+      },
+      "evidence": [
+        "docs/681 (player report 2026-11-20: the emergency lot's doors stay locked for the firefighter)",
+        "repro fire-greet-lockout (decision with controls)"
+      ],
+      "reason": "NOT passed in game yet (needs a firefighter who steps off the emergency lot mid-job); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). The firefighter is greeted on the emergency lot again after EA drops the greeting (a child carried out, a step outside, a save loaded mid-emergency), so its doors stay open, with EA's own greeting."
+    },
+    {
       "id": "splashroof",
       "status": "verified",
       "on": {
