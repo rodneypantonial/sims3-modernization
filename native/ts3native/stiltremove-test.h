@@ -185,7 +185,7 @@ static void TestStiltPlaceClamp() {
 
 static void TestStiltRemove() {
     static_assert(offsetof(Ts3nCounters, srMode) == 0x6B48 && offsetof(Ts3nCounters, srImportFixed) == 0x6B54 &&
-                      offsetof(Ts3nCounters, srPlaceMode) == 0x6B58 && offsetof(Ts3nCounters, srClamped) == 0x6B64 && sizeof(Ts3nCounters) == 6874 * 4,
+                      offsetof(Ts3nCounters, srPlaceMode) == 0x6B58 && offsetof(Ts3nCounters, srClamped) == 0x6B64 && sizeof(Ts3nCounters) == 6878 * 4,
                   "counters v923 layout after v222 (docs/registry.md)");
     TestStiltPlaceClamp();
     const StKeyFn sKey = g_stKey;
