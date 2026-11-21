@@ -820,6 +820,67 @@
         "docs/197 §7a"
       ],
       "reason": "in-game off/on pair PASS (verdict 2026-11-21). The scope ts3fixes sends per route lives in an 8-entry table keyed by route handle, so a nested plan cannot overwrite or clear another route's scope. Unknown and household scopes stay exempt."
+    },
+    {
+      "id": "tombsting",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kTombSting": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kTombSting": "False"
+        }
+      },
+      "evidence": [
+        "queue beta1121-local 2026-11-21, job tsg-ip-32211 (Isla Paradiso, 8 min, PASS): repro tombsting-live off BROKEN (counter 2176 +0, EA's 3D sting), on FIXED (+1, 2D sting), control sting unchanged, errors 0",
+        "docs/575 §11"
+      ],
+      "reason": "in-game repro passed (off BROKEN / on FIXED). EA bug fix: the tomb-complete sting plays as a 2D sound like EA's other UI stings, so it is heard when the Sim is far from the camera or underground; same IsSelectable gate, notice and return value. Any other sting goes to EA's code."
+    },
+    {
+      "id": "hecklefix",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kHeckleFix": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kHeckleFix": "False"
+        }
+      },
+      "evidence": [
+        "bugfix/heckle-spam (local branch 12f4a141): HeckleFixChecks.cs pure checks, build-fixes.ts builds; in-game check hfx-ip-32214 running 2026-11-21, verdict pending",
+        "docs/860"
+      ],
+      "reason": "NOT passed in game yet; on for tester feedback (user request 2026-11-21). EA bug fix: an autonomous Heckle is refused unless the target is performing, and stale Heckled flags are cleared. Player-ordered heckles keep EA's test; household, selected and unknown-scope actors keep EA's test (Fixes.HouseholdExempt); hecklefixhh (kHeckleFixHousehold) stays off."
+    },
+    {
+      "id": "stiltremove",
+      "status": "verified",
+      "on": {
+        "ini": {
+          "StiltRemove": {
+            "Enabled": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "StiltRemove": {
+            "Enabled": "0"
+          }
+        }
+      },
+      "evidence": [
+        "queue beta1121-local 2026-11-21, job stilt-ip-32212 (Isla Paradiso, 8 min, PASS, no crash): 'OK StiltRemove' applied, 32 stilt keys repaired at load on EA's own Isla Paradiso lots",
+        "selftest stiltremove-test.h, docs/858"
+      ],
+      "reason": "NOT passed in game yet (the removal itself is not player-verified); on for tester feedback (user request 2026-11-21). Stilts of a lot placed from the Library or the town bin are keyed by their grid point at import, so they can be removed again. Changes save data once: the stilt keys an earlier import broke are repaired at load and written by the next save."
     }
   ],
   "knownIssues": [
