@@ -679,7 +679,7 @@
     },
     {
       "id": "travelcarnew",
-      "status": "unverified",
+      "status": "verified",
       "on": {
         "tunables": {
           "kTravelCarNew": "True"
@@ -691,34 +691,134 @@
         }
       },
       "evidence": [
-        "PR #619 (draft) comment 2026-11-20: repro travelcar-live PASS (off new=True BROKEN, on new=False FIXED, 2119=1); a real trip not run"
+        "PR #619 (draft) comment 2026-11-20: in-game repro travelcar-live PASS (Isla Paradiso, Apex + bridge, 9.8 min): off, the rebuilt car is still new after the travel import step (BROKEN); on, not new (FIXED), counter 2119=1; TimeOfPurchase put back both times",
+        "a real trip not run: that travel rebuilds the car through Inventory.ImportContent is inferred from the scripts",
+        "build-fixes.ts builds"
       ],
-      "reason": "held off: EA bug fix that acts on household cars on purpose (a car bought less than 4 days before a trip loses its last New Car Smell days). No household / selected-Sim exemption in code, so the user's household rule keeps it off in this build (it was asked on for tester feedback 2026-11-21)."
+      "reason": "EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay); on for tester feedback (user request 2026-11-21). Draft PR #619. After a travel import, a car that counts as new gets a TimeOfPurchase one day before the new-car window, so New Car Smell does not come back after every trip. It writes that value on household cars (saved). Cost: a car bought less than 4 days before a trip loses its last new-car days."
     },
     {
-      "id": "eabugs500-household",
-      "status": "unverified",
+      "id": "playpenflags",
+      "status": "verified",
       "on": {
         "tunables": {
-          "kPlaypenFlags": "True",
-          "kVoodooBindWait": "True",
-          "kSaunaWooHooPreg": "True",
+          "kPlaypenFlags": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kPlaypenFlags": "False"
+        }
+      },
+      "evidence": [
+        "PR #583 (draft) comment 2026-11-20 (queue pr1120-local: master asi 0.36.295 + the PR package, Apex + bridge): playpenflags in-game check (Bridgeport, earlier gap1b run): own marks cleared, off False / on True, controls ok",
+        "PR #583 comment 2026-11-20: Appaloosa Plains on arm with all five #583 switches PASS 26.6 min, no dump",
+        "tools/selftest/eabugs500 PASS"
+      ],
+      "reason": "EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay); on for tester feedback (user request 2026-11-21). Draft PR #583. When a playpen TakeOut / PlayWithOutsideSim / PlaySocial run ends by an exception or reset, the busy mark it set is cleared (else the toddler and the next adult wait for good); a normal end runs EA's code unchanged."
+    },
+    {
+      "id": "voodoobindwait",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kVoodooBindWait": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kVoodooBindWait": "False"
+        }
+      },
+      "evidence": [
+        "PR #583 (draft) comment 2026-11-20 (queue pr1120-local: master asi 0.36.295 + the PR package, Apex + bridge): voodoobindwait in-game check (Bridgeport, 8 min): cancel / gone ends the wait, off False BROKEN / on True FIXED; control: plain sleep still waits, True in both",
+        "PR #583 comment 2026-11-20: Appaloosa Plains on arm with all five #583 switches PASS 26.6 min, no dump",
+        "tools/selftest/eabugs500 PASS"
+      ],
+      "reason": "EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay); on for tester feedback (user request 2026-11-21). Draft PR #583. VoodooDoll Bind's wait for a sleeping target also ends when the binder is cancelled or the target is destroyed (no bind, as a refused bind); otherwise EA's wait and body run unchanged."
+    },
+    {
+      "id": "saunawoohoopreg",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kSaunaWooHooPreg": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kSaunaWooHooPreg": "False"
+        }
+      },
+      "evidence": [
+        "PR #583 (draft) comment 2026-11-20 (queue pr1120-local: master asi 0.36.295 + the PR package, Apex + bridge): saunawoohoopreg in-game check (Bridgeport, 7.7 min): pregnant target refused, off False BROKEN / on True FIXED; control: other targets go to EA's test, True in both",
+        "PR #583 comment 2026-11-20: Appaloosa Plains on arm with all five #583 switches PASS 26.6 min, no dump",
+        "tools/selftest/eabugs500 PASS"
+      ],
+      "reason": "EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay); on for tester feedback (user request 2026-11-21). Draft PR #583. Sauna WooHoo's test checks the target's visible pregnancy as EA meant (EA's IL tests the actor twice); the sibling cuddle test already does."
+    },
+    {
+      "id": "lotentrypet",
+      "status": "verified",
+      "on": {
+        "tunables": {
           "kLotEntryPet": "True"
         }
       },
       "off": {
         "tunables": {
-          "kPlaypenFlags": "False",
-          "kVoodooBindWait": "False",
-          "kSaunaWooHooPreg": "False",
           "kLotEntryPet": "False"
         }
       },
       "evidence": [
-        "PR #583 (draft) comment 2026-11-20: in-game checks voodoobindwait and saunawoohoopreg off BROKEN / on FIXED (BP), playpenflags marks cleared (gap1b run); lotentrypet fired 32 times in as19-ap-31452-c",
-        "tools/selftest/eabugs500 PASS"
+        "PR #583 (draft) comment 2026-11-19: natural run as19-ap-31452-c (local build, same code) PASS 41.8 min, fired 32 times",
+        "PR #583 comment 2026-11-20: Appaloosa Plains on arm with all five #583 switches PASS 26.6 min, no dump",
+        "tools/selftest/eabugs500 PASS (16 LeUnvalidate rows)"
       ],
-      "reason": "held off: exact EA bug fixes that include household Sims by design (PR #583: playpen, voodoo bind, sauna WooHoo test, lot-entry cache). No household / selected-Sim exemption in code, so the user's household rule keeps it off in this build (it was asked on for tester feedback 2026-11-21)."
+      "reason": "NOT passed in game yet (no off/on check); EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay); on for tester feedback (user request 2026-11-21). Draft PR #583. When a horse's or pet's failed door plan validated a lot's entry cache with no spot, the cache stays unvalidated so the next Sim decides (else every later Sim, household humans included, walks to the mailbox); a human's result is vanilla. At world load a validated empty cache is reset, as EA's build/buy does."
+    },
+    {
+      "id": "sandboxtns",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kSandboxTns": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kSandboxTns": "False"
+        }
+      },
+      "evidence": [
+        "PR #620 (draft) comment 2026-11-20: in-game repro sandboxtns-live (Isla Paradiso, Apex + bridge, one load on a local package of #614 + #620): off, a townie notice is shown (BROKEN) and the active Sim's is shown; on, the townie notice is not shown (FIXED) and the active Sim's is; counters 2174=1, errors 2175=0",
+        "swap-stack-audit row added at the contributor merge (ShowWithAutomaticGender yields; stub ShowOrig)",
+        "build-fixes.ts builds"
+      ],
+      "reason": "NOT passed in game on this port (its repro ran on a combined local package); on for tester feedback (user request 2026-11-21: players still get their own sand notices). Draft PR #620. Drops only the sand found / buried notices of Sims outside the household; household, selected and unknown-scope Sims keep them (Fixes.HouseholdExempt in SandboxTns.cs). The Sim's play is unchanged."
+    },
+    {
+      "id": "kdscopetable",
+      "status": "unverified",
+      "on": {
+        "ini": {
+          "RouteAsync": {
+            "KdScopeTable": "1"
+          }
+        }
+      },
+      "off": {
+        "ini": {
+          "RouteAsync": {
+            "KdScopeTable": "0"
+          }
+        }
+      },
+      "evidence": [
+        "bugfix/kd-scope-slot (local branch d75657fa): selftest TestKdScopeTable; merge adds the JobYield park and PdScopeAt table reads (TestKdScopeTable checks both modes)",
+        "in-game off/on pair running 2026-11-21, verdict pending"
+      ],
+      "reason": "off (master default 0) until the in-game off/on pair has a verdict. Unknown and household scopes stay exempt either way."
     }
   ],
   "knownIssues": [
