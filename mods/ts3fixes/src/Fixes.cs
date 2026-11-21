@@ -138,6 +138,7 @@ namespace Ts3Fixes
             ApplyPetFirePlan();  // docs/546 §10, off by default
             ApplySplashRoof();  // docs/546 §16, off by default (NPCs only)
             ApplyBurntTileFloor();  // docs/277 §4.1, off by default (EA bug fix, all Sims: outcome as vanilla)
+            ApplyMessClearUnreach();  // docs/277 §10, off by default (EA bug fix, all Sims: unreachable burnt tiles / puddles cleaned with EA's own clear)
             ApplyShuffleboardBcast();  // docs/546 §17, off by default (leak; exact for every Sim)
             ApplyCookClickListener();  // docs/546 §17, off by default (leak; exact for every Sim)
             ApplyVipRoomRefresh();  // docs/555 §3, off by default (EA throw; exact for every Sim)
@@ -1552,6 +1553,7 @@ namespace Ts3Fixes
         // local, pushed, no pick, not pushed under a user / autonomous head, same pick again, short gap, no-push runs, Sims, max per Sim, exceptions
         // [1135-1138] burnttilefloor (BurntTileFloor.cs, docs/277 §4.1): burnt tiles left out (no floor), lists that lost one, lists left empty, errors
         // [1545-1546] burnttilefloor level rule (BurntTileFloor.cs, docs/277 §9): tiles cut on a level 2+ with no level changer near it, lists the rule alone emptied
+        // [1547-1549] messclearunreach (MessClear.cs, docs/277 §10): unreachable burnt tiles cleaned, unreachable puddles cleaned, errors
         // [1115-1134] hhsearchprobe docs/277 §5: scope, why enqueued (immediate ok/fail, empty <5/5-10/10-60/>60 sim-min, none), gap ms bins, no pick after >60, L0 pairs, active lot, pets
         // [1158-1181] autt2local (AutShadowLocal.cs, docs/276 rank 5 piece 3): post gate codes, posts refused by the session, reference /
         // worker runs done, worker results dropped, pairs walked / dup / lpcap / skip / pass / fail / abort / exc, H8 local no-op / abort, sim-thread exc, reference pairs
@@ -1994,6 +1996,7 @@ namespace Ts3Fixes
                 case "petfireplan": return Instantiator.kPetFirePlan;
                 case "splashroof": return Instantiator.kSplashRoof;
                 case "burnttilefloor": return Instantiator.kBurntTileFloor;
+                case "messclearunreach": return Instantiator.kMessClearUnreach;
                 case "shuffleboardbcast": return Instantiator.kShuffleboardBcast;
                 case "cookclicklistener": return Instantiator.kCookClickListener;
                 case "viproomrefresh": return Instantiator.kVipRoomRefresh;

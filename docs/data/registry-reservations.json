@@ -9488,6 +9488,16 @@
       "worktree": "C:\\Users\\<user>\\AppData\\Local\\Temp\\claude\\<session>\\scratchpad\\wburnt"
     },
     {
+      "id": "fixes-1547",
+      "kind": "fixes",
+      "from": 1547,
+      "to": 1549,
+      "by": "burnt-tile-floor-1121",
+      "what": "messclearunreach (MessClear.cs)",
+      "at": "2026-11-21T10:00:00.000Z",
+      "worktree": "C:\\Users\\<user>\\AppData\\Local\\Temp\\claude\\<session>\\scratchpad\\wburnt"
+    },
+    {
       "id": "doc-313",
       "kind": "doc",
       "from": 313,

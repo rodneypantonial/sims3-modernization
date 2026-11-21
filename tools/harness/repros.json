@@ -70103,6 +70103,148 @@
     ]
   },
   {
+    "id": "messclear-live",
+    "bug": "Sim.MopFloor.Run (MopBurntTiles / MopPuddles) sends a Sim to the first listed tile it could mop, reachable or not; an unreachable burnt tile or puddle stays forever and lures the Sim again after every failed try (SV Keaton: 80 burnt L2 tiles, 676 + 175 failed MopBurnt plans in one soak run, NRaas Overwatch 'Unroutable Sim Found'; docs/277 §3, §10)",
+    "fix": "ts3fixes MessClear.cs: messclearunreach (default off). Before EA's Run, a listed tile known unreachable (burnttilefloor's level rule, or a tile EA's planner already failed: the design-2 memo, learned for autonomous MopBurnt / MopPuddle) gets EA's own clear for tiles it cannot mop (PuddleManager.RemovePuddle + World.SetBurnt false, no animation, as EA's floorless clear); EA's Run then mops the rest. Every Sim but service Sims (EA bug fix); the state written is EA's clean state. Check: MessClearCheck (MessClear.cs)",
+    "save": "Baseline-SV-Spring",
+    "note": "One load, Keatons active on their lot, burnttilefloor off in both arms. 'stage' burns one unburnt floor tile next to the active Sim (reachable control) and adds a puddle on the first burnt tile the level rule flags (unreachable puddle). 'push' queues EA's MopBurntTiles and MopPuddles (autonomous) for the household humans. 'run' counts flagged burnt tiles left (level rule or memo) and says whether the control was mopped by the Sim or cleared by the fix. 'unstage' removes what the stage left. Each arm stages its own control.",
+    "expect": "off: 'verdict: BROKEN' (flagged burnt tiles left > 0, staged puddle still there; MopBurnt / MopPuddle routefail lines). on: 'verdict: FIXED' (flagged left 0, staged puddle gone, control mopped and not cleared by the fix), messclear_burnt (1547) > 0, messclear_puddles (1548) >= 1, messclear_err (1549) 0. 'N/A (nothing flagged unreachable)' off = the level rule does not match the lot (then only the memo flags tiles, one per failed try). Never UNEXPECTED; pure=True.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "messclearunreach": false,
+          "burnttilefloor": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.MessClearCheck",
+          "args": [
+            "stage"
+          ]
+        },
+        "note": "off: control tile + unreachable puddle"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.MessClearCheck",
+          "args": [
+            "push"
+          ]
+        },
+        "note": "off: EA's mop tries",
+        "waitS": 60
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.MessClearCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "off: unreachable tiles still there (BROKEN)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.MessClearCheck",
+          "args": [
+            "unstage"
+          ]
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "messclearunreach": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.MessClearCheck",
+          "args": [
+            "stage"
+          ]
+        },
+        "note": "on: a fresh control tile + unreachable puddle"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.MessClearCheck",
+          "args": [
+            "push"
+          ]
+        },
+        "note": "on: Run cleans the unreachable tiles, then the Sim mops the control",
+        "waitS": 90
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.MessClearCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "on: FIXED"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.MessClearCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "counters 1547-1549"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.MessClearCheck",
+          "args": [
+            "unstage"
+          ]
+        }
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "messclearunreach": false
+        },
+        "note": "back to the default"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "messclearunreach": false
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.MessClearCheck",
+          "args": [
+            "unstage"
+          ]
+        }
+      }
+    ]
+  },
+  {
     "id": "apartment-leave-farewell",
     "bug": "Sim.RoomChanged on a lot with virtual residential slots (Late Night apartment) calls VisitSituation.OnSimLeavingLot whenever a Sim walks on the same lot from a room that is not public (the household's unmarked apartment, or a hidden room) into a public one (PublicRoomMarker hallway/lobby), without checking that it is leaving. A visitor who only walks through the hallway gets the farewell ('time to leave' TNS or the party's leaving message) and is removed from the party as left early (liking change, -50 early-departure mood in the party score, no longer a guest), yet keeps visiting; its real departure later shows no farewell (docs/553)",
     "fix": "ts3fixes AptLeave.cs: aptleave (default off), NPCs only: that room-change call is skipped while the Sim is not leaving (current interaction targets this lot and is not GoHome/GoOutside, no GoHome/GoOutside queued, no visit leave reason, does not live on the lot). GoHome/GoOutside/commute calls are never touched; household Sims run EA's code. Check: ApartmentLeaveCheck (AptLeaveChecks.cs)",

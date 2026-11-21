@@ -267,6 +267,7 @@ namespace Ts3Fixes
                 case "megaphonerun": return EpLive(typeof(WsMegaHook), 1);
                 case "meltalarm": return EpLive(typeof(B12MaHook), 1, "sMaAlarm", sMaAlarm, null, "sMaHours", sMaHours, typeof(float), "sMaHours", sMaHours, "static");
                 case "menumaven": return EpLive(typeof(MenuMavenHook), 1);
+                case "messclearunreach": return EpJoin(EpLive(typeof(BurntTileHook), 0), EpLive(typeof(MessClearHook), 1));
                 case "metricskillmissing": return EpLive(typeof(MetricSkillMissingHook), 3);
                 case "midlifeuiending": return EpLive(typeof(BMuHook), 1, "sMuOwner", sMuOwner, null, "sMuLength", sMuLength, typeof(float), "sMuLength", sMuLength, "static", "sMcDate", sMcDate, null);
                 case "midlifewishsave": return EpLive(typeof(BMcHook), 2, "sMcWishes", sMcWishes, typeof(uint), "sMcDate", sMcDate, null, "sMcWishes", sMcWishes, null);
