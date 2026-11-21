@@ -84,12 +84,17 @@ namespace Ts3Fixes
             return false;
         }
 
-        // RouteFailLog.RflPlan, after every failed plan: learn the goal tile of an autonomous MopBurnt whose last try found no destination
+        // RouteFailLog.RflPlan, after every failed plan: learn the goal tile of an autonomous MopBurnt (or MopPuddle with
+        // messclearunreach) whose last try found no destination
         static void BtPlanFailed(ScriptCore.Route r, Sim sim, RoutePlanResult res)
         {
-            if (!sBtReady || res.mType != RoutePlanResultType.FailedBecauseNoDestinationSpecified) return;
-            Terrain.MopBurnt mb = sim.CurrentInteraction as Terrain.MopBurnt;
-            if (mb == null || !mb.Autonomous || !ShortcutOn("burnttilefloor")) return;
+            if (res.mType != RoutePlanResultType.FailedBecauseNoDestinationSpecified) return;
+            Terrain.Mopping mb = sim.CurrentInteraction as Terrain.Mopping;
+            if (mb == null || !mb.Autonomous) return;
+            // MopBurnt for either switch (burnttilefloor needs its list hook); MopPuddle only for messclearunreach (MessClear.cs)
+            bool clear = ShortcutOn("messclearunreach");
+            bool burnt = mb is Terrain.MopBurnt && (clear || (sBtReady && ShortcutOn("burnttilefloor")));
+            if (!burnt && !(mb is Terrain.MopPuddle && clear)) return;
             int[] c = PatchCounters();
             try
             {
@@ -153,7 +158,8 @@ namespace Ts3Fixes
             public LotLocation[] LocHook(ulong lotId)
             {
                 LotLocation[] all = LocOrig(lotId);
-                if (!sBtReady || all == null || all.Length == 0 || OnWorker() || !ShortcutOn("burnttilefloor")) return all;
+                // messclearunreach cleans these tiles in MopFloor.Run (MessClear.cs): Test must still offer the mop for that
+                if (!sBtReady || all == null || all.Length == 0 || OnWorker() || !ShortcutOn("burnttilefloor") || ShortcutOn("messclearunreach")) return all;
                 int[] c = PatchCounters();
                 try
                 {

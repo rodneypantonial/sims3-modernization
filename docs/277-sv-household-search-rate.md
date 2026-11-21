@@ -389,7 +389,7 @@ Hook points (all read-only; household Sims are only counted):
 - Counters `fixes-1545`:
   - [1545] `burnttile_levelcut`: tiles cut;
   - [1546] `burnttile_levelempty`: lists the rule alone left empty.
-  - 1547-1549 were offered and left free.
+  - 1547-1549 went to `messclearunreach` (§10).
 
 ### 9.3 Check and repro
 
@@ -405,3 +405,83 @@ Hook points (all read-only; household Sims are only counted):
 - N/A when the lot has a level changer on levels 1-3. That would mean the Keaton L2 is linked after all, and design 2
   stays the only cut. The check names the objects.
 - Not run: the game soak occupies the machine. The default-on decision still waits for this repro.
+
+## 10. `messclearunreach`: clean an unreachable mess instead of skipping it (2026-11-21, NOT RUN)
+
+Player ask: a mess a Sim cannot reach should get cleaned anyway, so it stops luring Sims for good. `burnttilefloor` only
+hides such a tile, so it stays burnt, and a new load or a memo expiry brings it back.
+
+### 10.1 Evidence: which messes loop [measured]
+
+One pass over the 1013 harness `*-ts3native.log` files (3.6 GB) took every `routefail:` line whose interaction names a
+cleaning word: 7,839 lines.
+
+| Interaction | Lines | Same goal again | Verdict |
+|---|---|---|---|
+| `MopBurnt` | 3,257 | one goal (1064.7,52.8,1243.2), about 2,390 times; 83 goals in all | loops: implemented |
+| `MopPuddle` | 350 | 94 goals, at most about 10 at one goal | no loop seen, but EA's code lets it loop (below): implemented |
+| `CleanUp` on `ClothingPileDry` | 308 | up to ~50 at one goal, mostly `DestinationPortalLocked` | dropped |
+| `CustomCleanUp` on `Plate` / `Bowl` | 244 | up to 11 at one goal, NoPath / PortalLocked / NoDestination | dropped |
+| `GetCleanLaundry`, `CustomCleanToilet`, `CustomWashDishes`, `CleanBathtub` | ~1,100 | mostly `Replan` mid-route | dropped |
+| leaves / raking, snow, ash piles, trash | 0 | - | dropped: no failure in the logs |
+
+The puddle-play lines (`AutonomousSplashInPuddleEx` 718, `PlayInPuddle`, `DrinkPuddle`, `SplashInPuddle`) are not
+cleaning. `splashroof` / `puddlereach` cover them.
+
+Why each drop:
+- Clothing piles: a door lock is the player's setting, and the pile stays reachable for other Sims or after the unlock.
+  Cleaning it remotely would fake the result.
+- Dishes: objects with their own cleaning outcome (sink, dishwasher); these are `Custom*` (mod) interactions; the counts
+  are low.
+- Object-use interactions: these are not messes. The failures are mid-route replans.
+- Leaves, snow, ash, trash: no evidence in 1013 runs.
+
+`MopPuddles` shares `MopFloor.Run` and EA's clear code with `MopBurntTiles`, so an unreachable puddle on an unlinked upper
+level loops exactly like the burnt tile. Adding it costs one branch.
+
+### 10.2 Design as built
+
+- New switch `messclearunreach` (`kMessClearUnreach`, default off), so testers can compare it with plain `burnttilefloor`.
+- One new swap: `Sim.MopFloor.Run` (`MessClearHook`, stub `RunOrig`). It acts only for `MopBurntTiles` and `MopPuddles`,
+  the two subclasses.
+- Before EA's Run, the hook cleans every listed tile known to be unreachable. A tile is unreachable when:
+  - §9's level rule cuts it: a valid tile on level 2+ with no level changer on L-1..L+1; or
+  - EA's planner already failed it: the design-2 memo. With this switch on, the memo also learns from autonomous
+    `MopPuddle`, not only `MopBurnt`.
+- The clean is EA's own clear for a tile it cannot mop, the two calls of `MopFloor.Run`'s else branch:
+  `PuddleManager.RemovePuddle(lot, tile)` and `World.SetBurnt(lot, tile, false)` [verified, decompiled].
+- Then EA's Run goes on as before and mops the first reachable tile, so a reachable mess is still mopped normally.
+- No animation: `MopFloor` is an `ImmediateInteraction`, and its Run cannot play one. The clean is silent, like EA's
+  floorless clear.
+- While this switch is on, `burnttilefloor`'s list cut stays off. Otherwise MopFloor's Test would stop offering the mop
+  and the clean would never run.
+- Nothing in Test or `GetMoppableLocations` writes anything.
+- Save: the state written is EA's normal clean state, exactly what mopping writes (`OnTileMopped`: `SetBurnt(false)` /
+  `RemovePuddle`). There is no mod data in the save. A cleaned tile stays clean without the mod, as if the Sim had
+  mopped it.
+- Household rule: an EA bug fix, so household Sims are included.
+  - Visible change: an unreachable burnt tile or puddle disappears the first time a Sim's autonomy picks the mop. In
+    vanilla it stays forever and keeps luring Sims.
+  - Service Sims run EA's Run unchanged (EA's `IsLocationMoppableBySim` rule for them).
+- Counters `fixes-1547`:
+  - [1547] `messclear_burnt`: burnt tiles cleaned;
+  - [1548] `messclear_puddles`: puddles cleaned;
+  - [1549] `messclear_err`: errors.
+
+### 10.3 Check and repro
+
+`MessClearCheck` (`MessClear.cs`) commands:
+- `stage`: burns a free floor tile next to the active Sim (the reachable control) and adds a puddle on the first burnt
+  tile the level rule flags (the unreachable puddle);
+- `push`: queues EA's `MopBurntTiles` and `MopPuddles` on the household humans, autonomous as EA queues them;
+- `run`: gives the verdict;
+- `unstage`: removes what the stage left.
+
+Repro `messclear-live` (Baseline-SV-Spring, one load, `burnttilefloor` off):
+- off: `BROKEN` (flagged tiles and the staged puddle still there);
+- on: `FIXED` (none left, staged puddle gone, the control mopped by the Sim and not cleaned by the fix).
+
+Risks [inferred]:
+- If the level rule does not match the Keaton lot (§9.3 N/A), only the memo flags tiles, one per failed try. Then one
+  push cleans one tile and the on verdict needs more pushes.
+- The puddle stage depends on `PuddleManager.AddPuddle` taking an L2 roof-floor tile.

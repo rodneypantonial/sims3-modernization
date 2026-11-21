@@ -61,6 +61,8 @@ tombsting
 #   unseenloopskip_offscreen
 # maintainer switches added on master, not reviewed for this set (merge 2026-11-18):
 #   zdemptyout decaymemo burnttilefloor
+# not run yet (2026-11-21, docs/277 §10, repro messclear-live):
+#   messclearunreach
 # autonomy quality PR #575 (import 2026-11-20): fightorphanwait poolnolane autonomyfailcooldown venuepicktime default ON; still off, no verdict (timing only):
 #   venuepickfast
 # Dalexlol PR 2026-11-20 (docs/202 §3.10), default off: unseenhouseboatview, a scope-rule change never run in game (unseenfbghost, unseenfbnosync, safespotplanyield are ON by default, natural play only, no off/on verdict):

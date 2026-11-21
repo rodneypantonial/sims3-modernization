@@ -350,6 +350,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kSocialReceiveFail value="True" />
     <kPetFirePlan value="False" />
     <kBurntTileFloor value="False" />
+    <kMessClearUnreach value="False" />
     <kSplashRoof value="False" />
     <kShuffleboardBcast value="True" />
     <kCookClickListener value="True" />
