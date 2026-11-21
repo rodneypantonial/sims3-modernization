@@ -194,6 +194,7 @@ namespace Ts3Fixes
             ApplyFireActiveJob();    // docs/570 §1 (FireActiveJob.cs)
             ApplyFireTrapCount();    // docs/570 §5 (FireTrapCount.cs)
             ApplyGenerationsLogic(); // docs/571 §1-4 (GenerationsLogic.cs)
+            ApplyPromDateLimo();     // docs/861 (PromDateLimo.cs): promdatelimo, promlimolot
             ApplySeasonsLogic();     // docs/571 §5-7 (SeasonsLogic.cs)
             ApplySupernaturalLogic(); // docs/571 §8 (SupernaturalLogic.cs)
             ApplyShowtimeLogic();    // docs/571 §9-11 (ShowtimeLogic.cs)
@@ -1074,6 +1075,8 @@ namespace Ts3Fixes
         // [3960-3962] birthdayagers (GenerationsLogic.cs, docs/571 §1): later agers recorded / listeners removed at cleanup / errors.
         // [3963-3966] sneakoutlistener (GenerationsLogic.cs, docs/571 §2): stale sneak-outs skipped / duplicate return-home listeners removed / left-over sneak listeners removed / errors.
         // [3618-3619] promcarpool (GenerationsLogic.cs, docs/571 §3): prom carpools removed / errors.
+        // [1535-1539] promdatelimo (PromDateLimo.cs, docs/861 §1): dates pushed into the prom limo / dates sent to prom on their own / limo cases seen with switch off / left-behind dates seen with switch off / errors.
+        // [1540-1542] promlimolot (PromDateLimo.cs, docs/861 §2): prom limo pickups moved to the current home lot / seen with switch off / errors.
         // [3967-3968] curfewalarm (GenerationsLogic.cs, docs/571 §4): handles reset at quit / errors.
         // [3969-3971] trickortreatalarm (SeasonsLogic.cs, docs/571 §5): handles reset at quit / off-holiday runs skipped / errors.
         // [2591-2592] snowfightjoinwait (SeasonsLogic.cs, docs/571 §6): arenas reset at game end / errors.
@@ -2080,6 +2083,8 @@ namespace Ts3Fixes
                 case "birthdayagers": return Instantiator.kBirthdayAgers;
                 case "sneakoutlistener": return Instantiator.kSneakOutListener;
                 case "promcarpool": return Instantiator.kPromCarpool;
+                case "promdatelimo": return Instantiator.kPromDateLimo;
+                case "promlimolot": return Instantiator.kPromLimoLot;
                 case "curfewalarm": return Instantiator.kCurfewAlarm;
                 case "trickortreatalarm": return Instantiator.kTrickOrTreatAlarm;
                 case "snowfightjoinwait": return Instantiator.kSnowFightJoinWait;

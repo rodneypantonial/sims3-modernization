@@ -76,3 +76,5 @@ tombsting
 #   playpenflags voodoobindwait saunawoohoopreg lotentrypet horselotentry sandboxtns
 # EA bug fix: autonomous Heckle only at a performing target + stale Heckled flags (docs/860, 2026-11-21), default off, NOT RUN:
 #   hecklefix hecklefixhh
+# EA bug fix: prom date boards the limo or is sent to prom; the limo picks up at the current home (docs/861, 2026-11-21), default off, NOT RUN:
+#   promdatelimo promlimolot

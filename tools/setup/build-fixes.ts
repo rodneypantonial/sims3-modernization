@@ -645,6 +645,8 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kBirthdayAgers value="True" />
     <kSneakOutListener value="True" />
     <kPromCarpool value="True" />
+    <kPromDateLimo value="False" />
+    <kPromLimoLot value="False" />
     <kCurfewAlarm value="True" />
     <kTrickOrTreatAlarm value="True" />
     <kSnowFightJoinWait value="True" />
