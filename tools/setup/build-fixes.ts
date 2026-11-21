@@ -435,6 +435,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kHoverTrainTest value="True" />
     <kNewCarTest value="True" />
     <kTravelCarNew value="False" />
+    <kSandboxTns value="False" />
     <kSpoonSlaveChecks value="True" />
     <kPetWakeBed value="True" />
     <kSlaveWakeReason value="True" />
