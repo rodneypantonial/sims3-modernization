@@ -1168,6 +1168,45 @@
       "reason": "NOT passed in game yet (needs a firefighter emergency on a lot with locked doors); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). After a large fire the lot's own door locks (household, one-Sim, pets, owner-list, resort VIP rooms, apartment neighbour doors) are no longer wiped to 'anybody'; doors the job locked to trap a Sim are unlocked again after other emergency types too."
     },
     {
+      "id": "horseshoesolo",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kHorseshoeSolo": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kHorseshoeSolo": "False"
+        }
+      },
+      "evidence": [
+        "docs/865 §2 (HorseshoeCourt+TakeTurn.DoEndOfTurnChecks returns while one Sim is queued, so a solo game never ends; TakeTurn.Cleanup leaves lost Sims in the court queue)",
+        "our test logs: 18 jobs flagged a festival NPC stuck on Throw Horseshoes, 17-53 game hours alone",
+        "selftest horseshoesolo; repro horseshoe-solo"
+      ],
+      "reason": "NOT passed in game yet (needs a Sim playing horseshoes alone, e.g. at a festival); on for tester feedback (user decision 2026-11-21). EA bug fix. A non-household Sim playing horseshoes alone stops after 2 game hours, or when something like Go Home is waiting; household and selected Sims are never cut. Sims that were reset or deleted mid-game no longer block the court's queue."
+    },
+    {
+      "id": "burglarapt",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kBurglarApt": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kBurglarApt": "False"
+        }
+      },
+      "evidence": [
+        "docs/866 §2 (BurglarSituation+Stealing.CanBeStolen has no room test; EA's CanBeRepossessed refuses hidden and public apartment rooms)",
+        "selftest burglarapt; repro burglar-apt"
+      ],
+      "reason": "NOT passed in game yet (needs a burglar on an apartment lot); on for tester feedback (user decision 2026-11-21). EA bug fix on the household's own home: the burglar no longer picks loot in the neighbours' hidden units or in public rooms, which it can never steal, so it stops wasting its visit one sim-minute per unreachable valuable."
+    },
+    {
       "id": "splashroof",
       "status": "verified",
       "on": {
