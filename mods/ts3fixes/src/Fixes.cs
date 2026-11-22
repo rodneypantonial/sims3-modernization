@@ -1079,6 +1079,7 @@ namespace Ts3Fixes
         // [2181-2183] aptgasleak (AptJobTargets.cs, docs/863): earthquake gas leaks in hidden apartment units dropped / seen with the switch off / errors.
         // [2184-2186] aptpossess (AptJobTargets.cs, docs/863): ghost-hunter spirit hops into hidden apartment units re-picked / seen with the switch off / errors.
         // [2187-2190] firedoorkeep (FireDoorKeep.cs, docs/864): door locks given back after a large-fire cleanup / job door locks undone after another job type / doors seen with the switch off / errors.
+        // [2191-2194] horseshoesolo (HorseshoeSolo.cs, docs/865): solo horseshoe turns ended / gone or idle players removed from court queues / seen with the switch off / errors.
         // [3960-3962] birthdayagers (GenerationsLogic.cs, docs/571 §1): later agers recorded / listeners removed at cleanup / errors.
         // [3963-3966] sneakoutlistener (GenerationsLogic.cs, docs/571 §2): stale sneak-outs skipped / duplicate return-home listeners removed / left-over sneak listeners removed / errors.
         // [3618-3619] promcarpool (GenerationsLogic.cs, docs/571 §3): prom carpools removed / errors.
@@ -2090,6 +2091,7 @@ namespace Ts3Fixes
                 case "fireleftover": return Instantiator.kFireLeftover;
                 case "aptgasleak": return Instantiator.kAptGasLeak;
                 case "aptpossess": return Instantiator.kAptPossess;
+                case "horseshoesolo": return Instantiator.kHorseshoeSolo;
                 case "fglinbound": return Instantiator.kFglInBound;  // FglInBound.cs (docs/682 §9): FindGoodLocationNearby's indoors stage announced to ts3native [FglInside] (no placement tests on tiles without a room; EA's answer), off
                 case "fglinboundhh": return Instantiator.kFglInBoundHousehold;  // FglInBound.cs (docs/682): fglinbound for household and selected Sims too, off
                 case "firedoorkeep": return Instantiator.kFireDoorKeep;
