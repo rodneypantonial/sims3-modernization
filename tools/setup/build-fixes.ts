@@ -647,6 +647,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kFireGreet value="False" />
     <kAptGasLeak value="False" />
     <kAptPossess value="False" />
+    <kFireDoorKeep value="False" />
     <kBirthdayAgers value="True" />
     <kSneakOutListener value="True" />
     <kPromCarpool value="True" />
