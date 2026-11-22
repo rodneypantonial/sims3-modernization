@@ -1149,6 +1149,25 @@
       "reason": "NOT passed in game yet (needs a ghost hunter job on an apartment lot); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). After a failed exorcism the spirit no longer hops into an object inside a hidden neighbour unit the ghost hunter cannot reach; it picks with EA's own rule among the reachable objects."
     },
     {
+      "id": "firedoorkeep",
+      "status": "verified",
+      "on": {
+        "tunables": {
+          "kFireDoorKeep": "True"
+        }
+      },
+      "off": {
+        "tunables": {
+          "kFireDoorKeep": "False"
+        }
+      },
+      "evidence": [
+        "docs/864 §2 (FireFightingJob.CleanUpJob: only LargeFires unlocks, and it unlocks every locked door of the lot; SetupTask(TrappedSims) locks doors for any job id)",
+        "selftest firedoorkeep; repro fire-door-keep"
+      ],
+      "reason": "NOT passed in game yet (needs a firefighter emergency on a lot with locked doors); on for tester feedback (user decision 2026-11-21). EA bug fix, so household Sims are included (CLAUDE.md household rule: EA bug fixes stay). After a large fire the lot's own door locks (household, one-Sim, pets, owner-list, resort VIP rooms, apartment neighbour doors) are no longer wiped to 'anybody'; doors the job locked to trap a Sim are unlocked again after other emergency types too."
+    },
+    {
       "id": "splashroof",
       "status": "verified",
       "on": {
