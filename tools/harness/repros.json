@@ -116353,6 +116353,430 @@
     ]
   },
   {
+    "id": "ip-workerhold-storm",
+    "bug": "docs/673: in the s151 / s153 / s155 storms (Isla Paradiso, 2 min) the route worker held +0x918 for 36-52 s of job time in 1548-2239 jobs and the sim thread waited on it 167-244 times (5.6-7.0 s). The logs give no job length distribution, no plan count per candidate count, and cannot say where in a job the sim starts to wait",
+    "fix": "none (measurement): ts3native [RouteJobPhases] HoldProbe=1 (default 0, observe only; docs/673)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED in the game (2026-11-20: clang-cl syntax check, Linux host test). Job ini: [RouteJobPhases] HoldProbe=1 CandidateSplit=1 CandidateSplitLogMs=100, the s155 on-arm switches otherwise. Nothing changes a plan: one arm is enough",
+    "expect": "'OK   worker hold probe:' with 'plans by candidates'. After the storm: a 'worker hold:' line with jobs in the buckets, a 'worker hold plans by candidates' line, a 'worker hold boundaries' line with boundaries reached > 0. No crash, the 'route async: mode' job count as in s155 (about 2000)",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "count": 40,
+          "repeatS": 30,
+          "seed": 143
+        },
+        "waitS": 120,
+        "note": "40 forced routes every 30 s (lot, home, boat, meet, no-path), as ip-placetestro-storm; 2 min"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        },
+        "waitS": 5
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "ip-holdoutside-storm",
+    "bug": "docs/673 §9: in the s159 storm (Isla Paradiso, 2 min) 12.4 s of the route worker's 33.7 s of job time (+0x918 hold) is outside PlanHierarchical, and no log says what it is: the goal step and its door asks before the plan, our Route_PlanLocked wrappers, the EditPath tail, our job end. The sim thread's wait pump tries +0x918 once a millisecond, so a TailUnlock window shorter than that is missed, and the job's tail after its plan is held although the search is over",
+    "fix": "ts3native [RouteJobPhases] HoldProbe=1 (the 'worker hold parts' line, observe only), [RouteAsync] PlanEndLend=1 (the job's +0x918 lent to a waiting sim taker when the plan has returned, worker parked) and LendWake=1 (a TailUnlock window wakes the sim's wait pump); all default 0 (docs/673 §9)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED in the game (2026-11-20: clang-cl syntax check, Linux host test of the probe; the selftest of the lend is single-threaded and was not run). Off arm: the s159 on-arm ini with [RouteJobPhases] HoldProbe=1 CandidateSplit=1 HostSplit=1 and [RouteAsync] PlanEndLend=2 (count only). On arm: PlanEndLend=1 LendWake=1 on top. Compare 'hitch totals' +0x918 waits and the 'route lock wait' lines",
+    "expect": "'OK   plan end lend: PlanEndLend=1' and 'OK   worker hold probe:'. After the storm: a 'worker hold parts' line whose parts sum to the job time of 'route async:', a 'plan end lend:' line with plan ends about the job count, windows > 0, 'closed while parked 0', and no 'TailUnlock: worker waited' line. Off arm: windows 0, the same plan ends. No crash, no stuck Sim, the same plans and fails as the off arm within storm noise",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "count": 40,
+          "repeatS": 30,
+          "seed": 143
+        },
+        "waitS": 120,
+        "note": "40 forced routes every 30 s (lot, home, boat, meet, no-path), as ip-placetestro-storm; 2 min"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        },
+        "waitS": 5
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "ip-worldpre-storm",
+    "bug": "docs/676: in the s160-s168 storms (Isla Paradiso, 2 min) the water plan is 5.3-8.1 s of planner time in 218-316 searches (22-30 ms each), the world A* 4.0-7.0 s in 1001-1203 searches and the post pass 4.8-6.0 s. The water search walks straight rays over two byte grids that change only when a footprint or the water grid is written; no log says how often a world or water query repeats, nor which of the post pass's 19 node passes carry its time",
+    "fix": "ts3native [WorldPrecompute] WaterScanTable (1 use, 2 shadow: per map pair a table of every straight ray's run, compared with the live grids at each search; identical results) and Probe=1 (repeat counts of water and world searches, the post pass by node pass; observe only); both default 0 (docs/676)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED in the game (2026-11-20: clang-cl syntax check, Linux host test of the table, its updates, the slot manager and the probe counts). Job ini: [WorldPrecompute] WaterScanTable=2 WaterScanAll=1 Probe=1, [WaterJps] Enabled=1, [RouteJobPhases] CandidateSplit=1 CandidateSplitLogMs=100, the s168 on-arm switches otherwise. Arm 1 is shadow (every jump runs both ways: the water time rises, the mismatch count is the result), arm 2 serves",
+    "expect": "'OK   world precompute: ready 0xF' (0x7 without the post pass sites). After arm 1: a 'world precompute: water scan table mode 2' line with searches > 0, 'with a table' > 0, shadow checks > 0 and mismatch 0, and no 'WATER SCAN TABLE MISMATCH' line; 'world precompute probe water / world / post passes' lines with searches > 0. After arm 2 (mode 1): 'straight rays from it' > 0, and in 'route candidate split totals' the water ms per call below arm 1's and below the s160-s168 on arms (22-30 ms a call). No crash, plans / failed in 'route plans:' as in s168",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "waterscantable": 2
+        },
+        "waitS": 1,
+        "note": "arm 1: shadow (the ini value)"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "count": 40,
+          "repeatS": 30,
+          "seed": 143
+        },
+        "waitS": 120,
+        "note": "40 forced routes every 30 s (lot, home, boat, meet, no-path), as ip-workerhold-storm; 2 min"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "waterscantable": 1
+        },
+        "waitS": 1,
+        "note": "arm 2: the jump's straight rays come from the table"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "count": 40,
+          "repeatS": 30,
+          "seed": 143
+        },
+        "waitS": 120,
+        "note": "the same storm with the table serving; 2 min"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        },
+        "waitS": 5
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        }
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "waterscantable": 2
+        },
+        "note": "back to shadow (the ini value)"
+      }
+    ]
+  },
+  {
+    "id": "nopathmemo-check",
+    "bug": "An NPC's repeat of a plan EA already failed with no path searches again every time (water and boat plans, FollowerMeetUpAtPoint retries around a moving goal: 10 tries in one tick were a 1 s hitch); docs/643",
+    "fix": "ts3native [RouteAsync] NoPathMemo (nopathmemo.cpp) with ts3fixes npmfuzzy / npmhousehold (NoPathMemoSwitches.cs), all default off, docs/643",
+    "save": "any world (pure check)",
+    "note": "Rule check only (2026-11-23): NpmCheck 'run' checks the op 38 flag encoding and the player-command rule with controls and shows counters 4240-4243. The native memo's own checks are TestNoPathMemo* in selftest.exe. The forced stale-answer sequence of docs/643 §8.3 (nopathmemo-stale-force) needs agent steps that are not upstream (build_layout, put_in_front, move_object) and is not in this entry.",
+    "expect": "'flags ok' and 'player command rule ok' in both arms; with [RouteAsync] NoPathMemo=1 in the ini, 4240 counts up once the switches change.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "npmfuzzy": false,
+          "npmhousehold": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.NpmCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "off",
+        "max": 1500,
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "npmfuzzy": true,
+          "npmhousehold": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.NpmCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "on",
+        "max": 1500,
+        "waitS": 2
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "npmfuzzy": false,
+          "npmhousehold": false
+        },
+        "note": "default off again",
+        "waitS": 1
+      }
+    ]
+  },
+  {
+    "id": "ip-floodmemo-crowd",
+    "bug": "docs/667 §1, §3: a hierarchical plan that cannot reach its goal runs the in-room cell A* 0x61E500 once or twice per candidate and each search floods the same closed region to an empty open list: failed sync plans of 290-550 ms with cell 290-500 ms over 95-136 searches (Isla Paradiso 2026-11-19: 5 identical plans in the first 23 min of s140, 54 of one houseboat Sim in phase-20261119-2149); failed plans' cell time was 17,477 ms of 27,760 ms on 2026-11-19 (docs/663 §1)",
+    "fix": "ts3native [RouteSpeed] FloodMemo (default 0): a failed flood's closed cells are kept per search context until Q's table clear, a routing write or a managed call; a later search that starts inside them with no goal linked to them leaves through the game's own failure exit at its first pop (docs/667 §4). Also the split's new host column (docs/667 §2)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static + clang syntax check + Linux host test, 2026-11-19): never run. Job ini must have [RouteSpeed] FloodMemo=2 (shadow: hooks installed, every search runs), [RouteAsync] Enabled=1 and [RouteJobPhases] CandidateSplit=1 CandidateSplitLogMs=100 (per-plan cell ms and the host column); [RouteSnap] counting is turned on by the FloodMemo key. Three arms in one load: the first crowd pass runs with floodmemo 0 (off), then the loop alternates shadow (2, its 'off' firings) and serve (1, its 'on' firings) by export (native_set floodmemo). Read per arm: 'route candidate split' lines with code 5 (cell ms and calls per failed plan), the 'route speed: flood memo' line (hits, stores, managed-call resets, checks, mismatch, saved ~ms) and hitches >= 200 ms led by a failed sync plan. The off pass must show failed plans with cell >= 100 ms, else the crowd did not reach a closed region (rerun, or use a houseboat household). Same crowd as ip-neighbourmemo-crowd.",
+    "expect": "shadow arms: fmChecks > 0 and fmMismatch 0, no FLOOD MEMO MISMATCH line. on arms: fmHits > 0, failed plans' cell ms per plan well below the off pass (one or two floods per plan instead of one per candidate), route results (ufplansplit codes, routefail lines, stuck Sims) unchanged; no crash",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "floodmemo": 0
+        },
+        "waitS": 1,
+        "note": "off arm: the memo looks at nothing"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 180,
+        "note": "off pass: 3 counter lines without the memo"
+      }
+    ],
+    "loop": {
+      "steps": [
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "floodmemo": "$on:1:2"
+          },
+          "waitS": 1,
+          "note": "arm: on = 1 serve, off = 2 shadow"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far"
+          },
+          "waitS": 180,
+          "note": "unseen townies route across the island; 3 minutes = 3 counter lines per arm"
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
+      "maxMinutes": 30
+    },
+    "cleanup": [
+      {
+        "cmd": "native_set",
+        "args": {
+          "floodmemo": 2
+        },
+        "note": "back to shadow (the ini value)"
+      }
+    ]
+  },
+  {
+    "id": "ip-smoothmemo-storm",
+    "bug": "docs/676 §11, §14: the path smoothing pass 0x64DD40 is about 6.9 s of route worker time per 3-minute storm (2,420 calls, 2.85 ms each), all under the routing lock. On a lot each of its 2-3 segment tests per sample asks the quadtree cell evaluator 0x66B090 for every cell the segment crosses, on fresh stack cursors, so no answer is reused between the neighbouring tests of one pass",
+    "fix": "ts3native [WorldPrecompute] SmoothMemo (1 serve, 2 shadow; default 0): one pass's cell evaluations are kept under what the evaluator reads and replayed; identical results (docs/676 §14)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED in the game (2026-11-20: clang-cl syntax check, Linux host test of the table and the three hooks). Job ini: [WorldPrecompute] SmoothMemo=2 (the hooks install only with a non-zero ini value), [RouteSnap] Enabled=1, the s189 on-arm switches otherwise; SmoothMemoAll=0. Arm 1 is off (pass 3 time without the memo), arm 2 shadow (every evaluation runs and is compared: the mismatch count and 'would have replaced N ms' are the result), arm 3 serves. The share of pass 3 that the memo can touch is not measured yet: lot tests with the smoother's byte +0x72 clear only; a storm of off-lot routes shows few evaluations",
+    "expect": "'OK   world precompute smooth memo: SmoothMemo=2' with ready 0x7 or 0xF. After arm 2: 'world precompute: smooth memo mode 2' with cell evaluations asked > 0, shadow checks > 0 and mismatch 0, and no 'SMOOTH MEMO MISMATCH' line. After arm 3 (mode 1): 'from a record' > 0, and pass 3 ms per call 'with the memo' below arm 1's 'without'. No crash, plans / failed in 'route plans:' as in the off arm",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "smoothmemo": 0
+        },
+        "waitS": 1,
+        "note": "arm 1: off (the pass is timed, nothing is looked at)"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "count": 40,
+          "repeatS": 30,
+          "seed": 143
+        },
+        "waitS": 120,
+        "note": "40 forced routes every 30 s (lot, home, boat, meet, no-path), as ip-worldpre-storm; 2 min"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "smoothmemo": 2
+        },
+        "waitS": 1,
+        "note": "arm 2: shadow"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "count": 40,
+          "repeatS": 30,
+          "seed": 143
+        },
+        "waitS": 120,
+        "note": "the same storm, every record compared with the game's evaluation; 2 min"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "smoothmemo": 1
+        },
+        "waitS": 1,
+        "note": "arm 3: records answer (NPC routers; others stay shadow)"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "count": 40,
+          "repeatS": 30,
+          "seed": 143
+        },
+        "waitS": 120,
+        "note": "the same storm with the memo serving; 2 min"
+      },
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        },
+        "waitS": 5
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "route_storm",
+        "args": {
+          "stop": true
+        }
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "smoothmemo": 2
+        },
+        "note": "back to shadow (the ini value)"
+      }
+    ]
+  },
+  {
     "id": "sweep-ep1",
     "bug": "docs/267: EP1 World Adventures has 286 script types, 271 never seen in our runs; their interactions never ran under our routing / Mono changes",
     "fix": "measurement only: forced interaction sweep of every definition the pack brings (docs/268)",
