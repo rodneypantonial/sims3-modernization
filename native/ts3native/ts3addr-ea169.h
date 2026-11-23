@@ -58,13 +58,13 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x0050B270, 0x0050B100},
     {0x0050B300, 0x0050B190},
     {0x005172E0, 0x00517140},
-    {0x00568710, 0x00000000},
-    {0x00568A6C, 0x00000000},
-    {0x00568B28, 0x00000000},
+    {0x00568710, 0x005682B0},
+    {0x00568A6C, 0x0056860C},
+    {0x00568B28, 0x005686C8},
     {0x00569CC9, 0x00569859},
-    {0x0056FA98, 0x00000000},
+    {0x0056FA98, 0x0056F488},
     {0x005718C0, 0x005711F0},
-    {0x00571A50, 0x00000000},
+    {0x00571A50, 0x00571380},
     {0x00571B90, 0x005714C0},
     {0x00571BF3, 0x00571523},
     {0x00571C3C, 0x0057156C},
@@ -74,13 +74,13 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00571D20, 0x00571650},
     {0x00571DDC, 0x0057170C},
     {0x00571E0A, 0x0057173A},
-    {0x00571E0F, 0x00000000},
-    {0x00571E1A, 0x00000000},
+    {0x00571E0F, 0x0057173F},
+    {0x00571E1A, 0x0057174A},
     {0x00572400, 0x00571D30},
-    {0x00577060, 0x00000000},
+    {0x00577060, 0x00576A70},
     {0x00580420, 0x00A34C40},
-    {0x005833C0, 0x00000000},
-    {0x00583D00, 0x00000000},
+    {0x005833C0, 0x005829A0},
+    {0x00583D00, 0x005832E0},
     {0x0058D996, 0x00000000},
     {0x00593590, 0x00593300},
     {0x00593600, 0x00593370},
@@ -468,7 +468,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x0073DEF0, 0x0073EBB0},
     {0x0073DFB0, 0x0073EC70},
     {0x0073E000, 0x0073ECC0},
-    {0x00742710, 0x00000000},
+    {0x00742710, 0x00743590},
     {0x00742A95, 0x00743905},
     {0x007460F0, 0x00746F80},
     {0x0074A830, 0x00000000},
@@ -593,7 +593,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x007F2F0F, 0x007F30FF},
     {0x007F3790, 0x00549E30},
     {0x00800C99, 0x007FFF59},
-    {0x00801E51, 0x00000000},
+    {0x00801E51, 0x008010E1},
     {0x008066C0, 0x00805960},
     {0x00806770, 0x00805A10},
     {0x00806BF0, 0x00805E90},
@@ -761,14 +761,14 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x0093F90D, 0x0093FEAD},
     {0x009402E3, 0x00940883},
     {0x00940430, 0x009409D0},
-    {0x00940569, 0x00000000},
-    {0x0094059E, 0x00000000},
-    {0x00940742, 0x00000000},
-    {0x0094118B, 0x00000000},
+    {0x00940569, 0x00940B09},
+    {0x0094059E, 0x00940B3E},
+    {0x00940742, 0x00940CE2},
+    {0x0094118B, 0x0094172B},
     {0x00941CD0, 0x00942270},
     {0x00942C00, 0x009431A0},
-    {0x00942CC6, 0x00000000},
-    {0x00942CF1, 0x00000000},
+    {0x00942CC6, 0x00943266},
+    {0x00942CF1, 0x00943291},
     {0x00942E73, 0x00943413},
     {0x00946160, 0x00946780},
     {0x009462D4, 0x009468F4},
@@ -797,7 +797,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00958560, 0x00958C70},
     {0x00959000, 0x00959710},
     {0x00959060, 0x00959770},
-    {0x00959670, 0x00000000},
+    {0x00959670, 0x00959D80},
     {0x0095EFF2, 0x0095F692},
     {0x0096B850, 0x0096BDD0},
     {0x0099C299, 0x00999949},
@@ -1623,8 +1623,6 @@ constexpr unsigned long ts3addr_pairs[][2] = {
 };
 // master fold 2026-11-15 (docs/232 §8): addresses of master code newer than rc1111g, no EA 1.69 row yet (0 = their feature SKIPs on EA)
 // unresolved: 0x004D9AD0 no-ea-1.69-address native/ts3native/autraces.cpp:35
-// unresolved: 0x005833C0 no-ea-1.69-address native/ts3native/unseenanim.cpp
-// unresolved: 0x00583D00 no-ea-1.69-address native/ts3native/unseenanim.cpp
 // unresolved: 0x00631A60 no-ea-1.69-address native/ts3native/ts3native.cpp:4941
 // unresolved: 0x0064CEBA no-ea-1.69-address native/ts3native/wastar.cpp:282
 // unresolved: 0x0064CEC0 no-ea-1.69-address native/ts3native/wastar.cpp:282
@@ -1639,11 +1637,6 @@ constexpr unsigned long ts3addr_pairs[][2] = {
 // unresolved: 0x007646F8 no-ea-1.69-address native/ts3native/c2diag.cpp:119
 // unresolved: 0x007935B0 no-ea-1.69-address native/ts3native/autraces.cpp:33
 // unresolved: 0x008A79B0 no-ea-1.69-address native/ts3native/autraces.cpp:34
-// unresolved: 0x00940569 no-ea-1.69-address native/ts3native/unseenanim.cpp
-// unresolved: 0x0094059E no-ea-1.69-address native/ts3native/unseenanim.cpp
-// unresolved: 0x00940742 no-ea-1.69-address native/ts3native/unseenanim.cpp
-// unresolved: 0x0094118B no-ea-1.69-address native/ts3native/unseenanim.cpp
-// unresolved: 0x00959670 no-ea-1.69-address native/ts3native/unseenanim.cpp
 // unresolved: 0x009B0530 no-ea-1.69-address native/ts3native/autraces.cpp:36
 // unresolved: 0x00AB70B0 no-ea-1.69-address native/ts3native/eafix.cpp:475
 // unresolved: 0x00B11A95 no-ea-1.69-address native/ts3native/wastar.cpp:505
@@ -1777,18 +1770,6 @@ constexpr unsigned long ts3addr_pairs[][2] = {
 constexpr int ts3addr_count = 1616;
 
 
-// unresolved: 0x00568710 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x00568A6C no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x00568B28 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x0056FA98 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x00571A50 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x00571E0F no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x00571E1A no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x00577060 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x00742710 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x00801E51 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x00942CC6 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
-// unresolved: 0x00942CF1 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
 // unresolved: 0x00E49DA0 no-ea-1.69-address native/ts3native/gcmark.cpp ([GC] MarkHelpers, gc-markhelpers-p3-1118)
 // unresolved: 0x00E49F49 no-ea-1.69-address native/ts3native/gcmark.cpp ([GC] MarkHelpers, gc-markhelpers-p3-1118)
 // unresolved: 0x00E4C17E no-ea-1.69-address native/ts3native/gcmark.cpp ([GC] MarkHelpers, gc-markhelpers-p3-1118)

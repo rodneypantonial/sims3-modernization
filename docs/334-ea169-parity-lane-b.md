@@ -46,3 +46,19 @@ mapped most of these rows on an older base; its values were re-derived here with
 Code: the five inline-asm literals get EA values (`TS_ASM_*`, `TC_ASM_*`: 0xD5A9F2 0xD5AA45 0xD5A9FD 0x44C5D0
 0x5A8759, `static_assert` to `TS3A`), the two `ts3a_noaddr` stand-downs go. 9 bytes rows. EA rc ini: `[ThumbStall]`
 Enabled=1 as Steam ships it, `[ThumbCallers]` stays 0 (Steam 0). Live check: `OK   thumb stall (EXPERIMENT, [ThumbStall])`.
+
+## 3. [UnseenAnim] / [AnimPhase] (19 rows)
+
+| Steam | EA | what | evidence |
+|---|---|---|---|
+| 0x940569 0x94059E 0x940742 0x94118B | 0x940B09 0x940B3E 0x940CE2 0x94172B | AnimPhase call sites (advance, notify, evaluate, publish) | block 0x940500..0x941200 equal at +0x5A0 (846 instructions, in-block branches keep the delta); sigmap unique for 3 of 4 |
+| 0x942CC6 0x942CF1 | 0x943266 0x943291 | pose call sites | sigmap unique, operands map |
+| 0x583D00 0x5833C0 0x959670 | 0x5832E0 0x5829A0 0x959D80 | advance, evaluate, publish targets | sigmap unique; 1/1, 2/2, 4/4 callers; 0x583D00..0x583E00 equal at -0xA20 |
+| 0x568710 | 0x5682B0 | clip event dispatch (vtable slot +0x10) | sigmap unique; its 3 Steam callers 0x568A6C 0x568B28 0x56FA98 = the 3 EA callers 0x56860C 0x5686C8 0x56F488 |
+| 0x568A6C 0x568B28 0x56FA98 | 0x56860C 0x5686C8 0x56F488 | clip event call sites 1-3 | caller sets one to one (above); block 0x568700..0x568C00 equal at -0x460; sigmap near/ambiguous (site 3: 0x56F3C8 calls the slot +8 clone 0x568260). Override rows (PR #598) |
+| 0x571A50 0x571E0F 0x571E1A | 0x571380 0x57173F 0x57174A | drain / event sites | block 0x571A50..0x571F00 equal at -0x6D0 |
+| 0x577060 0x742710 0x801E51 | 0x576A70 0x743590 0x8010E1 | pose / root-motion sites | sigmap unique, 2/2 and 1/1 callers |
+
+Code: the `ts3a_noaddr` stand-down of `ApplyAnimPhase` goes. 11 bytes rows (incl. the locomotion site 0xD81C5C ->
+0xD8201C, whose row was mapped before but had no bytes row: Simulate 0xD81840..0xD82100 equal at +0x3C0). EA rc ini:
+`[UnseenAnim]` Enabled=1 as Steam ships it (Objects=0), `[AnimPhase]` stays 0. Live check: `OK   unseen anim: ready`.
