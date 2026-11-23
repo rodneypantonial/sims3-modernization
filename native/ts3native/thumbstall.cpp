@@ -604,9 +604,6 @@ static void ApplyThumbStall(const wchar_t* ini) {
 // [OutfitFirst]: after ApplyThumbStall (a failed [ThumbStall] install reverts the shared pick site; this puts it back).
 static void ApplyOutfitFirst(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"OutfitFirst", L"Enabled", 1, ini)) return;
-#ifdef TS3A_TABLE
-    if (ts3a_noaddr) { Log("SKIP outfit first ([OutfitFirst]): no EA 1.69 address, docs/232 §8"); return; }
-#endif
 #if defined(TS3A_TABLE) && defined(TS3A_RETAIL)
     // its three rows are 0 in ts3addr-retail167.h too (not mapped yet); a runtime flag, as ts3a_noaddr, keeps /W4 /WX quiet
     static volatile bool noRetailRow = true;

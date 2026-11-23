@@ -18,7 +18,8 @@
 #ifdef TS3N_RFTEST
 #define TS3NATIVE_VERSION "0.36.189-rftest1"  // docs/89 §18: repro ops 30-34, never a release
 #else
-#define TS3NATIVE_VERSION "0.36.299-eaparB"  // m1123 + EA 1.69 parity lane B rows (docs/334: ThumbStall, UnseenAnim, EqualsFast, GoalValidRO Hits, Binder, GC)
+#define TS3NATIVE_VERSION "0.36.299-eaof"  // eaparB + m1123c (#697) + [OutfitFirst] EA 1.69 rows, per-build call offsets in its check bytes
+// was "0.36.299-eaparB"  // m1123 + EA 1.69 parity lane B rows (docs/334: ThumbStall, UnseenAnim, EqualsFast, GoalValidRO Hits, Binder, GC)
 // was "0.36.299-m1123"  // master set m1123: m1122 + overflow-fixes-1122 (docs/323 lanes A-F) + unbounded-caps-1122 (docs/321 lanes 0, B, C) + watergrid-next-1122 ([WaterGrid] Diff + Par, docs/100 §14, off) + nonsim-split-1122 ([Diag] NonSimSplit, docs/329, off) + compat, Dalexlol 637-653 and loop-cost merges (ts3fixes only)
 // was "0.36.299-m1122"  // master set m1122: e1122 + unseen-distance-probe-1122 ([UnseenProbe] Bands, TaskSeam 65536/4096, docs/322, off) + world-scale-perf-1122 ([WaterGrid] Prof, LoadProf counter-clear fix, docs/100 §13, off) (2026-11-22); was uband2 / wgprof1 on the branches; e1122: m1121b + Dalexlol 1122 imports
 // was "0.36.297-m1120n" (the same merges on 0.36.295-mdt1, before TaskSeam)
