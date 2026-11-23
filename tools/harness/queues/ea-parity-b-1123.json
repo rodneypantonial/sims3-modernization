@@ -1,0 +1,528 @@
+{
+  "note": "ea-parity-b-1123 (EA laptop, correctness only, GPU-limited: no timing). NOT RUN. EA 1.69 parity lane B (docs/334, branch feature/ea169-parity-b): EA asi ts3native 0.36.299-eaparB (sha256 e76a4c2e3c58) + its regenerated EA rc ini (ea-ini.ts, sha256 c1605cef2b58) in game-copy/eaparB-1123/ (copy both there on the EA laptop), ts3fixes.package of the v0.3.1 EA release. Newly ON as Steam ships them: [ThumbStall], [UnseenAnim], [EqualsFast], [Binder] TypeHandleDirect, [GoalValidRO] (Hits=0), [EaCrashFixes] SavedFrameGuard and [RouteAsync] TaskServe (keys ship 1; with draft PR #690's ea-ini.ts they are 0 while unresolved, here resolved). The soak job also turns [GC] IdleGate=1 / SubTimers=1 / MarkHelpers=2 / MarkHelpersVerify=1 on through job ini (the rc ini keeps them 0 as Steam ships them). Same flow as ea-v031-parity-1123; needs the save-reload.ts harness fixes of PR #660. Run: TS3_MACHINE=ea-laptop TS3_LAUNCH=ea node tools/harness/queue.ts tools/harness/queues/ea-parity-b-1123.json",
+  "stopQueueOnFail": true,
+  "jobs": [
+    {
+      "id": "ea-parb-sv-play",
+      "note": "[est 25 min] [natural play, no cheats] 10 min autopilot play with a Buy and a CAS visit, save to EaParB-SV, quit to menu + reload, direct reload, 3 min after each. --no-marks: [MemDiag] stays as shipped.",
+      "asi": "game-copy/eaparB-1123/ts3native-ea169.asi",
+      "iniBase": "game-copy/eaparB-1123/ts3native-ea169-rc.ini",
+      "fixesPackage": "game-copy/v031-ea169/dl-2058/ts3fixes.package",
+      "pinReason": "EA 1.69 parity lane B build (ts3native 0.36.299-eaparB, docs/334) with its regenerated EA rc ini",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "noiseCheck": false,
+      "scriptErrorsMax": 0,
+      "timeoutMin": 45,
+      "logRequire": {
+        "^ts3native 0\\.36\\.299-eaparB ": 1,
+        "^OK   thumb stall \\(EXPERIMENT, \\[ThumbStall\\]\\)": 1,
+        "^OK   unseen anim: ready ": 1,
+        "^OK   equals fast \\(docs/258 option C\\)": 1,
+        "^OK   binder type handle direct \\(docs/537 §20\\.3\\)": 1,
+        "^OK   saved frame guard: ": 1,
+        "^OK   route task serve: ": 1,
+        "^OK   goal validation RO: 0x75A647 \\+ the S2 writer set": 1
+      },
+      "logForbid": {
+        "no EA 1\\.69 address": 0,
+        "^(SKIP|FAIL) (thumb stall|anim phase|equals fast|binder type handle direct|goal validation RO|goal hits RO)": 0,
+        "^(SKIP|FAIL) (route task serve|saved frame guard)": 0,
+        "^FAIL unseen anim": 0
+      },
+      "regexCases": {
+        "^ts3native 0\\.36\\.299-eaparB ": {
+          "match": [
+            "ts3native 0.36.299-eaparB 2026-11-24 10:00:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.299-m1123 2026-11-23 12:00:00",
+            "ts3native 0.36.295a 2026-11-20 23:29:00"
+          ]
+        },
+        "^OK   thumb stall \\(EXPERIMENT, \\[ThumbStall\\]\\)": {
+          "match": [
+            "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11 of the Sim thumbnail queue, timeout 10000 ms, action 1"
+          ],
+          "noMatch": [
+            "SKIP thumb stall: bytes at 0x00D5A9E8 / 0x00D5A9F2 / 0x00D5A9FD / 0x00D5AA45 differ: not installed"
+          ]
+        },
+        "^OK   unseen anim: ready ": {
+          "match": [
+            "OK   unseen anim: ready 0x1, mode 1, Every=4 MaxOwedMs=250 NearVisM=10 CapPasses=4 HardCapMs=1500; unseen Sims' non-root-motion pose calls summed over Every passes (--ab unseenanim)"
+          ],
+          "noMatch": [
+            "FAIL unseen anim: ready 0x0, mode 0, Every=4"
+          ]
+        },
+        "^OK   equals fast \\(docs/258 option C\\)": {
+          "match": [
+            "OK   equals fast (docs/258 option C): InternalEquals 0xE7A590 answers int-only value types (enums) from a per-class plan, no loader lock (switch eqMode +0x5F94, --ab equalsfast), SmallEnums=0"
+          ],
+          "noMatch": [
+            "SKIP equals fast ([EqualsFast]): no EA 1.69 address, docs/232 §8"
+          ]
+        },
+        "^OK   binder type handle direct \\(docs/537 §20\\.3\\)": {
+          "match": [
+            "OK   binder type handle direct (docs/537 §20.3): Type.GetTypeFromHandle's EA body 0xDB0940 reads the handle at 0x00DB09DE, no 0xD8A8E0 call to RuntimeTypeHandle.get_Value"
+          ],
+          "noMatch": [
+            "SKIP binder type handle direct: bytes at 0x00DB09C0 differ (another owner or another exe): not installed"
+          ]
+        },
+        "^OK   saved frame guard: ": {
+          "match": [
+            "OK   saved frame guard: a saved task frame inside an instruction is repaired or its stack dropped at load ([EaCrashFixes] SavedFrameGuard=1)"
+          ],
+          "noMatch": [
+            "SKIP saved frame guard: prologue differs"
+          ]
+        },
+        "^OK   route task serve: ": {
+          "match": [
+            "OK   route task serve: the job's managed calls are served after each script task run (TaskServe=1, docs/637)"
+          ],
+          "noMatch": [
+            "SKIP route task serve: needs the async route path",
+            "route task serve off ([RouteAsync] TaskServe=0)"
+          ]
+        },
+        "^OK   goal validation RO: 0x75A647 \\+ the S2 writer set": {
+          "match": [
+            "OK   goal validation RO: 0x75A647 + the S2 writer set (Mode=1 Shadow=0 Attr=0)"
+          ],
+          "noMatch": [
+            "SKIP goal validation RO: needs [RouteGate] Enforce=1 with the async path"
+          ]
+        },
+        "no EA 1\\.69 address": {
+          "match": [
+            "SKIP thumb stall ([ThumbStall]): no EA 1.69 address, docs/232 §8",
+            "SKIP goal hits RO: no EA 1.69 address, docs/670 §11"
+          ],
+          "noMatch": [
+            "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11"
+          ]
+        },
+        "^(SKIP|FAIL) (thumb stall|anim phase|equals fast|binder type handle direct|goal validation RO|goal hits RO)": {
+          "match": [
+            "SKIP thumb stall: bytes at 0x00D5A9E8 / 0x00D5A9F2 / 0x00D5A9FD / 0x00D5AA45 differ: not installed",
+            "FAIL thumb stall fallback: cannot write 0x005F1D75",
+            "SKIP goal hits RO: GoalPoint_Validate's hit loop is not the code read (docs/670 §11)"
+          ],
+          "noMatch": [
+            "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11",
+            "thumb stall: action 4 not available, action 1 instead"
+          ]
+        },
+        "^(SKIP|FAIL) (route task serve|saved frame guard)": {
+          "match": [
+            "SKIP route task serve (ScriptHost_RunTask call sites): call at 0x00D7FE34 is not a call to 0x00D7F3C0, nothing written",
+            "SKIP route task serve: needs the async route path"
+          ],
+          "noMatch": [
+            "OK   route task serve: the job's managed calls are served",
+            "OK   saved frame guard: a saved task frame"
+          ]
+        },
+        "^FAIL unseen anim": {
+          "match": [
+            "FAIL unseen anim: ready 0x0, mode 0, Every=4"
+          ],
+          "noMatch": [
+            "OK   unseen anim: ready 0x1, mode 1"
+          ]
+        }
+      },
+      "run": {
+        "script": [
+          "save-reload.ts",
+          "--world",
+          "SV",
+          "--play",
+          "10",
+          "--after",
+          "3",
+          "--name",
+          "EaParB-SV",
+          "--no-marks"
+        ]
+      }
+    },
+    {
+      "id": "ea-parb-sv-restart",
+      "note": "[est 10 min] fresh game start, load EaParB-SV written by the play job, 3 min live.",
+      "asi": "game-copy/eaparB-1123/ts3native-ea169.asi",
+      "iniBase": "game-copy/eaparB-1123/ts3native-ea169-rc.ini",
+      "fixesPackage": "game-copy/v031-ea169/dl-2058/ts3fixes.package",
+      "pinReason": "EA 1.69 parity lane B build (ts3native 0.36.299-eaparB, docs/334) with its regenerated EA rc ini",
+      "releaseDefaults": true,
+      "save": "EaParB-SV",
+      "noiseCheck": false,
+      "scriptErrorsMax": 0,
+      "timeoutMin": 30,
+      "logRequire": {
+        "^ts3native 0\\.36\\.299-eaparB ": 1,
+        "^OK   thumb stall \\(EXPERIMENT, \\[ThumbStall\\]\\)": 1,
+        "^OK   unseen anim: ready ": 1,
+        "^OK   equals fast \\(docs/258 option C\\)": 1,
+        "^OK   binder type handle direct \\(docs/537 §20\\.3\\)": 1,
+        "^OK   saved frame guard: ": 1,
+        "^OK   route task serve: ": 1,
+        "^OK   goal validation RO: 0x75A647 \\+ the S2 writer set": 1
+      },
+      "logForbid": {
+        "no EA 1\\.69 address": 0,
+        "^(SKIP|FAIL) (thumb stall|anim phase|equals fast|binder type handle direct|goal validation RO|goal hits RO)": 0,
+        "^(SKIP|FAIL) (route task serve|saved frame guard)": 0,
+        "^FAIL unseen anim": 0
+      },
+      "regexCases": {
+        "^ts3native 0\\.36\\.299-eaparB ": {
+          "match": [
+            "ts3native 0.36.299-eaparB 2026-11-24 10:00:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.299-m1123 2026-11-23 12:00:00",
+            "ts3native 0.36.295a 2026-11-20 23:29:00"
+          ]
+        },
+        "^OK   thumb stall \\(EXPERIMENT, \\[ThumbStall\\]\\)": {
+          "match": [
+            "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11 of the Sim thumbnail queue, timeout 10000 ms, action 1"
+          ],
+          "noMatch": [
+            "SKIP thumb stall: bytes at 0x00D5A9E8 / 0x00D5A9F2 / 0x00D5A9FD / 0x00D5AA45 differ: not installed"
+          ]
+        },
+        "^OK   unseen anim: ready ": {
+          "match": [
+            "OK   unseen anim: ready 0x1, mode 1, Every=4 MaxOwedMs=250 NearVisM=10 CapPasses=4 HardCapMs=1500; unseen Sims' non-root-motion pose calls summed over Every passes (--ab unseenanim)"
+          ],
+          "noMatch": [
+            "FAIL unseen anim: ready 0x0, mode 0, Every=4"
+          ]
+        },
+        "^OK   equals fast \\(docs/258 option C\\)": {
+          "match": [
+            "OK   equals fast (docs/258 option C): InternalEquals 0xE7A590 answers int-only value types (enums) from a per-class plan, no loader lock (switch eqMode +0x5F94, --ab equalsfast), SmallEnums=0"
+          ],
+          "noMatch": [
+            "SKIP equals fast ([EqualsFast]): no EA 1.69 address, docs/232 §8"
+          ]
+        },
+        "^OK   binder type handle direct \\(docs/537 §20\\.3\\)": {
+          "match": [
+            "OK   binder type handle direct (docs/537 §20.3): Type.GetTypeFromHandle's EA body 0xDB0940 reads the handle at 0x00DB09DE, no 0xD8A8E0 call to RuntimeTypeHandle.get_Value"
+          ],
+          "noMatch": [
+            "SKIP binder type handle direct: bytes at 0x00DB09C0 differ (another owner or another exe): not installed"
+          ]
+        },
+        "^OK   saved frame guard: ": {
+          "match": [
+            "OK   saved frame guard: a saved task frame inside an instruction is repaired or its stack dropped at load ([EaCrashFixes] SavedFrameGuard=1)"
+          ],
+          "noMatch": [
+            "SKIP saved frame guard: prologue differs"
+          ]
+        },
+        "^OK   route task serve: ": {
+          "match": [
+            "OK   route task serve: the job's managed calls are served after each script task run (TaskServe=1, docs/637)"
+          ],
+          "noMatch": [
+            "SKIP route task serve: needs the async route path",
+            "route task serve off ([RouteAsync] TaskServe=0)"
+          ]
+        },
+        "^OK   goal validation RO: 0x75A647 \\+ the S2 writer set": {
+          "match": [
+            "OK   goal validation RO: 0x75A647 + the S2 writer set (Mode=1 Shadow=0 Attr=0)"
+          ],
+          "noMatch": [
+            "SKIP goal validation RO: needs [RouteGate] Enforce=1 with the async path"
+          ]
+        },
+        "no EA 1\\.69 address": {
+          "match": [
+            "SKIP thumb stall ([ThumbStall]): no EA 1.69 address, docs/232 §8",
+            "SKIP goal hits RO: no EA 1.69 address, docs/670 §11"
+          ],
+          "noMatch": [
+            "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11"
+          ]
+        },
+        "^(SKIP|FAIL) (thumb stall|anim phase|equals fast|binder type handle direct|goal validation RO|goal hits RO)": {
+          "match": [
+            "SKIP thumb stall: bytes at 0x00D5A9E8 / 0x00D5A9F2 / 0x00D5A9FD / 0x00D5AA45 differ: not installed",
+            "FAIL thumb stall fallback: cannot write 0x005F1D75",
+            "SKIP goal hits RO: GoalPoint_Validate's hit loop is not the code read (docs/670 §11)"
+          ],
+          "noMatch": [
+            "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11",
+            "thumb stall: action 4 not available, action 1 instead"
+          ]
+        },
+        "^(SKIP|FAIL) (route task serve|saved frame guard)": {
+          "match": [
+            "SKIP route task serve (ScriptHost_RunTask call sites): call at 0x00D7FE34 is not a call to 0x00D7F3C0, nothing written",
+            "SKIP route task serve: needs the async route path"
+          ],
+          "noMatch": [
+            "OK   route task serve: the job's managed calls are served",
+            "OK   saved frame guard: a saved task frame"
+          ]
+        },
+        "^FAIL unseen anim": {
+          "match": [
+            "FAIL unseen anim: ready 0x0, mode 0, Every=4"
+          ],
+          "noMatch": [
+            "OK   unseen anim: ready 0x1, mode 1"
+          ]
+        }
+      },
+      "run": {
+        "script": [
+          "save-reload.ts",
+          "--control",
+          "--world",
+          "SV",
+          "--after",
+          "3",
+          "--name",
+          "EaParB-SV",
+          "--no-marks"
+        ]
+      }
+    },
+    {
+      "id": "ea-parb-sv-soak-gc",
+      "note": "[est 22 min] 15 min SV soak at normal speed on the Spring baseline, correctness only, with the GC hooks on through job ini (IdleGate=1, SubTimers=1, MarkHelpers=2, MarkHelpersVerify=1: every cycle's helper mark checked against a serial mark).",
+      "asi": "game-copy/eaparB-1123/ts3native-ea169.asi",
+      "iniBase": "game-copy/eaparB-1123/ts3native-ea169-rc.ini",
+      "fixesPackage": "game-copy/v031-ea169/dl-2058/ts3fixes.package",
+      "pinReason": "EA 1.69 parity lane B build (ts3native 0.36.299-eaparB, docs/334) with its regenerated EA rc ini",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "noiseCheck": false,
+      "scriptErrorsMax": 0,
+      "timeoutMin": 35,
+      "ini": {
+        "GC.IdleGate": 1,
+        "GC.SubTimers": 1,
+        "GC.MarkHelpers": 2,
+        "GC.MarkHelpersVerify": 1
+      },
+      "logRequire": {
+        "^ts3native 0\\.36\\.299-eaparB ": 1,
+        "^OK   thumb stall \\(EXPERIMENT, \\[ThumbStall\\]\\)": 1,
+        "^OK   unseen anim: ready ": 1,
+        "^OK   equals fast \\(docs/258 option C\\)": 1,
+        "^OK   binder type handle direct \\(docs/537 §20\\.3\\)": 1,
+        "^OK   saved frame guard: ": 1,
+        "^OK   route task serve: ": 1,
+        "^OK   goal validation RO: 0x75A647 \\+ the S2 writer set": 1,
+        "^GC idle gate: IdleGate=1 \\(gcgMode 1\\) IdleGateMB=64 IdleGateHeapPct=15 ready=0x3$": 1,
+        "^OK   GC sub-timers: 10 call sites$": 1,
+        "^OK   GC mark helpers: MarkHelpers=2 \\(threads 2\\) ": 1,
+        "^OK   GC mark verify \\d+: \\d+ blocks, \\d+ ms, g5Mode 1; helper mark vs serial mark: 0 words differ; serial mark outside the cycle's marks: 0 words$": 1
+      },
+      "logForbid": {
+        "no EA 1\\.69 address": 0,
+        "^(SKIP|FAIL) (thumb stall|anim phase|equals fast|binder type handle direct|goal validation RO|goal hits RO)": 0,
+        "^(SKIP|FAIL) (route task serve|saved frame guard)": 0,
+        "^FAIL unseen anim": 0,
+        "^(SKIP|FAIL) GC (mark helpers|idle gate|sub-timers)": 0,
+        "^GC mark helpers: \\d+ helper faults this session": 0,
+        "^(FAIL|WARN) GC mark verify \\d+: ": 0,
+        "^(SKIP GC mark verify|GC mark verify: (skipped|gave up))": 0
+      },
+      "regexCases": {
+        "^ts3native 0\\.36\\.299-eaparB ": {
+          "match": [
+            "ts3native 0.36.299-eaparB 2026-11-24 10:00:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.299-m1123 2026-11-23 12:00:00",
+            "ts3native 0.36.295a 2026-11-20 23:29:00"
+          ]
+        },
+        "^OK   thumb stall \\(EXPERIMENT, \\[ThumbStall\\]\\)": {
+          "match": [
+            "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11 of the Sim thumbnail queue, timeout 10000 ms, action 1"
+          ],
+          "noMatch": [
+            "SKIP thumb stall: bytes at 0x00D5A9E8 / 0x00D5A9F2 / 0x00D5A9FD / 0x00D5AA45 differ: not installed"
+          ]
+        },
+        "^OK   unseen anim: ready ": {
+          "match": [
+            "OK   unseen anim: ready 0x1, mode 1, Every=4 MaxOwedMs=250 NearVisM=10 CapPasses=4 HardCapMs=1500; unseen Sims' non-root-motion pose calls summed over Every passes (--ab unseenanim)"
+          ],
+          "noMatch": [
+            "FAIL unseen anim: ready 0x0, mode 0, Every=4"
+          ]
+        },
+        "^OK   equals fast \\(docs/258 option C\\)": {
+          "match": [
+            "OK   equals fast (docs/258 option C): InternalEquals 0xE7A590 answers int-only value types (enums) from a per-class plan, no loader lock (switch eqMode +0x5F94, --ab equalsfast), SmallEnums=0"
+          ],
+          "noMatch": [
+            "SKIP equals fast ([EqualsFast]): no EA 1.69 address, docs/232 §8"
+          ]
+        },
+        "^OK   binder type handle direct \\(docs/537 §20\\.3\\)": {
+          "match": [
+            "OK   binder type handle direct (docs/537 §20.3): Type.GetTypeFromHandle's EA body 0xDB0940 reads the handle at 0x00DB09DE, no 0xD8A8E0 call to RuntimeTypeHandle.get_Value"
+          ],
+          "noMatch": [
+            "SKIP binder type handle direct: bytes at 0x00DB09C0 differ (another owner or another exe): not installed"
+          ]
+        },
+        "^OK   saved frame guard: ": {
+          "match": [
+            "OK   saved frame guard: a saved task frame inside an instruction is repaired or its stack dropped at load ([EaCrashFixes] SavedFrameGuard=1)"
+          ],
+          "noMatch": [
+            "SKIP saved frame guard: prologue differs"
+          ]
+        },
+        "^OK   route task serve: ": {
+          "match": [
+            "OK   route task serve: the job's managed calls are served after each script task run (TaskServe=1, docs/637)"
+          ],
+          "noMatch": [
+            "SKIP route task serve: needs the async route path",
+            "route task serve off ([RouteAsync] TaskServe=0)"
+          ]
+        },
+        "^OK   goal validation RO: 0x75A647 \\+ the S2 writer set": {
+          "match": [
+            "OK   goal validation RO: 0x75A647 + the S2 writer set (Mode=1 Shadow=0 Attr=0)"
+          ],
+          "noMatch": [
+            "SKIP goal validation RO: needs [RouteGate] Enforce=1 with the async path"
+          ]
+        },
+        "^GC idle gate: IdleGate=1 \\(gcgMode 1\\) IdleGateMB=64 IdleGateHeapPct=15 ready=0x3$": {
+          "match": [
+            "GC idle gate: IdleGate=1 (gcgMode 1) IdleGateMB=64 IdleGateHeapPct=15 ready=0x3"
+          ],
+          "noMatch": [
+            "GC idle gate off (IdleGate=0)",
+            "SKIP GC idle gate ([GC] IdleGate): no EA 1.69 address, docs/232 §8"
+          ]
+        },
+        "^OK   GC sub-timers: 10 call sites$": {
+          "match": [
+            "OK   GC sub-timers: 10 call sites"
+          ],
+          "noMatch": [
+            "SKIP GC sub-timers: call at 0x00E49E42 is not a call to 0x00E4D4B0, nothing written"
+          ]
+        },
+        "^OK   GC mark helpers: MarkHelpers=2 \\(threads 2\\) ": {
+          "match": [
+            "OK   GC mark helpers: MarkHelpers=2 (threads 2) MinSplit=64 Verify=1 g5Mode=1: 8 mark-bit sites lock bts, 2 lock or, overflow deferral 0xE4C390, 6 call sites (0xE49FDF chained after SubTimers)"
+          ],
+          "noMatch": [
+            "SKIP GC mark helpers ([GC] MarkHelpers): no EA 1.69 address, docs/232 §8",
+            "GC mark helpers off (MarkHelpers=0)"
+          ]
+        },
+        "^OK   GC mark verify \\d+: \\d+ blocks, \\d+ ms, g5Mode 1; helper mark vs serial mark: 0 words differ; serial mark outside the cycle's marks: 0 words$": {
+          "match": [
+            "OK   GC mark verify 3: 1234 blocks, 12 ms, g5Mode 1; helper mark vs serial mark: 0 words differ; serial mark outside the cycle's marks: 0 words"
+          ],
+          "noMatch": [
+            "FAIL GC mark verify 3: 1234 blocks, 12 ms, g5Mode 1; helper mark vs serial mark: 5 words differ"
+          ]
+        },
+        "no EA 1\\.69 address": {
+          "match": [
+            "SKIP thumb stall ([ThumbStall]): no EA 1.69 address, docs/232 §8",
+            "SKIP goal hits RO: no EA 1.69 address, docs/670 §11"
+          ],
+          "noMatch": [
+            "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11"
+          ]
+        },
+        "^(SKIP|FAIL) (thumb stall|anim phase|equals fast|binder type handle direct|goal validation RO|goal hits RO)": {
+          "match": [
+            "SKIP thumb stall: bytes at 0x00D5A9E8 / 0x00D5A9F2 / 0x00D5A9FD / 0x00D5AA45 differ: not installed",
+            "FAIL thumb stall fallback: cannot write 0x005F1D75",
+            "SKIP goal hits RO: GoalPoint_Validate's hit loop is not the code read (docs/670 §11)"
+          ],
+          "noMatch": [
+            "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11",
+            "thumb stall: action 4 not available, action 1 instead"
+          ]
+        },
+        "^(SKIP|FAIL) (route task serve|saved frame guard)": {
+          "match": [
+            "SKIP route task serve (ScriptHost_RunTask call sites): call at 0x00D7FE34 is not a call to 0x00D7F3C0, nothing written",
+            "SKIP route task serve: needs the async route path"
+          ],
+          "noMatch": [
+            "OK   route task serve: the job's managed calls are served",
+            "OK   saved frame guard: a saved task frame"
+          ]
+        },
+        "^FAIL unseen anim": {
+          "match": [
+            "FAIL unseen anim: ready 0x0, mode 0, Every=4"
+          ],
+          "noMatch": [
+            "OK   unseen anim: ready 0x1, mode 1"
+          ]
+        },
+        "^(SKIP|FAIL) GC (mark helpers|idle gate|sub-timers)": {
+          "match": [
+            "SKIP GC idle gate: Boehm state code differs (0xE4C060 / 0xE4A022 / 0xE49AD9 / 0xE49E6D)",
+            "SKIP GC mark helpers: mark-bit site differs at 0x00E4C649, nothing written",
+            "FAIL GC mark helpers: write failed at 0x00E4C649 (err 5); g5Mode 0, serial marker"
+          ],
+          "noMatch": [
+            "GC idle gate: IdleGate=1 (gcgMode 1) IdleGateMB=64",
+            "OK   GC mark helpers: MarkHelpers=2"
+          ]
+        },
+        "^GC mark helpers: \\d+ helper faults this session": {
+          "match": [
+            "GC mark helpers: 1 helper faults this session"
+          ],
+          "noMatch": [
+            "OK   GC mark helpers: MarkHelpers=2 (threads 2)"
+          ]
+        },
+        "^(FAIL|WARN) GC mark verify \\d+: ": {
+          "match": [
+            "FAIL GC mark verify 3: 1234 blocks",
+            "WARN GC mark verify 7: 99 blocks"
+          ],
+          "noMatch": [
+            "OK   GC mark verify 3: 1234 blocks"
+          ]
+        },
+        "^(SKIP GC mark verify|GC mark verify: (skipped|gave up))": {
+          "match": [
+            "SKIP GC mark verify ([GC] MarkHelpersVerify): a stopped-mark call site differs, the helpers install without it",
+            "GC mark verify: gave up after 3 tries"
+          ],
+          "noMatch": [
+            "OK   GC mark verify 3: 1234 blocks"
+          ]
+        }
+      },
+      "run": {
+        "soak": {
+          "minutes": 15
+        }
+      }
+    }
+  ]
+}
