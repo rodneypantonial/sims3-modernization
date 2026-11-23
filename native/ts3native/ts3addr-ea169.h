@@ -993,7 +993,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00D81FF6, 0x00D823B6},
     {0x00D82110, 0x00000000},
     {0x00D83000, 0x00D83330},
-    {0x00D84360, 0x00000000},
+    {0x00D84360, 0x00D846E0},
     {0x00D89930, 0x00D89CB0},
     {0x00D89BF0, 0x00D89F70},
     {0x00D89C60, 0x00D89FE0},
@@ -1116,7 +1116,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00E525C0, 0x00E52610},
     {0x00E529A0, 0x00E529F0},
     {0x00E52B60, 0x00E52BB0},
-    {0x00E52B90, 0x00000000},
+    {0x00E52B90, 0x00E52BE0},
     {0x00E53070, 0x00E530C0},
     {0x00E53130, 0x00E53180},
     {0x00E53220, 0x00E53270},
@@ -1738,8 +1738,6 @@ constexpr unsigned long ts3addr_pairs[][2] = {
 constexpr int ts3addr_count = 1616;
 
 
-// unresolved: 0x00D84360 no-ea-1.69-address native/ts3native/saveframes.cpp (2026-11-19, docs/293 §6: not ported yet)
-// unresolved: 0x00E52B90 no-ea-1.69-address native/ts3native/saveframes.cpp (2026-11-19, docs/293 §6: not ported yet)
 // unresolved: 0x00E535E0 no-ea-1.69-address native/ts3native/yielddiag.cpp (2026-11-19, docs/293 §6: not ported yet)
 // unresolved: 0x00E5404D no-ea-1.69-address native/ts3native/yielddiag.cpp (2026-11-19, docs/293 §6: not ported yet)
 // unresolved: 0x0061BCE0 no-ea-1.69-address native/ts3native/routespeed.cpp (docs/663)

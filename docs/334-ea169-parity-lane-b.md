@@ -133,3 +133,15 @@ and the P4 store `A3 <finish pending>`.
 Code: the `ts3a_noaddr` stand-downs of `ApplyGcIdleGate` and `ApplyGcMarkHelpers` go. These keys ship 0 on Steam
 (`IdleGate=0`, `SubTimers=0`, `MarkHelpers=0`), so the EA rc ini keeps them 0 as well: this only removes the EA SKIP,
 nothing turns on. A test of them on EA needs its own queue (not written here).
+
+## 8. [EaCrashFixes] SavedFrameGuard (saveframes.cpp, 2 rows)
+
+| Steam | EA | what | evidence |
+|---|---|---|---|
+| 0xD84360 | 0xD846E0 | TaskControl_SetTaskContext (detour, prologue `sub esp,0xC8; push ebx; push ebp; push esi`) | internal-call table row {fn, name} with the same name string `ScriptCore.TaskControl::TaskControl_SetTaskContext` in both builds (GetTaskContext 0xD831D0 -> 0xD83500 next to it); 0xD84360..0xD84460 equal at +0x380 modulo 5 pointer / rel32 operands |
+| 0xE52B90 | 0xE52BE0 | the Mono call it makes per frame | sigmap / map exact; 3 / 3 callers, all inside SetTaskContext at the same offsets; 0xE52B90..0xE52C40 equal at +0x50 |
+
+The two rows it reads besides (0xE643B0, 0xE75260) were mapped before. Code: none but the comment (the detour has no
+`ts3a_noaddr` guard: with 0 rows it found no prologue and logged SKIP). 1 bytes row (9 prologue bytes, `ok`). The key
+ships 1; draft PR #690 lists it in ea-ini.ts `KEY_ADDRS`, so it is 0 on EA while unresolved and comes back with these
+rows. Live check: `OK   saved frame guard`.
