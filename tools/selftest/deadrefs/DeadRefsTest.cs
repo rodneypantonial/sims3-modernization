@@ -77,6 +77,29 @@ static class DeadRefsTest
         Check(DeadRefsCore.ConvArmVerdict(3, 0, 2) == "pass", "arm: 3 conclusive + 2 n/a");
         Check(DeadRefsCore.ConvArmVerdict(2, 0, 3) == "inconclusive", "arm: 2 conclusive");
         Check(DeadRefsCore.ConvArmVerdict(4, 1, 0) == "fail", "arm: one fail fails the arm");
+        // SimFrozenCore (docs/205 §2.3b): the gate, and the clock-still memory
+        Check(!SimFrozenCore.FrozenOrNotLive(true, false, false, false), "frozen: live, running = act");
+        Check(SimFrozenCore.FrozenOrNotLive(false, false, false, false), "frozen: CAS / Buy / Build / Edit Town = wait");
+        Check(SimFrozenCore.FrozenOrNotLive(true, true, false, false), "frozen: travelling / shutting down");
+        Check(SimFrozenCore.FrozenOrNotLive(true, false, true, false), "frozen: paused");
+        Check(SimFrozenCore.FrozenOrNotLive(true, false, false, true), "frozen: clock stopped (minimized)");
+        long last = 0; int moved = 0;
+        Check(!SimFrozenCore.ClockStill(500, 1000, ref last, ref moved) && last == 500 && moved == 1000, "clock: first read is a move");
+        Check(!SimFrozenCore.ClockStill(500, 1050, ref last, ref moved), "clock: 50 ms between steps is not frozen");
+        Check(!SimFrozenCore.ClockStill(500, 1099, ref last, ref moved), "clock: 99 ms not frozen");
+        Check(SimFrozenCore.ClockStill(500, 1100, ref last, ref moved), "clock: 100 ms still = frozen");
+        Check(SimFrozenCore.ClockStill(500, 61000, ref last, ref moved), "clock: still frozen a minute later");
+        Check(!SimFrozenCore.ClockStill(533, 61010, ref last, ref moved) && moved == 61010, "clock: a move unfreezes at once");
+        Check(!SimFrozenCore.ClockStill(533, 61010, ref last, ref moved), "clock: second caller in the same frame sees the recent move");
+        last = 7; moved = int.MaxValue - 20;
+        Check(!SimFrozenCore.ClockStill(7, unchecked(int.MaxValue + 50), ref last, ref moved), "clock: TickCount wrap, 70 ms not frozen");
+        Check(SimFrozenCore.ClockStill(7, unchecked(int.MaxValue + 90), ref last, ref moved), "clock: TickCount wrap, 110 ms frozen");
+        // SimFrozenCore.Hold (docs/205 §2.3c): the drains' wait
+        Check(SimFrozenCore.Hold(true, false, false), "hold: paused / not live = wait, work kept");
+        Check(!SimFrozenCore.Hold(false, false, false), "hold: live and running = act");
+        Check(!SimFrozenCore.Hold(true, true, false), "hold: world going away = caller's exit, no endless wait");
+        Check(!SimFrozenCore.Hold(true, false, true), "hold: save started (wildflower) = caller's exit");
+        Check(!SimFrozenCore.Hold(false, true, true), "hold: running, leaving and saving = no wait");
         Console.WriteLine(sFails == 0 ? "deadrefs selftest: PASS" : "deadrefs selftest: FAIL " + sFails);
         Environment.Exit(sFails == 0 ? 0 : 1);
     }

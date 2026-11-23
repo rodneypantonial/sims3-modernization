@@ -886,7 +886,7 @@ namespace Ts3Fixes
         static void UrPlacedSweep()
         {
             var placed = sUrPlaced;
-            if (placed.Count == 0 || !GameStates.IsLiveState) return;
+            if (placed.Count == 0 || SimFrozenOrNotLive()) return;  // docs/205 §2.3e: no repair placement while paused; the map waits
             System.Collections.Generic.List<ulong> ids = new System.Collections.Generic.List<ulong>(placed.Keys);
             foreach (ulong id in ids)
             {
@@ -1149,7 +1149,6 @@ namespace Ts3Fixes
                     if (btm && !btmAnswered) BtmPost(r, unchecked(System.Environment.TickCount - t0));
                     if (hlmLeg != 0) HlmPost(hlmLeg, p, r, unchecked(System.Environment.TickCount - t0), last.Cut, hlm, hgr);
                     else if (hlm && !btmAnswered) HlmMiss(r, unchecked(System.Environment.TickCount - t0));
-                    FrbPost(r, unchecked(System.Environment.TickCount - t0));  // docs/851 §8 failreplanboat (FailReplanBoat.cs): every failed plan, answered ones too; counts with the switch off
                 }
                 finally { sUfPlanDepth.Exit(task); DiagSend(12, Handle); }  // docs/197 §7: this plan's scope ends here
                 UrLearn ln;
