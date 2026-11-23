@@ -171,6 +171,14 @@ static void TsLodLog(const u8* blk) {
 // 0x5EDB30. Same thread (main), same list, one job per call as before.
 static const DWORD TS_PICK_AT = TS3A(0x005F12A3), TS_PICK = TS3A(0x005EDB30);
 static const u8 kTsPickSite[12] = {0x8B, 0xCF, 0xE8, 0x86, 0xC8, 0xFF, 0xFF, 0x85, 0xC0, 0x89, 0x47, 0x68};  // mov ecx,edi; call; test; mov [edi+68h],eax
+// A call site template with this build's own rel32 at `at` (the call ends at `next`): the literals above hold Steam's
+// offsets, EA 1.69 / retail 1.67 call the same target from another distance (check and revert both use this).
+static void TsCallBytes(u8* out, const u8* tmpl, size_t n, size_t at, DWORD target, DWORD next) {
+    memcpy(out, tmpl, n);
+    const DWORD rel = target - next;
+    memcpy(out + at, &rel, 4);
+}
+static void TsPickBytes(u8 out[12]) { TsCallBytes(out, kTsPickSite, 12, 3, TS_PICK, TS_PICK_AT + 7); }
 // The manager's Update (vtable 0x1088F2C +0x1C = 0xD61670, thiscall, 2 arguments) steps the front request through
 // 0xD5C6D0 -> 0xD59C10. Its slot is swapped so the fallback sees, after each step, whether the request left state 0x11.
 static const DWORD TS_TM_SLOT = TS3A(0x01088F48), TS_TM_UPDATE = TS3A(0x00D61670);
@@ -225,6 +233,7 @@ static TsPickFn g_tsPickOrig = (TsPickFn)(uintptr_t)TS_PICK;  // selftest: its o
 static const DWORD OF_CALL_AT = TS3A(0x006F4926), OF_SWAP = TS3A(0x006DD160), OF_REQ = TS3A(0x005E4EB0);
 // lea ecx,[esi+210h]; call 0x6DD160; and byte ptr [esi+29Ch],0FEh
 static const u8 kOfSite[18] = {0x8D, 0x8E, 0x10, 0x02, 0x00, 0x00, 0xE8, 0x2F, 0x88, 0xFE, 0xFF, 0x80, 0xA6, 0x9C, 0x02, 0x00, 0x00, 0xFE};
+static void OfSiteBytes(u8 out[18]) { TsCallBytes(out, kOfSite, 18, 7, OF_SWAP, OF_CALL_AT + 11); }
 static int g_ofMode;                 // 0 = off, 1 = measure, 2 = first
 static DWORD g_ofLogMs = 100, g_ofMaxAgeMs = 60000, g_ofSumAt;
 static OfTable g_of;
@@ -505,14 +514,18 @@ static void TsRevert() {
     if (g_ofInstalled) {
         u8* const call = (u8*)(uintptr_t)OF_CALL_AT;
         const DWORD ours = (DWORD)(uintptr_t)&OfSwap - (OF_CALL_AT + 6 + 5);
-        if (Readable(call, sizeof(kOfSite)) && *(const DWORD*)(call + 7) == ours) Write(call, kOfSite, sizeof(kOfSite));
+        u8 orig[sizeof(kOfSite)];
+        OfSiteBytes(orig);
+        if (Readable(call, sizeof(orig)) && *(const DWORD*)(call + 7) == ours) Write(call, orig, sizeof(orig));
         g_ofInstalled = false;
         g_ofMode = 0;
     }
     if (g_tsPickPatched) {
         u8* const pick = (u8*)(uintptr_t)TS_PICK_AT;
         const DWORD ours = (DWORD)(uintptr_t)&TsPick - (TS_PICK_AT + 2 + 5);
-        if (Readable(pick, sizeof(kTsPickSite)) && *(const DWORD*)(pick + 3) == ours) Write(pick, kTsPickSite, sizeof(kTsPickSite));
+        u8 orig[sizeof(kTsPickSite)];
+        TsPickBytes(orig);
+        if (Readable(pick, sizeof(orig)) && *(const DWORD*)(pick + 3) == ours) Write(pick, orig, sizeof(orig));
         g_tsPickPatched = false;
     }
     if (g_tsTmHooked) {
@@ -526,7 +539,9 @@ static void TsRevert() {
 static bool TsPickInstall(const char* who) {
     if (g_tsPickPatched) return true;
     u8* const site = (u8*)(uintptr_t)TS_PICK_AT;
-    if (!Matches((u8*)(uintptr_t)TS_PICK_AT, kTsPickSite, sizeof(kTsPickSite))) {
+    u8 want[sizeof(kTsPickSite)];
+    TsPickBytes(want);
+    if (!Matches((u8*)(uintptr_t)TS_PICK_AT, want, sizeof(want))) {
         Log("SKIP %s: the ready-job pick at 0x%08X differs", who, TS_PICK_AT + 2);
         return false;
     }
@@ -602,7 +617,9 @@ static void ApplyOutfitFirst(const wchar_t* ini) {
     g_ofLogMs = (DWORD)(logMs < 0 ? 0 : logMs);
     g_ofMaxAgeMs = (DWORD)(age < 1000 ? 1000 : age > 600000 ? 600000 : age);
     u8* const site = (u8*)(uintptr_t)OF_CALL_AT;
-    if (!Matches((u8*)(uintptr_t)OF_CALL_AT, kOfSite, sizeof(kOfSite))) {
+    u8 want[sizeof(kOfSite)];
+    OfSiteBytes(want);
+    if (!Matches((u8*)(uintptr_t)OF_CALL_AT, want, sizeof(want))) {
         Log("SKIP outfit first: the delayed-swap call at 0x%08X differs: not installed", OF_CALL_AT + 6);
         return;
     }
