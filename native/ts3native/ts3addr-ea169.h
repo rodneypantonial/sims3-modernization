@@ -18,12 +18,17 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00452D30, 0x00452F00},
     {0x0049C5F0, 0x0049C740},
     {0x004A7910, 0x004A78A0},
+    {0x004A8380, 0x004A8310},
     {0x004A850F, 0x004A845F},
     {0x004AA1B0, 0x004AA080},
     {0x004AFFC0, 0x004AFD40},
     {0x004B009E, 0x004AFE1E},
     {0x004B1AE0, 0x004B1950},
     {0x004B2D00, 0x004B2B70},
+    {0x004B2E78, 0x004B2CE8},
+    {0x004B2E7E, 0x004B2CEE},
+    {0x004B2EA4, 0x004B2D14},
+    {0x004B2EC0, 0x004B2D30},
     {0x004D9AD0, 0x004D9A80},
     {0x004E16F0, 0x004E18E0},
     {0x004E17B0, 0x004E19A0},
@@ -58,6 +63,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x0050B270, 0x0050B100},
     {0x0050B300, 0x0050B190},
     {0x005172E0, 0x00517140},
+    {0x0054DD80, 0x0054D880},
     {0x00568710, 0x00000000},
     {0x00568A6C, 0x00000000},
     {0x00568B28, 0x00000000},
@@ -295,6 +301,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00655AFB, 0x00656D9B},
     {0x00657650, 0x00658860},
     {0x006583E0, 0x006594A0},
+    {0x0065BB90, 0x0065CC50},
     {0x0065E0D0, 0x0065F190},
     {0x0065F80E, 0x006608CE},
     {0x0065FB9E, 0x00660C5E},
@@ -588,6 +595,8 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x007B0A24, 0x007B19F4},
     {0x007CFA30, 0x007D07D0},
     {0x007D2DB0, 0x007D2C40},
+    {0x007D7580, 0x007D7500},
+    {0x007D80E0, 0x007D8060},
     {0x007D98C0, 0x007D9840},
     {0x007E2530, 0x007E2360},
     {0x007E7A3D, 0x007E78AD},
@@ -740,6 +749,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x0085FF30, 0x0085EBE0},
     {0x0085FFC2, 0x00000000},
     {0x0085FFE0, 0x0085EC90},
+    {0x00862CC0, 0x008618C0},
     {0x00863DC0, 0x00862990},
     {0x00866E90, 0x00865BA0},
     {0x00869360, 0x00000000},
@@ -1717,7 +1727,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
 // unresolved: 0x00D7FB53 no-ea-1.69-address native/ts3native/taskserve.cpp
 // unresolved: 0x00D7FE01 no-ea-1.69-address native/ts3native/taskserve.cpp
 // unresolved: 0x00D800FC no-ea-1.69-address native/ts3native/taskserve.cpp
-constexpr int ts3addr_count = 1618;
+constexpr int ts3addr_count = 1628;
 
 
 // unresolved: 0x00568710 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
