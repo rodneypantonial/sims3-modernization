@@ -7259,3 +7259,9 @@ Lane G `thread-census-1120` bp-thread-census, first attempt (pid 12184, start 09
 | I-577-1 | 67 §45 | The 2026-11-19..23 `apex-401-present-lock-cycle` hangs are LotLightBridge::UpdateHooks vs D3D9Hooks g_lock, not the PostScene pair of #90 | disassembly of the 4.0.13 and a69a1bbc dumps (pushed mutex + "LotLightBridge" registration); PDB stress build names the frames [verified] | dump-locks + stacks of every new hit dump | same locks / helper | another pair: new section | verified (4 dumps) |
 | I-577-2 | 67 §45 | Taking the registration lock first in UpdateHooks removes the cycle | stress build (8 s hold inside UpdateHooks): base 3/3 hang, fix 3/3 pass [verified] | natural hits on an Apex build with #144 | 0 hits of this cycle over the next test week | a hit with UpdateHooks on the stack | open |
 | I-577-3 | 67 §45 | An off-render-thread unregister (pump reinstall) can still deadlock with a Present-time setter | static review of the fix [inferred] | a dump with Shutdown/SetEnabled(false) -> UnregisterAll on the Apex thread | never seen | seen: follow-up Apex PR | open |
+
+## 589. EA 1.69 parity lane B rows (2026-11-23, docs/334; static, not run)
+
+| ID | Doc | Claim | Based on | Check | Pass | Fail | Verdict |
+|---|---|---|---|---|---|---|---|
+| I-589-1 | 334 §2 | The 17 EA 1.69.47 rows of thumbstall.cpp (state 0x11 site + keep/go/abort, request entries, CASUtils IC bodies, pick site, vtables, globals) are the Steam sites | shape + operand map + callers, block 0xD5A900..0xD5AA80 equal at +0x20, IC names, vtable slot and reference votes [verified, static] | queue `ea-parity-b-1123` on EA: `OK   thumb stall` line, no SKIP / FAIL, no crash at 0xD5A9F2 | OK line, clean soak | SKIP bytes line or crash: drop the rows | static verified, live open |

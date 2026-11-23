@@ -67,19 +67,18 @@
 // range, but RequestSim raises it to MinSimLOD (1 below SimQuality VeryHigh) and the job is still the same queue.
 static const DWORD TS_SITE = TS3A(0x00D5A9C8), TS_KEEP = TS3A(0x00D5A9D2), TS_GO = TS3A(0x00D5A9DD), TS_ABORT = TS3A(0x00D5AA25);
 // inline asm takes no constexpr: its five addresses are literals per build, tied to the table by the static_assert (as mintcall.cpp).
-// EA 1.69: no rows yet (docs/232 §8), so 0 there; ApplyThumbStall / ApplyThumbCallers SKIP on EA and the stubs never run.
 #if defined(TS3A_TABLE) && defined(TS3A_RETAIL)  // retail 1.67 (docs/273)
 #define TS_ASM_KEEP 0x00D5AB12
 #define TS_ASM_ABORT 0x00D5AB65
 #define TS_ASM_GO 0x00D5AB1D
 #define TC_ASM_CALL 0x0044C4F0
 #define TC_ASM_RET 0x005A88E9
-#elif defined(TS3A_TABLE)
-#define TS_ASM_KEEP 0
-#define TS_ASM_ABORT 0
-#define TS_ASM_GO 0
-#define TC_ASM_CALL 0
-#define TC_ASM_RET 0
+#elif defined(TS3A_TABLE)  // EA app 1.69.47 (docs/334 §2)
+#define TS_ASM_KEEP 0x00D5A9F2
+#define TS_ASM_ABORT 0x00D5AA45
+#define TS_ASM_GO 0x00D5A9FD
+#define TC_ASM_CALL 0x0044C5D0
+#define TC_ASM_RET 0x005A8759
 #else
 #define TS_ASM_KEEP 0x00D5A9D2
 #define TS_ASM_ABORT 0x00D5AA25
@@ -439,9 +438,6 @@ static bool TsInstallFallback() {
 
 static void ApplyThumbStall(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"ThumbStall", L"Enabled", 0, ini)) return;
-#ifdef TS3A_TABLE
-    if (ts3a_noaddr) { Log("SKIP thumb stall ([ThumbStall]): no EA 1.69 address, docs/232 §8"); return; }
-#endif
     const int t = GetPrivateProfileIntW(L"ThumbStall", L"TimeoutMs", 10000, ini), a = GetPrivateProfileIntW(L"ThumbStall", L"Action", 1, ini);
     g_tsTimeoutMs = (DWORD)(t < 1000 ? 1000 : t > 600000 ? 600000 : t);
     g_tsAction = a < 0 ? 0 : a > 4 ? 4 : a;
@@ -633,9 +629,6 @@ static __declspec(naked) void TcStubSwap() {
 
 static void ApplyThumbCallers(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"ThumbCallers", L"Enabled", 0, ini)) return;
-#ifdef TS3A_TABLE
-    if (ts3a_noaddr) { Log("SKIP thumb callers ([ThumbCallers]): no EA 1.69 address, docs/232 §8"); return; }
-#endif
     g_tcLogEach = GetPrivateProfileIntW(L"ThumbCallers", L"LogEach", 1, ini) != 0;
     g_tcTopAt = GetTickCount();
     InstallDetour("ThumbHouseholdSimRequest", TC_HH, kTcHhPro, sizeof(kTcHhPro), (void*)TcStubHh, &g_tcOrig[0]);
