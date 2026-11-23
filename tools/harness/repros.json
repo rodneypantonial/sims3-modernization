@@ -113706,6 +113706,54 @@
     ]
   },
   {
+    "id": "outfitfirst-check",
+    "bug": "docs/684 §9: a Sim that changes clothes (going to work or school, Switch To Outfit, bath, bed) stands idle in Sim.SwitchOutfitHelper.Wait until the SimService has built the new outfit's model; the service builds one job at a time and takes the ready job of the Sim nearest the camera first, so the swap of a Sim away from the camera waits behind every nearer Sim's LOD build",
+    "fix": "ts3native [OutfitFirst] (thumbstall.cpp, default off): Enabled=1 notes each live outfit swap at the call 0x6F492C; Mode=1 measures (how long the swap's job sat ready, how many other jobs were built first), Mode=2 builds the oldest pending swap's ready job first (same builds, another order, every Sim alike)",
+    "save": "needs a loaded world in live mode with an active household of two or more Sims, child or older, and townies around (Isla Paradiso: Baseline-IP-Spring)",
+    "note": "Measured in natural play (docs/684 §9.1, contributor rig, Isla Paradiso 6-min calm soaks): s233 Mode 1 / s234 Mode 2 ready ms in all 6,327 -> 3,988, other jobs built past a ready swap 8 -> 0. Job ini: [OutfitFirst] Enabled=1 Mode=1 for the off arm (measure), Mode=2 for the on arm (no runtime switch: the mode is read at start-up). The trigger is the agent's outfit_change, which runs EA's SwitchToOutfitWithoutSpin (CASUtils.SetOutfitInGameObjectDelayed, the same delayed swap as Switch To Outfit) on the household Sims and then on townies spread over the town, so most swaps are away from the camera. A game whose swaps never wait behind other jobs (ready 0 in the off arm) is N/A, not FAIL: then the wait is the build itself.",
+    "expect": "ts3native.log: 'OK   outfit first ([OutfitFirst], docs/684 §9)' with the job's mode; 'outfitfirst: swap job taken by the game's order' lines (Mode 1) or 'outfitfirst: swap job taken first' lines (Mode 2) after the outfit_change steps; the once-a-minute 'outfitfirst: mode N, swaps noted N' summary with swaps noted > 0, and in Mode 2 'other jobs built past a ready swap' near 0. outfit_change answers list the changed Sims, every one wears the asked outfit; no new exceptions",
+    "steps": [
+      {
+        "cmd": "outfit_change",
+        "args": {
+          "count": 8,
+          "category": "formal"
+        },
+        "waitS": 30,
+        "note": "the household Sims (then others) change into Formalwear at once: delayed swaps, one SimService build job each"
+      },
+      {
+        "cmd": "outfit_change",
+        "args": {
+          "count": 12,
+          "category": "athletic",
+          "townies": true
+        },
+        "waitS": 30,
+        "note": "townies over the town (most away from the camera) change at once"
+      },
+      {
+        "cmd": "outfit_change",
+        "args": {
+          "count": 12,
+          "category": "everyday",
+          "townies": true
+        },
+        "waitS": 30,
+        "note": "more townies, back to Everyday"
+      },
+      {
+        "cmd": "outfit_change",
+        "args": {
+          "count": 8,
+          "category": "everyday"
+        },
+        "waitS": 70,
+        "note": "the household back to Everyday; the wait spans the once-a-minute summary line"
+      }
+    ]
+  },
+  {
     "id": "apex-buy-entry-stress",
     "bug": "2026-11-21: Apex Radiance 4.0.13 + RTX Remix bridge crash 3-4 s after the first Buy-mode entry (2 of 3 tries of speedlock-modeswitch): AV inside the bridge client SetStreamSource (d3d9.dll+0x3A91D read 0x61, or a wild call from its D3DAutoPtr release at +0x27898), called from the game wrapper Device_SetStreamSource 0x60F020 with a gone VB wrapper or D3D VB (docs/67 §44)",
     "fix": "none yet: detector [CrashForensics] VbGuard=1 (0.36.297-vbg1121b) names who freed the VB wrapper",
@@ -116348,6 +116396,71 @@
         "cmd": "patches",
         "args": {
           "firenre": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "actdelay-check",
+    "bug": "docs/684: Sims stand still before they start an interaction they were given or picked; nothing measured where that time goes (queue, the Sim's loop, posture transitions, Run's setup, route plans on the sim thread or asleep on a ts3native route job, re-plans, the gap from plan to first step)",
+    "fix": "measurement only: ts3fixes actdelay (ActDelay.cs + ActDelayCore.cs, tuning kActDelay, default off), pass-through hooks; per interaction instance the buckets from queued to acting, one 'actdelay:' line per instance over kActDelayLogMs (500), an 'actdelay minute:' summary a minute, ActDelayCheck result = p50/p90/max per bucket and Sim kind + top 15 interaction types",
+    "save": "needs a loaded world in live mode with Sims acting (no save change)",
+    "note": "UNVERIFIED in the game (2026-11-20: built with Roslyn, core selftest tools/selftest/actdelay). Read-only. 'run' is the bucket model in the game's Mono (no Sim needed); 'live' lists the nine hook swaps; the 90 s wait lets autonomy queue and run interactions with the probe on. Counters 4270-4289 (4280-4289: outfit and sync waits, rides, docs/684 §8).",
+    "expect": "run: 'verdict: ok'. live: 'members found=True'. result after the wait: 'actdelay switch on', acted > 0 with npc > 0, a 'p50/p90/max ms per bucket' table, 'top interaction types' rows, errors 4275=0; ts3native.log has 'actdelay minute:' lines; no new exceptions; nothing else in the game differs",
+    "steps": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ActDelayCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "waitS": 1,
+        "note": "the bucket logic on a fixed scenario"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "actdelay": true
+        },
+        "waitS": 1,
+        "note": "probe on"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ActDelayCheck",
+          "args": [
+            "live"
+          ]
+        },
+        "waitS": 90,
+        "note": "hook swaps"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ActDelayCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "aggregate after 90 s of play"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "actdelay": false
+        },
+        "note": "back to the default"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "actdelay": false
         }
       }
     ]
