@@ -21,7 +21,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { stallGuard } from './game-alive.ts';
+import { GUARD_MS, captureHang, dumpHungGame, hangDir, stallGuard } from './game-alive.ts';
 import { parseLog } from '../mem-report.ts';
 import { BIN, GAME_NAME } from './game-exe.ts';
 
@@ -40,6 +40,14 @@ export function markFields(logText: string, tag: string): Record<string, number 
   return parseLog(logText).samples.filter(s => s.tag === 'mark' && s.ev === tag).at(-1)?.v ?? null;
 }
 export const scratchOk = (name: string) => /^[\w.-]+$/.test(name) && !/^baseline-/i.test(name);
+// Load-start check after load_save from the menu, one call per GUARD_MS sample once LOAD_GRACE_MS passed (a menu load takes ~20 s
+// on EA and keeps the sim busy): a miss = game_state answers and is not in a world. stallGuard cannot see this: at the menu the
+// agent heartbeat ticks (ea-cullrace-1123 sv-play 2026-11-23 waited the whole 900 s with no capture). Pure, --self-check.
+export const LOAD_GRACE_MS = 60000;
+export function loadStartStep(st: { misses: number }, gs: { ok?: boolean; result?: { in_world?: boolean } } | null): string {
+  st.misses = gs?.ok && gs.result?.in_world === false ? st.misses + 1 : 0;
+  return st.misses >= 2 ? `load never started: agent answers and still at the main menu for ${Math.round(2 * GUARD_MS / 1000)} s` : '';
+}
 
 function selfCheck() {
   const log = 'ts3native 0.36.118 2026-10-30 01:00:00\nsave: end #1 result 1 after 8123 ms\nx\nsave: end #2 result 0 after 99 ms\n'
@@ -53,6 +61,14 @@ function selfCheck() {
   const pk = peakOf({ largestFreeMB: 900, commitMB: 2000 }, [{ largestFreeMB: 880, commitMB: 2050, freeMB: 1500 }, { largestFreeMB: 640, commitMB: 2300, freeMB: 1300 }, null]);
   assert.deepEqual([pk.reads, pk.minBig, pk.bigNeedMB, pk.minFree, pk.commitPeakMB], [3, 640, 260, 1300, 300]);
   assert.equal(peakOf(null, []).bigNeedMB, null);
+  const ls = { misses: 0 }, menu = { ok: true, result: { in_world: false } };
+  assert.equal(loadStartStep(ls, menu), ''); // 1 miss
+  assert.equal(loadStartStep(ls, { ok: false }), ''); // no answer = the sim is busy loading: resets
+  assert.equal(loadStartStep(ls, menu), '');
+  assert.equal(loadStartStep(ls, { ok: true, result: { in_world: true } }), ''); // loading
+  assert.equal(loadStartStep(ls, menu), '');
+  assert.match(loadStartStep(ls, menu), /^load never started/); // 2 in a row
+  assert.equal(loadStartStep({ misses: 1 }, null), '');
   console.log('save-reload self-check ok');
 }
 
@@ -96,9 +112,29 @@ async function until(what: string, capS: number, cond: () => Promise<boolean>, e
     if (await cond()) return Date.now() - t0;
     const why = await g();
     if (why) throw new Error(why);
-    if (Date.now() - t0 > capS * 1000) throw new Error(`${what}: not done after ${capS} s`);
+    if (Date.now() - t0 > capS * 1000) throw new Error(await hangEvidence(`${what}: not done after ${capS} s`));
     await sleep(everyMs);
   }
+}
+// a wait that failed with the game up: what the agent says, the hang capture (stacks, managed stack) and a dump, as stallGuard
+// does for "nothing moved" (queue.ts kills the game after the failure, so this is the last chance)
+async function hangEvidence(why: string) {
+  const snap = async (cmd: string, args?: object) => JSON.stringify(await ag(cmd, args)).slice(0, 2000);
+  log(`${why}: game_state ${await snap('game_state')}; async_log ${await snap('async_log')}; dialog ${await snap('pending_dialogs')}; state machine ${await snap('reflect_get', { path: 'Sims3.Gameplay.GameStates.sSingleton.mStateMachine', depth: 3 })}`);
+  return `${why}; ${await captureHang(hangDir(), { port: PORT }).catch(e => `hang capture failed: ${e}`)}; ${dumpHungGame(why)}`;
+}
+// the menu reload's wait: in live mode, or fail once the load has not started after LOAD_GRACE_MS + 2 samples
+function menuLoadCond() {
+  const st = { misses: 0 };
+  let next = Date.now() + LOAD_GRACE_MS;
+  return async () => {
+    if (await inLive()) return true;
+    if (Date.now() < next) return false;
+    next = Date.now() + GUARD_MS;
+    const why = loadStartStep(st, await ag('game_state'));
+    if (why) throw new Error(await hangEvidence(why));
+    return false;
+  };
 }
 // Steam GC_black_list_spacing 0x0119482C and the [GC] BlackListCapKB counters (docs/232 Run 8q); nulls when unreadable
 async function gcState() {
@@ -228,7 +264,7 @@ try {
       if (!lr.ok) throw new Error(`load_save: ${lr.error}`);
       out.phases[`menuToLoadMs${sfx}`] = Date.now() - tl;
       tl = Date.now();
-      out.phases[`loadMs${sfx}`] = await until('reload', 900, inLive, 1000);
+      out.phases[`loadMs${sfx}`] = await until('reload', 900, menuLoadCond(), 1000);
       out.phases[`reloadCycleMs${sfx}`] = Date.now() - tc;
       (out.reloadPeak ??= {})[`menu${sfx}`] = await stopM(); // unload + load: the compaction itself must not run out of address space
       log(`menu route${sfx}: unload ${out.phases[`menuMs${sfx}`]} ms, load ${out.phases[`loadMs${sfx}`]} ms, cycle ${out.phases[`reloadCycleMs${sfx}`]} ms (save included)`);
