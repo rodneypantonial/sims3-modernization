@@ -33,6 +33,13 @@
 #   sharelaneshh laddersharehh spiralsharehh simpass simpasshh angleentry angleentryhh lanewaitlog
 #   blockedusehh
 #   makebedbothhh makebedbothlog
+#   reachuse reachusehh reachuselog
+#   viewlenient viewlenienthh viewlenientlog
+#   socialreach socialreachhh socialreachlog
+#   unstuck unstuckhh unstucklog
+#   woohoosnap woohoosnaphh pairsnap pairsnaphh woohoosnaplog pairsnaplog
+#   linewaitlog rhshare rhsharehh servingshare servingsharehh
+#   showertogether showertogetherhh showerpee showerpeehh showersharelog
 #   awardkeep boatgetoutguard bsrefund convturn eanullguards indoorcap
 #   ageupdupinst boatroutenull motivesnohousehold overwatchresetgone stagedarrival
 #   overwatchspread overwatchstucknotice petfireplan posturepopcycle simfestkeep socialworkeronlot splashroof unigradkeep

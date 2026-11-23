@@ -556,6 +556,12 @@ namespace Ts3Fixes
             ApplyShareLanes();         // docs/686 §8 (ShareLanes.cs): sharelanes / laddershare / spiralshare ON, simpass / angleentry and the household switches off by default (counts either way)
             ApplyBlockedUse();         // docs/686 §10 (BlockedUse.cs): blockeduse ON, blockedusehh off by default (counts either way)
             ApplyMakeBedBoth();        // docs/686 §13 (MakeBedBoth.cs): makebedboth ON, makebedbothhh off by default (counts either way)
+            ApplySocialReach();        // docs/686 §17 (SocialReach.cs): socialreach / socialreachhh, off by default (counts either way); its DoRoute step is in ApplyBlockedUse's hook, as unstuck's (§18, Unstuck.cs)
+            ApplyWooHooSnap();         // docs/686 §20 (WooHooSnap.cs): woohoosnap / woohoosnaphh, pairsnap / pairsnaphh, off by default; their steps are in ApplyBlockedUse's, ApplySocialReach's and ApplyShowerShare's hooks
+            ApplyReachUse();           // docs/686 §12 (ReachUse.cs): reachuse / reachusehh, off by default (counts either way); the DoRoute hook is ApplyBlockedUse's
+            ApplyObjShare();           // docs/686 §14 (ObjShare.cs): rhshare / servingshare and their household switches, linewaitlog, off by default (counts either way); the line hook is ApplyShareLanes's
+            ApplyShowerShare();        // docs/686 §15 (ShowerShare.cs): showertogether / showerpee and their household switches, off by default (counts either way); the line hook is ApplyShareLanes's
+            ApplySmcSetActor();        // SmcSetActor.cs: StateMachineClient.SetActor for servingshare (docs/686 §14), a one-int test while nothing is armed
             try { Alloc87Sync(); } catch (Exception) { }  // docs/625: before any save loads, when the tuning turns them on
         }
 
@@ -1634,7 +1640,37 @@ namespace Ts3Fixes
         // [4462-4469] makebedboth (MakeBedBoth.cs, docs/686 §13): Make Bed runs on a bed with exactly one unmade free half / second half made from the first
         // side / closed half made from the other side (first make) / kept: the half can be reached / kept: no side to make it from / errors / would (off,
         // or household without makebedbothhh) / run ended early, flags put back.
-        const int kCounterSlots = 4470;
+        // [4446-4461] reachuse (ReachUse.cs, docs/686 §12): failed point plans of a reach-kind interaction in DoRoute / would handle, off / exempt (household
+        // without reachusehh) / done from range: fire / floor (puddle, burnt tile) / small thing picked up or cleaned away / plant / of them without a walk /
+        // slot chores given to blockeduse's rules / kept: nothing in reach / kept: other level or lot / kept: wall between / walk stopped / errors / kept:
+        // cooling down / other failed point plans (not a reach kind, not to the target, a Sim blocks, portal locked, pet).
+        // [4510-4525] viewlenient (ViewLenient.cs, docs/686 §16): failed plans of a view-kind interaction in DoRoute / would handle, off / exempt (household
+        // without viewlenienthh) / handled, by kind: contemplate / art (ViewObjects) / performer / tv / stars / by outcome: stayed in place / walked to the
+        // nearest place with a view / quiet ends (no balloon) / kept as the game has it (aborted plan, slot route, a route with no balloon, pet, another
+        // walk) / walk stopped or ended with no view / errors / quiet ends while cooling down / tries after a walk (failed replan).
+        // [4526-4537] socialreach (SocialReach.cs, docs/686 §17): failed plans and placements of talk socials (plain SocialInteractionA/B, one-person jig,
+        // two humans) / would handle, off / exempt (a household Sim in the pair without socialreachhh, none without socialreach) / paired or jig socials left
+        // alone / handled, by kind: the starter's route / the partner's route / the pair's placement / by outcome: from where they stand / walked to the
+        // nearest place / kept as the game has it (too far, other level, wall, sitting, still walking, placement jig walk, cooling down) / walk stopped or
+        // ended out of reach / errors.
+        // [4538-4549] unstuck (Unstuck.cs, docs/686 §18): failed plans left to the game (no path, no destination, obstructed) / stuck signals (3 from one
+        // spot over 2.5 sim-minutes, or the game's stuck check) / Sims the game's stuck check found no way for / would look, off / exempt (household
+        // without unstuckhh) / kept: sitting, lying, swimming, riding, carried, cancelled / kept: can walk 3 m away / kept: walled in (no way through
+        // objects either) / walked out through objects / walk out stopped / the failed route planned again after the walk out: ok / errors.
+        // [4566-4581] woohoosnap, pairsnap (WooHooSnap.cs, docs/686 §20): failed plans of WooHoo partners / would, off / exempt (household without
+        // woohoosnaphh) / snaps at a bed / at a shower, tub, all-in-one bathroom or sauna / at another object / kept (other lot, not a route failure, no
+        // spot, pet or rider, a social's own route, walk up cancelled) / snaps after a walk up / snap outs (both rules) / errors; paired socials:
+        // failed placements, plans and walks / would, off / exempt (household without pairsnaphh) / placed (snap, turn, jig slot, plan through
+        // objects) / kept (too far, other level, sitting, still walking, no spot) / errors.
+        // [4470-4493] objshare (ObjShare.cs, docs/686 §14): linewait: line waits from half a sim-minute / tenths of sim-minutes / timed out / cancelled;
+        // rabbit hole enter-slot waits / tenths / timed out (15 sim-min) / cancelled; errors; rhshare: walked to a held slot / would (off) / exempt / kept
+        // (holder out of scope, horse, rider, carrier) / left the wait on a cancel / dead reservations removed; servingshare: runs at a busy platter / lines
+        // skipped / took with another Sim / would / exempt / kept (a Sim out of scope there) / last serving refused; linewait: line full / shorter waits.
+        // [4494-4509] showershare (ShowerShare.cs, docs/686 §15): showertogether: joined a partner in a shower / would (off) / exempt / kept: not romantic
+        // or disliked / kept: a teen or child / kept: other (several Sims, not showering, a third Sim) / exits held for the partner's; errors;
+        // showerpee: bladders refilled in a shower / showers queued at the last warning / failures replaced by a shower / kept: no usable shower /
+        // would / exempt / given back to the game (the shower never began); showertogether: joined in an all-in-one bathroom.
+        const int kCounterSlots = 4582;
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
@@ -2112,6 +2148,12 @@ namespace Ts3Fixes
                 case "aptgasleak": return Instantiator.kAptGasLeak;
                 case "aptpossess": return Instantiator.kAptPossess;
                 case "firedoorkeep": return Instantiator.kFireDoorKeep;
+                case "woohoosnap": return Instantiator.kWooHooSnap;  // WooHooSnap.cs (docs/686 §20): a WooHoo partner (NPC pairs) whose route to the bed, shower or other object fails is put on its spot, off
+                case "woohoosnaphh": return Instantiator.kWooHooSnapHousehold;  // WooHooSnap.cs: the same for pairs with a household or selected Sim, off
+                case "woohoosnaplog": return Instantiator.kWooHooSnapLog;  // WooHooSnap.cs (docs/686 §20): one line per act, off
+                case "pairsnap": return Instantiator.kPairSnap;  // WooHooSnap.cs (docs/686 §20): a paired social (kiss, hug) of two NPCs within 3 m whose placement or route fails is lined up by a snap, off
+                case "pairsnaphh": return Instantiator.kPairSnapHousehold;  // WooHooSnap.cs: the same for pairs with a household or selected Sim, off
+                case "pairsnaplog": return Instantiator.kPairSnapLog;  // WooHooSnap.cs (docs/686 §20): one line per act, off
                 case "standwaitfix": return Instantiator.kStandWaitFix;  // StandWait.cs (docs/686): a blocked obstacle stand-and-wait yields to pushes, pushes its blockers, passes when only people block, off
                 case "standwaitfixhh": return Instantiator.kStandWaitFixHousehold;  // StandWait.cs (docs/686): standwaitfix for household and selected Sims too, off
                 case "sharelanes": return Instantiator.kShareLanes;  // ShareLanes.cs (docs/686 §8): a stair, door, gate or ladder lane held from the other end is shared; a portal closed by standing Sims is tried without people at once, off
@@ -2125,12 +2167,34 @@ namespace Ts3Fixes
                 case "angleentry": return Instantiator.kAngleEntry;  // ShareLanes.cs (docs/686 §8): stairs and ladders climbed from below are approached by a point plan without facing, off
                 case "angleentryhh": return Instantiator.kAngleEntryHousehold;  // ShareLanes.cs: angleentry for household and selected Sims too, off
                 case "lanewaitlog": return Instantiator.kLaneWaitLog;  // ShareLanes.cs (docs/686 §8): one line per wait for a portal lane, off
+                case "linewaitlog": return Instantiator.kLineWaitLog;  // ObjShare.cs (docs/686 §14): one line per wait in an object's line or for a rabbit hole's enter slot, and per share, off
+                case "rhshare": return Instantiator.kRhShare;  // ObjShare.cs (docs/686 §14): an NPC walks to a rabbit hole enter slot another Sim holds; a cancelled Sim leaves the wait, off
+                case "rhsharehh": return Instantiator.kRhShareHousehold;  // ObjShare.cs: the same for household and selected Sims, off
+                case "servingshare": return Instantiator.kServingShare;  // ObjShare.cs (docs/686 §14): NPCs grab servings from one platter at once, no line, last serving taken once, off
+                case "servingsharehh": return Instantiator.kServingShareHousehold;  // ObjShare.cs: the same for household and selected Sims, off
+                case "showertogether": return Instantiator.kShowerTogether;  // ShowerShare.cs (docs/686 §15): an NPC joins its romantic partner (young adult or older) in a shower or all-in-one bathroom, no line, off
+                case "showertogetherhh": return Instantiator.kShowerTogetherHousehold;  // ShowerShare.cs: the same for household and selected Sims, off
+                case "showerpee": return Instantiator.kShowerPee;  // ShowerShare.cs (docs/686 §15): an NPC that has to pee with no usable toilet on the lot takes a shower that refills its bladder, off
+                case "showerpeehh": return Instantiator.kShowerPeeHousehold;  // ShowerShare.cs: the same for household and selected Sims, off
+                case "showersharelog": return Instantiator.kShowerShareLog;  // ShowerShare.cs: one line per showertogether / showerpee act, off
                 case "standwaitlog": return Instantiator.kStandWaitLog;  // StandWait.cs (docs/686): one line per wait with blocked cycles, off
                 case "blockeduse": return Instantiator.kBlockedUse;  // BlockedUse.cs (docs/686 §10): an NPC whose route to an object's slot fails on furniture or a wall walks the last stretch through objects or is put on the slot, and back afterwards, off
                 case "blockedusehh": return Instantiator.kBlockedUseHousehold;  // BlockedUse.cs: the same for household and selected Sims (stands alone), off
                 case "makebedboth": return Instantiator.kMakeBedBoth;  // MakeBedBoth.cs (docs/686 §13): an NPC makes a bed half it cannot reach from the other side, off
                 case "makebedbothhh": return Instantiator.kMakeBedBothHousehold;  // MakeBedBoth.cs: the same for household and selected Sims (stands alone), off
                 case "makebedbothlog": return Instantiator.kMakeBedBothLog;  // MakeBedBoth.cs (docs/686 §13): one line per act, off
+                case "reachuse": return Instantiator.kReachUse;  // ReachUse.cs (docs/686 §12): an NPC's chore (fire, mop, pick up, plant) whose spot is closed is done from within reach; chores at a slot get blockeduse's rules, off
+                case "reachusehh": return Instantiator.kReachUseHousehold;  // ReachUse.cs: the same for household and selected Sims (stands alone), off
+                case "reachuselog": return Instantiator.kReachUseLog;  // ReachUse.cs (docs/686 §12): one line per act, off
+                case "viewlenient": return Instantiator.kViewLenient;  // ViewLenient.cs (docs/686 §16): an NPC whose route to contemplate, view or watch fails looks from where it stands or the nearest place with a view, no balloon, off
+                case "viewlenienthh": return Instantiator.kViewLenientHousehold;  // ViewLenient.cs: the same for household and selected Sims (stands alone), off
+                case "viewlenientlog": return Instantiator.kViewLenientLog;  // ViewLenient.cs (docs/686 §16): one line per act, off
+                case "socialreach": return Instantiator.kSocialReach;  // SocialReach.cs (docs/686 §17): a talk social between NPCs whose route or placement fails is done from where the two stand (3 m, same level, no wall) or after a walk to the nearest place, off
+                case "socialreachhh": return Instantiator.kSocialReachHousehold;  // SocialReach.cs: the same for pairs with a household or selected Sim (stands alone), off
+                case "socialreachlog": return Instantiator.kSocialReachLog;  // SocialReach.cs (docs/686 §17): one line per act, off
+                case "unstuck": return Instantiator.kUnstuck;  // Unstuck.cs (docs/686 §18): an NPC or pet that fails 3 plans from one spot over 2.5 sim-minutes and has no normal way out walks out through the objects (walls count), off
+                case "unstuckhh": return Instantiator.kUnstuckHousehold;  // Unstuck.cs: the same for household and selected Sims and pets (stands alone), off
+                case "unstucklog": return Instantiator.kUnstuckLog;  // Unstuck.cs (docs/686 §18): one line per act, off
                 case "firetrapcount": return Instantiator.kFireTrapCount;
                 case "firenre": return Instantiator.kFireNre;
                 case "firecount": return Instantiator.kFireCount;

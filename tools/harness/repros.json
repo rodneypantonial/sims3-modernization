@@ -116353,6 +116353,517 @@
     ]
   },
   {
+    "id": "objshare-check",
+    "bug": "Sims wait at objects other Sims use: a rabbit hole enter slot is held by one Sim until its walk to it ends and the others idle in a loop that ignores exit reasons (RabbitHole.WaitForEnterSlot); Grab a Serving queues in the platter's line and gives up when the platter is in use (ServingContainerGroup.RunBodyForGrabAServing) (docs/686 §14)",
+    "fix": "ts3fixes ObjShare.cs: rhshare, servingshare (each with an hh switch for household and selected Sims), linewaitlog, default off, docs/686 §14",
+    "save": "any world (pure check); lot arm: a selected Sim on a lot",
+    "note": "UNVERIFIED (2026-11-22, offline only, never run). ObjShareCheck 'run' evaluates the rules with controls (read-only); 'result' shows the counters 4470-4493, the last linewait: line and the last share line; 'lot' lists the lines with Sims in them and the platters of the selected Sim's lot, and the rabbit holes of the world with a reserved enter slot.",
+    "expect": "off: 'verdict: BROKEN'. on: 'verdict: FIXED'. 'members found=True' and 'controls ok=True' in both.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "rhshare": false,
+          "rhsharehh": false,
+          "servingshare": false,
+          "servingsharehh": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ObjShareCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "off: the game's answer",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ObjShareCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "off: counters",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ObjShareCheck",
+          "args": [
+            "lot"
+          ]
+        },
+        "note": "lines, platters, reserved enter slots",
+        "max": 4000,
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "rhshare": true,
+          "rhsharehh": true,
+          "servingshare": true,
+          "servingsharehh": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ObjShareCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "on: the fix",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ObjShareCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "on: counters",
+        "max": 2500,
+        "waitS": 2
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "rhshare": false,
+          "rhsharehh": false,
+          "servingshare": false,
+          "servingsharehh": false,
+          "linewaitlog": false
+        },
+        "note": "default off again",
+        "waitS": 1
+      }
+    ]
+  },
+  {
+    "id": "showershare-check",
+    "bug": "A Sim that wants the shower its romantic partner is in queues at the door (Shower.TakeShower: line, then 'in use'), and a Sim whose bladder fails on a lot with no usable toilet wets itself although a shower is free (Motive.MotiveDistress -> Sim.BladderFailure) (docs/686 §15)",
+    "fix": "ts3fixes ShowerShare.cs: showertogether, showerpee (each with an hh switch for household and selected Sims), showersharelog, default off, docs/686 §15",
+    "save": "any world (pure check); lot arm: a selected Sim on a lot with a toilet or shower",
+    "note": "UNVERIFIED (2026-11-22, offline only, never run). ShowerShareCheck 'run' evaluates the rules with controls (read-only); 'result' shows the counters 4494-4509 and the last showertogether: / showerpee: line; 'lot' lists the toilets, showers and all-in-one bathrooms of the selected Sim's lot, who uses them, and what both rules would do for that Sim now. Forced repros (two partners and one shower; a Sim that has to pee on a lot with a shower and no toilet) are outlined in docs/686 §15.4, not built as entries yet.",
+    "expect": "off: 'verdict: BROKEN'. on: 'verdict: FIXED'. 'members found=True' and 'controls ok=True' in both.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "showertogether": false,
+          "showertogetherhh": false,
+          "showerpee": false,
+          "showerpeehh": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowerShareCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "off: the game's answer",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowerShareCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "off: counters",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowerShareCheck",
+          "args": [
+            "lot"
+          ]
+        },
+        "note": "toilets and showers of the selected Sim's lot",
+        "max": 4000,
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "showertogether": true,
+          "showertogetherhh": true,
+          "showerpee": true,
+          "showerpeehh": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowerShareCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "on: the fix",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ShowerShareCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "on: counters",
+        "max": 2500,
+        "waitS": 2
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "showertogether": false,
+          "showertogetherhh": false,
+          "showerpee": false,
+          "showerpeehh": false,
+          "showersharelog": false
+        },
+        "note": "default off again",
+        "waitS": 1
+      }
+    ]
+  },
+  {
+    "id": "woohoosnap-check",
+    "bug": "A WooHoo or Try for Baby both Sims agreed to ends with the route-fail balloon when one partner's route to its spot has no plan: the free bed side closed by furniture or a wall (EnterRelaxing: RouteToUnusedPart, then IsRoutingSlotObstructed), the shower, wardrobe, leaf pile, sarcophagus or other object's slot closed (docs/686 §20)",
+    "fix": "ts3fixes WooHooSnap.cs: woohoosnap (pairs of NPCs), woohoosnaphh (pairs with a household or selected Sim), woohoosnaplog, default off, docs/686 §20",
+    "save": "any world (pure check); lot arm: a selected Sim on a lot",
+    "note": "UNVERIFIED (2026-11-22, offline only, never run). WooHooSnapCheck 'run' evaluates the rules with controls (read-only); 'result' shows the counters 4566-4575, the reasons for kept cases and the last woohoosnap: line; 'lot' lists the beds, showers and objects with a WooHoo interaction on the selected Sim's lot that have a routing slot the selected Sim cannot plan to. Forced repro (two partners, a double bed with one side closed by a fridge or a wall, WooHoo ordered) outlined in docs/686 §20.5, not built as an entry yet.",
+    "expect": "off: 'verdict: BROKEN'. on: 'verdict: FIXED'. 'members found=True' and 'controls ok=True' in both.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "woohoosnap": false,
+          "woohoosnaphh": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.WooHooSnapCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "off: the game's answer",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.WooHooSnapCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "off: counters",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.WooHooSnapCheck",
+          "args": [
+            "lot"
+          ]
+        },
+        "note": "WooHoo objects on the selected Sim's lot with a closed routing slot",
+        "max": 4000,
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "woohoosnap": true,
+          "woohoosnaphh": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.WooHooSnapCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "on: the fix",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.WooHooSnapCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "on: counters",
+        "max": 2500,
+        "waitS": 2
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "woohoosnap": false,
+          "woohoosnaphh": false,
+          "woohoosnaplog": false
+        },
+        "note": "default off again",
+        "waitS": 1
+      }
+    ]
+  },
+  {
+    "id": "pairsnap-check",
+    "bug": "A paired social (kiss, hug: ActionData.SocialJig other than one-person) between two Sims standing within 3 m ends with the route-fail balloon when SocialInteraction.SetupTwoPersonSocial finds no ring place or jig place (a counter, furniture or a wall next to them), or when the walk to the place fails (docs/686 §20)",
+    "fix": "ts3fixes WooHooSnap.cs: pairsnap (pairs of NPCs), pairsnaphh (pairs with a household or selected Sim), pairsnaplog, default off, docs/686 §20",
+    "save": "any world (pure check); lot arm: a selected Sim on a lot",
+    "note": "UNVERIFIED (2026-11-22, offline only, never run). PairSnapCheck 'run' evaluates the rules with controls (read-only); 'result' shows the counters 4576-4581 (snap outs in 4574), how pairs were placed, the reasons for kept cases and the last pairsnap: line; 'lot' lists the Sims within 3 m of the selected Sim on its level the game's placement ring (0.7 m) has no plan for, and the place the rule would put them on. Forced repro (two Sims on either side of a counter, a kiss ordered) outlined in docs/686 §20.5, not built as an entry yet.",
+    "expect": "off: 'verdict: BROKEN'. on: 'verdict: FIXED'. 'members found=True' and 'controls ok=True' in both.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "pairsnap": false,
+          "pairsnaphh": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PairSnapCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "off: the game's answer",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PairSnapCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "off: counters",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PairSnapCheck",
+          "args": [
+            "lot"
+          ]
+        },
+        "note": "Sims within 3 m of the selected Sim the game's placement ring cannot reach",
+        "max": 4000,
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "pairsnap": true,
+          "pairsnaphh": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PairSnapCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "on: the fix",
+        "max": 2500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PairSnapCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "on: counters",
+        "max": 2500,
+        "waitS": 2
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "pairsnap": false,
+          "pairsnaphh": false,
+          "pairsnaplog": false
+        },
+        "note": "default off again",
+        "waitS": 1
+      }
+    ]
+  },
+  {
+    "id": "reachuse-check",
+    "bug": "A chore whose spot is closed (a puddle in a nook, a fire behind a counter, a trash pile between chairs) ends with the route-fail balloon, and a fire whose plan fails is passed over, although the Sim could stand a step away and do it from there: the plan to the game's ring fails and SimRoutingComponent.DoRoute answers false (docs/686 §12)",
+    "fix": "ts3fixes ReachUse.cs: reachuse (Sims the player does not control), reachusehh (household and selected Sims), default off, docs/686 §12",
+    "save": "any world (pure check); lot arm: a selected Sim on a lot (puddles, burnt tiles, fires, piles or plants make it say more)",
+    "note": "UNVERIFIED (2026-11-22, offline only, never run). ReachUseCheck 'run' evaluates the rules with controls (read-only); 'result' shows the counters 4446-4461 and the last reachuse: line; 'lot' plans the selected Sim to the puddles, burnt tiles, fires, trash and ash piles and plants of its lot as the game does and, for those that fail, to the nearest place within reach (read-only plans, up to 40 targets). No forced arm: the agent has no step that makes a puddle or a fire in a closed spot.",
+    "expect": "off: 'verdict: BROKEN'. on: 'verdict: FIXED'. 'members found=True' and 'controls ok=True' in both.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "reachuse": false,
+          "reachusehh": false
+        },
+        "note": "off first",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ReachUseCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "off: the game's answer",
+        "max": 1500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ReachUseCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "off: counters",
+        "max": 1500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ReachUseCheck",
+          "args": [
+            "lot"
+          ]
+        },
+        "note": "targets the game cannot plan to, and whether a place in reach exists",
+        "max": 4000,
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "reachuse": true,
+          "reachusehh": true
+        },
+        "note": "on",
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ReachUseCheck",
+          "args": [
+            "run"
+          ]
+        },
+        "note": "on: the fix",
+        "max": 1500,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ReachUseCheck",
+          "args": [
+            "result"
+          ]
+        },
+        "note": "on: counters",
+        "max": 1500,
+        "waitS": 2
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "reachuse": false,
+          "reachusehh": false
+        },
+        "note": "default off again",
+        "waitS": 1
+      }
+    ]
+  },
+  {
     "id": "sweep-ep1",
     "bug": "docs/267: EP1 World Adventures has 286 script types, 271 never seen in our runs; their interactions never ran under our routing / Mono changes",
     "fix": "measurement only: forced interaction sweep of every definition the pack brings (docs/268)",

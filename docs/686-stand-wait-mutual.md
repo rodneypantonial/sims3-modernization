@@ -3,7 +3,7 @@
 2026-11-21, branch `fix/stand-wait-1121`. Storm logs s141-s291 (Isla Paradiso, Collins household, 2-minute route storms) +
 decompiled C#. Built, default off, **NOT RUN**. Switches `standwaitfix`, `standwaitfixhh`, `standwaitlog`; counters
 4300-4319; `StandWait.cs`, `StandWaitCore.cs`; repro `standwait-check`.
-§7 (waits at a privacy-locked room, `standwaitlocked`) and §9-§13 stay on the contributor's combo branch for now; §8 is
+§7 (waits at a privacy-locked room, `standwaitlocked`) and the other sections stay on the contributor's combo branch for now; §8, §14 and §15 are
 in this file. **Correction to §1-§2:** the wait in the tuning XML is 20 sim-minutes, not 50; "50" below is the default
 in the code.
 
@@ -581,3 +581,853 @@ Imported by Dalexlol's commits of PR #648 (§1-§8: `standwaitfix`, `sharelanes`
 | `standwaitfix`, `standwaitlog`, `lanewaitlog`, `makebedbothlog` | OFF | `standwaitfix` is unproven alone (both A/B arms had it, §6 run plan open); the others only write log lines |
 
 The `blockeduse` `DoRoute` swap is installed even with the switches off (saves keep a frame in it), so the save change matrix (docs/242 §2) still applies before the swap is relied on; `blockedusehh` and `HouseholdToo` must never lift its snap branch. PR #651 later adds a second swap of `SimRoutingComponent.DoRoute` (not imported). Repros `standwait-check`, `sharelanes-check`, `blockeduse-check`, `makebedboth-check` added to repros.json.
+
+## 12. A chore whose spot is closed is done from within reach (`reachuse`, `reachusehh`; 2026-11-22, `feat/reachuse-1122`, built, default off, rule 1 run for a pile §12.7)
+
+A player's wish: a firefighter, a maid or a Sim cleaning should do the job from a step further away when the place
+is blocked, not give up. `ReachUse.cs`, rules in `ReachUseCore.cs`, counters 4446-4461, check
+`ReachUseCheck run | result | lot`, selftest `tools/selftest/reachuse`, repro `reachuse-check`.
+
+### 12.1 How the chores walk [verified, decompiled `Sims3.Gameplay` unless marked]
+
+- Every route below ends in `SimRoutingComponent.DoRoute`, whose first test is the plan result: a failed plan runs
+  the route-fail behaviour, adds the exit reason `RouteFailed` and returns false (§10.1). A replan that fails during
+  the walk ends the same way after the walk.
+- Mop (`Terrain.Mopping`: `MopPuddle`, `MopBurnt`): `RouteToPuddle` plans a ring from 1 m round the puddle,
+  restricted to the puddle's room and one level; a second plan drops the footprint test near the goal. After the
+  walk `PuddleManager.CanMopPuddle` refuses a tile covered by an object or a Sim.
+- Fire (`ExtinguishBase.RemoveFire`, pushed for household Sims and by the firefighter's situation as
+  `Fire.Extinguish`): `Fire.PlanRouteToExtinguish` plans 0.5-2.5 m in the fire's room, then 0-2.5 m. The caller
+  tests the plan before `DoRoute`: a fire whose plan failed is passed over for the next one, and with none left
+  nothing is walked. A burning Sim (`Sim.ExtinguishSim`) is a 2 m ring round the Sim, straight into `DoRoute`.
+- Pick up, clean away (`CarrySystem.PickUp`, trash and ash piles): `RouteToObjectRadius` in the object's room when
+  the thing lies on the floor; a thing on a surface is reached by the surface's routing slots.
+- Plants (`Plant.DoPlantRoute`): a ring from 0.7 m round the soil, in its room.
+- Wash up at a sink, clean a toilet / tub / stove / counter, repair, fill a pet bowl: routing slots of the object
+  (§10's case).
+- Picking up a baby or toddler (`PickUpChild`) is a social interaction with its own jig: not a chore route.
+
+### 12.2 Measured (storm logs `phase-*`, `routefail:` lines, read-only)
+
+57,664 failed plans (spot probes left out). "Near" = the goal within 4 m of the Sim on its level. The logs hold no
+`standwait: ... near:` lines.
+
+| interaction | failed | near | how it fails near |
+|---|---|---|---|
+| MopPuddle | 3,614 | 2,296 | no path 743, no destination 1,027, portal locked 512 |
+| UseToilet | 2,960 | 1,656 | §10 |
+| socials (A, B) | 3,884 | 2,779 | a Sim as target: out of scope |
+| WashDishes | 1,253 | 1,146 | sink slots: no destination 841, no path 183, portal locked 96 |
+| Fridge / serving (eat) | 1,646 | 1,271 | object use, §10 |
+| Clean (toilet, counter, sink) | 468 | 331 | slots |
+| PutAwayLeftovers | 172 | 153 | plate: no destination 99, no path 31 |
+| ServingContainer_CleanUp | 852 | 112 | plate / bowl |
+| PutDownHeldObject | 101 | 92 | the walk to a surface, not to the target |
+| CleanSink / CleanBathtub / Stove_Clean | 235 | 171 | slots |
+| Snack_CleanUp | 74 | 68 | no path |
+| RecycleNewspaper | 133 | 55 | |
+| GetHomework | 47 | 47 | no path 35 |
+| RepairShower | 68 | 37 | slots |
+| PutCarriedChildInCrib | 72 | 55 | crib slots, §10 |
+| FillBowl / UseLitterBox / CleanLitterBox / DisposeTrash | 66 | 39 | |
+| ReactToFire | 3,206 | 10 | fleeing, not a chore |
+| Extinguish | 8 | 0 | the fire's plan is tested before the route: failures do not reach the log |
+
+Gardening interactions do not appear (the storm lots have no gardens).
+
+### 12.3 What is built
+
+1. Point routes in `DoRoute` (the hook of §10): a failed plan with no slot destination, either the first plan or
+   a replan that ended the walk (the walk answers false, the plan is failed, no exit reason on the Sim; a cancelled
+   or interrupted walk keeps its answer). Plan results taken: no path, no destination, obstructed, destination
+   blocked by a Sim (the chore is done from beside it); "portal locked" and aborted plans keep the game's
+   behaviour. The Sim's running interaction gives the kind and the reach:
+
+   | kind | interactions | reach | why |
+   |---|---|---|---|
+   | fire | `ExtinguishBase`, `ExtinguishSim` | 4 m, not nearer than 0.5 m | the game's own ring ends at 2.5 m; the spray is drawn from the Sim to the fire |
+   | floor | `Terrain.Mopping` | 2.5 m | the game mops from 1 m; a tile and a half more |
+   | small | targets `TrashPile`, `AshPile`, `Newspaper`, `Homework`, `LitterPile`, `FoodScrap`, `ToyScraps`; names with `CleanUp`, `PutAwayLeftovers`, `Recycle`, `PickUp`, `ThrowAway`, `DisposeTrash`, `PutInInventory` | 2 m | the game picks up from about 0.5 m; an arm and a tile more |
+   | plant | any interaction on an object of `Sims3.Gameplay.Objects.Gardening` | 2 m | the game tends from 0.7 m |
+
+   The route must be the one to the interaction's target (its goal within 1.5 m of the target; a terrain target's
+   goal is the place). A Sim that stands within reach, on the target's level (1.5 m in height), with no wall between
+   (`World.WallExistsBetweenPoints`, light-blocking walls, the test of the game's own line-of-sight helper) and
+   sits or lies in nothing turns to the target and the route answers "arrived". Otherwise a normal plan to the
+   nearest point within reach is made, in the target's room first, then in any room; its end must pass the same
+   test; the Sim walks it and the route answers "arrived". The interaction then runs where the Sim stands.
+2. Fires: `Fire.PlanRouteToExtinguish` (new swap, plans only) answers a failed plan with the plan of rule 1 (a
+   plan to where the Sim stands when it is in reach already), so the fire is not passed over.
+3. Slot chores (kind chore: names with `Clean`, `WashDishes`, `Repair`, `Unclog`, `FillBowl`, `EmptyTrash`,
+   `TakeOutTrash`, `MakeBed`; and the kinds of rule 1 when the route goes to slots): a failed plan to the slots of
+   the interaction's target, or of the surface the target lies on, gets §10's rules (walk up, clip, snap onto the
+   slot, out again) with `reachuse` / `reachusehh` standing in for `blockeduse` / `blockedusehh`. The animations
+   there need the slot.
+4. A puddle tile covered by an object (not a Sim) is mopped when `mopunreachable`'s run is in use
+   (`MopUnreachable.cs`, its copy of the game's tile step); the game's own run keeps refusing it.
+
+Scope: `reachuse` = Sims the player does not control (townies, service Sims, firefighters, maids, repairmen),
+`reachusehh` = household and selected Sims; each stands alone. Humans, not riding, not in a vehicle. Go Here and
+every other interaction are untouched. A case that kept the game's behaviour is not tried again for 30 sim-minutes
+(per Sim and goal tile). Off = compare mode. `reachuselog` writes one `reachuse:` line per act (capped).
+
+Counters: 4446 failed point plans of a reach kind / 4447 would, off / 4448 exempt (household without `reachusehh`)
+/ 4449 fire / 4450 floor / 4451 small / 4452 plant done from range / 4453 of them without a walk / 4454 slot chores
+given to §10's rules / 4455 kept: nothing in reach / 4456 kept: other level or lot / 4457 kept: wall between /
+4458 walk stopped / 4459 errors (`reachuse: error at <site>`) / 4460 kept: cooling down / 4461 other failed point
+plans.
+
+### 12.4 Not built, and why
+
+- `DestinationPortalLocked` (512 of MopPuddle's near failures): a privacy-locked room, §7's subject.
+- Walking through objects to a point (clip) for point routes: the Sim would end inside furniture with no slot to
+  come out of. Slot routes have it (§10).
+- Picking up a baby or toddler: a social with a two-person jig; a Sim as target is only taken for a Sim on fire.
+- `PutDownHeldObject`, the walk of a clean-up to the dishwasher, sink or trash can: slots of another object than
+  the target; `blockeduse` covers them.
+- Burning windows (`Windows.PlanRouteToExtinguish`, a cone in front of the window), pets, the world lot.
+
+### 12.5 Limits [inferred unless marked]
+
+- The interaction's animation plays where the Sim stands: a mop or a pick-up 2 m from the thing shows a gap, a
+  picked-up thing jumps into the hand. The mop jig is put on the puddle as the game does [verified].
+- `WallExistsBetweenPoints` is read as "a wall crosses the straight line"; a doorway in that wall still counts as
+  a wall, so a target seen through a door is kept.
+- `GetApproximateOriginalDestination` of a failed plan is taken as the ring's centre; when it is not valid the
+  target's place is used.
+- The fire plan for a Sim in reach is a plan to its own place; `DoRoute` is expected to answer true for it.
+- Replans are most of the failures (MopPuddle near: first plan 434, replan 1,091, plan from a point 765; WashDishes
+  near: first plan 10, replan 945), so the hook's entry method `RouteHook` was changed once to pass a walk that
+  ended on a failed plan to the rules (`RouteEnded`). [verified, docs/242 §2] A save made by a build with §10's
+  hook (2026-11-22 builds only, never released) resets the Sims that were mid-route once at its first load. §10's
+  slot rules get such walks too, and their counters 4414-4429 now include them.
+- After a failed replan the game may have played its route-fail reaction inside the walk before the chore is done
+  from where the Sim stands.
+- Which plan a `PlanFromPoint` failure belongs to is not known from the logs; one that does not end in `DoRoute`
+  is not covered.
+
+### 12.6 Checks (2026-11-22, no game) and run plan
+
+- `node tools/selftest/reachuse/run.ts`: 53 checks (plan results, kinds, reach per kind, the goal test, the place test, the slot
+  rule, the covered tile, scope). `build-fixes.ts` builds, `refs-resolve-check` 0 unresolved; selftest
+  `blockeduse` passes; `swap-stack-audit` has the new row
+  (`Fire.PlanRouteToExtinguish`, stub `PlanOrig`).
+- Live: `reachuse-check` once (off `BROKEN`, on `FIXED`, `members found=True`; `fix_applied`
+  `Fire.PlanRouteToExtinguish: ok`). A storm save, off / on interleaved with `reachuselog routefaillog`: off arm
+  4446 and 4447 up; on arm `reachuse reachusehh` (with `mopunreachable` for rule 4): 4450 > 0, `routefail:` lines
+  of MopPuddle with `Plan ... FailedBecauseNo(Path|Destination)` down, 4459 = 0, no `reachuse: error at` line.
+  Before the arms: save with a Sim mid-route and load it (the `DoRoute` hook's entry changed).
+  `ReachUseCheck lot` lists the puddles, burnt tiles, fires, piles and plants the game's plan cannot reach and
+  whether a place in reach exists. By eye: a puddle in a nook behind a chair (mopped from the open side), a
+  kitchen fire behind a counter with the firefighter called.
+
+### 12.7 Run in the game (2026-11-22, Deck, Sunset Valley new game) [verified]
+
+**When the game fails at all.** Every ring above starts at about 1 m and has no outer limit, so a pile or puddle
+ringed by furniture in a big room is done from any free place of that room, 2 m away or more. The game's plan only
+fails where the target's room has no place 1 m away that can be stood on. By hand (session `fr-m1`): a nook ringed
+by fridges (cleaned from exactly 1.0 m), a closet 1 x 2 with the pile in its middle (cleaned from the far wall,
+exactly 1.0 m), a closet 1 x 1 (cannot be entered, the door is the blocker; the game fails and the rule keeps: "no
+place within 2.0 m can be walked to", the places outside are behind the wall).
+
+**Repro `reachuse-force`** (run `ru-r2`; it stays on the contributor's combo branch: its agent step `add_trash` is not upstream yet): a closet one tile wide and two deep, a trash pile 1.3 m behind its door.
+
+| | off | on (`reachuse reachusehh`) |
+|---|---|---|
+| Clean Up, Sim at the mailbox | `routefail: ... DisposeTrash target TrashPile, Plan ... FailedBecauseNoPathToDestination blocker Object ... DoorSingleCountry`; the pile stays | the same failed plan, then `reachuse: selected Bea Reach, DisposeTrash -> TrashPile at ... (small, FailedBecauseNoPathToDestination): from 0.0 m at ..., walked up`; the pile is carried to the outdoor can |
+| Counters | tries (4446) 1, would (4447) 1 | small (4451) 1, errors 0 |
+| `ReachUseCheck lot` after | targets 1, closed 1, in reach 1 | targets 0 |
+
+- The Sim walks onto the pile ("from 0.0 m"): the rule's own plan has no least distance for the small kind
+  (`MinDist` 0) and prefers the place nearest the target. The pick-up plays there. Not changed.
+- A puddle on the closet's far tile is mopped by the game itself from the closet's middle: no case.
+- `ReachUseCheck lot` made one plan in any room and read "wall between" for a pile in a closet; it now plans as the
+  rule does, the target's room first, with the game's 1 m ring for piles (fixed, check only).
+- Open [inferred, not run]: for a puddle the rule may end within 0.6 m of the tile's centre, where the game's
+  `PuddleManager.CanMopPuddle(ignoreSims: false)` counts the mopping Sim itself as blocker and plays the route-fail.
+  No layout in these runs produced a failed mop plan with a place in reach, so it is not changed.
+- Not run: fires, plants, slot chores (rule 3), replans that fail during the walk (most of §12.2's failures).
+
+## 16. No route-fail balloon for looking at things (`viewlenient`; 2026-11-22, `feat/viewlenient-1122`, built, default off, NOT RUN)
+
+A player's remark: "Routing errors contemplating surroundings or viewing something makes no sense." A Sim that
+only looks at something needs no exact spot; a failed plan to the chosen spot should not end in the route-fail
+balloon when a place with a view is at hand.
+
+### 16.1 How the game routes a spectator [verified, decompiled `Sims3.Gameplay` / `Sims3GameplayObjects`]
+
+| kind | class | route | on a failed plan |
+|---|---|---|---|
+| contemplate | `Terrain.Contemplate` (Genius trait, autonomous on residential and venue lots) | `PlanToPointRadialRange` 0.3-1 m round the clicked point, valid rooms = the room of one randomly picked object near the Sim | `DoRoute` false: the next object is tried (a balloon each time), with none left "bored" and the interaction ends |
+| art | `ViewObjects` (`IViewable`: paintings, sculptures, photos, altars) | `CreateRouteToObject`: a ring of the viewable's min..max distance, one level; in range with a view only a turn | ends |
+| performer | `MusicalInstrument.WatchBase<T>` (`Guitar+Watch`, `Drums+Watch`, ...) | `DoRouteForWatchOrDance`: a dance floor near the instrument, else a ring 1 m .. 0.9 x the sound radius in the instrument's room (front half, then all round, then platforms allowed) | ends |
+| tv | `TV.WatchTV`, standing | `TV.RouteToCone`: 2-6 m, a 3/8 pi cone in front of the TV, in its room | ends |
+| stars | `Sim.WatchTheStars` (two Sims) | `SocialJigTwoPerson.RouteToJigA/B` to a jig placed by `FindGoodDeltaLevelPosition` | both Sims' interactions end |
+
+All of them hand the plan to `SimRoutingComponent.DoRoute`. A plan that failed before the walk gets
+`DoRouteFailureBehavior` (the balloon, for a locked door the door reaction) when `Route.DoRouteFail` is set, the
+exit reason `RouteFailed` and false. A walk that ends on a failed replan answers false with no balloon of its own
+(the balloon there is only for a Sim standing on the goal or a turn jig).
+
+Route failures in the storm logs (`ts3fixes: routefail:` lines of `ts3native-full.log`, all phases) [verified]:
+
+| interaction | no destination | no path | portal locked | aborted | first plan / from a point / replan |
+|---|---|---|---|---|---|
+| Contemplate (target Terrain) | 296 | 4 | 0 | 0 | 297 / 3 / 0 |
+| Watch (Guitar 61, KeyBoard 24, LaserHarp 18, Drums 5, GrandPiano 4, BassGuitar 1) | 1 | 76 | 36 | 0 | 6 / 59 / 48 |
+| WatchTV | 6 | 55 | 6 | 0 | 43 / 18 / 6 |
+| WatchTheStars (target Sim) | 7 | 25 | 0 | 9 | 35 / 5 / 1 |
+| ViewObjects (paintings 4, altar 2) | 0 | 6 | 0 | 0 | 0 / 6 / 0 |
+
+Contemplate's 296 "no destination" plans are the room filter: the picked object's room is not the room of the
+point, so the ring has no place at all. `ViewText` (6, a phone) has no route of its own and is left out.
+`ListenToGhostStory` (46, a group round a storyteller) and `LookOutWindow` (12, a window's slot) are not in.
+
+### 16.2 What is built
+
+`ViewLenient.cs` / `ViewLenientCore.cs`, no swap of its own: the case is a third step in blockeduse's `DoRoute`
+hook (`BuRouteHook.RouteBlocked` -> `RouteReach` -> `RouteView`), reached for a failed plan (the first plan, or a
+replan that ended the walk with no exit reason) that blockeduse and reachuse left alone.
+
+- Which: the Sim's running interaction is one of the five kinds (class names, `ViewLenientCore.Kind`), the plan
+  failed with no destination, no path, obstructed goal, a Sim on the goal, no free slot or portal locked
+  (`PlanKind`), the route would show the balloon (`DoRouteFail`), the Sim is a human on foot.
+- contemplate: a standing Sim stays where it is and the route answers "arrived" (the game then turns it to the
+  object it picked). A sitting, lying or swimming Sim walks a normal plan to the nearest place within 6 m of the
+  point.
+- art, performer, tv: the failed route must go to the target (goal within range + 1.5 m). The Sim stands within
+  the game's range (the viewable's `MaxDistanceFromObjectToView`; 0.9 x the instrument's `DanceRadius`; 6 m for a
+  TV), on the target's level (1.5 m), no light-blocking wall between it and the target (for a painting or a TV a
+  point 0.3 m in front of it), for a TV on its front side: it turns to the target, "arrived". Otherwise a normal
+  plan to the nearest such place (reachuse's `RuNearPlan`: the target's room first, then any room) is walked and
+  tested again at its end.
+- stars, or no such place (also a walk that was stopped): the game's own answer (exit reason, false) with the
+  route's `DoRouteFail` cleared for that call, so no balloon. A target with no place is not searched again by
+  that Sim for 30 sim-minutes (quiet end at once).
+- Scope: `viewlenient` = Sims the player does not control, `viewlenienthh` = household and selected Sims, each
+  stands alone. Off = compare mode (counted as "would"). `viewlenientlog` = one `viewlenient:` line per act.
+- `ReachUse.cs` lost its copy of the search: `RuPlace` and `ViewLenient.cs` share `RuNearPlan` and `RuWall`.
+
+Counters 4510-4525 (`kCounterSlots` 4526): tries 4510, would 4511, exempt 4512, handled by kind: contemplate
+4513, art 4514, performer 4515, tv 4516, stars 4517; by outcome: stayed in place 4518, walked to the nearest
+place 4519, quiet ends 4520; kept as the game has it 4521, walk stopped or ended with no view 4522, errors 4523
+(`viewlenient: error at <site>`), quiet ends while cooling down 4524, tries after a walk 4525.
+
+### 16.3 Limits [inferred unless marked]
+
+- Not in: socials, Go Here, every interaction not named in §16.1, routes to routing slots (blockeduse), aborted
+  plans (WatchTheStars has 9), pets, riders, Sims in vehicles.
+- Watch the Stars is a pose for two on a jig: only the balloon goes, the interaction ends as before.
+- Contemplate in place may look at an object in another room (the game picks it before the route).
+- A Sim that stays in place turns at once (`SetForward`, as reachuse does), not with a turn animation.
+- A failed route onto a dance floor near an instrument (`RouteOntoDanceFloorAndFaceObject`) is answered the same
+  way when it would show the balloon: the Sim watches from the nearest place and is entered in that dance floor's
+  use list.
+- A TV watched from a place the game's cone would not give (up to 6.5 m, anywhere on the front side): `WatchTV`
+  runs its own facing test after the route.
+- `RouteReach`'s body changed (it calls `RouteView`): a Sim saved in a reachuse walk by an older build resets once.
+- The household switch changes what a player-ordered View / Watch does when its spot is closed (it is done from
+  the nearest place); Go Here is never touched.
+
+### 16.4 Checks (2026-11-22, no game) and run plan
+
+- `node tools/selftest/viewlenient/run.ts`: 56 checks ok. reachuse 53, blockeduse 45, showershare 41 ok.
+  `swap-stack-audit`: no change. Build ok.
+- Repro `viewlenient-check` (any save): `ViewLenientCheck run` off -> `verdict: BROKEN`, on -> `verdict: FIXED`,
+  `controls ok=True`; `result` = counters and the last line; `lot` = the TVs, viewables and instruments of the
+  selected Sim's lot its plan cannot reach as the game does, and what the rule finds.
+- Storms: with the switches off 4510 and 4511 count the cases (Contemplate is common: expect most of 4510 there);
+  with `viewlenient` on 4513 and 4518 rise together (contemplate in place), `routefail:` lines for Contemplate /
+  Watch / WatchTV stay (they are written at the plan) but no balloon follows; 4523 must stay 0.
+
+### 16.5 Storms (2026-11-22, Deck) and what is still open
+
+Ten route storms s520-s529 (5 on, 5 off, the switches of §16-§18 together): no contemplate route failure happened
+in either arm, so the storms did not exercise this rule. Errors 0, crashes 0. **Not run in the game yet**: a forced
+repro (a sculpture or a view spot whose view slot cannot be reached) is pending.
+
+## 17. Talk socials from a distance (`socialreach`; 2026-11-22, `feat/socialreach-1122`, built, default off, NOT RUN)
+
+A player's wish, after Sims 4: Sims should be able to chat at a distance (across a counter, a fence, a crowded
+room) instead of ending the social with the route-fail balloon. No clipping: every walk is a normal plan.
+
+### 17.1 How the game places a social [verified, decompiled `Sims3.Gameplay.Socializing.SocialInteraction`]
+
+`SocialInteractionA` runs on the starter, `SocialInteractionB` on the partner; both are `SocialInteraction`.
+
+| step | method (task) | route | on a failure |
+|---|---|---|---|
+| 1 approach | `BeginSocialInteraction` -> `SocialRouteA` (starter) | other level, or farther than 5 m (`kSocialRouteMinDist`) from a partner that is not walking: two ring destinations round the partner, the social's distance .. 3 m (`kSocialRouteRadiusMax`), valid room = the partner's. Else a turn (`PlanRouteTurnToFace`). `DoRoute` | result code `PathPlanToToSocialTargetFailed`, the starter's `Run` leaves the conversation, adds `RouteFailed`, and with a group walks away 3 m |
+| 2 placement | `ReceiveSocialInteraction` -> `SetupTwoPersonSocial` (partner) | `RouteSimsToSocial`: the starter's walk to a ring at exactly the social's distance in the partner's room, facing it, planned from the end of the starter's current walk; a turn for the partner. Roles swapped when the starter is outside and not at home and the partner at home. Partner too close to a wall or object (`Route.IsOkToIdleAtCurrentLocation`): a step aside (`Wander` 0.35-0.5 m), then the ring again. Still too close, or in a doorway: `SocialJigTwoPerson` placed at the partner, at the starter, then near the mailbox or in an adjacent room (within 6 m), both walk to its slots | no plan: false. `SocialInteractionB.Run` adds `RouteFailed`, copies it to the starter and waits for the starter's social to end |
+| 3 walk and face | both `DoRoute` the routes of step 2; then, when they do not stand exactly face to face at the social's distance (`SimsAreFacing`), the partner and the starter each `RouteTurnToFace` the other | the partner's failed route or turn: step 2's failure. The starter's: its own failure as in step 1 |
+
+Conversations of three or more use `SetupGroupSocial` (positions from `SocialGroupInteractionSituation`); a
+baby uses `SetupTwoPersonSocialWithBaby`. Neither is touched.
+
+How the game marks socials whose Sims touch [verified]:
+
+- `ActionData.SocialJig` (the `jig` attribute of the social's data). `SocialJigOnePerson` (the default) = each
+  Sim plays its own animation. Any other value (`SocialJigTwoPerson`, `_1Unit`, `_1_25Unit`, `_1_68Unit`,
+  `_0_35Unit`, `_Dog_GrowlJig`, `UnderwaterSocial_Jig`) makes `SocialInteractionA.Run` set `mbPairedSocial`,
+  and a paired social is refused unless the pair stands aligned at the social's distance
+  (`VerifyPositionAndAlignment`).
+- `ActionData.ForceCreateJig`, a horse or an adult full-size dog on either side: the social creates its own jig
+  (`GetSocialDistanceAndSetupJig`), and both walk to its slots.
+- Socials with steps of their own are subclasses or other classes: `PillowFight`, `PlayTagInteraction`,
+  `PlayCatchSocialInteraction`, `DanceTogetherA`, `Pool.PoolSocialInteractionB`, `WatchTheStars`, ...
+
+### 17.2 The failures in the storm logs [verified, `ts3fixes: routefail:` lines, all phases]
+
+3,331 lines name `SocialInteractionA` (1,139) or `SocialInteractionB` (2,192), on 1,534 routes (a route that
+replans writes one line per failed replan); the biggest group of all 19,338 route-fail lines. The lines do not
+name the social (the action key), so the share of talk socials is not known [not measured].
+
+| | A (starter) | B (partner) |
+|---|---|---|
+| no path | 547 | 1,831 |
+| portal locked | 405 | 70 |
+| no destination | 187 | 206 |
+| planner aborted | 0 | 85 |
+| first plan / from a point / replan / replan from a point | 148 / 338 / 619 / 34 | 523 / 283 / 1,363 / 23 |
+| goal within 1 m of the Sim / 1-3 m / 3-6 m / farther / another level | 305 / 529 / 89 / 64 / 152 | 1,610 / 353 / 72 / 6 / 151 |
+| blocker: a Sim / the placement jig / another object / none named | 206 / 20 / 111 / 802 | 757 / 29 / 667 / 739 |
+
+2,797 lines have their goal within 3 m on the Sim's level. Named blockers besides Sims: beds 271, crib 117,
+bathtub 107, sink 65, dresser 56, the two-person jig 45 (small rooms; toddlers are frequent). The partner's
+1,610 lines within 1 m are the short moves of step 2 (the step aside, the jig slot, the turn) failing next to a
+Sim or a piece of furniture.
+
+### 17.3 What is built
+
+`SocialReach.cs` / `SocialReachCore.cs`. Covered: the plain classes `SocialInteractionA` / `SocialInteractionB`
+(no subclass) whose data says `SocialJigOnePerson`, that made no jig of their own, between two humans, no baby,
+nobody riding, ridden, swimming or diving (`SocialReachCore.Cover`). Failed plans that count: no path, no
+destination, all places obstructed, a Sim on the place; a locked door and an aborted plan keep the game's
+answer and are not counted (`PlanKind`).
+
+a. In `DoRoute` (blockeduse's hook, fourth step: `RouteBlocked` -> `RouteReach` -> `RouteView` ->
+   `RouteSocial`), a failed plan (the first, or a replan that ended the walk with no exit reason) of a Sim whose
+   running interaction is a covered social:
+   - within 3 m of the partner (flat), on its level (1.5 m), no light-blocking wall of either Sim's lot between:
+     the Sim turns to the partner and the route answers "arrived";
+   - else, the starter only, standing, not for a failed turn: a normal plan to the nearest place 0.7-2 m from the
+     partner with no wall between (reachuse's `RuNearPlan`: the partner's room first, then any room) is walked;
+     it answers "arrived" when the walk ends within 3 m with no wall;
+   - the partner never walks; its walk to the game's placement jig is left to the game (it has more tries).
+b. `SetupTwoPersonSocial` (swap `SrSetupHook`, with a stub) answered false with no exit reason on either Sim
+   and neither social cancelled: with the starter (or the end of its current walk) within 3 m, same level, no
+   wall, the pair is placed where it stands: both routes none, and step 3's facing turns both with the game's
+   own turn. Else, with a standing starter that is not walking, the starter's route becomes the plan of (a)'s
+   second case. The placement jig of the game's failed tries is destroyed (the game's `Cleanup` would do it at
+   the social's end).
+
+After either, the game's flow goes on unchanged: sync levels, the conversation, the animation, the outcome.
+Scope: `socialreach` = pairs with no Sim the player controls, `socialreachhh` = pairs with a household or
+selected Sim; each stands alone. Off = compare mode (counted as "would"). `socialreachlog` = one `socialreach:`
+line per act and per kept case. A walk search that found no place is not repeated for that pair for 30
+sim-minutes.
+
+Counters 4526-4537 (`kCounterSlots` 4550): tries 4526, would 4527, exempt 4528, paired or jig socials left alone
+4529; handled by kind: the starter's route 4530, the partner's route 4531, the placement 4532; by outcome: from
+where they stand 4533, walked to the nearest place 4534; kept as the game has it 4535 (reasons in
+`SocialReachCheck result`: too far, other level, wall between, sitting or lying, starter still walking, a walk
+to the placement jig, cooling down), walk stopped or ended out of reach 4536, errors 4537
+(`socialreach: error at <site>`, sites: begin, arrive, placement, lot).
+
+### 17.4 Limits [inferred unless marked]
+
+- Excluded, the game's behaviour stays: every paired or jig social (hug, kiss, slap, fight, handshake, woohoo,
+  carry, anything the data gives a two-person jig), every social with a pet, a horse or a baby, every subclass
+  (pillow fight, tag, catch, dance, pool socials), conversations placed as a group, another level, a wall
+  between, a locked door.
+- The talk animations are played where the Sims stand, up to 3 m apart; an animation that hands something over
+  or points at the partner is not known from the data and is not excluded when its jig is "one person"
+  [not checked per social].
+- A Sim that stays in place after a failed route turns at once (`SetForward`); in the placement case the game's
+  own turn is played.
+- Across a counter or fence the test is the game's light-blocking wall test: a fence is no wall; a half wall or
+  window wall is [not checked].
+- The partner's failed step aside (`Wander`, no balloon) is answered "arrived" too when the starter is within
+  3 m; the game then goes on to its jig tries as after a successful step.
+- One social can count several tries (its route, then its placement).
+- A turn in place that fails because another Sim overlaps (757 partner lines name a Sim) is the common partner
+  case: the social then runs with the Sims as they stand, overlap included.
+- `RouteView`'s body changed (it calls `RouteSocial`), `Keep` now passes unstuck (§18): a Sim saved inside these
+  helper frames by an older build resets once. `SetupTwoPersonSocial` yields; its swap has a stub
+  (`docs/data/swap-stack-audit.csv`).
+
+### 17.5 Checks (2026-11-22, no game) and run plan
+
+- `node tools/selftest/socialreach/run.ts`: 54 checks ok. Build ok, `swap-stack-audit` ok (one new row).
+- Repro `socialreach-check` (any save): `SocialReachCheck run` off -> `verdict: BROKEN`, on -> `verdict: FIXED`,
+  `controls ok=True`, `members found=True`; `result` = counters, kept reasons, the last line; `lot` = the Sims on
+  the selected Sim's lot the game's placement ring cannot reach and what the rule finds.
+- Forced repro, not built as an entry: a lot with a counter row (or a fence) across a room, Sim A on one side,
+  Sim B on the other, 2 m apart, no way round within the room; `socialreachhh` and `socialreachlog` on; A:
+  Chat with B. Off: balloon, `routefail:` line for SocialInteractionA or B, 4526 and 4527 rise. On: the two
+  talk across the counter, 4532 + 4533 (or 4530 + 4533) rise, one `socialreach: ... placed where they stand`
+  line, no balloon. Control on the same lot: Hug across the counter keeps the balloon, 4529 rises.
+- Storms: off, 4526 / 4527 give the share of talk socials among the 1,534 failed routes; on, 4533 should carry
+  most of it (2,797 of 3,331 lines are within 3 m), 4537 must stay 0, and the `SocialInteractionA/B` route-fail
+  lines stay (they are written at the plan) while the balloons go.
+
+## 18. Boxed-in Sims walk out through objects (`unstuck`; 2026-11-22, `feat/socialreach-1122`, built, default off, NOT RUN)
+
+A player's wish: a Sim or pet that is trapped (furniture put round it, a spot it was reset or snapped to) should
+walk out instead of failing every route. This is the one rule here that clips on purpose, so it waits: at least
+2.5 sim-minutes (2-3 s at normal speed) and three failed plans from one spot, and it never passes a wall.
+
+### 18.1 What the game has [verified, decompiled]
+
+- `LotManager.RunStuckCheckHelper`: armed for every actor at the nightly lot update, it looks 20-60 sim-minutes
+  later at a Sim that stands where it stood, is not on the active household's lot and is in no rabbit hole. On a
+  lot: up to `Sim.kNumberOfPlanAttemptsForStuckSim` (10) plans to random lot points; on the world lot: four
+  plans of 2 m, selectable Sims only. All failed: looked at again 20-60 minutes later, and the third time the
+  Sim is reset (`SetObjectToReset`). `FewerPlans.cs` already wraps it (`StuckCheckRun`, counters 297-301).
+- No `Sim.IsStuck`, no per-Sim counter of failed routes: `SimRoutingComponent.DoRoute` answers each failed plan
+  on its own (route-fail behaviour, exit reason, false).
+- NRaas Overwatch's nightly Stuck Check plans one route per standing Sim and resets as well
+  (`OverwatchStuck.cs`).
+
+So a boxed-in Sim on the played lot is never helped, and elsewhere it is reset after up to three sim-hours.
+
+### 18.2 What is built
+
+`Unstuck.cs` / `UnstuckCore.cs`, no swap of its own: the last step of blockeduse's `DoRoute` hook. `Keep`, the
+hook's one exit for "the game's answer", now passes `RouteStuck` first, so every failed plan that blockeduse,
+reachuse, viewlenient and socialreach leave to the game is seen.
+
+- Signal: failed plans of the kinds no path, no destination, all places obstructed are counted per Sim and spot
+  (0.6 m). Three from one spot, the first at least 2.5 sim-minutes ago, with no successful plan of 3 m or more
+  from the Sim's spot between them (`BuAfterPlan` clears the count, only while Sims are counted). A pause of 120
+  sim-minutes or another spot starts a new count. The game's stuck check stands for count and grace: a Sim it
+  found no way for (`StuckCheckRun`'s outcome, any round) is looked at on its next failed plan.
+- Never: a Sim that sits or lies in something (posture container), swims, dives, rides or is ridden, is carried
+  or moved by a routing parent, a baby, a Sim with an exit reason. A Sim that was looked at is not looked at
+  again for 30 sim-minutes.
+- Probe (plans only): a normal plan to a ring 3-10 m round the Sim succeeds = it can walk, not boxed in (kept).
+  Else a plan with `Route.RouteOption.PassThroughObjects` (walls still block) to the nearest ring, inner radius
+  0.75, 1.5, then 3 m, at most 12 m long, whose end is routable (`IsPointRoutable`) and has a normal plan on to
+  a ring 3-10 m away (the end is no second box). None = walled in (kept; the game's reset remains the answer).
+- Act: the plan through the objects is walked as a real route. Then the failed route is planned again from the
+  new spot and walked when it now succeeds; otherwise the game's answer for the failed plan.
+- Scope: `unstuck` = Sims and pets the player does not control, `unstuckhh` = household and selected ones; each
+  stands alone. Off = compare mode: the signal is counted ("would look"), no probe is made. `unstucklog` = one
+  `unstuck:` line per act and per kept probe.
+
+Counters 4538-4549: failed plans left to the game 4538, stuck signals 4539, Sims the game's stuck check found
+no way for 4540, would look (off) 4541, exempt 4542, kept: sitting, lying, swimming, riding, carried or
+cancelled 4543, kept: can walk 3 m away 4544, kept: walled in 4545, walked out through objects 4546, walk out
+stopped 4547, the failed route planned again after the walk out: ok 4548, errors 4549
+(`unstuck: error at <site>`, sites: begin, after the walk, plan seen, game signal, lot).
+
+### 18.3 Limits [inferred unless marked]
+
+- "Boxed in" means no normal plan to any place 3-10 m away. A Sim shut in a doorless room larger than that, or
+  on an island, is not helped (walled in or "can walk"); a Sim in a pool with no ladder is excluded.
+- A room whose only door is blocked by an object counts as boxed in: the Sim walks out through that object.
+- Whether a pass-through-objects plan may end inside a footprint is not known; the end is tested with
+  `IsPointRoutable` and a normal plan on from it [not run].
+- The signal needs the Sim to try to walk: a Sim that stands idle and never plans is not seen (the game's check
+  and its reset remain).
+- With the switches off the signal count (4539, 4541) includes Sims the probe would call free: three failed
+  plans from one spot over 2.5 minutes is common for a Sim whose targets are closed, not only for a boxed-in
+  one. The probe count is only known with a switch on (4544 against 4546).
+- Every failed plan now costs one table lookup; every plan one count test while Sims are counted (as blockeduse's
+  way-out test).
+- The count table holds 256 Sims; when full, counts older than 30 sim-minutes go.
+
+### 18.4 Checks (2026-11-22, no game)
+
+- `node tools/selftest/unstuck/run.ts`: 50 checks ok. reachuse 53, viewlenient 56, blockeduse 45 ok.
+- Repro `unstuck-check` (any save): `UnstuckCheck run` off -> `verdict: BROKEN`, on -> `verdict: FIXED`,
+  `controls ok=True`; `result` = counters and the last line; `lot` = the probe for the selected Sim and up to
+  12 other Sims and pets on its lot.
+
+### 18.5 Run plan
+
+- Forced repro, not built as an entry: in buy mode put four pieces of furniture (counters or bookcases, no
+  seats) round a standing household Sim in the middle of a room; `unstuckhh` and `unstucklog` on;
+  `UnstuckCheck lot` must name it "boxed in, a way out through objects". Order Go Here three times across the
+  room, 2.5 sim-minutes or more from the first to the third. Off: three balloons, 4539 and 4541 rise by one. On:
+  at the third the Sim walks out through the furniture (4546, one `unstuck: ... walked out through objects`
+  line) and then walks to the clicked point (4548). Controls: the same Sim seated on a chair inside the box is
+  kept (4543); a Sim in a doorless walled room is kept (4545); an unreachable Go Here target for a free Sim is
+  kept (4544).
+- Storms: off, 4538 against 4539 says how often the signal fires; on (`unstuck`), 4544 is expected to carry
+  nearly all of it and 4546 to be rare; 4549 must stay 0.
+
+### 18.6 Storms for §17-§18 (2026-11-22, Deck)
+
+Ten route storms s520-s529 (5 on, 5 off; §16-§18's switches together). `socialreach` acted once: `npc Liliana
+Ichtaca, SocialInteractionB Share Interests -> Edward Dregg (FailedBecauseNoPathToDestination, a turn): talks from
+where it stands`. `unstuck` walked a Sim out once (0.7 m; its route still had no plan afterwards). Errors 0, crashes
+0; hitches per storm 4.8 on vs 5.8 off. **Not run in the game as a forced repro yet** (pending).
+
+## 14. Sims share rabbit hole doors and serving platters; line waits logged (`rhshare`, `servingshare`, `linewaitlog`; 2026-11-22, `feat/objshare-1122`, built, default off, run §14.5)
+
+A player's wish: Sims share more things, clipping is fine. Privacy objects (toilet, shower, bath, bed) are not
+touched. Source `ObjShare.cs`, rules `ObjShareCore.cs`, counters 4470-4493, `kCounterSlots` 4494, check
+`ObjShareCheck`, selftest `tools/selftest/objshare`, repros `objshare-check`, `rhshare-rush`, `servingshare-buffet`.
+
+### 14.1 Where Sims queue at objects [verified, decompiled `Sims3.Gameplay` unless marked]
+
+- `SimQueue.WaitForTurn` is the one line of the game: 58 classes own one. A Sim is entered, walks behind the Sim
+  before it, and its place is looked at once per check period; after the timeout it gets `ObjectInUse` + `TimedOut`
+  and the route-fail balloon. After the line most objects test `InUse` again.
+- `RabbitHole.AnimateEnterRabbitHole` calls `WaitForEnterSlot` before each walk to its enter slot. One Sim holds
+  the slot (`ReservedEnterSlots`, `ReservedEnterSlotsPerPerson`) until that walk has ended; the caller's `finally`
+  takes the reservation off and names the nearest Sim of `WaitingToEnterSims` as the next holder. The waiting loop
+  sleeps 10 ticks a turn, never looks at exit reasons (a cancelled Sim stays), and breaks a reservation only after
+  15 sim-minutes with the same holder. The caller's retry path takes the slot's reservation off without asking
+  whose it is. Riders and horses come through the same call.
+- `ServingContainerGroup.RunBodyForGrabAServing` (platters, buffet food, pizza through its override's base call):
+  a walk near the platter, the platter's line (`servings - 1` long, 10 sim-minutes), the surface slot's walk (which
+  waits in the surface's line when it has one), then `InUse` -> `ObjectInUse`, `HasFoodLeft`, `StandardEntry`, the
+  state machine `TakeAServing` (actors: the Sim and its own plate) and `DecrementServings` after the take. Food on
+  an `IBuffetTable` is never decremented. Nothing but the line and the use list keeps two Sims from both passing
+  `HasFoodLeft` on the last serving.
+
+### 14.2 What is built
+
+- `linewaitlog` (log only). `LdsQueueHook.WaitHook` (sharelanes' swap of `WaitForTurn`, no second swap) times the
+  game's body: from half a sim-minute one line and counters 4470-4473; shorter ones 4493, a refusal at once at a
+  line with Sims in it 4492. The enter-slot hook below does the same for every wait at a held slot (4474-4477).
+  `linewait: <Sim> npc|household|selected, <interaction>: <TargetType> line|rhdoor, waited N sim-min, line length L, outcome got turn|timed out|cancelled|shared, at x,y,z`.
+  Line: `timed out` = refused after the whole timeout, `cancelled` = refused earlier. rhdoor: `timed out` = the
+  wait lasted the 15 sim-minutes after which a reservation is broken, `shared` = rhshare let the Sim walk.
+  The counters run with the switch off. With `linewaitlog` on rhshare and servingshare write one line per act too.
+- `rhshare` / `rhsharehh`: swap of `RabbitHole.WaitForEnterSlot` (yields, stub `WaitOrig`). When another Sim
+  holds the slot:
+  - holder in scope and a plain walker: the Sim returns at once and walks to the slot. It takes no reservation and
+    is not in the waiting list, so the holder's `finally` and the hand-over are what they were (4479).
+  - the reservation names no living Sim: it is removed, the game's code reserves for this Sim (4484).
+  - holder out of scope, or a horse / rider / carrier: the Sim waits in our loop, entered in the waiting list. It
+    is the game's loop with three more exits: an exit reason on the Sim (4483; the caller's walk then fails and it
+    ends), the holder changing to one it may share with, and a dead holder. After 15 sim-minutes with one holder
+    the reservation is removed as the game does. Then the game's own code runs (free slot or handed over).
+  - horses, riders, Sims carrying a child and toddlers keep the game's wait (4482 with the kept holders).
+- `servingshare` / `servingsharehh`: swap of `ServingContainerGroup.RunBodyForGrabAServing` (yields, stub
+  `GrabOrig`) opens a run for a Sim in scope when every Sim in the platter's line and use list is in scope; the
+  game's own body runs inside it.
+  - `WaitForTurn` for a Sim whose run has not begun its take answers true without entering the Sim, for the
+    platter's line and the surface's, while the Sims in that line are in scope (4486 when somebody was there).
+  - `ServingContainerGroup.HasFoodLeft` (swap, no yield; one integer test while no run is open): the run's first
+    call is the test before the take. Servings that other runs are taking now count as gone; with none left it
+    answers false and the game's run ends as at an empty platter (4491). Otherwise the serving is spoken for. The
+    run's second call is the game's test after `DecrementServings`, which ends the reservation. Buffets always
+    have food. Other callers get the game's answer.
+  - `StateMachineClient.SetActor` (`SmcSetActor.cs`; on the combo branch actdelay's swap; one integer test while no run is open): the first call for a
+    Sim that has passed the food test is its take; the Sim leaves the platter's use list there, before the first
+    yield, so the next Sim's `InUse` test passes (4487 counts takes that began while another was running).
+
+### 14.3 Limits [inferred unless marked]
+
+- Scope is not exact at the platter: a Sim out of scope that arrives while a Sim in scope takes finds the line
+  empty and the platter free, so it does not wait either.
+- While a Sim takes (a few seconds) the platter is not in use for other interactions (pick up, clean up, drag).
+  A platter destroyed in those seconds would make the game's `DecrementServings` run on a dead object.
+- A Sim that leaves the enter-slot wait on a cancel is handed to the caller's walk, which has to fail on the exit
+  reason. If a route ignores it the Sim walks to the slot and enters.
+- A sharing Sim whose walk fails runs the game's retry path, which takes the holder's reservation off; the next
+  waiting Sim is then named while the holder still walks. The tables stay consistent, Sims overlap.
+- Sims walking to one slot stand in each other's footprint at the door: the obstacle wait there is `clipwait` /
+  `simpass`' business (§8, §9).
+- `LdsQueueHook.WaitHook` changed: Sims saved in a line by an older build are reset once at the first load
+  (docs/242 §2).
+- A serving run's identity is the Sim's task: a `HasFoodLeft` call on the same platter from that task before the
+  game's own test would be taken for it (none found in the walk).
+
+### 14.4 Checks (2026-11-22, no game) and run plan
+
+- `node tools/selftest/objshare/run.ts`: 29 checks. `build-fixes.ts` builds; selftests `sharelanes`, `clipwait`,
+  `standwait` pass; `swap-stack-audit` has the three new rows.
+- Live: `objshare-check` once (off `BROKEN`, on `FIXED`, one switch on `MIXED`). Then a storm with the switches
+  off and `linewaitlog` on to rank the lines by 4470-4477, before any on arm.
+- `rhshare-rush`: a town at 08:00-09:00 on a weekday (school and work), or a festival / showtime venue. Off arm:
+  4474 / 4475 and `rhdoor` lines; on arm `rhshare rhsharehh`: 4479 up, 4475 near zero, no `objshare: error at`.
+  Cancel a household Sim that waits behind a held slot (hh off): 4483.
+- `servingshare-buffet`: a party or a community lot with a buffet table / a platter on a counter and 4+ hungry
+  Sims. Off arm: `ServingContainerGroup... line` waits; on arm: 4486 / 4487 up; a platter with 2 servings and 3
+  Sims: 4491 once, servings never below 0 (`ObjShareCheck lot`).
+
+### 14.5 Run in the game (2026-11-22, Deck, Sunset Valley new game) [verified]
+
+Four household young adults, nobody autonomous; by hand in session `sh-m1`, then the entries below (exit 0 each). The
+forced repros `servingshare-force` and `rhshare-force` stay on the contributor's combo branch: their agent steps
+(`add_platter` and others) are not upstream yet. In these runs the `SetActor` hook was actdelay's; here it is
+`SmcSetActor.cs` with the same body.
+
+**Repro `servingshare-force`** (run `sv-r1`): a finished group meal on the ground of the front yard (agent step
+`add_platter`: `Recipe.CreateFinishedFood`, Group), the Sims 6 m away on four sides, Grab a Serving for three at
+once and the fourth 6 s later.
+
+| | off | on (`servingshare servingsharehh`) |
+|---|---|---|
+| 8 servings, 4 Sims | `linewait: Di Platter household, ServingContainerGroup_GrabAServing target BowlL: BowlLarge line, waited 3.1 sim-min, line length 1, outcome got turn`, Cy 5.9 and Bo 5.0 sim-min (line length 2); 4 plates | no line wait; `servingshare: Di Platter household takes from BowlLarge with 1 other Sim(s), 4 left`, `Cy ... with 2 other Sim(s)`; 4 plates, servings 0 |
+| Counters | line waits (4470) 3 more, runs at a busy platter (4485) 1, would (4488) 1 | took with another Sim (4487) 2, line waits unchanged, errors 0 |
+| 2 servings, 3 Sims | | exactly 2 plates, servings 0, lines skipped (4486) 1 |
+| 1 serving, 3 Sims | | exactly 1 plate, `servingshare: Bea Platter selected does not take from BowlLarge: 1 left, 1 being taken`, last serving refused (4491) 1 (2 in `sh-m1`), servings 0 |
+
+- Sims that come from one side, or through one door, reach the platter one after the other and take 3 s apart
+  with the switch on (6 s off): they never meet at it and 4487 stays 0. From several sides the takes overlap.
+- 4485 and 4488 count a run only when the platter was in use or had a line when the run began (before the walk):
+  orders given at one time leave them at 0. Counters only, not changed.
+- The third Sim at a platter with 2 servings found it empty the game's own way; 4491 needs a Sim that asks while
+  the last serving is being taken (the 1-serving arm).
+
+**Repro `rhshare-force`** (run `rh-r1`): the four Sims put 20 m before City Hall's doors and ordered Tour City Hall.
+
+| | off | on (`rhshare rhsharehh`) |
+|---|---|---|
+| Lines | `linewait: Di Rabbit household, VisitRabbitHole target CityHall: CityHall rhdoor, waited 0.9 sim-min, line length 2, outcome got turn`, Cy 2.1, Bea 5.1 sim-min | `rhshare: Bo Rabbit household walks to enter slot 1212927037 of CityHall held by another Sim, 1 waiting`, `linewait: Bo Rabbit household, ...: CityHall rhdoor, waited 0.0 sim-min, line length 1, outcome shared`; the same for Bea and Cy |
+| Counters | rhdoor waits (4474) 4, 9.4 sim-min (4475), would (4480) 4 | walked to a held slot (4479) 3, sim-min unchanged, errors 0 |
+| After 30 s | all four in the tour | all four in the tour, no reserved enter slot left |
+
+- NPCs shared too in the on arm (`rhshare: Monika Morris npc walks to enter slot ... of Stadium`).
+- Not run: the cancel exit (4483), dead reservations (4484), horses and riders (4482).
+
+## 15. Partners shower together; a Sim with no usable toilet takes a shower (`showertogether`, `showerpee`; 2026-11-22, `feat/showershare-1122`, built, default off, run §15.5)
+
+A player's wish: romantic Sims shower together (they clip and come out one at a time), also in the all-in-one
+bathroom, and a Sim that has to pee with the toilet busy or no toilet on the lot does it in the shower, as a
+shower: no new interaction. Source `ShowerShare.cs`, rules `ShowerShareCore.cs`, counters 4494-4509,
+`kCounterSlots` 4510, check `ShowerShareCheck`, selftest `tools/selftest/showershare`, repro `showershare-check`.
+
+### 15.1 How the game's shower, all-in-one bathroom and bladder failure work [verified, decompiled `Sims3.Gameplay` unless marked]
+
+- `Shower.TakeShower.Run` (target `IShowerable`: every shower and shower tub): `SimLine.WaitForTurn` (line of 2,
+  waits outside the room's door, evicts after 15 sim-minutes), `RouteToSlotAndCheckInUse(RoutingSlot_0)`, a
+  `ShowerPrivacySituation`, `StandardEntry` (use list), a second walk to the slot, the outfit change, its own
+  "Shower" state machine (actors `x` and `Shower`), `SimInShower = Actor`, the loop until hygiene is full, then
+  `WaitToLeaveShower`, the exit animation and `StandardExit`.
+- `SimRoutingComponent.RouteToSlotAndCheckInUse`: `PreRouteCheckForLine` (asks the line once more, never
+  waiting), `RouteToSlot`, then `InUse` -> exit reason `ObjectInUse`.
+- `WaitToLeaveShower`: `EnableFootprintAndPushSims(824351308, actor)` pushes every other Sim off the exit
+  footprint, then sleeps while `IsRoutingSlotObstructed(actor, RoutingSlot_0)`.
+- Privacy: `ShowerPrivacySituation.OtherSimCanIgnorePrivacy` is true for a Sim in a romantic relationship
+  (`Sim.CanIgnoreNormalPrivacySituationsWith` -> `IsInRomanticRelationshipWith`: the relationship's long-term state
+  is romantic). A partner is neither shooed out nor reacted to; nothing had to change there.
+- The game's own second Sim in a shower is `Shower.WooHoo`: actor `y` on the first Sim's state machine, on
+  `RoutingSlot_0`. There is no "shower with" interaction to unlock, so a partner runs its own Take Shower with
+  its own state machine on the same slot.
+- `AllInOneBathroom.UseAllInOneBathroom`: its line (6, cut ahead of lower priority), the same in-use walk, no
+  privacy situation, a footprint shut while a Sim is inside, the Sim fades out; hygiene and the bladder fill
+  (bladder in 5 sim-minutes). No exit wait.
+- Bladder: `Motive.MotiveDistress(sim, Bladder)` runs when the motive is at its minimum and queues
+  `Sim.BladderFailure` (puddle, embarrassment) unless one is queued. `BuffReallyHasToPee` is added shortly before.
+  Toilets fill the bladder with a motive delta on the interaction (`Motives.LerpToFill`).
+
+### 15.2 What is built
+
+`showertogether` (NPCs) / `showertogetherhh` (household and selected Sims too; both Sims must be in scope):
+
+- Rule (`ShowerShareCore.Join`): exactly one other Sim uses the object or is in its line, it runs the same
+  interaction there (Take Shower, or the all-in-one bathroom's use; not a bath, a repair, a WooHoo), both are
+  humans and no robots, both young adults or older, the game's romantic test holds, and their liking is not
+  below zero.
+- The line: `LdsQueueHook.WaitHook` (sharelanes' swap of `SimQueue.WaitForTurn`) returns at once for such a Sim
+  and notes the two as the object's pair. A third Sim keeps the line.
+- The in-use test: swap of `SimRoutingComponent.RouteToSlotAndCheckInUse` (yields, stub `InUseOrig`). Switch
+  off: the game's body. Switch on: the game's three steps in the hook, with "in use" passing while every Sim
+  using the object is of its pair (so a pair formed during a walk still counts after it). For an all-in-one
+  bathroom the partner's walk first opens the footprint the Sim inside shut.
+- The exit (showers): swap of `GameObject.PushSimsFromFootprint` (yields, stub `PushOrig`) adds the partner to
+  the push's exceptions for footprint 824351308, and swap of `GameObject.IsRoutingSlotObstructed` (8 arguments,
+  no yield, stub `ObstructedOrig`) answers the game's wait for a Sim of a pair: obstructed while the partner
+  plays its exit and is still in the use list (cap 10 sim-minutes), free otherwise. So the partner in the
+  shower does not hold the leaving Sim, and two leaving Sims come out one after the other.
+
+`showerpee` / `showerpeehh`:
+
+- Rule (`ShowerShareCore.Pee`): a human Sim, child or older, no robot, not swimming, on a lot; no toilet, urinal
+  or all-in-one bathroom there that is not broken, not used by another Sim, with nobody else in its line (a
+  urinal only for a male Sim); and a shower that is not broken and free, or held by a partner `showertogether`
+  lets the Sim join.
+- At the last warning (swap of `BuffReallyHasToPee.OnAddition`, stub `AddOrig`): the game's Take Shower is
+  queued next at high priority, unless the Sim is selectable and has orders from the player.
+- At the failure (swap of `Motive.MotiveDistress`, stub `DistressOrig`): the same shower is queued instead of
+  `BladderFailure`, and further distress calls are held back while that shower is queued or runs. A shower that
+  has not begun within 30 sim-minutes, or that left the queue, gives the failure back to the game, and the Sim is
+  not sent again for 60 sim-minutes.
+- The bladder: a Take Shower started by such a Sim (pushed or of its own accord, noted in the line hook) gets a
+  bladder delta when the shower becomes an actor of its state machine (`StateMachineClient.SetActor`, `SmcSetActor.cs`
+  (actdelay's hook on the combo branch); 5 sim-minutes to full), and the bladder is set full when the Sim steps out. Hygiene is the shower's own.
+- An all-in-one bathroom is a toilet for this rule: when it is free the game uses it.
+
+`showersharelog`: one `showertogether:` / `showerpee:` line per act.
+
+### 15.3 Limits [inferred unless marked]
+
+- Not run. Open questions for the first run: whether a walk to `RoutingSlot_0` succeeds while the partner stands
+  on it (the game's own shower WooHoo does exactly that), whether two "Shower" state machines on one shower
+  fight over the door and water effects (they overlap; the first exit closes the door on the second Sim), and
+  whether the all-in-one bathroom's shut footprint covers its routing slot.
+- Autonomy does not offer a shower that is in use, so a join happens for a directed Sim, for a Sim whose shower
+  was queued by `showerpee`, and for a Sim that was already walking there. No autonomy change was made.
+- `SimInShower` is the last Sim that began, and is cleared by the first that ends: "WooHoo in shower" may be
+  missing on the shower until the next shower begins.
+- All-in-one bathroom: no exit wait exists in the game, so both exits may overlap; the second Sim's use starts
+  no second sound, and the first exit stops the sound.
+- A toilet that cannot be reached counts as usable (no route test is made); a toilet on another level too.
+- `showerpee` sends a visitor into the host's shower; the alternative was a puddle.
+- The failure is held back for up to 30 sim-minutes while the Sim walks to the shower; its bladder stays at the
+  minimum for that time.
+- With `showertogether` on, every `RouteToSlotAndCheckInUse` in the game runs through the hook's three steps
+  (the same calls in the same order).
+- `LdsQueueHook.WaitHook` changed: Sims saved in a line by an older build are reset once at the first load
+  (docs/242 §2).
+
+### 15.4 Checks (2026-11-22, no game) and run plan
+
+- `node tools/selftest/showershare/run.ts`: 41 checks. `build-fixes.ts` builds; selftests `objshare`,
+  `sharelanes`, `standwait` pass; `swap-stack-audit` has the five new rows.
+- Live: `showershare-check` once (off `BROKEN`, on `FIXED`, one switch on `MIXED`).
+- Forced repro, partners (outline, existing agent steps): `make_household` with two young adults on an empty
+  lot; `build_layout` one room with a door; `buy_object` one shower (then a shower tub, then an all-in-one
+  bathroom); `modify_relationship` to Partner (and a control pair: friends; a teen); `set_motive` Hygiene -80 for
+  both; `do_interaction` Take Shower for the first, the same for the second once the first is in the use list
+  (`ShowerShareCheck lot`). Off arm: the second waits at the door, 4495 up. On arm (`showertogether`
+  `showertogetherhh` `showersharelog`): a `showertogether: ... joins ...` line, 4494 up, both in the use list,
+  no shoo, 4500 up when both end together, both end standing outside, 4501 = 0.
+- Forced repro, bladder (outline): the same lot without a toilet (or with the toilet in use by the other Sim);
+  `set_motive` Bladder -95 for the active Sim, no orders. Off arm: the puddle, 4506 up. On arm (`showerpee`
+  `showerpeehh`): `showerpee: ... takes a shower ...` and `... bladder fills ...` lines, 4503 or 4504 and 4502
+  up, no puddle, bladder full after the shower. Control: a free toilet on the lot -> the game's way, nothing
+  counted; no shower -> 4505 and the puddle.
+
+### 15.5 Run in the game (2026-11-22, Deck, Sunset Valley new game) [verified]
+
+Repro `showershare-force` (run `sh-r7`, exit 0; by hand in sessions `sh-m1`, `sh-m2`): four young adults, Bea and
+Bo partners, a room without roof, one shower, later an all-in-one bathroom.
+
+| | off | on |
+|---|---|---|
+| Take Shower for Bea, then Bo | `in use by 1, in line 1`, Bo waits at the door (`linewait: Bo Share household, TakeShower target ShowerBasic: ShowerBasic line, waited 11.9 sim-min, line length 1, outcome cancelled`), would (4495) 1 | `showertogether: Bo Share household, TakeShower target ShowerBasic: joins Bea Share selected in ShowerBasic`, `in use by 2`, joined (4494) 1, both end clean and stand outside, exits held (4500) 1 when both end together (`sh-m1`, `sh-r5`; 0 in `sh-r7`), errors 0 |
+| Bladder -97, no toilet, no orders | Pee Self, Embarrassed, Smelly; would (4506) 1 | `showerpee: Di Share household, none: no usable toilet, takes a shower in ShowerBasic ... at the last warning`, `... bladder fills in ShowerBasic`; 4503 1, 4502 1, bladder 98, hygiene 99, no accident |
+| All-in-one bathroom | `in use by 1, in line 1`, would 2 | `showertogether: Bo Share household, UseAllInOneBathroom target AllInOneBathroom: joins Bea Share selected`, `in use by 2`, 4509 1, both come out |
+
+- How it looks: both Sims stand on the shower's one place inside each other, under one censor mosaic; from outside
+  it reads as one occupied shower. They step out one after the other and dry off side by side.
+- Answers to §15.3: the walk to `RoutingSlot_0` succeeds while the partner showers; the two state machines did not
+  disturb each other in these runs; the all-in-one bathroom's footprint opens for the partner.
+- **Fixed here: a partner that arrives while the other leaves.** Bea nearly clean, Bo 8 s away: Bo joins (no line),
+  Bea's exit footprint and then Bea herself cover the slot, Bo's walk fails and his Take Shower ended, where the
+  game's line would have held him (`sh-m1`, twice). The walk hook now waits until the partner no longer uses the
+  shower (cap 10 sim-min) plus 2 sim-min, takes the route-fail exit reason off and walks again, up to three times:
+  `showertogether: Bo Share household: the walk failed while Bea Share left ShowerBasic, waited 6.3 sim-min, walks
+  again` (twice in `sh-r7`), then Bo showers. He still plays the route-fail reaction once per failed walk.
+- The shower lasts about a minute at speed 1 from hygiene -95, so a second order 20 s late is this late case.
+- Not run: 4504 (the failure itself replaced: the last warning always came first), a shower tub, a teen or friend
+  as control, a visitor, 4508.
+- The forced repro `showershare-force` stays on the contributor's combo branch: its agent steps and the
+  harness's `noKeepAlive` flag are not upstream yet.
+- Harness: profile-world's `keep_alive` fills every household motive below -50 each 30 s and hid the bladder
+  failure in three runs; a repro entry with `"noKeepAlive": true` runs without it.
+
+## 20. WooHoo partners and paired socials are snapped onto their spots (`woohoosnap`, `pairsnap`; 2026-11-22, `feat/woohoosnap-1122`, built, default off, NOT RUN)
+
+A player's wish: "WooHoo. If they get to kissing and just can't reach the bed, one of them, or the shower or wherever
+they are woohooing, you can teleport them, that's a big issue a lot of times." `WooHooSnap.cs`, rules in
+`WooHooSnapCore.cs`. The game's tests (age, relationship, privacy, object in use) are untouched; only the walk is
+replaced.
+
+### 20.1 How the game routes the two partners [verified, decompiled `Sims3GameplayObjects`, `Sims3GameplaySystems`, `Sims3StoreObjects`]
+
+The social's callback (`SocialCallback.OnWooHoo` / `OnTryForBaby`) asks the object's own social
+(`IWooHooSocialInteraction.PushWooHoo`) or, without one, the nearest bed. Each partner then walks by itself; every
+walk ends in `SimRoutingComponent.DoRoute`, and a failed one ends the WooHoo for both (a plain `return false`, the
+other side times out after 30 s or sees the missing partner).
+
+| object | starter | partner | after the walk |
+|---|---|---|---|
+| bed, tent, igloo | `EnterRelaxing`: `RouteToUnusedPart`; then `Beds.WooHoo` (the only `IIsWooHoo`) from the queue | `EnterRelaxing`: `RouteToUnusedPart` | `PartData.IsRoutingSlotObstructed` ends Relax on a closed slot |
+| shower, shower tub | `Shower.WooHoo`: ring 1.5-4 m (result unused), then `RouteToSlot` slot 0 | `TakeShower` (`HavingWooHoo`): `RouteToSlotAndCheckInUse`; linked to the starter's | exit waits while slot 0 is obstructed (no time limit) |
+| all-in-one bathroom | `WoohooInAllInOneBathroom`: `RouteToSlotAndCheckInUse` slot 1 | `...B`: `RouteToSlot` slot 2 | 30 s wait for the partner |
+| wardrobe | `WooHooInWardrobeA`: radius 1.5 m, then a slot 0 route | `WooHooInWardrobeB` goes first: `RouteToSlotAndCheckInUse` slot 0 | each watches the other's interaction |
+| leaf pile, hay stack | `WoohooInPileOrStack`: `RouteToSlotListAndCheckInUse` | `...B`: cone 1-2 m, then a slot route | `CanWooHooIn`, 30 s wait |
+| sarcophagus, time machine, bot station, box of mystery | `<Object>+WooHoo`: `RouteToSlotAndCheckInUse`; the partner's interaction is made after it | the same class: a slot route that ignores the starter | `ActorsUsingMe` |
+| actor trailer, photo booth | `<Object>+WooHoo`: slot 0 | the same class, linked | `HasSpaceFor` |
+| elevator | `ElevatorDoors+WooHoo`: ring at the doors, then slot 0 of the car | the same, slot 1 | three 30 s sync waits |
+| underwater cave | `WoohooInCave`: slot 0 | the same, after the starter | sync |
+| gypsy caravan, resort tower | rabbit hole entry (`RouteNearEntranceAndEnterRabbitHole`) | the same | |
+| hot tub, sauna, treehouse, fairy house, hot air balloon | no walk in the WooHoo: both are in the object already (`GetIn` earlier, an ordinary slot route) | | |
+| rabbit holes (`WooHooInRabbitHoleWith`) | no walk: both are inside | | |
+
+Paired socials (kiss, hug: `ActionData.SocialJig` other than one-person): §17.1's three steps, then
+`SocialInteractionA.VerifyPositionAndAlignment` refuses to play unless the two face each other (dot product -1
+within 0.001), stand at the social's distance within 2 mm and at one height within 0.133 m. A social with its own
+jig (`ForceCreateJig`) places it with `SocialJigTwoPerson.PlaceJig` and plans `RouteToJigA` / `RouteToJigB` (slot
+routes on the jig); a failed plan there ends the social before any walk.
+
+### 20.2 What is built
+
+`woohoosnap`, first step of the `DoRoute` hook's chain (BlockedUse.cs), for a failed plan (no destination, no free
+slot, places obstructed, no path, a Sim on the place, the start closed) of a human whose running interaction is a
+WooHoo step: a class named `WooHoo` / `Woohoo` / `TryForBaby` (with the class it is nested in), an interaction
+linked to one (the shower's `TakeShower`), or a bed's `EnterRelaxing` while a bed WooHoo of the pair waits in a
+queue. Sim, partner and object must stand on one lot (not the world lot).
+
+1. Walk up: unless the Sim stands in the object's room within 3 m, the game's "near the object" plan (1-3 m) is
+   walked when there is one. With none the Sim is moved from where it stands (another level, a closed room).
+2. Snap: onto the nearest wanted slot of the route (parts in use are never wanted), facing as the slot does; the
+   route answers "arrived" with that slot. A route without slots (the ring round a shower, wardrobe or elevator):
+   onto a free place the game's placement search finds at the route's goal.
+3. The Sim is remembered for blockeduse's way out (§10.3 step 4), counted in 4574 when it is used.
+4. `GameObject.IsRoutingSlotObstructed` (ShowerShare.cs's hook) answers "free" for a Sim that was let onto a closed
+   slot of that object, by this rule or by blockeduse. Before, a bed's Relax ended right after blockeduse's snap
+   and a shower's exit would have waited for the closed slot without limit.
+
+`pairsnap`, for paired socials of two humans (no baby, nobody riding, swimming or sitting) within 3 m on one level
+(height within 0.133 m):
+
+- a. `SetupTwoPersonSocial` answered false (SocialReach.cs's hook; its talk rule looks first): the partner (the
+  hook's own Sim) is put at the social's distance from the starter, or from the end of the starter's walk: the
+  first of eight ring places (towards where it stood, then 45, 90, 135 degrees to either side, then behind) with
+  no wall between that is routable, else the first without a wall. Both face each other; no routes.
+- b. In `DoRoute`: a failed plan or walk of either Sim in such a social: onto its jig slot (within 4 m) when the
+  route leads to a jig, else onto a ring place round the other; while the other still walks the Sim only turns.
+- c. `SocialJigTwoPerson.PlanRouteToJigA` / `RouteToJigB` answered a failed plan: planned again with "pass through
+  objects" and "no slot obstruction test" (walls count); a plan of at most 6 m is kept and walked.
+
+Scope: `woohoosnap` / `pairsnap` = pairs without a Sim the player controls, `...hh` = pairs with one; each alone.
+Off = compare mode (4567 / 4577). Counters 4566-4581 (`kCounterSlots` 4582, table in docs/registry.md). Lines with
+`woohoosnaplog` / `pairsnaplog`: `woohoosnap: <who> <Sim>, <Interaction> with <Partner> -> <Object> (...): snap <m>
+to slot ... | kept, <why>`, `pairsnap: ... the partner snaps ... | snap ... onto the jig slot | planned through
+objects | kept, <why>`, `...: snap out from ... to ...`; errors always: `woohoosnap: error at <site>`,
+`pairsnap: error at <site>`.
+
+### 20.3 Not built, and why
+
+- Hot tub, sauna, treehouse and fairy house: the walk is an ordinary `GetIn` long before the WooHoo; blockeduse's case.
+- Rabbit hole WooHoo: no walk. Hover train WooHoo: a group walk (`RouteOutside` with a follower).
+- A social's jig that cannot be placed at all (`PlaceJig` false) and a starter's approach from beyond 5 m.
+- Horses and pets (box stall, pet house).
+
+### 20.4 Limits [inferred unless marked]
+
+- A snap is a visible jump, for WooHoo of any length on the lot. The Sim then stands in or behind what closed the slot.
+- The partner is read from the interaction's target, its linked interaction or a Sim field; when none is set yet
+  (the starter of a sarcophagus WooHoo before the partner's interaction exists) scope is decided by the Sim alone.
+- Rule a moves the partner from its own task and sets the starter's facing from there; a starter still walking is
+  left to the game's facing step, and the game's alignment test then decides (2 mm).
+- A ring place that is not routable leaves the Sim in furniture until its next plan (blockeduse's way out).
+- Rule 4 changes blockeduse too (default off): a Sim it let onto a slot is no longer refused at that object.
+- `RouteBlocked` gained one step: Sims saved while they walk a "near" or clip route of the hook are reset once at
+  the first load with this build (docs/242 §2). Two new swaps (plans only, with stubs).
+
+### 20.5 Checks (2026-11-22, no game) and run plan
+
+- `node tools/selftest/woohoosnap/run.ts`: 56 checks. `WooHooSnapCheck run | result | lot`, `PairSnapCheck run |
+  result | lot`. Repros `woohoosnap-check`, `pairsnap-check` (rules, counters, lot lists). Not run.
+- Forced repro `woohoosnap-force` (outline): `make_household` two young adult partners (romantic interest set) on an
+  empty lot, `build_layout` a room with a double bed in the middle, `bed_setup` closes one side with a fridge on its
+  routing slot (as `makebedboth-force`), autonomy off; order WooHoo on the bed. Off: the second Sim's
+  `routefail: ... EnterRelaxing`, 4566 and 4567 count. On (`woohoosnap`, `woohoosnaphh`, log): `woohoosnap: ... snap
+  ... to slot`, 4569 = 1, both Sims in the bed, the WooHoo plays; afterwards 4574 or blockeduse's "walked out".
+  Second arm: the same with a shower whose slot a dresser covers (4570).
+- Forced repro `pairsnap-force` (outline): the same household, a room cut by a row of counters with one Sim on each
+  side 1.5 m apart (`move_sim`), order Kiss. Off: route-fail balloon, 4576 / 4577. On: `pairsnap: ... the partner
+  snaps`, 4579 = 1, the kiss plays, no `kept` line.
+- Pass: 4575 = 0 and 4581 = 0, no `error at` line, no Sim left in furniture after its next walk, `applied` shows
+  the two jig swaps `ok`, `blockeduse-force` and `showershare-force` unchanged.
