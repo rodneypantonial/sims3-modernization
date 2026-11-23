@@ -164,7 +164,6 @@ namespace Ts3Fixes
             {
                 sStuckIn = sStuckCap = false;
                 PatchCounters()[NoStartCore.StuckOutcome(sStuckPlans, sStuckOk, last)]++;
-                UnGameSignal(sim, sStuckPlans, sStuckOk);  // unstuck (Unstuck.cs, docs/686 §18): a Sim with no way is looked at on its next failed plan
                 OwProbeExit(id, task);
             }
         }
@@ -262,6 +261,7 @@ namespace Ts3Fixes
                 while (sStuckQueue.Next(Sims3.Gameplay.Utilities.SimClock.CurrentTicks, out e))
                 {
                     c[131] = (int)(sStuckQueue.MaxWait * 60 / Math.Max(1L, Sims3.Gameplay.Utilities.SimClock.ConvertToTicks(1f, Sims3.Gameplay.Utilities.TimeUnit.Minutes)));
+                    SfWait(1734);  // docs/205 §2.3c: paused, clock stopped or out of live mode: hold this check (EA's alarm does not fire there)
                     if (GameStates.IsWorldShuttingDown || GameStates.IsTravelling || e.Sim.HasBeenDestroyed) { c[129]++; continue; }
                     c[128]++;
                     try { StuckCheckRun(e.Helper, e.Sim); }
