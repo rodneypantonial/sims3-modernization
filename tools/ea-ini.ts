@@ -34,6 +34,9 @@ const rcZeroKey = (sec: string, key: string) => (RC_ZERO_KEYS[sec] ?? []).includ
 export const KEY_ADDRS: Record<string, number[]> = {
     "EaCrashFixes.ThumbPoseBones": [0x00D5B708, 0x00D5B768, 0x00D5B7A1, 0x00FC2D30], "EaCrashFixes.LotGridMiss": [0x0082B608, 0x0082B7F4],
     "RouteToObjRO.Tail": [0x00686A90, 0x0082A780, 0x01003D7C],
+    // v0.3.1 EA run 2026-11-23: both ON in the EA ini while the asi logged SKIP at 0x00000000 (rows unresolved, docs/293 §6)
+    "EaCrashFixes.SavedFrameGuard": [0x00D84360, 0x00E52B90],
+    "RouteAsync.TaskServe": [0x00D7F000, 0x00D7FA74, 0x00D7FB53, 0x00D7FE01, 0x00D800FC],
     "IdleCheckRO.SiteC": [0x00620D20, 0x00624F70, 0x00652470, 0x0075598B, 0x00755A12, 0x00755A6D, 0x00755A82, 0x00755A97],
     // master fold 2026-11-15 (docs/232 §8): master code newer than rc1111g, no EA 1.69 rows yet; each feature also SKIPs in the EA
     // asi. RacesBits01 and SatbColdPark name no ini key (the code masks Races to bit 2, EA_SET ships Races=4; the cold park is not
