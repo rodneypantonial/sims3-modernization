@@ -375,7 +375,8 @@ static int __cdecl TvMarkSome(void* cold) {
         assert(!g_tvObj && !g_tvScan);
         for (int b = 0; b < 6; b++)
             assert(TvMarks(b)[5] == (b == 2 || b == 5 ? kTvPat[b] : b == 3 ? 0xDEADu : 0u) && TvMarks(b)[0] == (b == 3 ? 0xDEADu : 0u));
-        g_tState = 3, g_tvObj = 1, g_tvScan = 0x77, g_tTooSmall = 1, g_tvResc += 7, g_tvBl[0][3] |= 0x10, g_tvBl[1][9] ^= 0xFF, g_tvRuns++;
+        g_tState = 3, g_tvObj = 1, g_tvScan = 0x77, g_tTooSmall = 1, g_tvResc += 7, g_tvBl[1][9] ^= 0xFF, g_tvRuns++;
+        if (g_tvBlP[0]) g_tvBlP[0][3] |= 0x10;
         return 0;
     }
     assert(g_tState == 3);
@@ -432,22 +433,26 @@ static void TestG5Verify() {
     arm(0x100);
     G5Verify();  // the cycle's marks lack a live object: counted, no latch
     assert(same() && k.g5VerifyN == n0 + 4 && k.g5VerifyBad == bad0 + 1 && k.g5VerifySub == sub0 + 1 && k.g5Mode == 1);
+    arm(0), g_tvBlP[0] = NULL;
+    G5Verify();  // the game's normal black list is NULL (all interior pointers): checked, not given up
+    g_tvBlP[0] = g_tvBl[0];
+    assert(same() && k.g5VerifyN == n0 + 5 && k.g5VerifySkip == skip0 && k.g5Mode == 1);
     arm(0), g_tvHang = 1, g_g5vMaxMs = 20;
     G5Verify();  // time limit inside the helper mark: skipped, stack emptied, marks back
     g_tvHang = 0, g_g5vMaxMs = 60000;
-    assert(same() && k.g5VerifyN == n0 + 4 && k.g5VerifySkip == skip0 + 1 && k.g5Mode == 1);
+    assert(same() && k.g5VerifyN == n0 + 5 && k.g5VerifySkip == skip0 + 1 && k.g5Mode == 1);
     arm(0), g_tState = 1;
     G5Verify();  // a mark is running: skipped before the world stop
     assert(g_tState == 1 && g_tvRuns == 0 && k.g5VerifySkip == skip0 + 2 && !memcmp(hdr0, g_tvHdr, sizeof hdr0));
     // through G5Little: only a call that turns finish pending 0 -> 1 counts as a cycle; every 2nd is checked
     arm(0), g_g5LittleOrig = TvLittle, g_g5vEvery = 2, g_g5vCycle = 0, g_tvPend = 0;
     G5Little(1, NULL);
-    assert(g_g5vCycle == 1 && k.g5VerifyN == n0 + 4);
+    assert(g_g5vCycle == 1 && k.g5VerifyN == n0 + 5);
     G5Little(1, NULL);  // pending already set: not a new cycle
-    assert(g_g5vCycle == 1 && k.g5VerifyN == n0 + 4);
+    assert(g_g5vCycle == 1 && k.g5VerifyN == n0 + 5);
     g_tvPend = 0;
     G5Little(1, NULL);
-    assert(g_g5vCycle == 2 && k.g5VerifyN == n0 + 5 && same() && k.g5VerifyBad == bad0 + 1);
+    assert(g_g5vCycle == 2 && k.g5VerifyN == n0 + 6 && same() && k.g5VerifyBad == bad0 + 1);
     g_g5vEvery = 0, g_g5vCycle = 0, g_g5LittleOrig = NULL, memset(&g_g5v, 0, sizeof g_g5v);
     G5Shutdown();
 }

@@ -1,0 +1,392 @@
+{
+ "note": "ea-gcverify-rerun1-1123 (EA laptop, correctness only). Rerun of ea-parity-ab-1123 job ea-parab-sv-soak-gc after the G5Verify NULL black list fix. Setup: merge bugfix/gc-verify-null-blacklist-1123 into test/ea-parity-ab, set TS3NATIVE_VERSION 0.36.299-eaparac, tools/msvc-dl/ea-build.bat, copy out-ea169/ts3native-ea169.asi to game-copy/eaparAC-1123/ts3native.asi and game-copy/eaparAB-1123/ts3native.ini to game-copy/eaparAC-1123/ts3native.ini. Run: TS3_MACHINE=ea-laptop TS3_LAUNCH=ea node tools/harness/queue.ts tools/harness/queues/ea-gcverify-rerun1-1123.json",
+ "stopQueueOnFail": true,
+ "jobs": [
+  {
+   "id": "ea-parac-sv-soak-gc",
+   "note": "[est 22 min] rerun of ea-parab-sv-soak-gc: 44 of 44 verify checks gave up (\"block list changed or unreadable\") because G5Verify copied the normal incomplete black list [0x1234350], which is NULL (GC_all_interior_pointers 1). Same soak and GC ini.",
+   "asi": "game-copy/eaparAC-1123/ts3native.asi",
+   "iniBase": "game-copy/eaparAC-1123/ts3native.ini",
+   "fixesPackage": "game-copy/v031-ea169/dl-2058/ts3fixes.package",
+   "pinReason": "test build ts3native-ea169.asi 0.36.299-eaparac = test/ea-parity-ab (0.36.299-eaparab) + bugfix/gc-verify-null-blacklist-1123 (G5Verify skips the NULL normal black list); its EA rc ini as eaparab; ts3fixes.package = the shipped v0.3.1 EA asset",
+   "releaseDefaults": true,
+   "noiseCheck": false,
+   "scriptErrorsMax": 0,
+   "save": "Baseline-SV-Spring",
+   "timeoutMin": 35,
+   "ini": {
+    "GC.IdleGate": 1,
+    "GC.SubTimers": 1,
+    "GC.MarkHelpers": 2,
+    "GC.MarkHelpersVerify": 1
+   },
+   "run": {
+    "soak": {
+     "minutes": 15
+    }
+   },
+   "logRequire": {
+    "^ts3native 0.36.299-eaparac ": 1,
+    "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": 1,
+    "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": 1,
+    "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": 1,
+    "^OK   ea fix: HeightsInfLoop \\(docs/67 §36\\)": 1,
+    "^OK   ea fix: BridgeHeightNaN \\(docs/67 §37\\).*\\(3 of 3 height queries": 1,
+    "^OK   mono thread QuitStop=1: ": 1,
+    "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": 1,
+    "^autonomy shadow: Races=7 ": 1,
+    "^OK   autshadow races R1 pre-warm: ": 1,
+    "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": 1,
+    "^OK   thumb stall \\(EXPERIMENT, \\[ThumbStall\\]\\)": 1,
+    "^OK   unseen anim: ready ": 1,
+    "^OK   equals fast \\(docs/258 option C\\)": 1,
+    "^OK   binder type handle direct \\(docs/537 §20\\.3\\)": 1,
+    "^OK   saved frame guard: ": 1,
+    "^OK   route task serve: ": 1,
+    "^OK   goal validation RO: 0x75A647 \\+ the S2 writer set": 1,
+    "^GC idle gate: IdleGate=1 \\(gcgMode 1\\) IdleGateMB=64 IdleGateHeapPct=15 ready=0x3$": 1,
+    "^OK   GC sub-timers: 10 call sites$": 1,
+    "^OK   GC mark helpers: MarkHelpers=2 \\(threads 2\\) ": 1,
+    "^OK   GC mark verify \\d+: \\d+ blocks, \\d+ ms, g5Mode 1; helper mark vs serial mark: 0 words differ; serial mark outside the cycle's marks: 0 words$": 1
+   },
+   "logForbid": {
+    "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": 0,
+    "^SKIP ea fix (HeightsInfLoop|BridgeHeightNaN) \\(": 0,
+    "^SKIP mono thread QuitStop": 0,
+    "^SKIP jit BoundCall|^jit: BoundCall: mask": 0,
+    "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": 0,
+    "^PARTIAL ea fix: VbFreeDelay": 0,
+    "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": 0,
+    "no EA 1\\.69 address": 0,
+    "^(SKIP|FAIL) (thumb stall|anim phase|equals fast|binder type handle direct|goal validation RO|goal hits RO)": 0,
+    "^(SKIP|FAIL) (route task serve|saved frame guard)": 0,
+    "^FAIL unseen anim": 0,
+    "^(SKIP|FAIL) GC (mark helpers|idle gate|sub-timers)": 0,
+    "^GC mark helpers: \\d+ helper faults this session": 0,
+    "^(FAIL|WARN) GC mark verify \\d+: ": 0,
+    "^(SKIP GC mark verify|GC mark verify: (skipped|gave up))": 0
+   },
+   "regexCases": {
+    "^ts3native 0.36.299-eaparac ": {
+     "match": [
+      "ts3native 0.36.299-eaparac 2026-11-24 00:30:00"
+     ],
+     "noMatch": [
+      "ts3native 0.36.299-eaparab 2026-11-23 21:53:46",
+      "ts3native 0.36.299-eaparaC 2026-11-24 00:30:00"
+     ]
+    },
+    "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": {
+     "match": [
+      "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave (a boat's driver, a stroller, a led horse) is taken off its master's slave list before it is freed"
+     ],
+     "noMatch": [
+      "SKIP ea fix: SlaveUnlink: calls at 0x00955EF9 / 0x00956B16 differ: not installed"
+     ]
+    },
+    "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": {
+     "match": [
+      "OK   ea fix: DeadSlaveTrip (TEST TRIPWIRE, docs/143 §8.11): avoidance skips and logs a destroyed slave 0"
+     ],
+     "noMatch": [
+      "SKIP ea fix: DeadSlaveTrip: a call to 0x008389D0 differs: not installed"
+     ]
+    },
+    "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": {
+     "match": [
+      "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor (late draw 0xA84D00 binds NULL, not reused memory)"
+     ],
+     "noMatch": [
+      "PARTIAL ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor",
+      "SKIP ea fix: VbFreeDelay (docs/67 §44): Steam 1.67 only, no EA 1.69 rows: not installed"
+     ]
+    },
+    "^OK   ea fix: HeightsInfLoop \\(docs/67 §36\\)": {
+     "match": [
+      "OK   ea fix: HeightsInfLoop (docs/67 §36): path segments of infinite length skip the heights pass's halving loop (0x0064E62A)"
+     ],
+     "noMatch": [
+      "SKIP ea fix HeightsInfLoop ([EaCrashFixes] HeightsInfLoop): no EA 1.69 address, docs/232 §8"
+     ]
+    },
+    "^OK   ea fix: BridgeHeightNaN \\(docs/67 §37\\).*\\(3 of 3 height queries": {
+     "match": [
+      "OK   ea fix: BridgeHeightNaN (docs/67 §37): bridge heights that are not finite or above 1e6 in magnitude are ignored (3 of 3 height queries: 0x00C6070B, 0x00C697EB, 0x00C69A89)"
+     ],
+     "noMatch": [
+      "OK   ea fix: BridgeHeightNaN (docs/67 §37): bridge heights that are not finite or above 1e6 in magnitude are ignored (2 of 3 height queries: 0x00C6070B, 0x00C697EB, 0x00C69A89)"
+     ]
+    },
+    "^OK   mono thread QuitStop=1: ": {
+     "match": [
+      "OK   mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+     ],
+     "noMatch": [
+      "SKIP mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000",
+      "mono thread QuitStop=0: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+     ]
+    },
+    "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": {
+     "match": [
+      "OK   mono jit (docs/527): Mode=2, 40 templates (Groups=7), 12 list rows, VerifyEvery=0, code region 8192 KB (CodeKB), 20000 methods (MaxMethods), Direct=1 (docs/537), Trap=1, VtOps=1, CallExit=1, NewVt=1, Count=0, FastCopy=1, Ldsflda=1, BoundCall=0x3, ClauseLazy=1, RetTeardown=1, FaultRecover=1, YRows=0"
+     ],
+     "noMatch": [
+      "OK   mono jit (docs/527): Mode=2, Direct=1 (docs/537), BoundCall=0x0, ClauseLazy=1"
+     ]
+    },
+    "^autonomy shadow: Races=7 ": {
+     "match": [
+      "autonomy shadow: Races=7 (bit 0 R1 pre-warm at world event 7 + worker abort while a guard is clear, bit 1 R2/R3 witness of 43 rows, bit 2 R2c worker drain at world events 2/3/4/5/8, DrainMs=250; docs/data/races-handoff.md)"
+     ],
+     "noMatch": [
+      "autonomy shadow: Races=4 (bit 0 R1 pre-warm at world event 7 + worker abort while a guard is clear, bit 1 R2/R3 witness of 43 rows)"
+     ]
+    },
+    "^OK   autshadow races R1 pre-warm: ": {
+     "match": [
+      "OK   autshadow races R1 pre-warm: 5 getters called, 15 converter kinds filled, guards 0x7FFF, 0 still clear"
+     ],
+     "noMatch": [
+      "PART autshadow races R1 pre-warm: 5 getters called, 14 converter kinds filled, guards 0x7FFE, 1 still clear"
+     ]
+    },
+    "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": {
+     "match": [
+      "SKIP ea fix SlaveUnlink / DeadSlaveTrip: no EA 1.69 address, docs/232 §8",
+      "SKIP ea fix: VbFreeDelay (docs/67 §44): Steam 1.67 only, no EA 1.69 rows: not installed"
+     ],
+     "noMatch": [
+      "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave",
+      "SKIP ea fix: LotLevelPastEnd: vtable slot 0x01065268 or the getter bytes differ: not installed"
+     ]
+    },
+    "^SKIP ea fix (HeightsInfLoop|BridgeHeightNaN) \\(": {
+     "match": [
+      "SKIP ea fix BridgeHeightNaN ([EaCrashFixes] BridgeHeightNaN): no EA 1.69 address, docs/232 §8"
+     ],
+     "noMatch": [
+      "SKIP ea fix FglStaleObject ([EaCrashFixes] FglStaleObject): no EA 1.69 address, docs/232 §8"
+     ]
+    },
+    "^SKIP mono thread QuitStop": {
+     "match": [
+      "SKIP mono thread QuitStop ([MonoThread] QuitStop, Mono shutdown entry): no EA 1.69 address, docs/232 §8",
+      "SKIP mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+     ],
+     "noMatch": [
+      "OK   mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+     ]
+    },
+    "^SKIP jit BoundCall|^jit: BoundCall: mask": {
+     "match": [
+      "SKIP jit BoundCall ([MonoJit] BoundCall, monojit-bound.h rows): no EA 1.69 address, docs/232 §8",
+      "jit: BoundCall: mask 0x3 asked, 0x1 in force (a row's EA bytes differ, or no such row)"
+     ],
+     "noMatch": [
+      "OK   mono jit (docs/527): Mode=2, BoundCall=0x3,"
+     ]
+    },
+    "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": {
+     "match": [
+      "SKIP autshadow races bits 0-1 ([AutShadow] Races 7, R1b / R2b / R3a): no EA 1.69 address, docs/232 §8; bit 2 stays",
+      "FAIL autshadow races R1: FindClass Vector2 faulted, Races bit 0 off"
+     ],
+     "noMatch": [
+      "OK   autshadow races R1 pre-warm: 5 getters called, 15 converter kinds filled, guards 0x7FFF, 0 still clear"
+     ]
+    },
+    "^PARTIAL ea fix: VbFreeDelay": {
+     "match": [
+      "PARTIAL ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+     ],
+     "noMatch": [
+      "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+     ]
+    },
+    "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": {
+     "match": [
+      "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 1 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+     ],
+     "noMatch": [
+      "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 0 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+     ]
+    },
+    "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": {
+     "match": [
+      "SKIP detour ClosestWaypoints_Find (cut on wait, closest waypoint cut) at 0x0065BB90: prologue differs",
+      "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+     ],
+     "noMatch": [
+      "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+     ]
+    },
+    "^OK   thumb stall \\(EXPERIMENT, \\[ThumbStall\\]\\)": {
+     "match": [
+      "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11 of the Sim thumbnail queue, timeout 10000 ms, action 1"
+     ],
+     "noMatch": [
+      "SKIP thumb stall: bytes at 0x00D5A9E8 / 0x00D5A9F2 / 0x00D5A9FD / 0x00D5AA45 differ: not installed"
+     ]
+    },
+    "^OK   unseen anim: ready ": {
+     "match": [
+      "OK   unseen anim: ready 0x1, mode 1, Every=4 MaxOwedMs=250 NearVisM=10 CapPasses=4 HardCapMs=1500; unseen Sims' non-root-motion pose calls summed over Every passes (--ab unseenanim)"
+     ],
+     "noMatch": [
+      "FAIL unseen anim: ready 0x0, mode 0, Every=4"
+     ]
+    },
+    "^OK   equals fast \\(docs/258 option C\\)": {
+     "match": [
+      "OK   equals fast (docs/258 option C): InternalEquals 0xE7A590 answers int-only value types (enums) from a per-class plan, no loader lock (switch eqMode +0x5F94, --ab equalsfast), SmallEnums=0"
+     ],
+     "noMatch": [
+      "SKIP equals fast ([EqualsFast]): no EA 1.69 address, docs/232 §8"
+     ]
+    },
+    "^OK   binder type handle direct \\(docs/537 §20\\.3\\)": {
+     "match": [
+      "OK   binder type handle direct (docs/537 §20.3): Type.GetTypeFromHandle's EA body 0xDB0940 reads the handle at 0x00DB09DE, no 0xD8A8E0 call to RuntimeTypeHandle.get_Value"
+     ],
+     "noMatch": [
+      "SKIP binder type handle direct: bytes at 0x00DB09C0 differ (another owner or another exe): not installed"
+     ]
+    },
+    "^OK   saved frame guard: ": {
+     "match": [
+      "OK   saved frame guard: a saved task frame inside an instruction is repaired or its stack dropped at load ([EaCrashFixes] SavedFrameGuard=1)"
+     ],
+     "noMatch": [
+      "SKIP saved frame guard: prologue differs"
+     ]
+    },
+    "^OK   route task serve: ": {
+     "match": [
+      "OK   route task serve: the job's managed calls are served after each script task run (TaskServe=1, docs/637)"
+     ],
+     "noMatch": [
+      "SKIP route task serve: needs the async route path",
+      "route task serve off ([RouteAsync] TaskServe=0)"
+     ]
+    },
+    "^OK   goal validation RO: 0x75A647 \\+ the S2 writer set": {
+     "match": [
+      "OK   goal validation RO: 0x75A647 + the S2 writer set (Mode=1 Shadow=0 Attr=0)"
+     ],
+     "noMatch": [
+      "SKIP goal validation RO: needs [RouteGate] Enforce=1 with the async path"
+     ]
+    },
+    "^GC idle gate: IdleGate=1 \\(gcgMode 1\\) IdleGateMB=64 IdleGateHeapPct=15 ready=0x3$": {
+     "match": [
+      "GC idle gate: IdleGate=1 (gcgMode 1) IdleGateMB=64 IdleGateHeapPct=15 ready=0x3"
+     ],
+     "noMatch": [
+      "GC idle gate off (IdleGate=0)",
+      "SKIP GC idle gate ([GC] IdleGate): no EA 1.69 address, docs/232 §8"
+     ]
+    },
+    "^OK   GC sub-timers: 10 call sites$": {
+     "match": [
+      "OK   GC sub-timers: 10 call sites"
+     ],
+     "noMatch": [
+      "SKIP GC sub-timers: call at 0x00E49E42 is not a call to 0x00E4D4B0, nothing written"
+     ]
+    },
+    "^OK   GC mark helpers: MarkHelpers=2 \\(threads 2\\) ": {
+     "match": [
+      "OK   GC mark helpers: MarkHelpers=2 (threads 2) MinSplit=64 Verify=1 g5Mode=1: 8 mark-bit sites lock bts, 2 lock or, overflow deferral 0xE4C390, 6 call sites (0xE49FDF chained after SubTimers)"
+     ],
+     "noMatch": [
+      "SKIP GC mark helpers ([GC] MarkHelpers): no EA 1.69 address, docs/232 §8",
+      "GC mark helpers off (MarkHelpers=0)"
+     ]
+    },
+    "^OK   GC mark verify \\d+: \\d+ blocks, \\d+ ms, g5Mode 1; helper mark vs serial mark: 0 words differ; serial mark outside the cycle's marks: 0 words$": {
+     "match": [
+      "OK   GC mark verify 3: 1234 blocks, 12 ms, g5Mode 1; helper mark vs serial mark: 0 words differ; serial mark outside the cycle's marks: 0 words"
+     ],
+     "noMatch": [
+      "FAIL GC mark verify 3: 1234 blocks, 12 ms, g5Mode 1; helper mark vs serial mark: 5 words differ"
+     ]
+    },
+    "no EA 1\\.69 address": {
+     "match": [
+      "SKIP thumb stall ([ThumbStall]): no EA 1.69 address, docs/232 §8",
+      "SKIP goal hits RO: no EA 1.69 address, docs/670 §11"
+     ],
+     "noMatch": [
+      "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11"
+     ]
+    },
+    "^(SKIP|FAIL) (thumb stall|anim phase|equals fast|binder type handle direct|goal validation RO|goal hits RO)": {
+     "match": [
+      "SKIP thumb stall: bytes at 0x00D5A9E8 / 0x00D5A9F2 / 0x00D5A9FD / 0x00D5AA45 differ: not installed",
+      "FAIL thumb stall fallback: cannot write 0x005F1D75",
+      "SKIP goal hits RO: GoalPoint_Validate's hit loop is not the code read (docs/670 §11)"
+     ],
+     "noMatch": [
+      "OK   thumb stall (EXPERIMENT, [ThumbStall]): state 0x11",
+      "thumb stall: action 4 not available, action 1 instead"
+     ]
+    },
+    "^(SKIP|FAIL) (route task serve|saved frame guard)": {
+     "match": [
+      "SKIP route task serve (ScriptHost_RunTask call sites): call at 0x00D7FE34 is not a call to 0x00D7F3C0, nothing written",
+      "SKIP route task serve: needs the async route path"
+     ],
+     "noMatch": [
+      "OK   route task serve: the job's managed calls are served",
+      "OK   saved frame guard: a saved task frame"
+     ]
+    },
+    "^FAIL unseen anim": {
+     "match": [
+      "FAIL unseen anim: ready 0x0, mode 0, Every=4"
+     ],
+     "noMatch": [
+      "OK   unseen anim: ready 0x1, mode 1"
+     ]
+    },
+    "^(SKIP|FAIL) GC (mark helpers|idle gate|sub-timers)": {
+     "match": [
+      "SKIP GC idle gate: Boehm state code differs (0xE4C060 / 0xE4A022 / 0xE49AD9 / 0xE49E6D)",
+      "SKIP GC mark helpers: mark-bit site differs at 0x00E4C649, nothing written",
+      "FAIL GC mark helpers: write failed at 0x00E4C649 (err 5); g5Mode 0, serial marker"
+     ],
+     "noMatch": [
+      "GC idle gate: IdleGate=1 (gcgMode 1) IdleGateMB=64",
+      "OK   GC mark helpers: MarkHelpers=2"
+     ]
+    },
+    "^GC mark helpers: \\d+ helper faults this session": {
+     "match": [
+      "GC mark helpers: 1 helper faults this session"
+     ],
+     "noMatch": [
+      "OK   GC mark helpers: MarkHelpers=2 (threads 2)"
+     ]
+    },
+    "^(FAIL|WARN) GC mark verify \\d+: ": {
+     "match": [
+      "FAIL GC mark verify 3: 1234 blocks",
+      "WARN GC mark verify 7: 99 blocks"
+     ],
+     "noMatch": [
+      "OK   GC mark verify 3: 1234 blocks"
+     ]
+    },
+    "^(SKIP GC mark verify|GC mark verify: (skipped|gave up))": {
+     "match": [
+      "SKIP GC mark verify ([GC] MarkHelpersVerify): a stopped-mark call site differs, the helpers install without it",
+      "GC mark verify: gave up after 3 tries"
+     ],
+     "noMatch": [
+      "OK   GC mark verify 3: 1234 blocks"
+     ]
+    }
+   }
+  }
+ ]
+}

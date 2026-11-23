@@ -454,7 +454,7 @@ struct G5VEnv {
     volatile LONG *scanPtr, *objMarked, *nResc;   // [0x11F3070], [0x11F3080], [0x123433C]
     volatile LONG *worldStopped, *finishPending;  // [0x11F2FA8], [0x11F2F94]
     G5E **stkBase, **stkTop;                      // [0x1234338], [0x1234340] (empty: top = base - 1)
-    u8** bl[2];                                   // incomplete black lists [0x1234350] / [0x1234358], 0x2000 bytes each
+    u8** bl[2];                                   // incomplete black lists [0x1234350] / [0x1234358], 0x2000 bytes each or NULL
     int(__cdecl* markSome)(void* cold);           // GC_mark_some 0xE4D460 (SEH wrapper), 1 = mark done
     void(__cdecl* stopWorld)();                   // 0xE511A0
     void(__cdecl* startWorld)();                  // 0xE51290
@@ -543,7 +543,9 @@ static void G5Verify() {
         n = G5VBlocks(r, cap);
         if (n >= 0) {
             for (LONG i = 0; i < n; i++) memcpy(r[i].par, r[i].hdr + 7, 0x80);
-            for (int b = 0; b < 2; b++) memcpy(blSave + b * 0x2000, *e.bl[b], 0x2000);
+            // the normal list is NULL: GC_all_interior_pointers is 1, so GC_bl_init (0xE4A6F0) never allocates it
+            for (int b = 0; b < 2; b++)
+                if (*e.bl[b]) memcpy(blSave + b * 0x2000, *e.bl[b], 0x2000);
             saved = n + 1;
             if (G5VMark(r, n, 1)) {
                 for (LONG i = 0; i < n; i++) memcpy(r[i].par2, r[i].hdr + 7, 0x80);
@@ -566,7 +568,8 @@ static void G5Verify() {
     if (saved) {  // back to the cycle's result, whatever happened above
         if (!ok && g_g5.n) G5WindowLeave(), G5Drop();
         for (LONG i = 0; i < saved - 1; i++) memcpy(r[i].hdr + 7, r[i].par, 0x80);
-        for (int b = 0; b < 2; b++) memcpy(*e.bl[b], blSave + b * 0x2000, 0x2000);
+        for (int b = 0; b < 2; b++)
+            if (*e.bl[b]) memcpy(*e.bl[b], blSave + b * 0x2000, 0x2000);
         *e.stkTop = *e.stkBase - 1;
         *g_g5.state = 0, *e.scanPtr = g[0], *e.objMarked = g[1], *e.nResc = g[2], *g_g5.tooSmall = g[3];
     }
