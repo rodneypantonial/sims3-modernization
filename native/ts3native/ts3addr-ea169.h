@@ -976,12 +976,12 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00D79F50, 0x00000000},
     {0x00D7E560, 0x00D7E920},
     {0x00D7E62A, 0x00D7E9EA},
-    {0x00D7F000, 0x00000000},
+    {0x00D7F000, 0x00D7F3C0},
     {0x00D7F8B0, 0x00D7FC70},
-    {0x00D7FA74, 0x00000000},
-    {0x00D7FB53, 0x00000000},
-    {0x00D7FE01, 0x00000000},
-    {0x00D800FC, 0x00000000},
+    {0x00D7FA74, 0x00D7FE34},
+    {0x00D7FB53, 0x00D7FF13},
+    {0x00D7FE01, 0x00D801C1},
+    {0x00D800FC, 0x00D804BC},
     {0x00D80D14, 0x00000000},
     {0x00D814B6, 0x00D81876},
     {0x00D81840, 0x00D81C00},
@@ -1726,15 +1726,10 @@ constexpr unsigned long ts3addr_pairs[][2] = {
 // unresolved: 0x011F4574 no-ea-1.69-address native/ts3native/satb.cpp:1477
 // unresolved: 0x011F45A0 no-ea-1.69-address native/ts3native/satb.cpp:1477
 // unresolved: 0x00612640 no-ea-1.69-address native/ts3native/dxdiagcache.cpp ([Startup] DxDiagCache, no decrypted EA exe on hand)
-// unresolved: 0x00D7F000 no-ea-1.69-address native/ts3native/taskserve.cpp
 // unresolved: 0x00D748C2 no-ea-1.69-address native/ts3native/taskseam.cpp
 // unresolved: 0x00D80D14 no-ea-1.69-address native/ts3native/taskseam.cpp
 // unresolved: 0x00E6F720 no-ea-1.69-address native/ts3native/taskseam.cpp
 // unresolved: 0x00EA1090 no-ea-1.69-address native/ts3native/taskseam.cpp
-// unresolved: 0x00D7FA74 no-ea-1.69-address native/ts3native/taskserve.cpp
-// unresolved: 0x00D7FB53 no-ea-1.69-address native/ts3native/taskserve.cpp
-// unresolved: 0x00D7FE01 no-ea-1.69-address native/ts3native/taskserve.cpp
-// unresolved: 0x00D800FC no-ea-1.69-address native/ts3native/taskserve.cpp
 constexpr int ts3addr_count = 1616;
 
 

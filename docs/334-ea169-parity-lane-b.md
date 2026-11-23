@@ -145,3 +145,14 @@ The two rows it reads besides (0xE643B0, 0xE75260) were mapped before. Code: non
 `ts3a_noaddr` guard: with 0 rows it found no prologue and logged SKIP). 1 bytes row (9 prologue bytes, `ok`). The key
 ships 1; draft PR #690 lists it in ea-ini.ts `KEY_ADDRS`, so it is 0 on EA while unresolved and comes back with these
 rows. Live check: `OK   saved frame guard`.
+
+## 9. [RouteAsync] TaskServe (taskserve.cpp, 5 rows)
+
+ScriptHost_RunTask 0xD7F000 -> 0xD7F3C0 and its four call sites (ThreadedObjects 0xD7FA74 / 0xD7FB53, TaskObjects
+0xD7FE01 / 0xD800FC -> 0xD7FE34 / 0xD7FF13 / 0xD801C1 / 0xD804BC). The script host block 0xD7F000..0xD80200 is
+byte-equal at **+0x3C0** over 4608 bytes modulo 126 pointer / rel32 operands (the same delta as Simulate 0xD81840 ->
+0xD81C00); the map gives all five `exact`; 0xD7F3C0 has exactly these four `E8` callers in EA as 0xD7F000 has the four
+Steam sites. 4 bytes rows (`E8` + rel32, unchanged since caller and callee move together, `ok`). The install checks each
+site is `E8` to the mapped 0xD7F3C0 before it writes. The key ships 1; draft PR #690 lists it in ea-ini.ts `KEY_ADDRS`.
+Live check: `OK   route task serve` (it needs the async route path, which the EA rc ini has: [RouteGate] Enforce=1).
+`[Diag] TaskSeam` (taskseam.cpp, its own rows) is not part of this lane.
