@@ -7292,6 +7292,15 @@ Lane G `thread-census-1120` bp-thread-census, first attempt (pid 12184, start 09
 | I-600-4 | 205 §2.3e | `RoutingSystem_OnExitBuildBuy 0x835240` is entered only from `IC_RouteManager_OnExitBuildBuy 0x74B6B0` (an IC point), so draining deferred discourage records at its gate entry may fire `World_FireEvent 0x11` safely | docs/100 §65 call chain [verified there]; other callers not re-checked here [inferred] | xrefs to 0x835240 (REA / Ghidra) | one caller | another caller outside an IC: limit `DiscDrainBb` to that caller | open |
 | I-600-5 | 205 §2.3e | Every Build/Buy exit passes gate site 13 or the E13 IC, so the route epoch moves at every exit | routegate.cpp site 13 (`[RouteGate]` on in release) and routesnap.cpp E13 (`[RouteSnap]` on in release) [verified code]; that the game has no other exit path [inferred] | job 2: `pgEpochStale` >= 1 after three Buy/Build round trips | >= 1 | 0 with jobs in flight at the exits: find the other path | open |
 
+## 606. EA 1.69 rows for the native pause gate (2026-11-23, docs/205 §2.3e, docs/232 §8.1; branch feature/ea169-pausegate-1123, built, NOT RUN)
+
+| ID | Doc | Claim | Based on | Check | Pass | Fail | Verdict |
+|---|---|---|---|---|---|---|---|
+| V-606-1 | 205 §2.3e | The pause gate (bugfix/pausegate-all-1123) adds no TS3A literal: route epoch, Build/Buy exit drain and the code-27 frozen message reuse gate sites 13 / 14 (routegate.cpp) and routesnap E13 (slot 22) | `git diff origin/main...dda798d2 -- native/` has no added TS3A line [verified, counted] | `node tools/ts3addr-check.ts` ok | ok | missing row | verified |
+| V-606-2 | 205 §2.3e | `RoutingSystem_OnExitBuildBuy` 0x835240 -> EA 0x833EB0, `RoutingSystem_RebuildLotRouting` 0x835110 -> EA 0x833D80 (existing rows) | first 24 bytes equal in both images incl. the 10 stolen bytes (`56 8B F1 80 BE 7B/74 09 00 00 00`) that end before the `jz rel32` at +10; callers by rel32 scan: 0x835240 only `jmp` from 0x74B6BB, EA only from 0x74C55B; 0x835110 4 callers (0x792E40, 0x8361D9, 0xA48E2A, 0xC6BEC4) = EA 4 (0x793FD0, 0x834E49, 0xA47B4A, 0xC6B244); no absolute refs in either [verified] | EA run: `pgBbDrains` / `pgEpochStale` move after Buy/Build round trips | > 0 | 0 with jobs in flight | verified (static) |
+| V-606-3 | 205 §2.3e | `IC_RouteManager_OnExitBuildBuy` 0x74B6B0 -> EA 0x74C550, IC slot 0x1160DA8 -> EA 0x11B6B98 | 17 bytes same shape (`call` RoutingSystem_Get, `test`, `jz`, `jmp` OnExitBuildBuy); EA jmp target 0x74C560 + 0xE7950 = 0x833EB0; EA slot 0x11B6B98 holds 0x74C550 [verified] | as V-606-2 | - | - | verified (static) |
+| I-606-4 | 205 §2.3e | I-600-4 holds on EA 1.69 too: the Build/Buy exit gate is reached only from the IC, so the drain there runs at an IC point | V-606-2 caller scan (rel32 and absolute; an indirect call through a register would not show) [inferred] | EA run, as I-600-4 | - | - | open |
+
 ## 588. EA 1.69 parity lane A: address map (2026-11-23, docs/232 §8.1; built, queue ea-parity-a-1123, not run)
 
 | ID | Doc | Claim | Based on | Check | Pass | Fail | Verdict |
