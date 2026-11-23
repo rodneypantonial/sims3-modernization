@@ -7259,3 +7259,11 @@ Lane G `thread-census-1120` bp-thread-census, first attempt (pid 12184, start 09
 | I-577-1 | 67 §45 | The 2026-11-19..23 `apex-401-present-lock-cycle` hangs are LotLightBridge::UpdateHooks vs D3D9Hooks g_lock, not the PostScene pair of #90 | disassembly of the 4.0.13 and a69a1bbc dumps (pushed mutex + "LotLightBridge" registration); PDB stress build names the frames [verified] | dump-locks + stacks of every new hit dump | same locks / helper | another pair: new section | verified (4 dumps) |
 | I-577-2 | 67 §45 | Taking the registration lock first in UpdateHooks removes the cycle | stress build (8 s hold inside UpdateHooks): base 3/3 hang, fix 3/3 pass [verified] | natural hits on an Apex build with #144 | 0 hits of this cycle over the next test week | a hit with UpdateHooks on the stack | open |
 | I-577-3 | 67 §45 | An off-render-thread unregister (pump reinstall) can still deadlock with a Present-time setter | static review of the fix [inferred] | a dump with Shutdown/SetEnabled(false) -> UnregisterAll on the Apex thread | never seen | seen: follow-up Apex PR | open |
+
+## 606. Tune isolate: EA's tuning loop and one broken script mod (2026-11-23, docs/339)
+
+| ID | Doc | Claim | Based on | Check | Pass | Fail | Verdict |
+|---|---|---|---|---|---|---|---|
+| I-606-1 | 339 §3 | In the e-icarus repro ts3fixes came before the add-on in EA's assembly order and was fully tuned; ts3agent came after it | 9 `play: ui tasks` lines (Fixes.Apply ran), no world-load lines, agent silent [inferred] | `ip-tuneiso-off`: the "broken script mod ... EA's tuning stops here" line present | line present | absent (ts3fixes after the add-on on that run) | open |
+| I-606-2 | 339 §1 | The IL transform of both methods runs after ts3native's detour is in, so the patched body is the one that runs | asi loads before Mono; same path as b89 Fixup (docs/526 §5 live) [inferred] | `ip-tuneiso-on` applied lines + agent answers | both applied, agent answers | not applied / agent silent | open |
+| I-606-3 | 339 §1 | `leave` from a catch handler to the loop increment works in mint after the relocator's long re-encode | ECMA-335 III.3.46; selftest relocates it [inferred for mint] | `ip-tuneiso-on` runs past the add-on, 0 script errors | world loads | crash or script error at startup | open |

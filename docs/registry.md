@@ -1203,7 +1203,8 @@ ts3fixes `DiagSend(op, lo)` (`UserDiag.cs`): `Route.GetOption2` with optHi = `0x
 | 62 | `PcCheck.cs` / `pccheck.cpp` | [PcCheck] (docs/299): hi 0 with lo 0 on?, with lo = one PC_* bit: problem set and Notify=1?; hi 1 sim hour `lo` ended; hi 2 world quit. 62 = the same op as on the docs/298 diag branch (61 = its [Diag] ModTime) |
 | 63 | `AdaptDiag.cs` / `adaptdiag.cpp` | [AdaptDiag] (docs/316, kit diag ini only): hi&0xFF 0 activity `lo` (0xFF = probe: on?); 1 bit (hi>>8) of the install-check missing count; 2 world quit (report); 3 swapinvokediag asked this session?; 4 bit (hi>>8) of the kit-test InduceScriptErrors count |
 | 48 | `FglInBound.cs` / `fglprof.cpp` | fglinbound (docs/682 §9): lo 1 = this thread's next FindGoodLocation search is `FindGoodLocationNearby`'s indoors stage with `IsInside` as its check (`[FglInside]` may answer facing tests on tiles without a room), lo 0 = over; answers 1 when `[FglInside]` is installed |
-| **38-39, 42-47, 49-60, 63+** | next free | add a row with the `case` (38-39 and 42-47 are in use on contributor branches not yet in this repo) |
+| 49 | `TuneIsolate.cs` / `ilpatch.cpp` | [IlPatch] ilp_tuneisolate (docs/339): 1 = armed (Enabled=1, switch on, detour in); ts3fixes then late-inits ts3agent when EA's tuning loop never reached it |
+| **38-39, 42-47, 50-60, 64+** | next free | add a row with the `case` (38-39 and 42-47 are in use on contributor branches not yet in this repo) |
 
 ## ts3native `ts3native_readydrain` export (`ReadyDrainCounters` in `native/ts3native/ts3native.cpp`)
 
