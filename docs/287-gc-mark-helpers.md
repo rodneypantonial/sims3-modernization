@@ -415,7 +415,8 @@ retail exe [verified]; the retail asi compiles). EA 1.69: rows with 0, refused t
 3. `GC_stop_world`, `GC_world_stopped [0x11F2FA8]` = 1 (as `GC_stopped_mark` does; no notify events).
 4. Walk the block index as `GC_apply_to_all_blocks 0xE4B850` does (`[0x11F3054]`, 1024 entries, next at `+0x1000`, key
    at `+0x1008`, entries <= 0xFFF and free blocks skipped) [verified]; save each header's 0x80 mark bytes (`M_par`),
-   both incomplete black lists (`[0x1234350]`, `[0x1234358]`, 0x2000 bytes each) and `scan_ptr`,
+   both incomplete black lists (`[0x1234350]`, `[0x1234358]`, 0x2000 bytes each; the normal one is NULL in the game because
+   `GC_all_interior_pointers` is 1 and `GC_bl_init 0xE4A6F0` skips it [verified, both exes], so it is skipped) and `scan_ptr`,
    `GC_objects_are_marked`, `GC_n_rescuing_pages`, `GC_mark_stack_too_small`.
 5. Fresh marks: clear every block except kinds 2 / 3 (the `0xE4C0F0` rule; the `+0x18` stamp is not touched), state 5,
    `scan_ptr` 0, `GC_objects_are_marked` 0 (what `0xE4C370` + `0xE4C270` leave), zero 32 KB of stack below the frame,
