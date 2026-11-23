@@ -230,4 +230,11 @@ static void TestIlPatch() {
         g_ilpNext = next0; g_ilpHeader = header0;
     }
     HeapFree(GetProcessHeap(), 0, rA.code);
+    // EA app 1.69 rows (docs/339): both tune-isolate specs know the EA body, so the fix is not inert on EA
+    for (int i = 0; i < kIlpSpecN; i++) {
+        if (strncmp(kIlpSpecs[i].id, "tune-isolate-", 13)) continue;
+        bool ea169 = false;
+        for (DWORD k = 0; k < kIlpSpecs[i].nBuilds; k++) ea169 |= !strcmp(kIlpSpecs[i].builds[k].label, "ea-1.69");
+        assert(ea169);
+    }
 }

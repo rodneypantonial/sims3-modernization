@@ -33,8 +33,8 @@ loop goes on. Everything else in both methods is EA's own code.
   methods are transformed the first time `StartupState` runs the `GameplayInitializers`, so the patched body is the one that
   runs, whatever the assembly order [inferred: same path as the b89 `Fixup` spec, verified live in docs/526 §5].
 - Exact-hash rule as every IL spec: EA 1.67 and simler90 UPDATE242 bodies are known (`TuneAssemblies` 321 -> 345 bytes,
-  `GameplayInitialize` 559 -> 607 bytes); any other body is left alone and logged. EA 1.69 (EA app edition) is not in the
-  converter's build list: left alone there.
+  `GameplayInitialize` 559 -> 607 bytes); any other body is left alone and logged. EA 1.69 (EA app edition) rows added
+  2026-11-23 (§7).
 - The relocator refused every branch that leaves its edit's exception region (docs/506 I-506-3). A `leave` may exit regions
   by ECMA-335, never enter one, so `ilpatch.cpp` now allows a `leave` whose target lies in no region the edit is not in
   (`IlpLeaveOut`; selftest: leave out of a try allowed, leave into a try refused). Other branches keep the old rule.
@@ -86,3 +86,28 @@ set notes say so. `compat-overlap-1122-e-icarus` keeps the add-on alone on purpo
 
 Release: EA-bug / rare-fix rule: `Enabled=1` + `ilp_tuneisolate=1` in the release ini once `ip-tuneiso-on` and
 `bp-tuneiso-normal` pass (Rodney's call; `Enabled=1` arms only the switches that are 1).
+
+## 7. EA app 1.69 rows (2026-11-23, branch `feature/ea169-tuneisolate-1123`)
+
+`tools/ilpatch-convert.ts` now loads a third build `ea-1.69` from `game-copy/assemblies-ea169` when present, and `--dump`
+takes `--build <label>`. `--fill` on both specs added the EA rows; `--emit-native` regenerated `ilpatch-specs.h` (3 builds each).
+
+| Spec | EA 1.69 body | sha256 | patched sha256 | Edit |
+|---|---|---|---|---|
+| tune-isolate-tuning | 321 bytes | `9fd23f1be5f6fb70…` | `f37e9ffc7491284e…` | 0x56 `newobj; throw` -> `pop; leave @0x12F` |
+| tune-isolate-persist | 559 bytes | `fbeca10178d68295…` | `a4ade19eaf105d71…` | 0x132 `newobj; throw` -> `pop; leave @0x19E` |
+
+- [verified, `--dump --build ea-1.67` vs `--build ea-1.69`, decoded text identical] Both methods decode to the same
+  instructions, offsets, member names and exception clauses on 1.67 and 1.69 (TuneAssemblies: catch 0x34+40 with the
+  `newobj ApplicationException; throw` at 0x56/0x5B as its last instructions, finally 0xD4+11; GameplayInitialize: catch
+  0x120+24, `newobj; throw` at 0x132/0x137). The raw bytes differ (metadata tokens), hence the new hashes. The patch site
+  has the same stack (the message string on it, popped) and the `leave` targets the same loop-increment offsets, outside
+  every clause, so `pop; leave` is valid on EA exactly as on Steam. The spec uses no tokens, so no per-build token rows.
+- [verified] `ea-ini.ts`: `[IlPatch]` is kept on EA (no unresolved address row); `Enabled=0` / `ilp_tuneisolate=0` there as on Steam.
+- Selftests: `ilpatch-convert --self-check` now re-applies every spec to each build whose assemblies are local and compares
+  the body hash and patched hash (57 spec/build bodies; skipped without game-copy, as in CI); the native `TestIlPatch`
+  asserts both tune-isolate specs carry an `ea-1.69` row.
+- Queue `tuneisolate-correct-1124`: the applied-line regexes now accept `ea-1.69` (`ea-1\.6[79]`). Running it on EA needs an
+  EA build of the pair (`/DTS3A_TABLE` asi, EA ini), the e-icarus mod set and the EA Baseline saves on the EA laptop (§5 set is
+  not there yet). NOT RUN on EA.
+
