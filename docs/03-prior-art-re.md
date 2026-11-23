@@ -236,6 +236,11 @@ What the exe tells us (strings plus xrefs, [verified] unless marked):
 - **DXVK** is covered in docs/01. On Linux, a Bottles guide recommends `dxvk-gplasync` with `dxvk.enableAsync = true` to reduce shader-compile stutter. That fork exists for Windows too, but async shader compilation can cause brief visual pop-in. [community]
 - **dgVoodoo2** can translate D3D9 to D3D11 or D3D12. I found no TS3-specific reports. Its developer confirmed D3D12-backend stutter in another game caused by OS scheduler behaviour. [community; no TS3 data]
 - **D3D9On12** (Microsoft's D3D9-on-D3D12 mapping layer) has no TS3-specific reports either. [no data]
+  - **PARKED 2026-11-06: no further D3D9On12 runs.** Findings from the test proxy (`tools/d3d9on12-test`) on EA 1.69.47, Intel iGPU:
+    - It creates and runs: 2 Baseline-SV-Spring runs plus 2 visual arms (one D3D9On12, one DXVK), proxy log `path=9On12`, no fall back. [verified]
+    - Visuals were OK in the shots compared. Water and sky were not compared with DXVK. [verified for the checked shots only]
+    - The largest-free numbers from those runs were taken at reset options (next point), so they are not reliable and are not recorded here. The rerun at normal options was cancelled.
+    - Player note: the game stores the graphics device in `lastdevice` in `Options.ini`. The proxy reports the real device, while DXVK reports its own value, so switching to or from the proxy looks like a new device to the game. It then resets every option, audio on and `resolution = 1024 768 0`, and rewrites `Options.ini`. Seeding `lastdevice` with the new value before launch avoids the reset: a seeded D3D9On12 arm kept `resolution = 1600 900 0` and both mutes. [verified] No fix was built.
 - Neither wrapper moves managed texture memory out of the 32-bit process the way DXVK does, so DXVK stays the pick for Error 12. [inferred]
 - **`ddraw.dll` in `Game\Bin` is not stock.** On this install it is Ultimate ASI Loader (ThirteenAG) and loads `TS3Patch.asi` and `D3DShaderReplacer.asi` (section 0). TS3 does not need DirectDraw itself. [verified]
 
