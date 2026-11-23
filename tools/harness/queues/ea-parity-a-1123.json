@@ -1,21 +1,21 @@
 {
-  "note": "ea-parity-a-1123 (EA laptop, correctness only, GPU-limited: no timing; NOT RUN): EA 1.69 parity lane A (feature/ea169-parity-a, docs/232 §8.1, ledger docs/51 §588). Newly ON on EA: [EaCrashFixes] SlaveUnlink, DeadSlaveTrip, VbFreeDelayMs=2000, HeightsInfLoop, BridgeHeightNaN; [MonoThread] QuitStop; [MonoJit] BoundCall; [AutShadow] Races=7 (bits 0-1). Setup: copy native/ts3native/out-ea169/ts3native-ea169.asi (sha256 = docs/data/builds.json ts3native-ea169.asi.ea169-parity-a-1123) to game-copy/eaparA-1123/ts3native.asi, and ts3native-ea169-rc.ini from `node tools/ea-ini.ts --out <dir>` on this branch to game-copy/eaparA-1123/ts3native.ini. Same flow as ea-v031-parity-1123 (run.script save-reload.ts because run.saveReload refuses fixesPackage); wants the save-reload.ts fixes of PR #660. Household untouched: none of these fixes writes Sim or household state (obstacle slave lists, VB wrapper lifetime, height queries, Mono shutdown order, JIT call path, process globals); scriptErrorsMax 0 is the check. Run: TS3_MACHINE=ea-laptop TS3_LAUNCH=ea node tools/harness/queue.ts tools/harness/queues/ea-parity-a-1123.json",
+  "note": "ea-parity-a-1123 (EA laptop, correctness only, GPU-limited: no timing; NOT RUN; rerun of the 0.36.299-eaparA run that VOIDed at the menu on ClosestWpsCut, build 0.36.299-eapara2): EA 1.69 parity lane A (feature/ea169-parity-a, docs/232 §8.1, ledger docs/51 §588). Rerun build: TS3A_R removed, [RouteAsync] ClosestWpsCut hooks EA ClosestWaypoints_Find 0x65CC50 (V-588-8). Newly ON on EA: [EaCrashFixes] SlaveUnlink, DeadSlaveTrip, VbFreeDelayMs=2000, HeightsInfLoop, BridgeHeightNaN; [MonoThread] QuitStop; [MonoJit] BoundCall; [AutShadow] Races=7 (bits 0-1). Setup: copy native/ts3native/out-ea169/ts3native-ea169.asi (sha256 = docs/data/builds.json ts3native-ea169.asi.ea169-parity-a2-1123) to game-copy/eaparA2-1123/ts3native.asi, and ts3native-ea169-rc.ini from `node tools/ea-ini.ts --out <dir>` on this branch to game-copy/eaparA2-1123/ts3native.ini (same bytes as ts3native-ea169.ini.ea169-parity-a-1123). Same flow as ea-v031-parity-1123 (run.script save-reload.ts because run.saveReload refuses fixesPackage); wants the save-reload.ts fixes of PR #660. Household untouched: none of these fixes writes Sim or household state (obstacle slave lists, VB wrapper lifetime, height queries, Mono shutdown order, JIT call path, process globals); scriptErrorsMax 0 is the check. Run: TS3_MACHINE=ea-laptop TS3_LAUNCH=ea node tools/harness/queue.ts tools/harness/queues/ea-parity-a-1123.json",
   "stopQueueOnFail": true,
   "jobs": [
     {
       "id": "ea-parA-sv-play",
       "note": "[est 25 min] [natural play, no cheats] 10 min autopilot play with a Buy and a CAS visit, save to EaParA-SV, quit to menu + reload, direct reload, 3 min after each. Each newly enabled feature logs OK, none of them SKIPs; Races R1 pre-warm OK at world event 7.",
-      "asi": "game-copy/eaparA-1123/ts3native.asi",
-      "iniBase": "game-copy/eaparA-1123/ts3native.ini",
+      "asi": "game-copy/eaparA2-1123/ts3native.asi",
+      "iniBase": "game-copy/eaparA2-1123/ts3native.ini",
       "fixesPackage": "game-copy/v031-ea169/dl-2058/ts3fixes.package",
-      "pinReason": "lane build ts3native-ea169.asi.ea169-parity-a-1123 with its regenerated EA rc ini; ts3fixes.package = the shipped v0.3.1 EA asset (native-only lane)",
+      "pinReason": "lane build ts3native-ea169.asi.ea169-parity-a2-1123 (0.36.299-eapara2) with its EA rc ini (unchanged, ts3native-ea169.ini.ea169-parity-a-1123); ts3fixes.package = the shipped v0.3.1 EA asset (native-only lane)",
       "releaseDefaults": true,
       "noiseCheck": false,
       "scriptErrorsMax": 0,
       "save": "Baseline-SV-Spring",
       "timeoutMin": 45,
       "logRequire": {
-        "^ts3native 0\\.36\\.299-eaparA ": 1,
+        "^ts3native 0\\.36\\.299-eapara2 ": 1,
         "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": 1,
         "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": 1,
         "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": 1,
@@ -24,7 +24,8 @@
         "^OK   mono thread QuitStop=1: ": 1,
         "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": 1,
         "^autonomy shadow: Races=7 ": 1,
-        "^OK   autshadow races R1 pre-warm: ": 1
+        "^OK   autshadow races R1 pre-warm: ": 1,
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": 1
       },
       "logForbid": {
         "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": 0,
@@ -32,18 +33,10 @@
         "^SKIP mono thread QuitStop": 0,
         "^SKIP jit BoundCall|^jit: BoundCall: mask": 0,
         "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": 0,
-        "^PARTIAL ea fix: VbFreeDelay": 0
+        "^PARTIAL ea fix: VbFreeDelay": 0,
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": 0
       },
       "regexCases": {
-        "^ts3native 0\\.36\\.299-eaparA ": {
-          "match": [
-            "ts3native 0.36.299-eaparA 2026-11-23 22:10:00"
-          ],
-          "noMatch": [
-            "ts3native 0.36.299-m1123 2026-11-23 14:00:00",
-            "ts3native 0.36.295a 2026-11-20 23:29:00"
-          ]
-        },
         "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": {
           "match": [
             "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave (a boat's driver, a stroller, a led horse) is taken off its master's slave list before it is freed"
@@ -169,6 +162,32 @@
           ],
           "noMatch": [
             "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+          ]
+        },
+        "^ts3native 0\\.36\\.299-eapara2 ": {
+          "match": [
+            "ts3native 0.36.299-eapara2 2026-11-23 23:40:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.299-eaparA 2026-11-23 22:10:00",
+            "ts3native 0.36.299-m1123 2026-11-23 14:00:00"
+          ]
+        },
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": {
+          "match": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 1 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ],
+          "noMatch": [
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 0 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ]
+        },
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": {
+          "match": [
+            "SKIP detour ClosestWaypoints_Find (cut on wait, closest waypoint cut) at 0x0065BB90: prologue differs",
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+          ],
+          "noMatch": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
           ]
         }
       },
@@ -189,17 +208,17 @@
     {
       "id": "ea-parA-sv-restart",
       "note": "[est 10 min] fresh game start, load EaParA-SV written by the play job, 3 min live.",
-      "asi": "game-copy/eaparA-1123/ts3native.asi",
-      "iniBase": "game-copy/eaparA-1123/ts3native.ini",
+      "asi": "game-copy/eaparA2-1123/ts3native.asi",
+      "iniBase": "game-copy/eaparA2-1123/ts3native.ini",
       "fixesPackage": "game-copy/v031-ea169/dl-2058/ts3fixes.package",
-      "pinReason": "lane build ts3native-ea169.asi.ea169-parity-a-1123 with its regenerated EA rc ini; ts3fixes.package = the shipped v0.3.1 EA asset (native-only lane)",
+      "pinReason": "lane build ts3native-ea169.asi.ea169-parity-a2-1123 (0.36.299-eapara2) with its EA rc ini (unchanged, ts3native-ea169.ini.ea169-parity-a-1123); ts3fixes.package = the shipped v0.3.1 EA asset (native-only lane)",
       "releaseDefaults": true,
       "noiseCheck": false,
       "scriptErrorsMax": 0,
       "save": "EaParA-SV",
       "timeoutMin": 30,
       "logRequire": {
-        "^ts3native 0\\.36\\.299-eaparA ": 1,
+        "^ts3native 0\\.36\\.299-eapara2 ": 1,
         "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": 1,
         "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": 1,
         "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": 1,
@@ -208,7 +227,8 @@
         "^OK   mono thread QuitStop=1: ": 1,
         "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": 1,
         "^autonomy shadow: Races=7 ": 1,
-        "^OK   autshadow races R1 pre-warm: ": 1
+        "^OK   autshadow races R1 pre-warm: ": 1,
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": 1
       },
       "logForbid": {
         "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": 0,
@@ -216,18 +236,10 @@
         "^SKIP mono thread QuitStop": 0,
         "^SKIP jit BoundCall|^jit: BoundCall: mask": 0,
         "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": 0,
-        "^PARTIAL ea fix: VbFreeDelay": 0
+        "^PARTIAL ea fix: VbFreeDelay": 0,
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": 0
       },
       "regexCases": {
-        "^ts3native 0\\.36\\.299-eaparA ": {
-          "match": [
-            "ts3native 0.36.299-eaparA 2026-11-23 22:10:00"
-          ],
-          "noMatch": [
-            "ts3native 0.36.299-m1123 2026-11-23 14:00:00",
-            "ts3native 0.36.295a 2026-11-20 23:29:00"
-          ]
-        },
         "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": {
           "match": [
             "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave (a boat's driver, a stroller, a led horse) is taken off its master's slave list before it is freed"
@@ -353,6 +365,32 @@
           ],
           "noMatch": [
             "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+          ]
+        },
+        "^ts3native 0\\.36\\.299-eapara2 ": {
+          "match": [
+            "ts3native 0.36.299-eapara2 2026-11-23 23:40:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.299-eaparA 2026-11-23 22:10:00",
+            "ts3native 0.36.299-m1123 2026-11-23 14:00:00"
+          ]
+        },
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": {
+          "match": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 1 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ],
+          "noMatch": [
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 0 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ]
+        },
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": {
+          "match": [
+            "SKIP detour ClosestWaypoints_Find (cut on wait, closest waypoint cut) at 0x0065BB90: prologue differs",
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+          ],
+          "noMatch": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
           ]
         }
       },
@@ -372,17 +410,17 @@
     {
       "id": "ea-parA-sv-soak",
       "note": "[est 22 min] 15 min SV soak at normal speed on the Spring baseline, correctness only (crash, script errors, log lines).",
-      "asi": "game-copy/eaparA-1123/ts3native.asi",
-      "iniBase": "game-copy/eaparA-1123/ts3native.ini",
+      "asi": "game-copy/eaparA2-1123/ts3native.asi",
+      "iniBase": "game-copy/eaparA2-1123/ts3native.ini",
       "fixesPackage": "game-copy/v031-ea169/dl-2058/ts3fixes.package",
-      "pinReason": "lane build ts3native-ea169.asi.ea169-parity-a-1123 with its regenerated EA rc ini; ts3fixes.package = the shipped v0.3.1 EA asset (native-only lane)",
+      "pinReason": "lane build ts3native-ea169.asi.ea169-parity-a2-1123 (0.36.299-eapara2) with its EA rc ini (unchanged, ts3native-ea169.ini.ea169-parity-a-1123); ts3fixes.package = the shipped v0.3.1 EA asset (native-only lane)",
       "releaseDefaults": true,
       "noiseCheck": false,
       "scriptErrorsMax": 0,
       "save": "Baseline-SV-Spring",
       "timeoutMin": 35,
       "logRequire": {
-        "^ts3native 0\\.36\\.299-eaparA ": 1,
+        "^ts3native 0\\.36\\.299-eapara2 ": 1,
         "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": 1,
         "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": 1,
         "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": 1,
@@ -391,7 +429,8 @@
         "^OK   mono thread QuitStop=1: ": 1,
         "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": 1,
         "^autonomy shadow: Races=7 ": 1,
-        "^OK   autshadow races R1 pre-warm: ": 1
+        "^OK   autshadow races R1 pre-warm: ": 1,
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": 1
       },
       "logForbid": {
         "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": 0,
@@ -399,18 +438,10 @@
         "^SKIP mono thread QuitStop": 0,
         "^SKIP jit BoundCall|^jit: BoundCall: mask": 0,
         "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": 0,
-        "^PARTIAL ea fix: VbFreeDelay": 0
+        "^PARTIAL ea fix: VbFreeDelay": 0,
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": 0
       },
       "regexCases": {
-        "^ts3native 0\\.36\\.299-eaparA ": {
-          "match": [
-            "ts3native 0.36.299-eaparA 2026-11-23 22:10:00"
-          ],
-          "noMatch": [
-            "ts3native 0.36.299-m1123 2026-11-23 14:00:00",
-            "ts3native 0.36.295a 2026-11-20 23:29:00"
-          ]
-        },
         "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": {
           "match": [
             "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave (a boat's driver, a stroller, a led horse) is taken off its master's slave list before it is freed"
@@ -536,6 +567,32 @@
           ],
           "noMatch": [
             "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+          ]
+        },
+        "^ts3native 0\\.36\\.299-eapara2 ": {
+          "match": [
+            "ts3native 0.36.299-eapara2 2026-11-23 23:40:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.299-eaparA 2026-11-23 22:10:00",
+            "ts3native 0.36.299-m1123 2026-11-23 14:00:00"
+          ]
+        },
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": {
+          "match": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 1 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ],
+          "noMatch": [
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 0 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ]
+        },
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": {
+          "match": [
+            "SKIP detour ClosestWaypoints_Find (cut on wait, closest waypoint cut) at 0x0065BB90: prologue differs",
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+          ],
+          "noMatch": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
           ]
         }
       },
