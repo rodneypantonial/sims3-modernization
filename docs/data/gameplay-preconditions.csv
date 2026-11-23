@@ -1,5 +1,4 @@
 command,handler,states,player_action,realism,preconditions,source,gate
-pet_repro,PetReproHandlers,Live,"none: NPC pets teleported to a start spot and EA's GoHome / StrayPets / long-visit interactions pushed (docs/656 repro)",stress,"owned NPC pets of a known non-active household, not selectable or selected",handler,live
 ping,SystemHandlers,Any,none (agent plumbing),harness,,handler,none
 commands,SystemHandlers,Any,none (agent plumbing),harness,,handler,none
 notify,SystemHandlers,Any,none (harness: kit benchmark notice in the corner; docs/315),harness,,handler,none
@@ -49,6 +48,7 @@ cas_bench,CasHandlers,CAS,clicking through CAS parts,stress,timed part sweep,han
 buy_open,CasHandlers,Live,Buy button,natural,active household has a home lot; clock stops (R-MODE-2),handler + R-MODE-2,live
 buy_category,CasHandlers,Buy,clicking a Buy catalog tab,natural,in Buy mode,handler,none
 buy_close,CasHandlers,Buy,Live button,natural,in Buy mode,handler,none
+buy_delete_objects,ControlHandlers,Buy,deleting placed objects in Buy mode (select + Delete),natural,place_objects objects on the lot,handler,buy
 catalog_objects,ContentHandlers,Any,none (read),harness,,handler,none
 place_objects,ContentHandlers,Live,none: a player places objects one at a time in Buy mode with the clock stopped,stress,up to 100 free objects per call on the home lot or round-robin over town lots while the sim runs,handler,live
 remove_objects,ContentHandlers,Live,none: a player sells objects in Buy mode with the clock stopped,stress,removes place_objects objects,handler,live
