@@ -7259,3 +7259,14 @@ Lane G `thread-census-1120` bp-thread-census, first attempt (pid 12184, start 09
 | I-577-1 | 67 §45 | The 2026-11-19..23 `apex-401-present-lock-cycle` hangs are LotLightBridge::UpdateHooks vs D3D9Hooks g_lock, not the PostScene pair of #90 | disassembly of the 4.0.13 and a69a1bbc dumps (pushed mutex + "LotLightBridge" registration); PDB stress build names the frames [verified] | dump-locks + stacks of every new hit dump | same locks / helper | another pair: new section | verified (4 dumps) |
 | I-577-2 | 67 §45 | Taking the registration lock first in UpdateHooks removes the cycle | stress build (8 s hold inside UpdateHooks): base 3/3 hang, fix 3/3 pass [verified] | natural hits on an Apex build with #144 | 0 hits of this cycle over the next test week | a hit with UpdateHooks on the stack | open |
 | I-577-3 | 67 §45 | An off-render-thread unregister (pump reinstall) can still deadlock with a Present-time setter | static review of the fix [inferred] | a dump with Shutdown/SetEnabled(false) -> UnregisterAll on the Apex thread | never seen | seen: follow-up Apex PR | open |
+
+## 605. Scene index-list drain vs. the main-view cull job (2026-11-23, docs/338; static + build, queue cullrace-correct-1124, not run)
+
+| ID | Doc | Claim | Based on | Check | Pass | Fail | Verdict |
+|---|---|---|---|---|---|---|---|
+| I-605-1 | 338 §2 | `0x6E4720` is the scene index-list drain (`[scene+0x40..+0x44)`, `obj = [scene+4][idx]`, vfunc +0x74, then clear) | disassembly Steam 1.67 [verified] | - | - | - | verified |
+| I-605-2 | 338 §2 | DrawScene `0x6F3F90` drains at `0x6F401B` without waiting for job 318; it waits 310/314/320 only when `+0x28E` / `+0x294` / `+0x29C` | disassembly [verified] | - | - | - | verified |
+| I-605-3 | 338 §2 | With lightingquality 1 and generalreflections 0 all three flags are 0 | Lenovo triage, flag setters in docs/46 [inferred] | `cullrace: first DrawScene drain` line in `ip-cullrace-*` (shadow / reflection / shadow2 values) | all 0 | any non-zero | open |
+| I-605-4 | 338 §1 | The v0.3.1 EA 1.69 crash at `0x6E54F5` is the drain reading a list buffer that job 318's `push_back` grew (and freed) on another thread | static path + crash registers [inferred] | queue cullrace-correct-1124: `cullrace: RACE` / `BADIDX` with the cull on another thread, off arms; none with CullDrainWait=1 | hits off, none on | no hit in the off arms (look for another writer / freer) | open |
+| I-605-5 | 338 §3 | `[RouteAsync]` makes the race more likely | brief [inferred]; route jobs run on our own worker, not JobThread0 [verified], so only indirect (CPU contention) | `crRace` rate RouteAsync on vs off | on >> off | equal | open |
+| I-605-6 | 338 §4 | CullDrainWait costs ~0 (EA's draw passes wait for 318 right after) | static [inferred] | `cdwWaitUs / cdwWaits` in ip-cullrace-fix | < 50 us per frame | more | open |

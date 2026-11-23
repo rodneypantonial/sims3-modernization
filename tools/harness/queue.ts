@@ -107,6 +107,7 @@
 // d3d9Dll: repo-relative path of a dll that replaces Bin/d3d9.dll for the job (one-off renderer tests, tools/d3d9on12-test); the
 // DXVK d3d9.dll is saved as Bin/d3d9.dll.dxvk-bak first, put back and read back after the job (success or failure), and a leftover .dxvk-bak
 // from a killed queue is restored at the next queue start; a job whose Bin/d3d9on12-proxy.log lacks 'path=9On12' or says 'FELL BACK' FAILs.
+// optionsIni the same for <user>/Options.ini ("options.<key>", e.g. options.lightingquality: 1; the game reads it at start; docs/338).
 // dxvkConf the same for Bin/dxvk.conf (plain "key = value" lines, e.g. "d3d9.textureMemory": 64; DXVK reads it at start).
 // profile.repro: profile-world.ts --repro <id> runs that repros.json entry's steps at the window start (no stack samplers).
 // profile.untilCompares: N -> profile-world.ts --until-compares (end the window early once N shadow compares exist; 2N if N comes before 5 min; minutes is the cap).
@@ -366,7 +367,7 @@ function machineCols(tag: string) { return tag ? { head: ' machine |', sep: '---
 function machineField(tag: string): { machineTag?: string } { return tag ? { machineTag: tag } : {}; }
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
   save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; modSet?: string; run: { repro?: string; saveReload?: string[]; script?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
-    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; fixedwork?: number | boolean; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; quitJobs?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string }; rewindGames?: { n: number; profile: { minutes: number; seed?: number; fixesOn?: string; fixesOff?: string }; ab?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; apexProfiler?: boolean; apexToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; d3d9Dll?: string; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; apexLogRequire?: Record<string, number>; apexLogForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; report?: string[]; stopQueueOnFail?: boolean; crashHunt?: boolean; scriptErrorsMax?: number; scriptErrorsAllow?: string[]; scriptErrorsReport?: string[]; scriptErrorsReportBefore?: string; timeoutMin?: number; pin?: false | PinOpts;
+    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; fixedwork?: number | boolean; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; quitJobs?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string }; rewindGames?: { n: number; profile: { minutes: number; seed?: number; fixesOn?: string; fixesOff?: string }; ab?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; optionsIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; apexProfiler?: boolean; apexToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; d3d9Dll?: string; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; apexLogRequire?: Record<string, number>; apexLogForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; report?: string[]; stopQueueOnFail?: boolean; crashHunt?: boolean; scriptErrorsMax?: number; scriptErrorsAllow?: string[]; scriptErrorsReport?: string[]; scriptErrorsReportBefore?: string; timeoutMin?: number; pin?: false | PinOpts;
   saveMatrix?: { fixes?: 'all' | 'shipped' }; regexCases?: Record<string, { match: string[]; noMatch: string[] }>; fixesBuild?: string; fixesPackage?: string; iniBase?: string; dogfood?: boolean; pinReason?: string; rerunOf?: string; retryOf?: string; kcOf?: string; expectHang?: string; shadowCheck?: boolean; quitsGame?: boolean; skipIfMissing?: boolean; ourMods?: false; rewind?: false; rewindRequire?: 'snapshot' | 'rewind' };
 
 function checkRegexCases(cases: Record<string, { match?: unknown; noMatch?: unknown }>, res: string[], at: string, requireAll = true) {
@@ -392,7 +393,7 @@ function versionPinMiss(j: { asi?: string; logRequire?: Record<string, number> }
 }
 
 // every top-level job key queue.ts reads (Job type plus the optional extras); anything else is a typo or a profile key at the wrong level
-const JOB_KEYS = new Set(['id', 'dogfood', 'quitsGame', 'note', 'expectHang', 'asi', 'ini', 'defaultIni', 's3ppIni', 's3ssToml', 'apexProfiler', 'apexToml', 'dxvkConf', 'd3d9Dll', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'iniBase', 'scriptErrorsAllow', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'modSet', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'apexLogRequire', 'apexLogForbid', 'regexCases', 'noiseCheck', 'earlyGates', 'report', 'routingFailFast', 'scriptErrorsMax', 'scriptErrorsReport', 'scriptErrorsReportBefore', 'stopQueueOnFail', 'crashHunt', 'reuseSession', 'rewind', 'releaseDefaults', 'skipIfMissing', 'ourMods', 'agentArm', 'rewindRequire']);
+const JOB_KEYS = new Set(['id', 'dogfood', 'quitsGame', 'note', 'expectHang', 'asi', 'ini', 'defaultIni', 'optionsIni', 's3ppIni', 's3ssToml', 'apexProfiler', 'apexToml', 'dxvkConf', 'd3d9Dll', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'iniBase', 'scriptErrorsAllow', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'modSet', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'apexLogRequire', 'apexLogForbid', 'regexCases', 'noiseCheck', 'earlyGates', 'report', 'routingFailFast', 'scriptErrorsMax', 'scriptErrorsReport', 'scriptErrorsReportBefore', 'stopQueueOnFail', 'crashHunt', 'reuseSession', 'rewind', 'releaseDefaults', 'skipIfMissing', 'ourMods', 'agentArm', 'rewindRequire']);
 // ---- vanilla mode (docs/236): what a job may not ask for without ts3native/ts3fixes, and the checks the row names as N/A
 // results md cell: at most `max` chars, cut at an item boundary (", " / "; " / "<br>") and marked, never inside a number
 // (docs/277 §1: the cut at 400 turned aut_l0_pairn_hh 397 / 3163 into "3" / "316"; full values stay in the jsonl row)
@@ -502,6 +503,7 @@ export function parseQueue(json: unknown): Job[] {
     for (const k of Object.keys(j.ini ?? {})) if (!/^\w+\.\w+$/.test(k)) throw new Error(`${at}: ini key "${k}" must be Section.Key`);
     for (const k of Object.keys(j.defaultIni ?? {})) if (!/^\w+\.\w+$/.test(k)) throw new Error(`${at}: defaultIni key "${k}" must be Section.Key`);
     for (const k of Object.keys(j.s3ppIni ?? {})) if (!/^\w+\.\w+$/.test(k)) throw new Error(`${at}: s3ppIni key "${k}" must be Section.Key`);
+    for (const k of Object.keys(j.optionsIni ?? {})) if (!/^options\.\w+$/.test(k)) throw new Error(`${at}: optionsIni key "${k}" must be options.<key>`);
     for (const k of Object.keys(j.s3ssToml ?? {})) if (!/^\w+(\.\w+)+$/.test(k)) throw new Error(`${at}: s3ssToml key "${k}" must be table.key (e.g. patches.LotStreamingOptimizations.enabled)`);
     if (j.apexProfiler !== undefined && j.apexProfiler !== true) throw new Error(`${at}: apexProfiler is true or left out`);
     for (const k of Object.keys(j.apexToml ?? {})) if (!/^\w+(\.\w+)+$/.test(k)) throw new Error(`${at}: apexToml key "${k}" must be table.key (e.g. patches.StringTableIndex.enabled)`);
@@ -1660,6 +1662,8 @@ if (values['self-check']) {
   assert.equal(mergeConf('d3d9.samplerAnisotropy = 16\r\n', { 'd3d9.textureMemory': 64 }), 'd3d9.samplerAnisotropy = 16\r\nd3d9.textureMemory = 64\r\n');
   assert.equal(mergeConf('d3d9.textureMemory=100\n# x\n', { 'd3d9.textureMemory': 64 }), 'd3d9.textureMemory = 64\n# x\n');
   assert.throws(() => parseQueue([{ id: 'a', asi: 'tested', save: 'menu', dxvkConf: { textureMemory: 64 }, run: { menuMemory: {} } }]), /dxvkConf/);
+  assert.throws(() => parseQueue([{ id: 'a', asi: 'tested', save: 'menu', optionsIni: { 'Config.lightingquality': 1 }, run: { menuMemory: {} } }]), /optionsIni/);
+  assert.equal(mergeIni('[options]\r\nlightingquality = 3\r\ngeneralreflections = 2\r\n', { 'options.lightingquality': 1, 'options.generalreflections': 0 }), '[options]\r\nlightingquality=1\r\ngeneralreflections=0\r\n');
   assert.throws(() => parseQueue([{ id: 'a', asi: 'tested', save: 'menu', d3d9Dll: '../evil.dll', run: { menuMemory: {} } }]), /d3d9Dll/);
   assert.doesNotThrow(() => parseQueue([{ id: 'a', asi: 'tested', save: 'menu', d3d9Dll: 'tools/d3d9on12-test/out/d3d9.dll', run: { menuMemory: {} } }]));
   // S3SS.toml: dotted tables, true/false values
@@ -2579,12 +2583,12 @@ const installFixesPackage = (j: Job) => {
 const LOG = join(BIN, 'ts3native.log');
 // saves an age job would overwrite: <name>.sims3 and <name>-day*.sims3
 const ageClash = (j: Job) => { const n = ageName(j).toLowerCase(); return existsSync(SAVES) ? readdirSync(SAVES).filter(f => f.toLowerCase() === `${n}.sims3` || f.toLowerCase().startsWith(`${n}-day`)) : []; };
-const DEFAULT_INI = join(BIN, 'Default.ini'), S3PP_INI = join(BIN, 'Sims3Performance.ini'), S3SS_TOML = join(USER, 'S3SS', 'S3SS.toml'), DXVK_CONF = join(BIN, 'dxvk.conf'), D3D9_DLL = join(BIN, 'd3d9.dll'), D3D9_BAK = join(BIN, 'd3d9.dll.dxvk-bak'), D3D9_PROXY_LOG = join(BIN, 'd3d9on12-proxy.log');
+const DEFAULT_INI = join(BIN, 'Default.ini'), S3PP_INI = join(BIN, 'Sims3Performance.ini'), S3SS_TOML = join(USER, 'S3SS', 'S3SS.toml'), DXVK_CONF = join(BIN, 'dxvk.conf'), OPTIONS_INI = join(USER, 'Options.ini'), D3D9_DLL = join(BIN, 'd3d9.dll'), D3D9_BAK = join(BIN, 'd3d9.dll.dxvk-bak'), D3D9_PROXY_LOG = join(BIN, 'd3d9on12-proxy.log');
 const sha = (p: string) => (existsSync(p) ? createHash('sha256').update(readFileSync(p)).digest('hex').slice(0, 12) : 'missing');
 // docs/170: jobs with the same key need the same game start (what is written before the launch); reuseOf null = reuse off
 const reuseOf = (j: Job): ReuseOpts | null => parseReuse(j.reuseSession);
 const keyOf = (j: Job) => stableKey({ asi: asiPath(j), sha: sha(asiPath(j)), ini: jobIni(j) ?? {}, fixes: j.fixes ?? null, fixesPackage: j.fixesPackage ?? null, save: saveFile(saveOf(j) ?? ''), content: j.content ?? 'as-is', ccSet: j.ccSet ?? null, ccLots: j.ccLots ?? null, modSet: j.modSet ?? null,
-  gameArgs: j.gameArgs ?? [], defaultIni: j.defaultIni ?? null, s3ppIni: j.s3ppIni ?? null, s3ssToml: j.s3ssToml ?? null, apexProfiler: j.apexProfiler ?? false, apexToml: j.apexToml ?? null, dxvkConf: j.dxvkConf ?? null, d3d9Dll: j.d3d9Dll ?? null, pin: pinConfig(j.pin) ?? null });
+  gameArgs: j.gameArgs ?? [], defaultIni: j.defaultIni ?? null, optionsIni: j.optionsIni ?? null, s3ppIni: j.s3ppIni ?? null, s3ssToml: j.s3ssToml ?? null, apexProfiler: j.apexProfiler ?? false, apexToml: j.apexToml ?? null, dxvkConf: j.dxvkConf ?? null, d3d9Dll: j.d3d9Dll ?? null, pin: pinConfig(j.pin) ?? null });
 const itemsOf = (j: Job): ReproItem[] | null => (j.run.profile?.repros ? reproItems(j.run.profile.repros) : null);
 // the next job may take over the running game: reuse on for it, same key, a profile run that can share a load
 const canTakeOver = (key: string, next?: Job) => !!next && !!reuseOf(next) && !reuseBlock(next) && keyOf(next) === key;
@@ -2728,6 +2732,7 @@ if (values['dry-run']) {
     if (!noOurs(j)) console.log(`  3 Bin/ts3native.ini = ${j.iniBase ? `iniBase ${j.iniBase}` : dogfoodOn(j) ? `repo ini, dogfood base (${DOGFOOD!.id})` : 'repo ini'}${Object.keys(ji ?? {}).length ? ` + ${Object.entries(ji!).map(([k, v]) => `${k}=${v}`).join(', ')}` : ' (unchanged)'}`);
     if (j.run.worldimage && !existsSync(String(ji!['WorldImage.Helper']))) console.log(`  3 ** helper MISSING: build native\\worldimage\\build.cmd; the job refuses before touching the game **`);
     if (j.defaultIni) console.log(`  3 Bin/Default.ini + ${Object.entries(j.defaultIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
+    if (j.optionsIni) console.log(`  3 <user>/Options.ini + ${Object.entries(j.optionsIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
     if (j.s3ppIni) console.log(`  3 Bin/Sims3Performance.ini + ${Object.entries(j.s3ppIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
     if (j.d3d9Dll) console.log(`  3 Bin/d3d9.dll replaced by ${j.d3d9Dll}${existsSync(join(ROOT, j.d3d9Dll)) ? '' : '  ** MISSING **'}   (DXVK dll saved as d3d9.dll.dxvk-bak, put back and read back after the job)`);
     if (j.dxvkConf) console.log(`  3 Bin/dxvk.conf + ${Object.entries(j.dxvkConf).map(([k, v]) => `${k} = ${v}`).join(', ')}${existsSync(DXVK_CONF) ? '' : '  ** MISSING **'}   (put back after the job)`);
@@ -3103,7 +3108,7 @@ let prevCrashed = !!earlier.at(-1)?.crashed, stopWhy = '', exitCode = 0;
 const ledgerBlocks: string[] = [];  // mono ledger probe (docs/51, mono-ledger-report.ts): printed under the result table at the end
 // the running game and what its start changed; kept across jobs only when reuseSession lets the next job take it over (docs/170 §2)
 let d3d9Orig: Buffer | null = null; // DXVK d3d9.dll while a d3d9Dll job has the Bin swapped; not reset per job (a failed put-back must survive)
-let stopPin = () => {}, probe: ReturnType<typeof spawn> | undefined, applied = { install: [] as string[], uninstall: [] as string[] }, launched = false, defaultIniOrig: string | null = null, s3ppIniOrig: string | null = null, s3ssTomlOrig: string | null = null, apexTomlOrig: string | null = null, dxvkConfOrig: string | null = null, stashed = false, ccInstalled = false, modInstalled = false, lotsInstalled = false;
+let stopPin = () => {}, probe: ReturnType<typeof spawn> | undefined, applied = { install: [] as string[], uninstall: [] as string[] }, launched = false, defaultIniOrig: string | null = null, s3ppIniOrig: string | null = null, s3ssTomlOrig: string | null = null, apexTomlOrig: string | null = null, dxvkConfOrig: string | null = null, optionsIniOrig: string | null = null, stashed = false, ccInstalled = false, modInstalled = false, lotsInstalled = false;
 type Sess = { key: string; reuse: ReuseOpts | null; load: number; windows: number; logOff: number; base: WorldSnap | null; frames: string; carry?: string; rw?: ReturnType<typeof rewindSession>; rwUsed?: boolean };
 let sess: Sess | null = null, loads = 0;
 const logSize = () => { try { return statSync(LOG).size; } catch { return 0; } };
@@ -3250,12 +3255,13 @@ async function restoreStart(id: string, logFile: string): Promise<string[]> {
   if (s3ppIniOrig !== null) try { writeFileSync(S3PP_INI, s3ppIniOrig); } catch (e) { stopWhy ||= `could not put back Bin/Sims3Performance.ini (${e}; copy in probe-out/queue/bin-before)`; }
   if (s3ssTomlOrig !== null) try { writeFileSync(S3SS_TOML, s3ssTomlOrig); } catch (e) { stopWhy ||= `could not put back S3SS/S3SS.toml (${e}; copy in probe-out/queue/bin-before)`; }
   if (apexTomlOrig !== null) try { writeFileSync(APEX_TOML, apexTomlOrig); } catch (e) { stopWhy ||= `could not put back Apex Radiance/ApexRadiance.toml (${e}; copy in probe-out/queue/bin-before)`; }
+  if (optionsIniOrig !== null) try { writeFileSync(OPTIONS_INI, optionsIniOrig); } catch (e) { stopWhy ||= `could not put back Options.ini (${e})`; }
   if (dxvkConfOrig !== null) try { writeFileSync(DXVK_CONF, dxvkConfOrig); } catch (e) { stopWhy ||= `could not put back Bin/dxvk.conf (${e}; copy in probe-out/queue/bin-before)`; }
-  for (const [p, orig] of [[DEFAULT_INI, defaultIniOrig], [S3PP_INI, s3ppIniOrig], [S3SS_TOML, s3ssTomlOrig], [APEX_TOML, apexTomlOrig], [DXVK_CONF, dxvkConfOrig]] as const) {
+  for (const [p, orig] of [[DEFAULT_INI, defaultIniOrig], [S3PP_INI, s3ppIniOrig], [S3SS_TOML, s3ssTomlOrig], [APEX_TOML, apexTomlOrig], [DXVK_CONF, dxvkConfOrig], [OPTIONS_INI, optionsIniOrig]] as const) {
     const why = orig === null ? '' : readBack(p, orig); // docs/236 #16: the next job must not start on a config we think we put back
     if (why) { stopWhy ||= why; errs.push(why); log(`${id}: ${why}`); }
   }
-  defaultIniOrig = s3ppIniOrig = s3ssTomlOrig = apexTomlOrig = dxvkConfOrig = null;
+  defaultIniOrig = s3ppIniOrig = s3ssTomlOrig = apexTomlOrig = dxvkConfOrig = optionsIniOrig = null;
   if (d3d9Orig !== null) { // the DXVK dll must never stay out of Bin: retry, read back, then drop the backup copy
     let why = 'not tried';
     for (let t = 0; t < 5 && why; t++) { try { writeFileSync(D3D9_DLL, d3d9Orig); why = readBack(D3D9_DLL, d3d9Orig); } catch (e) { why = String(e); } if (why) await new Promise(r => setTimeout(r, 2000)); }
@@ -3364,7 +3370,7 @@ for (const [n, j] of jobs.entries()) {
   row.session = reused ? { load: sess!.load, window: sess!.windows, line: `reused session (#${sess!.windows} since load)`, before: sess!.carry ?? null } : { line: 'fresh load' };
   row.start = reused ? 'reused session' : 'fresh';
   if (reused) log(`${j.id}: ${row.session.line}; game start steps skipped`);
-  else { stopPin = () => {}; probe = undefined; applied = { install: [], uninstall: [] }; launched = false; defaultIniOrig = s3ppIniOrig = s3ssTomlOrig = apexTomlOrig = dxvkConfOrig = null; stashed = false; ccInstalled = false; modInstalled = false; lotsInstalled = false; lastBuild = null; }
+  else { stopPin = () => {}; probe = undefined; applied = { install: [], uninstall: [] }; launched = false; defaultIniOrig = s3ppIniOrig = s3ssTomlOrig = apexTomlOrig = dxvkConfOrig = optionsIniOrig = null; stashed = false; ccInstalled = false; modInstalled = false; lotsInstalled = false; lastBuild = null; }
   let jobLogOff = 0, rwOffs: { sh: number; aut: number } | null = null; // rwOffs: Bin jsonl sizes at a rewound job's start (not truncated then)
   try {
     if (!noOurs(j) && !existsSync(asiPath(j))) throw new Error(`asi missing: ${j.asi} (refused before touching the game)`);
@@ -3444,6 +3450,10 @@ for (const [n, j] of jobs.entries()) {
     }
     if (callSitesOffNote(j)) log(`${j.id}: ${callSitesOffNote(j)}`);
     if (j.defaultIni) { defaultIniOrig = readFileSync(DEFAULT_INI, 'utf8'); writeFileSync(DEFAULT_INI, mergeIni(defaultIniOrig, j.defaultIni)); }
+    if (j.optionsIni) {
+      if (!existsSync(OPTIONS_INI)) throw new Error('optionsIni: <user>/Options.ini missing (start the game once)');
+      optionsIniOrig = readFileSync(OPTIONS_INI, 'utf8'); writeFileSync(OPTIONS_INI, mergeIni(optionsIniOrig, j.optionsIni));
+    }
     if (j.s3ppIni) {
       if (!existsSync(S3PP_INI)) throw new Error('s3ppIni: Bin/Sims3Performance.ini missing (s3pp not installed)');
       s3ppIniOrig = readFileSync(S3PP_INI, 'utf8'); writeFileSync(S3PP_INI, mergeIni(s3ppIniOrig, j.s3ppIni));
