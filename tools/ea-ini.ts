@@ -50,6 +50,19 @@ export const KEY_ADDRS: Record<string, number[]> = {
     "EaCrashFixes.LotLevelPastEnd": [0x00AB70B0, 0x010652D4],
     "EaCrashFixes.FglStaleObject": [0x00B11A95, 0x00B11A9C, 0x00B11ABF],
 };
+// Keys whose code the EA asi compiles out or stands down (#ifdef TS3A_TABLE / ts3a_noaddr): the EA asi logs SKIP, so every EA
+// ini writes them 0, never on. Found by eaSkipKeys in the cpp SKIP lines that name "([Section] Key / Key2)" and say
+// "no EA 1.69 address" or "Steam 1.67 only" (no key = Enabled); EA_SKIP_KEYS holds the SKIP lines that name no section.
+export const EA_SKIP_KEYS: Record<string, string> = {
+    "EaCrashFixes.SlaveUnlink": "eafix.cpp ApplySlaveLink: ts3a_noaddr return on EA (no EA 1.69 address, docs/232 §8)",
+    "EaCrashFixes.DeadSlaveTrip": "eafix.cpp ApplySlaveLink: ts3a_noaddr return on EA (no EA 1.69 address, docs/232 §8)",
+    "EaCrashFixes.VbFreeDelayMs": "eafix.cpp ApplyVbFreeDelay: #ifndef TS3A_TABLE, Steam 1.67 only (docs/67 §44)",
+    "CrashForensics.VbGuard": "crashfx.cpp VbInstall: #ifndef TS3A_TABLE, Steam 1.67 only (docs/67 §44)",
+    "WaterGrid.Prof": "watergrid.cpp ApplyWaterGrid: #ifdef TS3A_TABLE SKIP, Steam 1.67 only",
+};
+// "Section.Key" named by EA SKIP lines in one cpp file's text; EA_SET keys are skipped (AutShadow.Races: bits 0-1 SKIP, bit 2 runs)
+export const eaSkipKeys = (cpp: string) => new Set([...cpp.matchAll(/Log\("SKIP [^"\n]*?\(\[(\w+)\](?: (\w+(?: \/ \w+)*))?[^)"\n]*\)[^"\n]*(?:no EA 1\.69 address|Steam 1\.67 only)/g)]
+    .flatMap((m) => (m[2] ?? "Enabled").split(" / ").map((k) => m[1] + "." + k)).filter((k) => EA_SET[k] === undefined));
 const keyed = new Set(Object.values(KEY_ADDRS).flat());
 const unresolvedRows = (addrHdr: string) => [...addrHdr.matchAll(/^\/\/ unresolved: (\S+) \S+ (?:native\/ts3native\/)?([\w-]+\.(?:cpp|h))/gm)];
 // "Section.Key" of every key with an unresolved address
@@ -160,11 +173,15 @@ function load() {
     const sections: string[] = [], enabled: Record<string, string> = {};
     let sec = "";
     for (const l of ini) { const m = /^\[(\w+)\]/.exec(l); if (m) { sec = m[1]; sections.push(sec); } const e = /^Enabled=(-?\d+)/.exec(l); if (e && sec) enabled[sec] = e[1]; }
-    const includes = new Map<string, string[]>();
-    for (const f of readdirSync(SRC).filter((f) => f.endsWith(".cpp"))) for (const m of readFileSync(join(SRC, f), "utf8").matchAll(/^#include "([\w-]+\.h)"/gm)) includes.set(m[1], [...(includes.get(m[1]) ?? []), f]);
+    const includes = new Map<string, string[]>(), skip = new Set(Object.keys(EA_SKIP_KEYS));
+    for (const f of readdirSync(SRC).filter((f) => f.endsWith(".cpp"))) {
+        const t = readFileSync(join(SRC, f), "utf8");
+        for (const m of t.matchAll(/^#include "([\w-]+\.h)"/gm)) includes.set(m[1], [...(includes.get(m[1]) ?? []), f]);
+        for (const k of eaSkipKeys(t)) skip.add(k);
+    }
     const map = JSON.parse(readFileSync(join(repo, "tools", "ini-sections.json"), "utf8"));
     const addrHdr = readFileSync(join(SRC, "ts3addr-ea169.h"), "utf8"), bad = badFiles(addrHdr, readFileSync(join(SRC, "ts3bytes-ea169.h"), "utf8"), includes);
-    return { ini, sections, enabled, map, bad, off: keysOff(addrHdr) };
+    return { ini, sections, enabled, map, bad, off: keysOff(addrHdr), skip };
 }
 
 function selfCheck() {
@@ -190,6 +207,13 @@ function selfCheck() {
     ok(addEaKeys(["[A]", "x=1", "", "[B]", "y=1"], { A: ["k=2"], C: ["z=3"] }).join() === "[A],x=1,k=2,,[B],y=1,,[C],z=3", "addEaKeys");
     const eaRc = render(addEaKeys(readFileSync(join(SRC, "ts3native.ini"), "utf8").split(/\r?\n/)), () => false, () => false, rcZeroKey, EA_SET);
     ok(/^SimNoTexture=1\s*$/m.test(eaRc) && /\r\n\[ImageGuard\]\r\n(;[^\r]*\r\n)*Enabled=0\r\n/.test(eaRc), "EA rc ini: SimNoTexture=1, [ImageGuard] Enabled=0");
+    const sk = eaSkipKeys('Log("SKIP a ([A] X / Y): no EA 1.69 address");\nLog("SKIP b ([B]): Steam 1.67 only");\nLog("SKIP c ([C] Z): bytes differ");\nLog("SKIP r ([AutShadow] Races %d, R1b): no EA 1.69 address");');
+    ok([...sk].sort().join() === "A.X,A.Y,B.Enabled", "eaSkipKeys " + [...sk]);
+    // the real sources: keys the EA asi SKIPs come out 0 in the rc ini (they were on until 2026-11-23)
+    const L = load(), z = (s: string, k: string) => L.off.has(s + "." + k) || L.skip.has(s + "." + k);
+    ok(L.skip.has("Binder.TypeHandleDirect") && L.skip.has("ResourceCache.TrimEveryMin"), "scan finds the named SKIP keys");
+    const eaFix = render(L.ini, () => false, () => false, (s, k) => rcZeroKey(s, k) || z(s, k), EA_SET).split("\r\n[EaCrashFixes]\r\n")[1].split("\r\n[")[0];
+    for (const k of ["SlaveUnlink", "DeadSlaveTrip", "VbFreeDelayMs"]) ok(new RegExp("^" + k + "=0\\s*$", "m").test(eaFix), "EA rc ini [EaCrashFixes] " + k + " must be 0");
     console.log("ea-ini self-check: ok");
 }
 
@@ -197,11 +221,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     const { values: v } = parseArgs({ options: { out: { type: "string" }, md: { type: "string" }, "self-check": { type: "boolean" } } });
     if (v["self-check"]) selfCheck();
     else {
-        const { ini, sections, enabled, map, bad, off } = load();
+        const { ini, sections, enabled, map, bad, off, skip } = load();
         // a raw TS3W address in __asm keeps its Steam value on EA (ThumbStall 0xD5A9D2 crash): no EA ini until it is per-build
         const asm = rawAsmRows(sourceFiles().flatMap((f) => { const t = readFileSync(join(SRC, f), "utf8"); return generated(t) || eaOnly(t) ? [] : scanText(t, f); }));
         if (asm.length) throw new Error("raw TS3W address in inline asm (per-build literal under #ifdef TS3A_TABLE + static_assert, as mintcall.cpp): " + asm.map((r) => `${r.file}:${r.line} ${r.lit}`).join(", "));
-        const zeroKey = (s: string, k: string) => off.has(s + "." + k);
+        const zeroKey = (s: string, k: string) => off.has(s + "." + k) || skip.has(s + "." + k);
         const on = (process.env.ALLOW_ON ?? "").split(" ").filter(Boolean), allow = (process.env.ALLOW ?? "").split(" ").filter(Boolean).concat(on);
         for (const s of allow) {
             if (!map[s]) throw new Error(`[${s}] is not in tools/ini-sections.json`);
@@ -217,6 +241,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         writeFileSync(join(out, "ts3native-ea169-test.ini"), render(ini, (s) => zeroed.has(s), () => false, (s, k) => rcZeroKey(s, k) || zeroKey(s, k), { ...EA_SET, ...TEST_SET }));
         for (const r of plan) console.log(`rc [${r.section}] shipped Enabled=${r.shipped}: ${r.state}${r.state === "zeroed" ? " (" + r.reason + ")" : ""}`);
         console.log(`keys off for unresolved rows: ${[...off].join(" ") || "none"}`);
+        console.log(`keys off for EA SKIP code paths: ${[...skip].join(" ")}`);
         console.log(`rc ini: ${plan.length - zeroed.size} sections kept as shipped (Enabled=1: ${plan.filter((r) => r.state === "kept" && r.shipped === "1").map((r) => r.section).join(" ")}), ${zeroed.size} zeroed`);
         if (v.md) writeFileSync(v.md, "| section | shipped Enabled | rc state | reason |\n|---|---|---|---|\n" + plan.map((r) => `| [${r.section}] | ${r.shipped} | ${r.state} | ${r.reason} |`).join("\n") + "\n");
     }
