@@ -107,3 +107,29 @@ sigmap finds neither (two equal bodies, the window is not unique): override rows
 Code: the `static_assert` on the window (body +0x1E) now holds on every build; the `ts3a_noaddr` stand-down of
 `ApplyBinderTypeHandle` goes; 1 bytes row (86 bytes, `ported`). EA rc ini: `[Binder]` TypeHandleDirect=1 as Steam ships it.
 Live check: `OK   binder type handle direct`.
+
+## 7. [GC] IdleGate / SubTimers / MarkHelpers (gcgate.cpp 28 rows, gcmark.cpp 35 rows)
+
+The Boehm collector in the exe is one block: Steam 0xE49980..0xE51300 is byte-equal to EA at **+0x50** over 31104 bytes
+modulo 1153 pointer / rel32 operands (0 other differing bytes). Every address operand inside it maps one to one (574
+distinct targets, 74 already in the table, 0 inconsistent), so all code rows in the block are +0x50 and the data rows
+are read off the instructions that use them:
+
+| Steam | EA | what |
+|---|---|---|
+| 0xE49980..0xE51290 (47 code rows) | +0x50 | GC_stopped_mark, GC_finish_collection sites, GC_collect_a_little_inner, GC_try_to_collect(_inner) sites, GC_finalize, GC_notify_or_invoke_finalizers, GC_clear_marks, GC_mark_some, GC_mark_from, GC_signal_mark_stack_overflow, the 8 mark-bit sites, push / set-bit sites, start / stop world |
+| 0x11F2FA8..0x11F30B4 (9 rows) | +0x5A090 (0x124D038..0x124D144) | n_attempts, mark state, mark stack too small, start hook flag / pointer, print stats, ... (as 0x11F2F90 / 0x11F2F94 / 0x11F3054 / 0x11F30D8, mapped before) |
+| 0x1234338..0x1234358 (5 rows) | +0x5A380 (0x128E6B8..0x128E6D8) | mark stack base / top / limit, black lists (as 0x123435C, mapped before) |
+| 0x5BFB90 | 0x8A7CE0 | GC_never_stop_func (`xor eax,eax; ret`, folded; 85 / 85 callers); the block pushes it at the same places |
+| 0xD70800 | 0xD70800 | forced-collection thunk `jmp GC 0xE4A320` (EA: `jmp 0xE4A370`), the only such jmp in each build |
+
+Over the whole image the data rows' reference contexts agree for 50% to 100% of the references per row (the rest are references outside the block whose next
+instructions differ). Byte checks: the 4 IdleGate state checks (0xE4C060 12, 0xE4A022 10, 0xE49AD9 6, 0xE49E6D 6),
+the push / set-bit literals and 0xE49DF2..0xE4A0A6 call sites have `ok` / `ported` bytes rows (22 new rows; `ported`
+operands are the mapped data rows). The run-time built expectations were compared on both images: the 8 mark-bit site
+literals (14 bytes, no addresses) are equal, the overflow routine's head (with this build's data addresses) and tail,
+and the P4 store `A3 <finish pending>`.
+
+Code: the `ts3a_noaddr` stand-downs of `ApplyGcIdleGate` and `ApplyGcMarkHelpers` go. These keys ship 0 on Steam
+(`IdleGate=0`, `SubTimers=0`, `MarkHelpers=0`), so the EA rc ini keeps them 0 as well: this only removes the EA SKIP,
+nothing turns on. A test of them on EA needs its own queue (not written here).
