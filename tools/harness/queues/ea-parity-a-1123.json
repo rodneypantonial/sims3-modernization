@@ -1,0 +1,606 @@
+{
+  "note": "ea-parity-a-1123 (EA laptop, correctness only, GPU-limited: no timing; NOT RUN; rerun of the 0.36.299-eaparA run that VOIDed at the menu on ClosestWpsCut, build 0.36.299-eapara2): EA 1.69 parity lane A (feature/ea169-parity-a, docs/232 §8.1, ledger docs/51 §588). Rerun build: TS3A_R removed, [RouteAsync] ClosestWpsCut hooks EA ClosestWaypoints_Find 0x65CC50 (V-588-8). Newly ON on EA: [EaCrashFixes] SlaveUnlink, DeadSlaveTrip, VbFreeDelayMs=2000, HeightsInfLoop, BridgeHeightNaN; [MonoThread] QuitStop; [MonoJit] BoundCall; [AutShadow] Races=7 (bits 0-1). Setup: copy native/ts3native/out-ea169/ts3native-ea169.asi (sha256 = docs/data/builds.json ts3native-ea169.asi.ea169-parity-a2-1123) to game-copy/eaparA2-1123/ts3native.asi, and ts3native-ea169-rc.ini from `node tools/ea-ini.ts --out <dir>` on this branch to game-copy/eaparA2-1123/ts3native.ini (same bytes as ts3native-ea169.ini.ea169-parity-a-1123). Same flow as ea-v031-parity-1123 (run.script save-reload.ts because run.saveReload refuses fixesPackage); wants the save-reload.ts fixes of PR #660. Household untouched: none of these fixes writes Sim or household state (obstacle slave lists, VB wrapper lifetime, height queries, Mono shutdown order, JIT call path, process globals); scriptErrorsMax 0 is the check. Run: TS3_MACHINE=ea-laptop TS3_LAUNCH=ea node tools/harness/queue.ts tools/harness/queues/ea-parity-a-1123.json",
+  "stopQueueOnFail": true,
+  "jobs": [
+    {
+      "id": "ea-parA-sv-play",
+      "note": "[est 25 min] [natural play, no cheats] 10 min autopilot play with a Buy and a CAS visit, save to EaParA-SV, quit to menu + reload, direct reload, 3 min after each. Each newly enabled feature logs OK, none of them SKIPs; Races R1 pre-warm OK at world event 7.",
+      "asi": "game-copy/eaparA2-1123/ts3native.asi",
+      "iniBase": "game-copy/eaparA2-1123/ts3native.ini",
+      "fixesPackage": "game-copy/v031-ea169/dl-2058/ts3fixes.package",
+      "pinReason": "lane build ts3native-ea169.asi.ea169-parity-a2-1123 (0.36.299-eapara2) with its EA rc ini (unchanged, ts3native-ea169.ini.ea169-parity-a-1123); ts3fixes.package = the shipped v0.3.1 EA asset (native-only lane)",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "scriptErrorsMax": 0,
+      "save": "Baseline-SV-Spring",
+      "timeoutMin": 45,
+      "logRequire": {
+        "^ts3native 0\\.36\\.299-eapara2 ": 1,
+        "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": 1,
+        "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": 1,
+        "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": 1,
+        "^OK   ea fix: HeightsInfLoop \\(docs/67 §36\\)": 1,
+        "^OK   ea fix: BridgeHeightNaN \\(docs/67 §37\\).*\\(3 of 3 height queries": 1,
+        "^OK   mono thread QuitStop=1: ": 1,
+        "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": 1,
+        "^autonomy shadow: Races=7 ": 1,
+        "^OK   autshadow races R1 pre-warm: ": 1,
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": 1
+      },
+      "logForbid": {
+        "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": 0,
+        "^SKIP ea fix (HeightsInfLoop|BridgeHeightNaN) \\(": 0,
+        "^SKIP mono thread QuitStop": 0,
+        "^SKIP jit BoundCall|^jit: BoundCall: mask": 0,
+        "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": 0,
+        "^PARTIAL ea fix: VbFreeDelay": 0,
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": 0
+      },
+      "regexCases": {
+        "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": {
+          "match": [
+            "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave (a boat's driver, a stroller, a led horse) is taken off its master's slave list before it is freed"
+          ],
+          "noMatch": [
+            "SKIP ea fix: SlaveUnlink: calls at 0x00955EF9 / 0x00956B16 differ: not installed"
+          ]
+        },
+        "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": {
+          "match": [
+            "OK   ea fix: DeadSlaveTrip (TEST TRIPWIRE, docs/143 §8.11): avoidance skips and logs a destroyed slave 0"
+          ],
+          "noMatch": [
+            "SKIP ea fix: DeadSlaveTrip: a call to 0x008389D0 differs: not installed"
+          ]
+        },
+        "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": {
+          "match": [
+            "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor (late draw 0xA84D00 binds NULL, not reused memory)"
+          ],
+          "noMatch": [
+            "PARTIAL ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor",
+            "SKIP ea fix: VbFreeDelay (docs/67 §44): Steam 1.67 only, no EA 1.69 rows: not installed"
+          ]
+        },
+        "^OK   ea fix: HeightsInfLoop \\(docs/67 §36\\)": {
+          "match": [
+            "OK   ea fix: HeightsInfLoop (docs/67 §36): path segments of infinite length skip the heights pass's halving loop (0x0064E62A)"
+          ],
+          "noMatch": [
+            "SKIP ea fix HeightsInfLoop ([EaCrashFixes] HeightsInfLoop): no EA 1.69 address, docs/232 §8"
+          ]
+        },
+        "^OK   ea fix: BridgeHeightNaN \\(docs/67 §37\\).*\\(3 of 3 height queries": {
+          "match": [
+            "OK   ea fix: BridgeHeightNaN (docs/67 §37): bridge heights that are not finite or above 1e6 in magnitude are ignored (3 of 3 height queries: 0x00C6070B, 0x00C697EB, 0x00C69A89)"
+          ],
+          "noMatch": [
+            "OK   ea fix: BridgeHeightNaN (docs/67 §37): bridge heights that are not finite or above 1e6 in magnitude are ignored (2 of 3 height queries: 0x00C6070B, 0x00C697EB, 0x00C69A89)"
+          ]
+        },
+        "^OK   mono thread QuitStop=1: ": {
+          "match": [
+            "OK   mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ],
+          "noMatch": [
+            "SKIP mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000",
+            "mono thread QuitStop=0: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ]
+        },
+        "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": {
+          "match": [
+            "OK   mono jit (docs/527): Mode=2, 40 templates (Groups=7), 12 list rows, VerifyEvery=0, code region 8192 KB (CodeKB), 20000 methods (MaxMethods), Direct=1 (docs/537), Trap=1, VtOps=1, CallExit=1, NewVt=1, Count=0, FastCopy=1, Ldsflda=1, BoundCall=0x3, ClauseLazy=1, RetTeardown=1, FaultRecover=1, YRows=0"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=2, Direct=1 (docs/537), BoundCall=0x0, ClauseLazy=1"
+          ]
+        },
+        "^autonomy shadow: Races=7 ": {
+          "match": [
+            "autonomy shadow: Races=7 (bit 0 R1 pre-warm at world event 7 + worker abort while a guard is clear, bit 1 R2/R3 witness of 43 rows, bit 2 R2c worker drain at world events 2/3/4/5/8, DrainMs=250; docs/data/races-handoff.md)"
+          ],
+          "noMatch": [
+            "autonomy shadow: Races=4 (bit 0 R1 pre-warm at world event 7 + worker abort while a guard is clear, bit 1 R2/R3 witness of 43 rows)"
+          ]
+        },
+        "^OK   autshadow races R1 pre-warm: ": {
+          "match": [
+            "OK   autshadow races R1 pre-warm: 5 getters called, 15 converter kinds filled, guards 0x7FFF, 0 still clear"
+          ],
+          "noMatch": [
+            "PART autshadow races R1 pre-warm: 5 getters called, 14 converter kinds filled, guards 0x7FFE, 1 still clear"
+          ]
+        },
+        "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": {
+          "match": [
+            "SKIP ea fix SlaveUnlink / DeadSlaveTrip: no EA 1.69 address, docs/232 §8",
+            "SKIP ea fix: VbFreeDelay (docs/67 §44): Steam 1.67 only, no EA 1.69 rows: not installed"
+          ],
+          "noMatch": [
+            "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave",
+            "SKIP ea fix: LotLevelPastEnd: vtable slot 0x01065268 or the getter bytes differ: not installed"
+          ]
+        },
+        "^SKIP ea fix (HeightsInfLoop|BridgeHeightNaN) \\(": {
+          "match": [
+            "SKIP ea fix BridgeHeightNaN ([EaCrashFixes] BridgeHeightNaN): no EA 1.69 address, docs/232 §8"
+          ],
+          "noMatch": [
+            "SKIP ea fix FglStaleObject ([EaCrashFixes] FglStaleObject): no EA 1.69 address, docs/232 §8"
+          ]
+        },
+        "^SKIP mono thread QuitStop": {
+          "match": [
+            "SKIP mono thread QuitStop ([MonoThread] QuitStop, Mono shutdown entry): no EA 1.69 address, docs/232 §8",
+            "SKIP mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ],
+          "noMatch": [
+            "OK   mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ]
+        },
+        "^SKIP jit BoundCall|^jit: BoundCall: mask": {
+          "match": [
+            "SKIP jit BoundCall ([MonoJit] BoundCall, monojit-bound.h rows): no EA 1.69 address, docs/232 §8",
+            "jit: BoundCall: mask 0x3 asked, 0x1 in force (a row's EA bytes differ, or no such row)"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=2, BoundCall=0x3,"
+          ]
+        },
+        "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": {
+          "match": [
+            "SKIP autshadow races bits 0-1 ([AutShadow] Races 7, R1b / R2b / R3a): no EA 1.69 address, docs/232 §8; bit 2 stays",
+            "FAIL autshadow races R1: FindClass Vector2 faulted, Races bit 0 off"
+          ],
+          "noMatch": [
+            "OK   autshadow races R1 pre-warm: 5 getters called, 15 converter kinds filled, guards 0x7FFF, 0 still clear"
+          ]
+        },
+        "^PARTIAL ea fix: VbFreeDelay": {
+          "match": [
+            "PARTIAL ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+          ],
+          "noMatch": [
+            "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+          ]
+        },
+        "^ts3native 0\\.36\\.299-eapara2 ": {
+          "match": [
+            "ts3native 0.36.299-eapara2 2026-11-23 23:40:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.299-eaparA 2026-11-23 22:10:00",
+            "ts3native 0.36.299-m1123 2026-11-23 14:00:00"
+          ]
+        },
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": {
+          "match": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 1 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ],
+          "noMatch": [
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 0 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ]
+        },
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": {
+          "match": [
+            "SKIP detour ClosestWaypoints_Find (cut on wait, closest waypoint cut) at 0x0065BB90: prologue differs",
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+          ],
+          "noMatch": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+          ]
+        }
+      },
+      "run": {
+        "script": [
+          "save-reload.ts",
+          "--world",
+          "SV",
+          "--play",
+          "10",
+          "--after",
+          "3",
+          "--name",
+          "EaParA-SV"
+        ]
+      }
+    },
+    {
+      "id": "ea-parA-sv-restart",
+      "note": "[est 10 min] fresh game start, load EaParA-SV written by the play job, 3 min live.",
+      "asi": "game-copy/eaparA2-1123/ts3native.asi",
+      "iniBase": "game-copy/eaparA2-1123/ts3native.ini",
+      "fixesPackage": "game-copy/v031-ea169/dl-2058/ts3fixes.package",
+      "pinReason": "lane build ts3native-ea169.asi.ea169-parity-a2-1123 (0.36.299-eapara2) with its EA rc ini (unchanged, ts3native-ea169.ini.ea169-parity-a-1123); ts3fixes.package = the shipped v0.3.1 EA asset (native-only lane)",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "scriptErrorsMax": 0,
+      "save": "EaParA-SV",
+      "timeoutMin": 30,
+      "logRequire": {
+        "^ts3native 0\\.36\\.299-eapara2 ": 1,
+        "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": 1,
+        "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": 1,
+        "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": 1,
+        "^OK   ea fix: HeightsInfLoop \\(docs/67 §36\\)": 1,
+        "^OK   ea fix: BridgeHeightNaN \\(docs/67 §37\\).*\\(3 of 3 height queries": 1,
+        "^OK   mono thread QuitStop=1: ": 1,
+        "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": 1,
+        "^autonomy shadow: Races=7 ": 1,
+        "^OK   autshadow races R1 pre-warm: ": 1,
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": 1
+      },
+      "logForbid": {
+        "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": 0,
+        "^SKIP ea fix (HeightsInfLoop|BridgeHeightNaN) \\(": 0,
+        "^SKIP mono thread QuitStop": 0,
+        "^SKIP jit BoundCall|^jit: BoundCall: mask": 0,
+        "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": 0,
+        "^PARTIAL ea fix: VbFreeDelay": 0,
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": 0
+      },
+      "regexCases": {
+        "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": {
+          "match": [
+            "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave (a boat's driver, a stroller, a led horse) is taken off its master's slave list before it is freed"
+          ],
+          "noMatch": [
+            "SKIP ea fix: SlaveUnlink: calls at 0x00955EF9 / 0x00956B16 differ: not installed"
+          ]
+        },
+        "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": {
+          "match": [
+            "OK   ea fix: DeadSlaveTrip (TEST TRIPWIRE, docs/143 §8.11): avoidance skips and logs a destroyed slave 0"
+          ],
+          "noMatch": [
+            "SKIP ea fix: DeadSlaveTrip: a call to 0x008389D0 differs: not installed"
+          ]
+        },
+        "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": {
+          "match": [
+            "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor (late draw 0xA84D00 binds NULL, not reused memory)"
+          ],
+          "noMatch": [
+            "PARTIAL ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor",
+            "SKIP ea fix: VbFreeDelay (docs/67 §44): Steam 1.67 only, no EA 1.69 rows: not installed"
+          ]
+        },
+        "^OK   ea fix: HeightsInfLoop \\(docs/67 §36\\)": {
+          "match": [
+            "OK   ea fix: HeightsInfLoop (docs/67 §36): path segments of infinite length skip the heights pass's halving loop (0x0064E62A)"
+          ],
+          "noMatch": [
+            "SKIP ea fix HeightsInfLoop ([EaCrashFixes] HeightsInfLoop): no EA 1.69 address, docs/232 §8"
+          ]
+        },
+        "^OK   ea fix: BridgeHeightNaN \\(docs/67 §37\\).*\\(3 of 3 height queries": {
+          "match": [
+            "OK   ea fix: BridgeHeightNaN (docs/67 §37): bridge heights that are not finite or above 1e6 in magnitude are ignored (3 of 3 height queries: 0x00C6070B, 0x00C697EB, 0x00C69A89)"
+          ],
+          "noMatch": [
+            "OK   ea fix: BridgeHeightNaN (docs/67 §37): bridge heights that are not finite or above 1e6 in magnitude are ignored (2 of 3 height queries: 0x00C6070B, 0x00C697EB, 0x00C69A89)"
+          ]
+        },
+        "^OK   mono thread QuitStop=1: ": {
+          "match": [
+            "OK   mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ],
+          "noMatch": [
+            "SKIP mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000",
+            "mono thread QuitStop=0: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ]
+        },
+        "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": {
+          "match": [
+            "OK   mono jit (docs/527): Mode=2, 40 templates (Groups=7), 12 list rows, VerifyEvery=0, code region 8192 KB (CodeKB), 20000 methods (MaxMethods), Direct=1 (docs/537), Trap=1, VtOps=1, CallExit=1, NewVt=1, Count=0, FastCopy=1, Ldsflda=1, BoundCall=0x3, ClauseLazy=1, RetTeardown=1, FaultRecover=1, YRows=0"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=2, Direct=1 (docs/537), BoundCall=0x0, ClauseLazy=1"
+          ]
+        },
+        "^autonomy shadow: Races=7 ": {
+          "match": [
+            "autonomy shadow: Races=7 (bit 0 R1 pre-warm at world event 7 + worker abort while a guard is clear, bit 1 R2/R3 witness of 43 rows, bit 2 R2c worker drain at world events 2/3/4/5/8, DrainMs=250; docs/data/races-handoff.md)"
+          ],
+          "noMatch": [
+            "autonomy shadow: Races=4 (bit 0 R1 pre-warm at world event 7 + worker abort while a guard is clear, bit 1 R2/R3 witness of 43 rows)"
+          ]
+        },
+        "^OK   autshadow races R1 pre-warm: ": {
+          "match": [
+            "OK   autshadow races R1 pre-warm: 5 getters called, 15 converter kinds filled, guards 0x7FFF, 0 still clear"
+          ],
+          "noMatch": [
+            "PART autshadow races R1 pre-warm: 5 getters called, 14 converter kinds filled, guards 0x7FFE, 1 still clear"
+          ]
+        },
+        "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": {
+          "match": [
+            "SKIP ea fix SlaveUnlink / DeadSlaveTrip: no EA 1.69 address, docs/232 §8",
+            "SKIP ea fix: VbFreeDelay (docs/67 §44): Steam 1.67 only, no EA 1.69 rows: not installed"
+          ],
+          "noMatch": [
+            "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave",
+            "SKIP ea fix: LotLevelPastEnd: vtable slot 0x01065268 or the getter bytes differ: not installed"
+          ]
+        },
+        "^SKIP ea fix (HeightsInfLoop|BridgeHeightNaN) \\(": {
+          "match": [
+            "SKIP ea fix BridgeHeightNaN ([EaCrashFixes] BridgeHeightNaN): no EA 1.69 address, docs/232 §8"
+          ],
+          "noMatch": [
+            "SKIP ea fix FglStaleObject ([EaCrashFixes] FglStaleObject): no EA 1.69 address, docs/232 §8"
+          ]
+        },
+        "^SKIP mono thread QuitStop": {
+          "match": [
+            "SKIP mono thread QuitStop ([MonoThread] QuitStop, Mono shutdown entry): no EA 1.69 address, docs/232 §8",
+            "SKIP mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ],
+          "noMatch": [
+            "OK   mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ]
+        },
+        "^SKIP jit BoundCall|^jit: BoundCall: mask": {
+          "match": [
+            "SKIP jit BoundCall ([MonoJit] BoundCall, monojit-bound.h rows): no EA 1.69 address, docs/232 §8",
+            "jit: BoundCall: mask 0x3 asked, 0x1 in force (a row's EA bytes differ, or no such row)"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=2, BoundCall=0x3,"
+          ]
+        },
+        "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": {
+          "match": [
+            "SKIP autshadow races bits 0-1 ([AutShadow] Races 7, R1b / R2b / R3a): no EA 1.69 address, docs/232 §8; bit 2 stays",
+            "FAIL autshadow races R1: FindClass Vector2 faulted, Races bit 0 off"
+          ],
+          "noMatch": [
+            "OK   autshadow races R1 pre-warm: 5 getters called, 15 converter kinds filled, guards 0x7FFF, 0 still clear"
+          ]
+        },
+        "^PARTIAL ea fix: VbFreeDelay": {
+          "match": [
+            "PARTIAL ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+          ],
+          "noMatch": [
+            "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+          ]
+        },
+        "^ts3native 0\\.36\\.299-eapara2 ": {
+          "match": [
+            "ts3native 0.36.299-eapara2 2026-11-23 23:40:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.299-eaparA 2026-11-23 22:10:00",
+            "ts3native 0.36.299-m1123 2026-11-23 14:00:00"
+          ]
+        },
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": {
+          "match": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 1 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ],
+          "noMatch": [
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 0 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ]
+        },
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": {
+          "match": [
+            "SKIP detour ClosestWaypoints_Find (cut on wait, closest waypoint cut) at 0x0065BB90: prologue differs",
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+          ],
+          "noMatch": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+          ]
+        }
+      },
+      "run": {
+        "script": [
+          "save-reload.ts",
+          "--control",
+          "--world",
+          "SV",
+          "--after",
+          "3",
+          "--name",
+          "EaParA-SV"
+        ]
+      }
+    },
+    {
+      "id": "ea-parA-sv-soak",
+      "note": "[est 22 min] 15 min SV soak at normal speed on the Spring baseline, correctness only (crash, script errors, log lines).",
+      "asi": "game-copy/eaparA2-1123/ts3native.asi",
+      "iniBase": "game-copy/eaparA2-1123/ts3native.ini",
+      "fixesPackage": "game-copy/v031-ea169/dl-2058/ts3fixes.package",
+      "pinReason": "lane build ts3native-ea169.asi.ea169-parity-a2-1123 (0.36.299-eapara2) with its EA rc ini (unchanged, ts3native-ea169.ini.ea169-parity-a-1123); ts3fixes.package = the shipped v0.3.1 EA asset (native-only lane)",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "scriptErrorsMax": 0,
+      "save": "Baseline-SV-Spring",
+      "timeoutMin": 35,
+      "logRequire": {
+        "^ts3native 0\\.36\\.299-eapara2 ": 1,
+        "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": 1,
+        "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": 1,
+        "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": 1,
+        "^OK   ea fix: HeightsInfLoop \\(docs/67 §36\\)": 1,
+        "^OK   ea fix: BridgeHeightNaN \\(docs/67 §37\\).*\\(3 of 3 height queries": 1,
+        "^OK   mono thread QuitStop=1: ": 1,
+        "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": 1,
+        "^autonomy shadow: Races=7 ": 1,
+        "^OK   autshadow races R1 pre-warm: ": 1,
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": 1
+      },
+      "logForbid": {
+        "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": 0,
+        "^SKIP ea fix (HeightsInfLoop|BridgeHeightNaN) \\(": 0,
+        "^SKIP mono thread QuitStop": 0,
+        "^SKIP jit BoundCall|^jit: BoundCall: mask": 0,
+        "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": 0,
+        "^PARTIAL ea fix: VbFreeDelay": 0,
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": 0
+      },
+      "regexCases": {
+        "^OK   ea fix: SlaveUnlink \\(docs/143 §8\\.11\\)": {
+          "match": [
+            "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave (a boat's driver, a stroller, a led horse) is taken off its master's slave list before it is freed"
+          ],
+          "noMatch": [
+            "SKIP ea fix: SlaveUnlink: calls at 0x00955EF9 / 0x00956B16 differ: not installed"
+          ]
+        },
+        "^OK   ea fix: DeadSlaveTrip \\(TEST TRIPWIRE": {
+          "match": [
+            "OK   ea fix: DeadSlaveTrip (TEST TRIPWIRE, docs/143 §8.11): avoidance skips and logs a destroyed slave 0"
+          ],
+          "noMatch": [
+            "SKIP ea fix: DeadSlaveTrip: a call to 0x008389D0 differs: not installed"
+          ]
+        },
+        "^OK   ea fix: VbFreeDelay \\(docs/67 §44\\)": {
+          "match": [
+            "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor (late draw 0xA84D00 binds NULL, not reused memory)"
+          ],
+          "noMatch": [
+            "PARTIAL ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor",
+            "SKIP ea fix: VbFreeDelay (docs/67 §44): Steam 1.67 only, no EA 1.69 rows: not installed"
+          ]
+        },
+        "^OK   ea fix: HeightsInfLoop \\(docs/67 §36\\)": {
+          "match": [
+            "OK   ea fix: HeightsInfLoop (docs/67 §36): path segments of infinite length skip the heights pass's halving loop (0x0064E62A)"
+          ],
+          "noMatch": [
+            "SKIP ea fix HeightsInfLoop ([EaCrashFixes] HeightsInfLoop): no EA 1.69 address, docs/232 §8"
+          ]
+        },
+        "^OK   ea fix: BridgeHeightNaN \\(docs/67 §37\\).*\\(3 of 3 height queries": {
+          "match": [
+            "OK   ea fix: BridgeHeightNaN (docs/67 §37): bridge heights that are not finite or above 1e6 in magnitude are ignored (3 of 3 height queries: 0x00C6070B, 0x00C697EB, 0x00C69A89)"
+          ],
+          "noMatch": [
+            "OK   ea fix: BridgeHeightNaN (docs/67 §37): bridge heights that are not finite or above 1e6 in magnitude are ignored (2 of 3 height queries: 0x00C6070B, 0x00C697EB, 0x00C69A89)"
+          ]
+        },
+        "^OK   mono thread QuitStop=1: ": {
+          "match": [
+            "OK   mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ],
+          "noMatch": [
+            "SKIP mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000",
+            "mono thread QuitStop=0: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ]
+        },
+        "^OK   mono jit \\(docs/527\\): .*BoundCall=0x3,": {
+          "match": [
+            "OK   mono jit (docs/527): Mode=2, 40 templates (Groups=7), 12 list rows, VerifyEvery=0, code region 8192 KB (CodeKB), 20000 methods (MaxMethods), Direct=1 (docs/537), Trap=1, VtOps=1, CallExit=1, NewVt=1, Count=0, FastCopy=1, Ldsflda=1, BoundCall=0x3, ClauseLazy=1, RetTeardown=1, FaultRecover=1, YRows=0"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=2, Direct=1 (docs/537), BoundCall=0x0, ClauseLazy=1"
+          ]
+        },
+        "^autonomy shadow: Races=7 ": {
+          "match": [
+            "autonomy shadow: Races=7 (bit 0 R1 pre-warm at world event 7 + worker abort while a guard is clear, bit 1 R2/R3 witness of 43 rows, bit 2 R2c worker drain at world events 2/3/4/5/8, DrainMs=250; docs/data/races-handoff.md)"
+          ],
+          "noMatch": [
+            "autonomy shadow: Races=4 (bit 0 R1 pre-warm at world event 7 + worker abort while a guard is clear, bit 1 R2/R3 witness of 43 rows)"
+          ]
+        },
+        "^OK   autshadow races R1 pre-warm: ": {
+          "match": [
+            "OK   autshadow races R1 pre-warm: 5 getters called, 15 converter kinds filled, guards 0x7FFF, 0 still clear"
+          ],
+          "noMatch": [
+            "PART autshadow races R1 pre-warm: 5 getters called, 14 converter kinds filled, guards 0x7FFE, 1 still clear"
+          ]
+        },
+        "^SKIP ea fix SlaveUnlink / DeadSlaveTrip|^SKIP ea fix: (SlaveUnlink|DeadSlaveTrip|VbFreeDelay|HeightsInfLoop|BridgeHeightNaN)\\b": {
+          "match": [
+            "SKIP ea fix SlaveUnlink / DeadSlaveTrip: no EA 1.69 address, docs/232 §8",
+            "SKIP ea fix: VbFreeDelay (docs/67 §44): Steam 1.67 only, no EA 1.69 rows: not installed"
+          ],
+          "noMatch": [
+            "OK   ea fix: SlaveUnlink (docs/143 §8.11): a destroyed slave",
+            "SKIP ea fix: LotLevelPastEnd: vtable slot 0x01065268 or the getter bytes differ: not installed"
+          ]
+        },
+        "^SKIP ea fix (HeightsInfLoop|BridgeHeightNaN) \\(": {
+          "match": [
+            "SKIP ea fix BridgeHeightNaN ([EaCrashFixes] BridgeHeightNaN): no EA 1.69 address, docs/232 §8"
+          ],
+          "noMatch": [
+            "SKIP ea fix FglStaleObject ([EaCrashFixes] FglStaleObject): no EA 1.69 address, docs/232 §8"
+          ]
+        },
+        "^SKIP mono thread QuitStop": {
+          "match": [
+            "SKIP mono thread QuitStop ([MonoThread] QuitStop, Mono shutdown entry): no EA 1.69 address, docs/232 §8",
+            "SKIP mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ],
+          "noMatch": [
+            "OK   mono thread QuitStop=1: worker stop + GC hooks back at the Mono shutdown entry 0xE534D0, QuitWaitMs=2000"
+          ]
+        },
+        "^SKIP jit BoundCall|^jit: BoundCall: mask": {
+          "match": [
+            "SKIP jit BoundCall ([MonoJit] BoundCall, monojit-bound.h rows): no EA 1.69 address, docs/232 §8",
+            "jit: BoundCall: mask 0x3 asked, 0x1 in force (a row's EA bytes differ, or no such row)"
+          ],
+          "noMatch": [
+            "OK   mono jit (docs/527): Mode=2, BoundCall=0x3,"
+          ]
+        },
+        "^SKIP autshadow races bits 0-1|^FAIL autshadow races R1": {
+          "match": [
+            "SKIP autshadow races bits 0-1 ([AutShadow] Races 7, R1b / R2b / R3a): no EA 1.69 address, docs/232 §8; bit 2 stays",
+            "FAIL autshadow races R1: FindClass Vector2 faulted, Races bit 0 off"
+          ],
+          "noMatch": [
+            "OK   autshadow races R1 pre-warm: 5 getters called, 15 converter kinds filled, guards 0x7FFF, 0 still clear"
+          ]
+        },
+        "^PARTIAL ea fix: VbFreeDelay": {
+          "match": [
+            "PARTIAL ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+          ],
+          "noMatch": [
+            "OK   ea fix: VbFreeDelay (docs/67 §44): VB wrappers freed 2000 ms after their destructor"
+          ]
+        },
+        "^ts3native 0\\.36\\.299-eapara2 ": {
+          "match": [
+            "ts3native 0.36.299-eapara2 2026-11-23 23:40:00"
+          ],
+          "noMatch": [
+            "ts3native 0.36.299-eaparA 2026-11-23 22:10:00",
+            "ts3native 0.36.299-m1123 2026-11-23 14:00:00"
+          ]
+        },
+        "^OK   cut on wait: ClosestWaypoints_Find 0x65BB90 .*ClosestWpsCut mode 1 \\(ini 1,": {
+          "match": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 1 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ],
+          "noMatch": [
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none past the moved deadline of a job a sim wait asked to end (CutOnWait 0) and, ClosestWpsCut mode 0 (ini 1, 2 = count only), past the deadline of a job whose route is known unseen"
+          ]
+        },
+        "^SKIP detour ClosestWaypoints_Find|^FAIL cut on wait": {
+          "match": [
+            "SKIP detour ClosestWaypoints_Find (cut on wait, closest waypoint cut) at 0x0065BB90: prologue differs",
+            "FAIL cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+          ],
+          "noMatch": [
+            "OK   cut on wait: ClosestWaypoints_Find 0x65BB90 answers none"
+          ]
+        }
+      },
+      "run": {
+        "soak": {
+          "minutes": 15
+        }
+      }
+    }
+  ]
+}

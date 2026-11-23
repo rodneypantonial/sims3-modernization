@@ -36,7 +36,7 @@ export const KEY_ADDRS: Record<string, number[]> = {
     "RouteToObjRO.Tail": [0x00686A90, 0x0082A780, 0x01003D7C],
     "IdleCheckRO.SiteC": [0x00620D20, 0x00624F70, 0x00652470, 0x0075598B, 0x00755A12, 0x00755A6D, 0x00755A82, 0x00755A97],
     // master fold 2026-11-15 (docs/232 §8): master code newer than rc1111g, no EA 1.69 rows yet; each feature also SKIPs in the EA
-    // asi. RacesBits01 and SatbColdPark name no ini key (the code masks Races to bit 2, EA_SET ships Races=4; the cold park is not
+    // asi. RacesBits01 and SatbColdPark name no ini key (RacesBits01 resolved 2026-11-23, kept as a guard; the cold park is not
     // switched): they only keep autraces.cpp and satb.cpp from zeroing the whole [AutShadow]
     "AutShadow.RacesBits01": [0x004D9AD0, 0x007935B0, 0x008A79B0, 0x009B0530, 0x00C88D80, 0x00D79CA0, 0x0114C908, 0x0114CA08, 0x0114CA0C, 0x011AF670, 0x011C7984, 0x011CB928, 0x011CC928, 0x011CC964, 0x011CDD00, 0x011CE2D0, 0x011CF490, 0x011D3E28, 0x011D4068, 0x011D4BC0, 0x011D6A78, 0x011D7518, 0x011D8888, 0x011D9848, 0x011DA058, 0x011E8FA8, 0x011E8FC0, 0x011E8FC4, 0x011E90F8, 0x011E9290, 0x011E92A8, 0x011E94F8, 0x011E96C1, 0x011EB490, 0x011EBAE0, 0x011ECEED, 0x011ED780, 0x011EE140, 0x011EE520, 0x011EE528, 0x011EE54C, 0x011EE550, 0x011EE554, 0x011EE558, 0x011EE55C, 0x011EE560, 0x011EE564, 0x011EE568, 0x011EE56C, 0x011EE570, 0x011EE574, 0x011EE578, 0x011EE57C, 0x011EE580, 0x011EE584, 0x011EE588],
     "AutShadow.SatbColdPark": [0x011F4130, 0x011F43E4, 0x011F4574, 0x011F45A0],
@@ -57,8 +57,8 @@ export const keysOff = (addrHdr: string) => { const un = new Set(unresolvedRows(
 // EA-only shipped defaults: values both EA inis take in place of the Steam ini's (sections that are not zeroed only); the Steam
 // ts3native.ini keeps its own value (main ships 1024 too since Run 8q, window mode). BlackListCapKB: docs/232 Run 8n/8o, Run 8p (no leak).
 // ThreadStack.Skip: SimulatorThread_Proc, a runtime string the address table cannot rewrite; the Steam value left the EA sim thread capped.
-// AutShadow.Races: bit 2 (R2c) only, as v0.2.12 EA shipped it; bits 0-1 have no EA 1.69 rows (docs/232 §8)
-export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360", "AutShadow.Races": "4" };
+// AutShadow.Races left 2026-11-23 (ea169-parity-a): bits 0-1 have EA 1.69 rows now, the rc ini ships the Steam value
+export const EA_SET: Record<string, string> = { "GC.BlackListCapKB": "1024", "ThreadStack.Skip": "0x76C360" };
 // EA-port-only keys (TS3N_EA_PORT in ts3addr.h: compiled into the EA asi only, so the Steam ts3native.ini has no line for them):
 // appended to the end of their section; a section ts3native.ini lacks goes at the end of the file. Values as the v0.2.10 EA
 // rc ini shipped them: SimNoTexture on (player crash, deterministic repro, the fix passes it, docs/67 §34.5), ImageGuard off

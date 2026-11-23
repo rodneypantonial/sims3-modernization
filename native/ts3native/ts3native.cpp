@@ -18,7 +18,9 @@
 #ifdef TS3N_RFTEST
 #define TS3NATIVE_VERSION "0.36.189-rftest1"  // docs/89 §18: repro ops 30-34, never a release
 #else
-#define TS3NATIVE_VERSION "0.36.300-pausegateall1"  // bugfix/pausegate-all-1123 (deadref + spread + drains + native pause gate); native part bugfix/pausegate-native-1123 (docs/205 §2.3e): frozen unseen holds, route epoch, Build/Buy exit drain; counters v224
+#define TS3NATIVE_VERSION "0.36.300-eapg1"  // feature/ea169-pausegate-1123: bugfix/pausegate-all-1123 + feature/ea169-parity-a (EA 1.69 rows for the pause gate, TS3A_R removed)
+// was "0.36.300-pausegateall1"  // bugfix/pausegate-all-1123 (deadref + spread + drains + native pause gate); native part bugfix/pausegate-native-1123 (docs/205 §2.3e): frozen unseen holds, route epoch, Build/Buy exit drain; counters v224
+// was "0.36.299-eapara2"  // feature/ea169-parity-a: m1123 + TS3A_R removed (ClosestWpsCut, AudioStateDup, MemDiag Access, PkgProbe EA rows) + EA 1.69 rows for [EaCrashFixes] SlaveUnlink / DeadSlaveTrip / VbFreeDelayMs / HeightsInfLoop / BridgeHeightNaN, [MonoThread] QuitStop, [MonoJit] BoundCall, [AutShadow] Races bits 0-1
 // was "0.36.299-m1123"  // master set m1123: m1122 + overflow-fixes-1122 (docs/323 lanes A-F) + unbounded-caps-1122 (docs/321 lanes 0, B, C) + watergrid-next-1122 ([WaterGrid] Diff + Par, docs/100 §14, off) + nonsim-split-1122 ([Diag] NonSimSplit, docs/329, off) + compat, Dalexlol 637-653 and loop-cost merges (ts3fixes only)
 // was "0.36.299-m1122"  // master set m1122: e1122 + unseen-distance-probe-1122 ([UnseenProbe] Bands, TaskSeam 65536/4096, docs/322, off) + world-scale-perf-1122 ([WaterGrid] Prof, LoadProf counter-clear fix, docs/100 §13, off) (2026-11-22); was uband2 / wgprof1 on the branches; e1122: m1121b + Dalexlol 1122 imports
 // was "0.36.297-m1120n" (the same merges on 0.36.295-mdt1, before TaskSeam)
