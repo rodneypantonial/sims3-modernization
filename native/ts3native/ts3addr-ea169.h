@@ -1234,7 +1234,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00E6B690, 0x00E6B6E0},
     {0x00E6F5A0, 0x00E6F600},
     {0x00E6F720, 0x00000000},
-    {0x00E70180, 0x00000000},
+    {0x00E70180, 0x00E701E0},
     {0x00E70D50, 0x00E70DB0},
     {0x00E72010, 0x00E72070},
     {0x00E75260, 0x00E752C0},
@@ -1253,7 +1253,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00E7A300, 0x00E7A350},
     {0x00E7A330, 0x00E7A380},
     {0x00E7A400, 0x00E7A450},
-    {0x00E7A590, 0x00000000},
+    {0x00E7A590, 0x00E7A5E0},
     {0x00E7AB60, 0x00E8D270},
     {0x00E7B150, 0x00E7B170},
     {0x00E7B320, 0x00E7B340},
@@ -1666,8 +1666,6 @@ constexpr unsigned long ts3addr_pairs[][2] = {
 // unresolved: 0x00DDD880 no-ea-1.69-address native/ts3native/monojit-bound.h:22
 // unresolved: 0x00DDD900 no-ea-1.69-address native/ts3native/monojit-bound.h:22
 // unresolved: 0x00E534D0 no-ea-1.69-address native/ts3native/monothread-m5.cpp:718
-// unresolved: 0x00E70180 no-ea-1.69-address native/ts3native/equalsfast.cpp:30
-// unresolved: 0x00E7A590 no-ea-1.69-address native/ts3native/equalsfast.cpp:30
 // unresolved: 0x00FFE2F0 no-ea-1.69-address native/ts3native/rctrim.cpp:24
 // unresolved: 0x01004148 no-ea-1.69-address native/ts3native/c2diag.cpp:23
 // unresolved: 0x010041C8 no-ea-1.69-address native/ts3native/c2diag.cpp:23

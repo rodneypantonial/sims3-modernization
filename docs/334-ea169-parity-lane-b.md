@@ -62,3 +62,13 @@ Enabled=1 as Steam ships it, `[ThumbCallers]` stays 0 (Steam 0). Live check: `OK
 Code: the `ts3a_noaddr` stand-down of `ApplyAnimPhase` goes. 11 bytes rows (incl. the locomotion site 0xD81C5C ->
 0xD8201C, whose row was mapped before but had no bytes row: Simulate 0xD81840..0xD82100 equal at +0x3C0). EA rc ini:
 `[UnseenAnim]` Enabled=1 as Steam ships it (Objects=0), `[AnimPhase]` stays 0. Live check: `OK   unseen anim: ready`.
+
+## 4. [EqualsFast] (2 rows)
+
+| Steam | EA | what | evidence |
+|---|---|---|---|
+| 0xE7A590 | 0xE7A5E0 | ValueType.InternalEquals internal call (detour, prologue `55 8B EC 83 EC 10`) | sigmap unique; 0xE7A590..0xE7A700 equal at +0x50 modulo 5 pointer operands; same slot of the Mono internal-call function table (neighbours 0xE81DB0 / 0xE7A410 map to 0xE81DD0 / 0xE7A460) |
+| 0xE70180 | 0xE701E0 | the class field walk it calls | 38 / 38 callers (paired deltas +0x20..+0x3C0, the Mono code shifts), the call at InternalEquals +0x4A in both, 0xE70180..0xE70260 equal at +0x60 modulo pointers; sigmap none (window) |
+
+Code: the `ts3a_noaddr` stand-down of `ApplyEqualsFast` goes; 1 bytes row (the 6 prologue bytes, `ok`). EA rc ini:
+`[EqualsFast]` Enabled=1 as Steam ships it (SmallEnums=0). Live check: `OK   equals fast (docs/258 option C)`.
