@@ -72,3 +72,26 @@ Code: the `ts3a_noaddr` stand-down of `ApplyAnimPhase` goes. 11 bytes rows (incl
 
 Code: the `ts3a_noaddr` stand-down of `ApplyEqualsFast` goes; 1 bytes row (the 6 prologue bytes, `ok`). EA rc ini:
 `[EqualsFast]` Enabled=1 as Steam ships it (SmallEnums=0). Live check: `OK   equals fast (docs/258 option C)`.
+
+## 5. [GoalValidRO] Hits / HitsShadow (gvhits.cpp, 7 rows)
+
+`gvhits.cpp` had the only 0 rows of `[GoalValidRO]`, so ea-ini zeroed the whole section on EA (Steam ships
+Enabled=1 Mode=1, Hits=0). GoalPoint_Validate 0x759B20 -> 0x75AAE0 (row mapped before) is byte-equal at **+0xFC0** over
+0x759B20..0x75AF80 (5216 bytes) modulo 143 pointer / rel32 operands; every address operand inside it maps through the
+table (24 table-consistent, 0 inconsistent), so the rows below are read off the block:
+
+| Steam | EA | what |
+|---|---|---|
+| 0x759B26 | 0x75AAE6 | `sub esp, 0xF4` (frame size check) |
+| 0x75A950 | 0x75B910 | the loop end's release call (HitsShadow observer) |
+| 0x75AAA1, 0x75AAC4 | 0x75BA61, 0x75BA84 | LEAVE label, the exit's second step |
+| 0x75AF4C | 0x75BF0C | the type switch: 4 targets each +0xFC0, the 0x1C index bytes after it equal |
+| 0xAB88A0 | 0xAB7510 | Lot point transform the loop calls (40 / 40 callers, sigmap unique) |
+| 0x1010960 | 0x107287C | the cost float the loop copies (read at 0x75A64C +0x1B5 / +0x1FF / +0x21C and the same offsets from 0x75B60C; 225 / 225 refs, 220 contexts equal) |
+
+Code: `kGvhCodeFnv` (FNV-1a over the four code ranges `GvhCodeOk` hashes) becomes `TS3A_PICK(0xB6EAEA97, 0xA3548D56,
+0xB6EAEA97)`: the Steam value recomputed from the exe equals the constant, the EA one is the same ranges on the EA image
+(the ranges hold rel32 / pointer operands, so the hash differs); retail keeps the Steam value (its rows are still 0, its
+own stand-down unchanged). `GvhMayInstall` loses its `ts3a_noaddr` stand-down. 2 bytes rows. EA rc ini: `[GoalValidRO]`
+comes back as Steam ships it (Enabled=1, Mode=1, Hits=0, HitsShadow=0). Live check: `OK   goal validation RO`; Hits stays
+off on EA as on Steam (PLAN 2026-11-21: an ON candidate for Rodney after its shadow queue).

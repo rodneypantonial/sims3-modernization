@@ -522,15 +522,15 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00758220, 0x007590E0},
     {0x00758BA0, 0x00759BB0},
     {0x00759B20, 0x0075AAE0},
-    {0x00759B26, 0x00000000},
+    {0x00759B26, 0x0075AAE6},
     {0x0075A647, 0x0075B607},
     {0x0075A64C, 0x0075B60C},
-    {0x0075A950, 0x00000000},
+    {0x0075A950, 0x0075B910},
     {0x0075AA16, 0x0075B9D6},
-    {0x0075AAA1, 0x00000000},
-    {0x0075AAC4, 0x00000000},
+    {0x0075AAA1, 0x0075BA61},
+    {0x0075AAC4, 0x0075BA84},
     {0x0075AC22, 0x0075BBE2},
-    {0x0075AF4C, 0x00000000},
+    {0x0075AF4C, 0x0075BF0C},
     {0x0075B610, 0x0075C5D0},
     {0x0075BD8B, 0x0075CD4B},
     {0x0075C05C, 0x0075D01C},
@@ -828,7 +828,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00AB4C00, 0x00AB37D0},
     {0x00AB70B0, 0x00000000},
     {0x00AB8540, 0x00AB71B0},
-    {0x00AB88A0, 0x00000000},
+    {0x00AB88A0, 0x00AB7510},
     {0x00AB9580, 0x00AB81F0},
     {0x00ABD3C0, 0x00ABC190},
     {0x00ABD3E0, 0x00ABC1B0},
@@ -1378,7 +1378,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x0100421C, 0x00000000},
     {0x0100423C, 0x00000000},
     {0x0100425C, 0x00000000},
-    {0x01010960, 0x00000000},
+    {0x01010960, 0x0107287C},
     {0x0102000C, 0x0106B064},
     {0x01020AE8, 0x0106BB40},
     {0x01021CF0, 0x0106CD48},
@@ -1851,13 +1851,6 @@ constexpr int ts3addr_count = 1616;
 // unresolved: 0x0066A040 no-ea-1.69-address native/ts3native/placero.cpp (docs/670, docs/671)
 // unresolved: 0x00FEE118 no-ea-1.69-address native/ts3native/placero.cpp (docs/670, docs/671)
 // unresolved: 0x00FEE3C0 no-ea-1.69-address native/ts3native/placero.cpp (docs/670, docs/671)
-// unresolved: 0x0075AAC4 no-ea-1.69-address native/ts3native/gvhits.cpp (docs/670, docs/671)
-// unresolved: 0x0075AAA1 no-ea-1.69-address native/ts3native/gvhits.cpp (docs/670, docs/671)
-// unresolved: 0x0075AF4C no-ea-1.69-address native/ts3native/gvhits.cpp (docs/670, docs/671)
-// unresolved: 0x00759B26 no-ea-1.69-address native/ts3native/gvhits.cpp (docs/670, docs/671)
-// unresolved: 0x0075A950 no-ea-1.69-address native/ts3native/gvhits.cpp (docs/670, docs/671)
-// unresolved: 0x00AB88A0 no-ea-1.69-address native/ts3native/gvhits.cpp (docs/670, docs/671)
-// unresolved: 0x01010960 no-ea-1.69-address native/ts3native/gvhits.cpp (docs/670, docs/671)
 // unresolved: 0x0066FD00 no-ea-1.69-address native/ts3native/watergrid.cpp (Steam-only probe, docs/100 §13)
 // unresolved: 0x00670F50 no-ea-1.69-address native/ts3native/watergrid.cpp (Steam-only probe, docs/100 §13)
 // unresolved: 0x00671000 no-ea-1.69-address native/ts3native/watergrid.cpp (Steam-only probe, docs/100 §13)
