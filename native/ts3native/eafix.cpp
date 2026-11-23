@@ -954,9 +954,6 @@ static u8* __fastcall SlTripGet(u8* part, void*, int i) {
 
 static bool ApplySlaveLink(const wchar_t* ini) {
     bool keep = false;
-#ifdef TS3A_TABLE
-    if (ts3a_noaddr) { Log("SKIP ea fix SlaveUnlink / DeadSlaveTrip: no EA 1.69 address, docs/232 §8"); return false; }
-#endif
     if (GetPrivateProfileIntW(L"EaCrashFixes", L"SlaveUnlink", 1, ini)) {
         if (FpCallOk(SL_SET_SITE, SL_SET) && FpCallOk(SL_DTOR_SITE, SL_DTOR) && FpRedirect(SL_SET_SITE, (const void*)&SlSetHook) &&
             FpRedirect(SL_DTOR_SITE, (const void*)&SlDtorHook)) {
@@ -977,15 +974,16 @@ static bool ApplySlaveLink(const wchar_t* ini) {
     return keep;
 }
 
-// [EaCrashFixes] VbFreeDelayMs (docs/67 §44, default 0 = off, Steam 1.67 only): EA use after free of a vertex buffer wrapper.
+// [EaCrashFixes] VbFreeDelayMs (docs/67 §44, default 0 = off; Steam 1.67 and EA 1.69): EA use after free of a vertex buffer wrapper.
 // 0xA85DF0 releases the wrapper at +0x70 of its owner (0xEC17A0, last ref: deleting dtor 0x61A410 / 0x61A340, then free
 // 0x4E3F70) while a queued draw item still runs the draw callback 0xA84D00 with the old pointer (VbGuard caught it 23-894 ms
 // after the release, same thread). Freed memory reused = Device_SetStreamSource 0x60F020 hands garbage to the device (the
 // bridge crashes at d3d9.dll+0x3A91D / +0x2789B). Fix: the two deleting dtors run without their free; the wrapper (base
 // vtable, D3D VB +0x14 = 0, the game's own released state) is freed VbFreeDelayMs later, so a late draw binds a NULL stream,
 // as the not yet reused memory already did in the caught cases. Its refcount is pinned high so a late Release cannot free it twice.
-#ifndef TS3A_TABLE
-static const DWORD kVqDelA = 0x0061A340, kVqDelB = 0x0061A410, kVqFree = 0x004E3F70;
+#ifndef TS3A_RETAIL  // retail 1.67: the two dtor rows are not mapped yet (docs/314 §5), stub below
+// EA 1.69.47: 0x61B500 / 0x61B5D0 / 0x4E41C0, same bytes (docs/51 §588, docs/232 §8.1)
+static const DWORD kVqDelA = TS3A(0x0061A340), kVqDelB = TS3A(0x0061A410), kVqFree = TS3A(0x004E3F70);
 static const u8 kVqPro[] = {0x56, 0x8B, 0xF1, 0x57, 0x8D, 0x7E, 0x08};  // push esi ; mov esi,ecx ; push edi ; lea edi,[esi+8]
 typedef void*(__fastcall* VqDelFn)(u8* self, void* edx, DWORD flags);
 static VqDelFn g_vqOrig[2];
@@ -1030,10 +1028,11 @@ static bool ApplyVbFreeDelay(const wchar_t* ini) {
         "not reused memory)", ok ? "OK  " : "PARTIAL", g_vqMs);
     return ok;
 }
+
 #else
-static bool ApplyVbFreeDelay(const wchar_t* ini) {  // EA 1.69: the VB wrapper dtor sites are unmapped
+static bool ApplyVbFreeDelay(const wchar_t* ini) {
     if (GetPrivateProfileIntW(L"EaCrashFixes", L"VbFreeDelayMs", 0, ini))
-        Log("SKIP ea fix: VbFreeDelay (docs/67 §44): Steam 1.67 only, no EA 1.69 rows: not installed");
+        Log("SKIP ea fix: VbFreeDelay (docs/67 §44): no retail 1.67 rows yet (docs/314 §5): not installed");
     return false;
 }
 #endif

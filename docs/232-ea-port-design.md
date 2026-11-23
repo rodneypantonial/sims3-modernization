@@ -178,14 +178,14 @@ tools/ini-sections.json gained [Binder], [Crash2Diag], [EqualsFast], [ThumbStall
 
 | feature | file | rows | Steam addresses | on EA now |
 |---|---|---|---|---|
-| [AutShadow] Races bits 0-1 (R1b pre-warm, R2b / R3a witness) | autraces.cpp | 56 | 0x4D9AD0 0x7935B0 0x8A79B0 0x9B0530 0xC88D80 0xD79CA0 0x114C908 0x114CA08 0x114CA0C 0x11AF670 0x11C7984 0x11CB928 0x11CC928 0x11CC964 0x11CDD00 0x11CE2D0 0x11CF490 0x11D3E28 0x11D4068 0x11D4BC0 0x11D6A78 0x11D7518 0x11D8888 0x11D9848 0x11DA058 0x11E8FA8 0x11E8FC0 0x11E8FC4 0x11E90F8 0x11E9290 0x11E92A8 0x11E94F8 0x11E96C1 0x11EB490 0x11EBAE0 0x11ECEED 0x11ED780 0x11EE140 0x11EE520 0x11EE528 0x11EE54C 0x11EE550 0x11EE554 0x11EE558 0x11EE55C 0x11EE560 0x11EE564 0x11EE568 0x11EE56C 0x11EE570 0x11EE574 0x11EE578 0x11EE57C 0x11EE580 0x11EE584 0x11EE588 | bits masked to 4 (R2c stays), SKIP line; rc ini Races=4 (EA_SET) |
+| [AutShadow] Races bits 0-1 (R1b pre-warm, R2b / R3a witness) | autraces.cpp | 56 | 0x4D9AD0 0x7935B0 0x8A79B0 0x9B0530 0xC88D80 0xD79CA0 0x114C908 0x114CA08 0x114CA0C 0x11AF670 0x11C7984 0x11CB928 0x11CC928 0x11CC964 0x11CDD00 0x11CE2D0 0x11CF490 0x11D3E28 0x11D4068 0x11D4BC0 0x11D6A78 0x11D7518 0x11D8888 0x11D9848 0x11DA058 0x11E8FA8 0x11E8FC0 0x11E8FC4 0x11E90F8 0x11E9290 0x11E92A8 0x11E94F8 0x11E96C1 0x11EB490 0x11EBAE0 0x11ECEED 0x11ED780 0x11EE140 0x11EE520 0x11EE528 0x11EE54C 0x11EE550 0x11EE554 0x11EE558 0x11EE55C 0x11EE560 0x11EE564 0x11EE568 0x11EE56C 0x11EE570 0x11EE574 0x11EE578 0x11EE57C 0x11EE580 0x11EE584 0x11EE588 | mapped 2026-11-23 (§8.1): all bits run, rc ini Races as shipped (7) |
 | [AutShadow] Satb cold park (docs/206 §18) | satb.cpp | 4 | 0x11F4130 0x11F43E4 0x11F4574 0x11F45A0 | no park (cold call runs as before the park), one SKIP line |
-| [MonoThread] QuitStop (Mono shutdown entry) | monothread-m5.cpp | 1 | 0xE534D0 | QuitStop forced 0, SKIP line; rc ini QuitStop=0 |
-| [MonoJit] BoundCall | monojit-bound.h | 5 | 0xDA4200 0xDBFAE0 0xDBFBF0 0xDDD880 0xDDD900 | BoundCall not installed, SKIP line; rc ini BoundCall=0 |
+| [MonoThread] QuitStop (Mono shutdown entry) | monothread-m5.cpp | 1 | 0xE534D0 | mapped 2026-11-23 (§8.1): 0xE53520, rc ini QuitStop=1 |
+| [MonoJit] BoundCall | monojit-bound.h | 5 | 0xDA4200 0xDBFAE0 0xDBFBF0 0xDDD880 0xDDD900 | mapped 2026-11-23 (§8.1): EA FNV per build (TS3A_PICK), rc ini BoundCall=1 |
 | [RouteAsync] FbApplyLog | ts3native.cpp | 2 | 0x631A60 0xC68960 | FbApplyLog forced 0, SKIP line; rc ini (shipped 0) |
 | [ResourceCache] TrimAfterCleanup / TrimEveryMin | rctrim.cpp | 1 | 0xFFE2F0 | both forced 0, SKIP line; rc ini 0 |
-| [EaCrashFixes] HeightsInfLoop | wastar.cpp | 4 | 0x64CEBA 0x64CEC0 0x64CF55 0x64D275 | SKIP line; rc ini HeightsInfLoop=0 |
-| [EaCrashFixes] BridgeHeightNaN | wastar.cpp | 10 | 0xB745A0 0xC6133B 0xC61342 0xC6137B 0xC6A46B 0xC6A472 0xC6A4B3 0xC6A709 0xC6A710 0xC6A772 | SKIP line; rc ini BridgeHeightNaN=0 |
+| [EaCrashFixes] HeightsInfLoop | wastar.cpp | 4 | 0x64CEBA 0x64CEC0 0x64CF55 0x64D275 | mapped 2026-11-23 (§8.1), rc ini HeightsInfLoop=1 |
+| [EaCrashFixes] BridgeHeightNaN | wastar.cpp | 10 | 0xB745A0 0xC6133B 0xC61342 0xC6137B 0xC6A46B 0xC6A472 0xC6A4B3 0xC6A709 0xC6A710 0xC6A772 | mapped 2026-11-23 (§8.1), rc ini BridgeHeightNaN=1 |
 | [EaCrashFixes] LotLevelPastEnd (docs/67 §40) | eafix.cpp | 2 | 0xAB70B0 0x10652D4 | SKIP line; rc ini LotLevelPastEnd=0 (shipped 0) |
 | [EaCrashFixes] FglStaleObject (docs/67 §41) | wastar.cpp | 3 | 0xB11A95 0xB11A9C 0xB11ABF | SKIP line; rc ini FglStaleObject=0 (shipped 0) |
 | [Binder] TypeHandleDirect | bindertd.cpp | 2 | 0xDB0940 0xDB095E | SKIP line; rc ini section zeroed |
@@ -194,4 +194,24 @@ tools/ini-sections.json gained [Binder], [Crash2Diag], [EqualsFast], [ThumbStall
 | [ThumbStall] / [ThumbCallers] (5 of them are the inline-asm literals, 0 on EA) | thumbstall.cpp | 17 | 0x44C470 0x5A80A0 0x5A80A9 0x5A9E90 0x5EDB30 0x5F12A3 0xD5A9C8 0xD5A9D2 0xD5A9DD 0xD5AA25 0xD5C830 0xD614E0 0xD61670 0xFE514C 0x1088F48 0x11CEB88 0x11CEB8C | SKIP line each; rc ini both sections zeroed |
 
 Left: EA laptop correctness runs of the folded EA asi (A alone, B + S3SS, E + Apex bridge, as #391), the address mapping above, and a
+
+### 8.1 Lane A parity map 2026-11-23 (branch `feature/ea169-parity-a`, no game run)
+Mapped on the decrypted EA 1.69.47 memory image (no EA laptop run): `tools/sigmap.ts gen/match` for every code site, then by hand
+with an iced-x86 compare of both images (masked operands, internal jump deltas, callee and caller lists), ledger docs/51 §588. Every
+row below is [verified]: the whole function (or the hook window) has 0 instruction differences, the site's call/jump graph matches
+(same caller count and order), and the match is unique; data globals came from code references (two or more unique sigmap matches
+of different references agreeing, or a whole-function compare of the function that uses them). The patched bytes are identical on
+both builds at every site (no `ts3bytes-ea169.h` row needed), so each hook keeps the Steam design's instruction boundaries and
+register use.
+
+| feature | Steam -> EA 1.69.47 | rc ini |
+|---|---|---|
+| [EaCrashFixes] SlaveUnlink / DeadSlaveTrip | SetSlaves 0x83A650->0x839380 (5 callers, same order), its call 0x955809->0x955EF9, entity dtor 0x839E60->0x838B90 (2 callers), its call 0x956426->0x956B16, slave getter 0x839CA0->0x8389D0 (27 callers, same order), trip calls 0x847490->0x845EB0, 0x847C57->0x846677, 0x85E88B->0x85D53B, 0x85F18F->0x85DE3F, purecall thunk 0xF7E8AC->0xFC4164 (slot +0x18 of the base vtable 0x1022E78->0x106DEE0, stored by the dtor) | 1 / 1 (as shipped) |
+| [EaCrashFixes] VbFreeDelayMs | VB wrapper deleting dtors 0x61A340->0x61B500 (vtable 0xFE9580->0x1034AE0), 0x61A410->0x61B5D0 (0xFE9590->0x1034AF0), free 0x4E3F70->0x4E41C0; 7-byte prologue identical | 2000 (as shipped) |
+| [EaCrashFixes] HeightsInfLoop | 0x64CEBA/0x64CEC0/0x64CF55/0x64D275 -> 0x64E62A/0x64E630/0x64E6C5/0x64E9E5 (whole function 0x64C7C0->0x64DF30, 720 instructions, 0 differences) | 1 |
+| [EaCrashFixes] BridgeHeightNaN | 0xB745A0->0xB72E40; sites/backs/skips in 0xC61200->0xC605D0, 0xC6A250->0xC695D0, 0xC6A540->0xC698C0 (same offsets, functions 0 differences, caller counts 6/128/56 both) | 1 |
+| [MonoThread] QuitStop | Mono shutdown entry 0xE534D0->0xE53520 (single caller 0xD80AE8->0xD80EA8, cleanup chain 0xE53470->0xE534C0 0 differences) | 1 |
+| [MonoJit] BoundCall | 0xDBFBF0->0xDBFC50, 0xDBFAE0->0xDBFB40, 0xDDD900->0xDDD920, 0xDDD880->0xDDD8A0, 0xDA4200->0xDA4280; FNV of the EA bytes 0x99FCCCFF / 0x687F6D46 (Steam hashes recomputed from the exe match the committed ones) | 1 |
+| [AutShadow] Races bits 0-1 | getters 0x7935B0->0x794740, 0x8A79B0->0x8A8720 (tail jump of 0x8A7B80->0x8A88F0, called from the converter at the same offset), 0x4D9AD0->0x4D9A80, 0x9B0530->0x9ADED0, 0xC88D80->0xC88540 (by their callers), FindClass 0xD79CA0->0xD7A060, converter caches 0x11EE54C..0x11EE588 -> 0x12485DC..0x1248618 (converter 0xD7BD40->0xD7C100, whole function), 41 more .data words by references | 7 (as shipped; EA_SET Races=4 dropped) |
+
 Steam smoke of the folded master asi (same code as master by the proof; data placement differs).

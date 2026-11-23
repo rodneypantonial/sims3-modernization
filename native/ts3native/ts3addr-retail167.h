@@ -182,6 +182,8 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00619770, 0x00619EB0},
     {0x00619C80, 0x0061A360},
     {0x00619EF0, 0x00723D50},
+    {0x0061A340, 0x00000000},
+    {0x0061A410, 0x00000000},
     {0x0061AC90, 0x0061B370},
     {0x0061AD13, 0x0061B3F3},
     {0x0061AE80, 0x0061B5A0},
@@ -1668,7 +1670,9 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x01234360, 0x01235360},
     {0x01234374, 0x01235374},
 };
-constexpr int ts3addr_count = 1663;
+constexpr int ts3addr_count = 1665;
+// unresolved: 0x0061A340 no-retail-row native/ts3native/eafix.cpp (VbFreeDelay, retail stub logs SKIP; docs/314 §5)
+// unresolved: 0x0061A410 no-retail-row native/ts3native/eafix.cpp (VbFreeDelay, retail stub logs SKIP; docs/314 §5)
 // unresolved: 0x005A2C00 xref-none native/ts3native/allocsites-owners.h:16 (+1)
 // unresolved: 0x005BF1FB xref-none native/ts3native/vcallsites3.h:5
 // unresolved: 0x0060AA00 xref-none native/ts3native/allocsites-owners.h:16 (+1)
