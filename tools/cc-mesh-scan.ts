@@ -28,7 +28,7 @@ type Entry = ReturnType<typeof readIndex>[number];
 export type Geom = { shader: number; verts: number; bones: number; top: number; weighted: number; matAt: number; chunk: number };
 
 // the index alone: header + index bytes, index position rewritten so readIndex can walk it
-function entries(fd: number): Entry[] {
+export function entries(fd: number): Entry[] {
   const hdr = Buffer.alloc(96);
   readSync(fd, hdr, 0, 96, 0);
   if (hdr.toString('latin1', 0, 4) !== 'DBPF') throw new Error('not DBPF');
@@ -37,7 +37,7 @@ function entries(fd: number): Entry[] {
   hdr.writeUInt32LE(96, 64);
   return readIndex(Buffer.concat([hdr, idx]));
 }
-function body(fd: number, e: Entry): Buffer {
+export function body(fd: number, e: Entry): Buffer {
   const b = Buffer.alloc(e.fileSize);
   readSync(fd, b, 0, e.fileSize, e.offset);
   return e.compressed === 0xffff ? refpack(b) : b;
@@ -157,7 +157,7 @@ export function stripMaterial(b: Buffer): Buffer {
   return out;
 }
 
-function packages(root: string): string[] {
+export function packages(root: string): string[] {
   if (statSync(root).isFile()) return [root];
   return readdirSync(root, { withFileTypes: true, recursive: true })
     .filter(d => d.isFile() && d.name.toLowerCase().endsWith('.package')).map(d => join(d.parentPath, d.name));
