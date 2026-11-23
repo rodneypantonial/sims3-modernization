@@ -739,6 +739,7 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
         case 3: case 4: case 5: return MsOp((hi >> 16) & 0xFF);
         case 6: return PlAnswer();  // played.cpp: store ready / household played (docs/14 section 8.6)
         case 7: return CpOp(lo);    // compaction.cpp: [Compaction] verdict and steps (docs/204)
+        case 49: return g_ilpTuneIso ? 1 : 0;  // docs/339 ilpatch.cpp: [IlPatch] ilp_tuneisolate armed (ts3fixes late init of ts3agent)
         case 8: return (u8)g_asLiveUnseen;  // autshadow-run.cpp: [AutShadow] Unseen=1 (docs/222); no icalls when [AutShadow] is off
         case 10: case 11: KdScopeSet(lo, ((hi >> 16) & 0xFF) == 10 ? 1 : 2, hi & 0xFFFF); return 1;  // docs/197 §7: UfWhy of route lo, before its START or sync plan; hi 0-15: its routefail interaction id (docs/226)
         case 12: KdScopeClear(lo); GvaPlanEnd(); if (g_pfH == lo) g_pfH = 0; if (g_dsH == lo) g_dsH = 0; return 1;  // docs/631: a sync plan's PlayerFirst mark ends with it too  // docs/197 §7: route lo's plan is over (docs/250 §7.0: gvattr's plan end)

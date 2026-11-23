@@ -11,12 +11,13 @@
 //        --csv   census per entry (default docs/data/ilpatch-convert.csv with --write, else none)
 //   node tools/ilpatch-convert.ts --self-check     relocator and alignment on synthetic bodies (no files)
 //   node tools/ilpatch-convert.ts --dump <assembly> <method id substring>   a method's instructions with offsets and member
-//        names (EA 1.67 build; local reading for a hand spec, prints no bytes)
+//        names (EA 1.67 build, or --build ea-1.69 / simler90-242; local reading for a hand spec, prints no bytes)
 //   node tools/ilpatch-convert.ts --fill <spec.json>   a hand-written spec (id, switch, assembly, method, edits): applies the
 //        edits offline to every known build and writes builds{size, sha256, tokens, patchedSha256} and ilHashG6 back
 //   node tools/ilpatch-convert.ts --emit-native [<out.h>]   the specs as a C table for ts3native (default
 //        native/ts3native/ilpatch-specs.h, docs/526); reads mods/ilpatch/specs only, no core repo needed
-// Builds: ea-1.67 = game-copy/assemblies (always); simler90-242 = game-copy/simler90-242/dll over EA, when present
+// Builds: ea-1.67 = game-copy/assemblies (always); simler90-242 = game-copy/simler90-242/dll over EA, when present;
+// ea-1.69 = game-copy/assemblies-ea169 (EA app 1.69.47), when present
 // (extract with tools/extract-assemblies.ts from the UPDATE242 package). The core patches were written against the
 // UPDATE242 listing, so the method is located there first, then by id in the other builds.
 import { execFileSync } from 'node:child_process';
@@ -425,6 +426,8 @@ function loadBuilds(): Build[] {
   const ea = join(ROOT, 'game-copy/assemblies'), sim = join(ROOT, 'game-copy/simler90-242/dll');
   const builds: Build[] = [{ label: 'ea-1.67', dir: ea, asms: new Map() }];
   if (existsSync(sim)) builds.push({ label: 'simler90-242', dir: sim, asms: new Map() });
+  // EA app 1.69.47 (docs/232): --fill adds it only when the spec's edit offsets fit its body (expect check in apply)
+  const ea169 = join(ROOT, 'game-copy/assemblies-ea169'); if (existsSync(ea169)) builds.push({ label: 'ea-1.69', dir: ea169, asms: new Map() });
   return builds;
 }
 function asmOf(b: Build, name: string, ea: Build): Asm | null {
@@ -578,7 +581,28 @@ function selfCheck(): void {
   const k5 = parseMember('method', 'instance class [mscorlib]System.Collections.Generic.IEnumerator`1<!0> class Sims3.Gameplay.Utilities.ListSorted`1<class Sims3.Gameplay.ActorSystems.BuffTimer>::GetEnumerator()').key;
   const k6 = keyOfTokenText('method', 'Sims3.Gameplay.Utilities.ListSorted`1<Sims3.Gameplay.ActorSystems.BuffTimer>::GetEnumerator():System.Collections.Generic.IEnumerator`1<!0>');
   if (k5 !== k6) throw new Error(`self-check: return-type keys ${k5} | ${k6}`);
+  specsCheck();
   console.log('ilpatch-convert self-check ok');
+}
+// Every spec against the local assemblies of each build it names (game-copy; skipped per build without them, as in CI):
+// the body hash still names that build's body and the offline application still gives patchedSha256 (EA 1.69 rows too).
+function specsCheck(): void {
+  const builds = loadBuilds(), ea = builds[0]; let n = 0;
+  for (const f of readdirSync(SPECS).filter((x) => x.endsWith('.json')).sort()) {
+    const spec = JSON.parse(readFileSync(join(SPECS, f), 'utf8'));
+    const edits: Edit[] = spec.edits.map((e: any) => ({ at: parseInt(e.at, 16), mode: e.mode, entry: e.entry, expect: e.expect, il: e.il, maxStack: e.maxStack, drop: e.mode === 'replace' ? e.expect.length : 0 }));
+    const maxAdd = Math.max(0, ...edits.map((x) => x.maxStack));
+    for (const [label, want] of Object.entries(spec.builds as Record<string, any>)) {
+      const b = builds.find((x) => x.label === label); if (!b || !existsSync(join(b.dir, `${spec.assembly}.dll`))) continue;
+      const ba = asmOf(b, spec.assembly, ea)!, bm = ba.methods.find((x) => x.id === spec.method), bb = bm ? bodyOf(bm) : null;
+      if (!bb) throw new Error(`self-check: ${f}: ${label}: method missing`);
+      if (sha(bb.code) !== want.sha256 || bb.code.length !== want.size) throw new Error(`self-check: ${f}: ${label}: body sha256 ${sha(bb.code).slice(0, 16)} is not the spec's`);
+      const got = sha(apply(bb, edits, (ref) => tokenFor(ba, ref), maxAdd).code);
+      if (got !== want.patchedSha256) throw new Error(`self-check: ${f}: ${label}: patched sha256 ${got.slice(0, 16)} is not the spec's`);
+      n++;
+    }
+  }
+  console.log(`ilpatch-convert: ${n} spec/build bodies re-checked against local assemblies`);
 }
 
 // ---------- --emit-native: the specs as a C table for ts3native (docs/526) ----------
@@ -643,7 +667,8 @@ function emitNative(out: string): void {
 
 // --dump / --fill: hand-written specs (docs/584 §5 buffbuf); no core repo involved
 function dump(asmName: string, needle: string): void {
-  const builds = loadBuilds(), ea = builds[0]; const a = asmOf(ea, asmName, ea); if (!a) throw new Error(`no ${asmName}.dll`);
+  const builds = loadBuilds(), ea = builds[0], bl = builds.find((x) => x.label === arg('--build', 'ea-1.67')); if (!bl) throw new Error(`no build ${arg('--build', '')}`);
+  const a = asmOf(bl, asmName, ea); if (!a) throw new Error(`no ${asmName}.dll`);
   const ms = a.methods.filter((m) => m.id.includes(needle)); if (ms.length !== 1) throw new Error(`${ms.length} methods match: ${ms.slice(0, 5).map((m) => m.id).join(' | ')}`);
   const b = bodyOf(ms[0])!; console.log(`${ms[0].id}: ${b.code.length} bytes, max stack ${b.maxStack}, ${b.clauses.length} clauses`);
   for (const c of b.clauses) console.log(`  clause flags ${c.flags} try 0x${c.tryOff.toString(16)}+${c.tryLen} handler 0x${c.hOff.toString(16)}+${c.hLen}`);
