@@ -95,3 +95,15 @@ Code: `kGvhCodeFnv` (FNV-1a over the four code ranges `GvhCodeOk` hashes) become
 own stand-down unchanged). `GvhMayInstall` loses its `ts3a_noaddr` stand-down. 2 bytes rows. EA rc ini: `[GoalValidRO]`
 comes back as Steam ships it (Enabled=1, Mode=1, Hits=0, HitsShadow=0). Live check: `OK   goal validation RO`; Hits stays
 off on EA as on Steam (PLAN 2026-11-21: an ON candidate for Rodney after its shadow queue).
+
+## 6. [Binder] TypeHandleDirect (2 rows)
+
+| Steam | EA | what | evidence |
+|---|---|---|---|
+| 0xDB0940 | 0xDB09C0 | Type.GetTypeFromHandle native body (86 bytes checked) | each build has two byte-identical bodies (0xDB0940 / 0xDA51B0 -> 0xDB09C0 / 0xDA5230, both at +0x80); this one has 41 direct callers in both builds, the other 1; 86 bytes equal modulo 4 pointer / rel32 operands, its call 0xD8A8E0 -> 0xD8AA40 (table row) |
+| 0xDB095E | 0xDB09DE | patch window, body +0x1E | same layout |
+
+sigmap finds neither (two equal bodies, the window is not unique): override rows (PR #598, evidence restated).
+Code: the `static_assert` on the window (body +0x1E) now holds on every build; the `ts3a_noaddr` stand-down of
+`ApplyBinderTypeHandle` goes; 1 bytes row (86 bytes, `ported`). EA rc ini: `[Binder]` TypeHandleDirect=1 as Steam ships it.
+Live check: `OK   binder type handle direct`.

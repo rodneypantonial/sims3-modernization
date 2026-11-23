@@ -110,3 +110,5 @@ steam,ea,label,evidence
 0x0056FA98,0x0056F488,clip event call site 3 (unseenanim AnimPhase Split),"map near/4 picked 0x56F3C8 (same 80 bytes, calls the slot +8 clone 0x568260); Steam callers of 0x568710 (vtable slot +0x10 dispatch) 0x568A6C 0x568B28 0x56FA98 = EA callers of 0x5682B0 0x56860C 0x5686C8 0x56F488, 80-byte window equal except rel32"
 0x00568A6C,0x0056860C,clip event call site 1 (unseenanim AnimPhase Split),"near/2 both ways; push edx; mov ecx,esi; call 0x568710 -> call 0x5682B0 (exact two-way), caller set of 0x5682B0 one to one"
 0x00568B28,0x005686C8,clip event call site 2 (unseenanim AnimPhase Split),"near/2 both ways; same 12 bytes and target as site 1, caller set of 0x5682B0 one to one"
+0x00DB0940,0x00DB09C0,Type.GetTypeFromHandle native body (bindertd),"near/2 both ways: 2 byte-identical bodies per build (0xDB0940 / 0xDA51B0 -> 0xDB09C0 / 0xDA5230, both +0x80); 86 bytes equal modulo 4 pointer / rel32 operands, call 0xD8A8E0 -> 0xD8AA40; this one has 41 direct callers in both builds, the other 1"
+0x00DB095E,0x00DB09DE,bindertd patch window (body +0x1E),"0xDB0940 -> 0xDB09C0 + 0x1E, same layout"

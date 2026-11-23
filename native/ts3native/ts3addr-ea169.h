@@ -1001,8 +1001,8 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00D8A8E0, 0x00D8AA40},
     {0x00DA4200, 0x00000000},
     {0x00DA9790, 0x00DA9810},
-    {0x00DB0940, 0x00000000},
-    {0x00DB095E, 0x00000000},
+    {0x00DB0940, 0x00DB09C0},
+    {0x00DB095E, 0x00DB09DE},
     {0x00DBFAE0, 0x00000000},
     {0x00DBFBF0, 0x00000000},
     {0x00DCA870, 0x00DCA890},
@@ -1659,8 +1659,6 @@ constexpr unsigned long ts3addr_pairs[][2] = {
 // unresolved: 0x00D79F50 no-ea-1.69-address native/ts3native/satb.cpp:1914
 // unresolved: 0x00D82110 no-ea-1.69-address native/ts3native/stallwatch.cpp:20
 // unresolved: 0x00DA4200 no-ea-1.69-address native/ts3native/monojit-bound.h:22
-// unresolved: 0x00DB0940 no-ea-1.69-address native/ts3native/bindertd.cpp:15
-// unresolved: 0x00DB095E no-ea-1.69-address native/ts3native/bindertd.cpp:15
 // unresolved: 0x00DBFAE0 no-ea-1.69-address native/ts3native/monojit-bound.h:20
 // unresolved: 0x00DBFBF0 no-ea-1.69-address native/ts3native/monojit-bound.h:20
 // unresolved: 0x00DDD880 no-ea-1.69-address native/ts3native/monojit-bound.h:22
