@@ -52,14 +52,18 @@ export const KEY_ADDRS: Record<string, number[]> = {
 };
 // Keys whose code the EA asi compiles out or stands down (#ifdef TS3A_TABLE / ts3a_noaddr): the EA asi logs SKIP, so every EA
 // ini writes them 0, never on. Found by eaSkipKeys in the cpp SKIP lines that name "([Section] Key / Key2)" and say
-// "no EA 1.69 address" or "Steam 1.67 only" (no key = Enabled); EA_SKIP_KEYS holds the SKIP lines that name no section.
-export const EA_SKIP_KEYS: Record<string, string> = {
-    "EaCrashFixes.SlaveUnlink": "eafix.cpp ApplySlaveLink: ts3a_noaddr return on EA (no EA 1.69 address, docs/232 §8)",
-    "EaCrashFixes.DeadSlaveTrip": "eafix.cpp ApplySlaveLink: ts3a_noaddr return on EA (no EA 1.69 address, docs/232 §8)",
-    "EaCrashFixes.VbFreeDelayMs": "eafix.cpp ApplyVbFreeDelay: #ifndef TS3A_TABLE, Steam 1.67 only (docs/67 §44)",
-    "CrashForensics.VbGuard": "crashfx.cpp VbInstall: #ifndef TS3A_TABLE, Steam 1.67 only (docs/67 §44)",
-    "WaterGrid.Prof": "watergrid.cpp ApplyWaterGrid: #ifdef TS3A_TABLE SKIP, Steam 1.67 only",
+// "no EA 1.69 address" or "Steam 1.67 only" (no key = Enabled); EA_SKIP_KEYS holds the SKIP lines that name no section:
+// [SKIP text in the source, why]. A key is zeroed only while its SKIP text is still in a cpp, so mapping the site for EA
+// (which removes that SKIP line) turns the key back on without editing this list.
+export const EA_SKIP_KEYS: Record<string, [string, string]> = {
+    "EaCrashFixes.SlaveUnlink": ["SKIP ea fix SlaveUnlink / DeadSlaveTrip: no EA 1.69 address", "eafix.cpp ApplySlaveLink: ts3a_noaddr return on EA (docs/232 §8)"],
+    "EaCrashFixes.DeadSlaveTrip": ["SKIP ea fix SlaveUnlink / DeadSlaveTrip: no EA 1.69 address", "eafix.cpp ApplySlaveLink: ts3a_noaddr return on EA (docs/232 §8)"],
+    "EaCrashFixes.VbFreeDelayMs": ["Steam 1.67 only, no EA 1.69 rows", "eafix.cpp ApplyVbFreeDelay: #ifndef TS3A_TABLE (docs/67 §44)"],
+    "CrashForensics.VbGuard": ["SKIP crash forensics VB guard: Steam 1.67 only", "crashfx.cpp VbInstall: #ifndef TS3A_TABLE (docs/67 §44)"],
+    "WaterGrid.Prof": ["SKIP water grid prof: Steam 1.67 only", "watergrid.cpp ApplyWaterGrid: #ifdef TS3A_TABLE SKIP"],
 };
+// EA_SKIP_KEYS entries whose SKIP text is in the given source text
+export const handSkipKeys = (src: string) => Object.entries(EA_SKIP_KEYS).filter(([, [m]]) => src.includes(m)).map(([k]) => k);
 // "Section.Key" named by EA SKIP lines in one cpp file's text; EA_SET keys are skipped (AutShadow.Races: bits 0-1 SKIP, bit 2 runs)
 export const eaSkipKeys = (cpp: string) => new Set([...cpp.matchAll(/Log\("SKIP [^"\n]*?\(\[(\w+)\](?: (\w+(?: \/ \w+)*))?[^)"\n]*\)[^"\n]*(?:no EA 1\.69 address|Steam 1\.67 only)/g)]
     .flatMap((m) => (m[2] ?? "Enabled").split(" / ").map((k) => m[1] + "." + k)).filter((k) => EA_SET[k] === undefined));
@@ -173,12 +177,15 @@ function load() {
     const sections: string[] = [], enabled: Record<string, string> = {};
     let sec = "";
     for (const l of ini) { const m = /^\[(\w+)\]/.exec(l); if (m) { sec = m[1]; sections.push(sec); } const e = /^Enabled=(-?\d+)/.exec(l); if (e && sec) enabled[sec] = e[1]; }
-    const includes = new Map<string, string[]>(), skip = new Set(Object.keys(EA_SKIP_KEYS));
+    const includes = new Map<string, string[]>(), skip = new Set<string>();
+    let all = "";
     for (const f of readdirSync(SRC).filter((f) => f.endsWith(".cpp"))) {
         const t = readFileSync(join(SRC, f), "utf8");
         for (const m of t.matchAll(/^#include "([\w-]+\.h)"/gm)) includes.set(m[1], [...(includes.get(m[1]) ?? []), f]);
         for (const k of eaSkipKeys(t)) skip.add(k);
+        all += t;
     }
+    for (const k of handSkipKeys(all)) skip.add(k);
     const map = JSON.parse(readFileSync(join(repo, "tools", "ini-sections.json"), "utf8"));
     const addrHdr = readFileSync(join(SRC, "ts3addr-ea169.h"), "utf8"), bad = badFiles(addrHdr, readFileSync(join(SRC, "ts3bytes-ea169.h"), "utf8"), includes);
     return { ini, sections, enabled, map, bad, off: keysOff(addrHdr), skip };
@@ -213,7 +220,9 @@ function selfCheck() {
     const L = load(), z = (s: string, k: string) => L.off.has(s + "." + k) || L.skip.has(s + "." + k);
     ok(L.skip.has("Binder.TypeHandleDirect") && L.skip.has("ResourceCache.TrimEveryMin"), "scan finds the named SKIP keys");
     const eaFix = render(L.ini, () => false, () => false, (s, k) => rcZeroKey(s, k) || z(s, k), EA_SET).split("\r\n[EaCrashFixes]\r\n")[1].split("\r\n[")[0];
-    for (const k of ["SlaveUnlink", "DeadSlaveTrip", "VbFreeDelayMs"]) ok(new RegExp("^" + k + "=0\\s*$", "m").test(eaFix), "EA rc ini [EaCrashFixes] " + k + " must be 0");
+    ok(handSkipKeys('Log("SKIP crash forensics VB guard: Steam 1.67 only");').join() === "CrashForensics.VbGuard", "hand list follows its SKIP text");
+    ok(handSkipKeys("mapped now, no SKIP line").length === 0, "hand list retires once the SKIP line is gone");
+    for (const k of ["SlaveUnlink", "DeadSlaveTrip", "VbFreeDelayMs"]) if (L.skip.has("EaCrashFixes." + k)) ok(new RegExp("^" + k + "=0\\s*$", "m").test(eaFix), "EA rc ini [EaCrashFixes] " + k + " must be 0");
     console.log("ea-ini self-check: ok");
 }
 
