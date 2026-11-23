@@ -136,3 +136,99 @@ static void TestThumbLod() {
     g_tsSvcAt = savedAt;
     g_tsPickOrig = savedPick;
 }
+
+// TestOutfitFirstPick ([OutfitFirst], docs/684 §9): the swap hook notes only a SimService provider and passes its call
+// on unchanged; the pick measures in Mode 1 (the game's order kept) and takes the noted job first in Mode 2.
+static DWORD g_ofTestArgs[5];
+static void __fastcall OfTestSwapOrig(u8* self, void* edx, DWORD outfit, DWORD cb, DWORD provider) {
+    g_ofTestArgs[0] = (DWORD)(uintptr_t)self, g_ofTestArgs[1] = (DWORD)(uintptr_t)edx, g_ofTestArgs[2] = outfit, g_ofTestArgs[3] = cb, g_ofTestArgs[4] = provider;
+}
+static u8* __fastcall OfTestPickFront(u8* svc) {   // the game's pick, as far as the ring goes: the front job, unlinked
+    u8* const head = svc + 0x60;
+    u8* const n = *(u8**)head;
+    if (n == head) return 0;
+    OfUnlink(n);
+    return n;
+}
+static void TestOutfitFirstPick() {
+    static u8 svc[0x80], nodes[3][0x198], objA[0x40], objB[0x40];
+    static DWORD vtGood[8], vtOther[8];
+    const TsPickFn savedPick = g_tsPickOrig;
+    const OfSwapFn savedSwap = g_ofSwapOrig;
+    DWORD(WINAPI* const savedNow)() = g_tsNow;
+    const int savedMode = g_ofMode;
+    g_tsPickOrig = &OfTestPickFront, g_ofSwapOrig = &OfTestSwapOrig, g_tsNow = &TsTestNow;
+    memset(&g_of, 0, sizeof(g_of));
+    InterlockedExchange(&g_tsPickObj, 0);
+    vtGood[4] = OF_REQ, vtOther[4] = OF_REQ + 0x10;
+    *(DWORD**)(objA + 0x28) = vtGood, *(DWORD**)(objB + 0x28) = vtOther;
+    u8* const h60 = svc + 0x60;
+    const auto ring = [&]() {
+        *(u8**)h60 = nodes[0], *(u8**)nodes[0] = nodes[1], *(u8**)nodes[1] = nodes[2], *(u8**)nodes[2] = h60;
+        *(u8**)(nodes[0] + 4) = h60, *(u8**)(nodes[1] + 4) = nodes[0], *(u8**)(nodes[2] + 4) = nodes[1], *(u8**)(h60 + 4) = nodes[2];
+    };
+    *(DWORD*)(nodes[0] + 0x18) = 0x5000, *(DWORD*)(nodes[1] + 0x18) = 0x6000, *(DWORD*)(nodes[2] + 0x18) = (DWORD)(uintptr_t)objA;
+    *(long*)(nodes[2] + 8) = 2;
+
+    // the hook: arguments pass through; a provider with the RequestSim wrapper is noted as its object, others are not
+    g_tsTestNow = 1000;
+    OfSwap(svc, (void*)(uintptr_t)0x22, 0x33, 0x44, (DWORD)(uintptr_t)(objA + 0x28));
+    assert(g_ofTestArgs[0] == (DWORD)(uintptr_t)svc && g_ofTestArgs[1] == 0x22 && g_ofTestArgs[2] == 0x33 && g_ofTestArgs[3] == 0x44);
+    assert(g_ofTestArgs[4] == (DWORD)(uintptr_t)(objA + 0x28) && g_of.notes == 1 && OfFind(&g_of, (unsigned)(uintptr_t)objA) >= 0);
+    OfSwap(svc, 0, 0, 0x44, (DWORD)(uintptr_t)(objB + 0x28));
+    OfSwap(svc, 0, 0, 0x44, 0);
+    OfSwap(svc, 0, 0, 0x44, 0x10);   // unreadable: caught, the call still goes on
+    assert(g_of.notes == 1 && g_ofTestArgs[4] == 0x10);
+
+    // off: the game's pick, nothing filed
+    g_ofMode = 0;
+    ring();
+    assert(TsPick(svc) == nodes[0] && g_of.passes == 0);
+    // Mode 1: the game's order (nodes 0, 1, then the swap's job), the swap's job passed twice and ready for 400 ms
+    g_ofMode = 1;
+    ring();
+    g_tsTestNow = 2000;
+    assert(TsPick(svc) == nodes[0] && g_of.passes == 1);
+    g_tsTestNow = 2200;
+    assert(TsPick(svc) == nodes[1] && g_of.passes == 2);
+    g_tsTestNow = 2400;
+    const LONG ready0 = g_ofReadyMs;
+    assert(TsPick(svc) == nodes[2] && g_of.ea == 1 && g_of.first == 0 && g_ofReadyMs - ready0 == 400);
+    assert(*(u8**)h60 == h60 && TsPick(svc) == 0);
+    // Mode 2: the swap's job first, unlinked; then the game's order for the rest
+    g_ofMode = 2;
+    OfSwap(svc, 0, 0, 0x44, (DWORD)(uintptr_t)(objA + 0x28));
+    ring();
+    g_tsTestNow = 3000;
+    assert(TsPick(svc) == nodes[2] && g_of.first == 1 && *(u8**)nodes[1] == h60 && *(u8**)(h60 + 4) == nodes[1]);
+    assert(TsPick(svc) == nodes[0] && TsPick(svc) == nodes[1] && g_of.passes == 2);
+    // [ThumbStall]'s own pick still comes before it
+    OfSwap(svc, 0, 0, 0x44, (DWORD)(uintptr_t)(objA + 0x28));
+    ring();
+    InterlockedExchange(&g_tsPickObj, 0x6000), InterlockedExchange(&g_tsPickLod, 0);
+    assert(TsPick(svc) == nodes[1]);
+    InterlockedExchange(&g_tsPickObj, 0);
+    assert(TsPick(svc) == nodes[2] && g_of.first == 2);
+    memset(&g_of, 0, sizeof(g_of));
+    g_tsPickOrig = savedPick, g_ofSwapOrig = savedSwap, g_tsNow = savedNow, g_ofMode = savedMode;
+    printf("outfit first pick ok\n");
+}
+
+// Call-site check bytes carry each build's own rel32: Steam gives the literals back, EA 1.69 / retail 1.67 their own
+// offsets (EA 0x6F565C call 0x6DDFE0 = 7F 89 FE FF, 0x5F1D75 call 0x5EE670 = F6 C8 FF FF; retail 0x5F1675 call 0x5EDEE0).
+static void TestTsCallBytes() {
+    u8 b[18];
+    TsPickBytes(b);
+    assert(memcmp(b, kTsPickSite, sizeof(kTsPickSite)) == 0);
+    OfSiteBytes(b);
+    assert(memcmp(b, kOfSite, sizeof(kOfSite)) == 0);
+    TsCallBytes(b, kOfSite, 18, 7, 0x006DDFE0, 0x006F5656 + 11);
+    static const u8 ofEa[4] = {0x7F, 0x89, 0xFE, 0xFF};
+    assert(memcmp(b + 7, ofEa, 4) == 0 && b[6] == 0xE8 && b[11] == 0x80 && memcmp(b, kOfSite, 6) == 0);
+    TsCallBytes(b, kTsPickSite, 12, 3, 0x005EE670, 0x005F1D73 + 7);
+    static const u8 pickEa[4] = {0xF6, 0xC8, 0xFF, 0xFF};
+    assert(memcmp(b + 3, pickEa, 4) == 0 && memcmp(b + 7, kTsPickSite + 7, 5) == 0);
+    TsCallBytes(b, kTsPickSite, 12, 3, 0x005EDEE0, 0x005F1673 + 7);
+    static const u8 pickRetail[4] = {0x66, 0xC8, 0xFF, 0xFF};
+    assert(memcmp(b + 3, pickRetail, 4) == 0);
+}

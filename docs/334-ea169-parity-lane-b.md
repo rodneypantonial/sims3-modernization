@@ -156,3 +156,26 @@ Steam sites. 4 bytes rows (`E8` + rel32, unchanged since caller and callee move 
 site is `E8` to the mapped 0xD7F3C0 before it writes. The key ships 1; draft PR #690 lists it in ea-ini.ts `KEY_ADDRS`.
 Live check: `OK   route task serve` (it needs the async route path, which the EA rc ini has: [RouteGate] Enforce=1).
 `[Diag] TaskSeam` (taskseam.cpp, its own rows) is not part of this lane.
+
+## 10. [OutfitFirst] (thumbstall.cpp, 3 rows; branch `feature/ea169-outfitfirst-1123`, 2026-11-23)
+
+[OutfitFirst] (docs/684 §9) came to main after this lane branched (#697); the branch merges main and maps its rows.
+
+| Steam | EA | what | evidence |
+|---|---|---|---|
+| 0x5E4EB0 | 0x5E5CC0 | RequestSim wrapper (provider vtable +0x10) | masked sigmap 1 hit; slots 0xFE49FC / 0xFE4B00 / 0xFE4B4C = EA 0x102FF6C / 0x1030070 / 0x10300B4 hold it |
+| 0x6DD160 | 0x6DDFE0 | delayed-swap set-up (thiscall, ret 0Ch) | masked sigmap 1 hit; 1 caller each (0x6F492C / 0x6F565C) |
+| 0x6F4926 | 0x6F5656 | hook site, `call` at +6 | function 0x6F4910 = EA 0x6F5640, thiscall ret 0Ch, 6 callers each; same instruction stream |
+
+All [verified, static] (Capstone, masked signature, same instruction streams; ledger I-589-9).
+
+**Check bytes per build.** `kOfSite` (18 bytes) and `kTsPickSite` (12 bytes) held Steam's rel32 call offsets
+(`2F 88 FE FF`, `86 C8 FF FF`); EA calls the same targets from another distance (`7F 89 FE FF`, `F6 C8 FF FF`; retail
+1.67 pick `66 C8 FF FF`). Install check and detach revert now build the bytes at run time with rel32 = target - next
+instruction (`OfSiteBytes`, `TsPickBytes`; selftest `TestTsCallBytes`). Before: the OutfitFirst site check failed on EA
+(no `ts3bytes-ea169.h` row for it); the pick check passed on EA and retail only because their bytes tables carry a
+`ported` 12-byte row at 0x5F1D73 / 0x5F1673, so [ThumbStall] Action 3 did install there, but `TsRevert` wrote Steam's
+rel32 back on detach (a wrong call target after unload). The `ts3a_noaddr` stand-down in `ApplyOutfitFirst` goes; the
+retail 1.67 stand-down stays (its three rows are still 0). tools/ea-ini.ts needs no change: the EA rc ini keeps
+[OutfitFirst] Enabled=1 Mode=2 and [ThumbStall] Enabled=1 Action=1 as Steam ships them. Live check: an EA queue with a
+live outfit change (`OK   outfit first`, `outfitfirst:` lines). Not run.
