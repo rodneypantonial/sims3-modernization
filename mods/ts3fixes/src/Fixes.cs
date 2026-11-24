@@ -553,6 +553,7 @@ namespace Ts3Fixes
             ApplyAutLiveB14();
             ApplyHitchCause();
             ApplyStandWait();          // docs/686 (StandWait.cs): standwaitfix / standwaitfixhh, off by default (counts either way)
+            ApplyReactOverlay();       // docs/686 §26 (ReactOverlay.cs): reactoverlay / reactoverlayhh, off by default (counts either way); swaps Sim.PlayReaction
             ApplyShareLanes();         // docs/686 §8 (ShareLanes.cs): sharelanes / laddershare / spiralshare ON, simpass / angleentry and the household switches off by default (counts either way)
             ApplyBlockedUse();         // docs/686 §10 (BlockedUse.cs): blockeduse ON, blockedusehh off by default (counts either way)
             ApplyMakeBedBoth();        // docs/686 §13 (MakeBedBoth.cs): makebedboth ON, makebedbothhh off by default (counts either way)
@@ -560,6 +561,7 @@ namespace Ts3Fixes
             ApplyPetRelax();           // docs/686 §11 (PetRelax.cs): petrelax / petrelaxhh, off by default (counts either way); after ApplyShareLanes and ApplyClipWait
             ApplySocialReach();        // docs/686 §17 (SocialReach.cs): socialreach / socialreachhh, off by default (counts either way); its DoRoute step is in ApplyBlockedUse's hook, as unstuck's (§18, Unstuck.cs)
             ApplyWooHooSnap();         // docs/686 §20 (WooHooSnap.cs): woohoosnap / woohoosnaphh, pairsnap / pairsnaphh, off by default; their steps are in ApplyBlockedUse's, ApplySocialReach's and ApplyShowerShare's hooks
+            ApplyLineSwitch();         // docs/686 §25 (LineSwitch.cs): lineswitch / lineswitchhh, off by default (counts either way); swaps SimQueue.WaitForExitReasonOnSim, the line hook is ApplyShareLanes's
             ApplyReachUse();           // docs/686 §12 (ReachUse.cs): reachuse / reachusehh, off by default (counts either way); the DoRoute hook is ApplyBlockedUse's
             ApplyObjShare();           // docs/686 §14 (ObjShare.cs): rhshare / servingshare and their household switches, linewaitlog, off by default (counts either way); the line hook is ApplyShareLanes's
             ApplyShowerShare();        // docs/686 §15 (ShowerShare.cs): showertogether / showerpee and their household switches, off by default (counts either way); the line hook is ApplyShareLanes's
@@ -1620,6 +1622,9 @@ namespace Ts3Fixes
         // [1508-1517] fglinbound (FglInBound.cs, docs/682 §9): indoors stages by our path / ts3native [FglInside] not answering / found / no indoor spot /
         // household or unknown Sim / shadow compares / shadow different (must stay 0) / errors / our ms / EA's stage ms in shadow.
         // [1543-1584] our loop cost (docs/330): deadrefsweep / deadrefcadence (DeadRefs.cs) and viewerpushdelta (UnseenViewers.cs): see the lists there
+        // [1671-1698] deadrefdelta / deadrefslimuse / deadrefdeltaverify (DeadRefsDelta.cs, docs/336): see the list there
+        // [1707-1714] deadrefslimuse pins (DeadRefsPin.cs), [1715-1726] deadrefperlot (DeadRefsPerLot.cs), docs/336 §9
+        // [1744-1757] deadrefdescrev (DeadRefsDescRev.cs, docs/333 LC-7): see the list there
         // [1518-1529] docs/321 lane 0 / H1 / H3 table fill (Caps.cs, always on): AutShadow requests capped / by objects / by pairs /
         // most objects / most pairs; NearVenue groups over 32 / most open lots; spawnerskip hw / clears; backoff hw / clears; cookclick hw.
         // [1658-1661] deadrefexact (DeadRefs.cs, docs/334): partitions, objects in the last one, shared event lists, re-reads; [1669-1670] deadrefexactverify lists compared / differed
@@ -1703,7 +1708,20 @@ namespace Ts3Fixes
         // [4462-4469] makebedboth (MakeBedBoth.cs, docs/686 §13): Make Bed runs on a bed with exactly one unmade free half / second half made from the first
         // side / closed half made from the other side (first make) / kept: the half can be reached / kept: no side to make it from / errors / would (off,
         // or household without makebedbothhh) / run ended early, flags put back.
-        const int kCounterSlots = 4660;
+        // [1727] deadrefsweep (DeadRefs.cs DrWaitWhileFrozen, docs/205 §2.3b): frames a pass waited while paused or with the clock stopped.
+        // [1728-1733] spread-pass pause gate (SpreadGate.cs WaitWhileFrozen, docs/205 §2.3d): frames waited while paused, clock stopped or (own
+        // tasks) out of live mode, by easpreadlots / easpreadpets / easpreaddecay / Overwatch (task starts, chain, StuckCheck, inventory) /
+        // errortrapspread / savecleanup spread.
+        // [1734-1742] pause gate group 2 (SimFrozen.cs SfWait, docs/205 §2.3c): frames held while paused, clock stopped or out of live mode by
+        // the stuck-check drain / stuck watchdog / replanspread replay; [1737] replanspread calls of household, selected, unknown-scope or
+        // non-Sim objects run at once; [1738] go-live searches dropped to the game's search (frozen while waiting); frames held by
+        // wildflowertask / disposespread / aptleave RemoveGuest / boattrip sweep; [1743] go-live searches whose later slice started frozen or
+        // not live and ran the game's B14 for the rest (autlivelate refusal / direct snap).
+        // [4615-4619] lineswitch (LineSwitch.cs, docs/686 §25): switched to a free twin object / would, off / kept (waited past the switch time, not
+        // switched) / plans to candidates / errors. 4610-4614 are left to the pending npcloops PR (post/npcloops-1123).        // [4660-4669] left to pending PRs (hotpaths 4660-4661, spotwaitattr up to 4665).
+        // [4670-4679] reactoverlay (ReactOverlay.cs, docs/686 §26): overlaid now / from the queue / would, off / queued by EA / dropped stale /
+        // would drop, off / queued that ran / their summed ms / max ms / errors.
+        const int kCounterSlots = 4680;
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
@@ -2218,6 +2236,9 @@ namespace Ts3Fixes
                 case "crowdporthh": return Instantiator.kCrowdPortHousehold;  // CrowdPort.cs: the same for household and selected Sims, off
                 case "crowdportlog": return Instantiator.kCrowdPortLog;  // CrowdPort.cs (docs/686 §19): one line per act, off
                 case "standwaitlog": return Instantiator.kStandWaitLog;  // StandWait.cs (docs/686): one line per wait with blocked cycles, off
+                case "reactoverlay": return Instantiator.kReactOverlay;  // ReactOverlay.cs (docs/686 §26): a busy NPC standing or seated reacts at once as EA's overlay, a stale queued reaction is dropped, off
+                case "reactoverlayhh": return Instantiator.kReactOverlayHh;  // ReactOverlay.cs (docs/686 §26): household and selected Sims too, off
+                case "reactoverlaylog": return Instantiator.kReactOverlayLog;  // ReactOverlay.cs (docs/686 §26): one line per case, off
                 case "blockeduse": return Instantiator.kBlockedUse;  // BlockedUse.cs (docs/686 §10): an NPC whose route to an object's slot fails on furniture or a wall walks the last stretch through objects or is put on the slot, and back afterwards, off
                 case "blockedusehh": return Instantiator.kBlockedUseHousehold;  // BlockedUse.cs: the same for household and selected Sims (stands alone), off
                 case "makebedboth": return Instantiator.kMakeBedBoth;  // MakeBedBoth.cs (docs/686 §13): an NPC makes a bed half it cannot reach from the other side, off
@@ -2637,6 +2658,9 @@ namespace Ts3Fixes
                 case "woohoosnaplog": return Instantiator.kWooHooSnapLog;  // WooHooSnap.cs (docs/686 §20): one line per act, off
                 case "pairsnap": return Instantiator.kPairSnap;  // WooHooSnap.cs (docs/686 §20): a paired social (kiss, hug) of two NPCs within 3 m whose placement or route fails is lined up by a snap, off
                 case "pairsnaphh": return Instantiator.kPairSnapHousehold;  // WooHooSnap.cs: the same for pairs with a household or selected Sim, off
+                case "lineswitch": return Instantiator.kLineSwitch;  // LineSwitch.cs (docs/686 §25): a Sim waiting in a toilet, sink, shower or bath line takes a free twin object of the lot after 2 sim-min, NPCs, off
+                case "lineswitchhh": return Instantiator.kLineSwitchHh;  // LineSwitch.cs (docs/686 §25): household and selected Sims too (their own autonomous actions only), off
+                case "lineswitchlog": return Instantiator.kLineSwitchLog;  // LineSwitch.cs (docs/686 §25): one line per case, off
                 case "pairsnaplog": return Instantiator.kPairSnapLog;  // WooHooSnap.cs (docs/686 §20): one line per act, off
                 case "birthroute": return Instantiator.kBirthRoute;
                 case "putdownplace": return Instantiator.kPutDownPlace;
@@ -2735,6 +2759,11 @@ namespace Ts3Fixes
                 case "deadrefcadence": return Instantiator.kDeadRefCadence;  // docs/330, ON (sub-switch of deadrefsweep: old cadence when off)
                 case "deadrefexact": return Instantiator.kDeadRefExact;  // docs/334, OFF (LC-1 exact cuts of the cadence pass)
                 case "deadrefexactverify": return false;  // docs/334, OFF, test only: partition lists compared with the filter passes
+                case "deadrefdelta": return Instantiator.kDeadRefDelta;  // docs/336, OFF (LC-5: owner / handler / cooking holders stepped from a holder index on event passes)
+                case "deadrefslimuse": return Instantiator.kDeadRefSlimUse;  // docs/336, OFF (needs deadrefdelta: phase 10 walks only objects with a use list)
+                case "deadrefperlot": return Instantiator.kDeadRefPerLot;  // docs/336 §9, OFF (LC-6a: typed phases gather from per-lot lists)
+                case "deadrefdescrev": return Instantiator.kDeadRefDescRev;  // docs/333 LC-7, OFF (phase 4 from a reverse index of description references)
+                case "deadrefdeltaverify": return false;  // docs/336, OFF, test only: objects outside the index checked for gone holders
                 case "viewerpushdelta": return Instantiator.kViewerPushDelta;  // docs/330, ON (old every-wake push when off)
                 case "savecleanupaggressive": return Instantiator.kSaveCleanupAggressive;
                 case "vacexport": return Instantiator.kVacExport;
@@ -3011,6 +3040,8 @@ namespace Ts3Fixes
                 return true;
             }
             static readonly Dictionary<ulong, long> sLastShortcut = new Dictionary<ulong, long>();
+            internal static int LoopCount { get { return sLastShortcut.Count; } }  // lanealoop (LaneA.cs, docs/321 L15)
+            internal static void LoopClear() { sLastShortcut.Clear(); }
             static readonly long kLoopTicks = Sims3.Gameplay.Utilities.SimClock.ConvertToTicks(10f, Sims3.Gameplay.Utilities.TimeUnit.Minutes);
 
             // Townie, alone, standing, going to its own ordinary lot, and neither it nor that lot near the camera or the
