@@ -265,3 +265,326 @@ Queue `unbounded-caps-correct-1122c` (smoke BP 2 min, then BP / IP / SV 10 min; 
 caps line has the lane C rows, and no caps line may show `asOl`, `dmx` or `aa` full > 0). Waiter
 `probe-out/queue/wait-unbounded-caps-1122c.sh` (not `chain-*`): waits for `probe-out/queue/ovf-rerun-1122.done` and no chain listed.
 Results: (pending, filled after the run).
+
+## 8. Lane A hub built: CP-1 lot generation counter + world event (2026-11-23, branch `feature/cp1-lotgen-1123`, 0.36.299-cp1)
+
+docs/332 package CP-1. Native only, `native/ts3native/lotstream.cpp`; no behaviour change, no consumer yet. Build
+`ts3native.asi.cp1-lotgen-1123`; queue `cp1-lothub-correct-1123` (not run). ST-12 (hub coverage) is still open; the
+coverage claims are docs/51 §591.
+
+### 8.1 What it does
+
+- `[LotHub] Enabled=1` (default 1, always on, measurement only; 0 = kill switch). `ApplyLotHub` checks both prologues
+  (`0xABD3C0` add execute, `0xABD3E0` remove execute, the bytes `[LotStream]` already checks) and hooks both or none; it
+  runs before `ApplyLotStream`, which now reuses those two detours (`LsAddHook` / `LsRemoveHook`) instead of hooking them
+  again. A different prologue (another mod's hook) = `SKIP lot hub`, counters stay 0. Apex does not own these two sites
+  (its `AXF_LOT` sites are `0xAC1130` and later; S3SS's object throttle detours `0xAC1130`, below the execute), so the hub
+  does not stand down for Apex.
+- Each add execute that runs fn `0xAC1130` and each remove execute that runs fn `0xAB4C00` bumps `lhAdds` / `lhRemoves`
+  and `lhLotGen` after the game's call returns. Other fns on those executes are not lot events.
+- The ts3fixes `world:` line (OnWorldLoadFinished, `userdiag.cpp` `UdWorldLoad`) and `world quit` line bump `lhWorldGen`
+  and `lhLotGen`. Both need `[UserDiag] Enabled=1` (default) and ts3fixes; without them only lot events count.
+- Read-back: `OK   lot hub: ready 0x3 (...)` at start, and `lot hub: <kind>, lot gen N (adds A, removes R), world gen W,
+  subscribers S` at every world event, at powers of two and at every 64th lot event.
+- `[Verify]`'s probe 65 `lotAddExec` (`0xABD3C0`, diagnostics, off) now finds the site taken and skips itself; the lot
+  add cost it measured is still in `[LotStream]` (`lotAdds` / `lotAddUs`).
+
+### 8.2 Handoff API for CP-2 and CP-3
+
+Counters (v223, `ts3native_counters`, registry row v223; all interlocked, monotonic, never reset):
+
+| Offset | Field | Meaning |
+|---|---|---|
+| +0x6B48 | `lhReady` | bit 1 add execute hooked, bit 2 remove execute hooked; 0 = no lot events (kill switch or another hook) |
+| +0x6B4C | `lhLotGen` | lot generation: +1 per lot add, lot remove, world load, world quit |
+| +0x6B50 | `lhWorldGen` | world generation: +1 per world load and world quit |
+| +0x6B54 | `lhAdds`, `lhRemoves` | lot add / remove fn runs seen |
+| +0x6B5C | `lhFired` | subscriber calls made |
+
+Native subscription (CP-3, same translation unit, include order after `lotstream.cpp`):
+
+```cpp
+enum { LH_ADD = 1, LH_REMOVE = 2, LH_WORLD_LOAD = 3, LH_WORLD_QUIT = 4 };
+typedef void (*LotHubFn)(int kind, const u8* lot, LONG gen, void* ctx);  // lot NULL for world kinds; gen = lhLotGen after the bump
+static bool LotHubSubscribe(LotHubFn fn, void* ctx);                     // install time only, 16 rows, no unsubscribe
+```
+
+Rules for consumers:
+- Subscribe from your own `Apply*` (loader thread, before the game runs), only when your own switch is on (default off).
+  Your switch, not the hub's, gates the behaviour.
+- The callback runs on the sim thread inside the game's lot add / remove execute (after the game's work) or inside the
+  ts3fixes text-line handler. Keep it short: clear or mark rows, no waits, no game calls, no locks the sim thread can
+  already hold.
+- `lot` is the `this` the execute passed to the fn (the lot object; id at `+0x48..+0x4C`, as `[LotStream]` logs it).
+- Threads other than the sim thread do not get callbacks: cache `lhLotGen` (or `lhWorldGen`) with your rows and drop them
+  when the live value differs. `lhReady == 0` means no lot events will come: keep today's behaviour (no hub-based
+  clearing) rather than assume "nothing changed".
+- A world event bumps `lhLotGen` too, so a consumer that only checks `lhLotGen` also catches world changes.
+
+Managed side (CP-2): ts3fixes already sees world load / quit itself (it sends the `world:` / `world quit` lines), so
+`OnWorldChange` needs no native call. If `OnLotLoad` needs the native lot generation, add a `UserDiag` op (registry
+"UserDiag ops") returning a byte of `lhLotGen` change since the last ask; the op answer is a `u8`, so a full counter read
+does not fit one call. Managed lot add / remove can also come from the game's own lot events; pick whichever ST-12 shows
+covers travel and Edit Town.
+
+### 8.3 Tests
+
+- Native selftest `TestLotHub` (`selftest.cpp`): both `[LotStream]` modes through the real hooks (return value kept, the
+  game's call first, one event per call), other fns on the execute ignored, world events, no-subscriber path, full
+  subscriber table refused, kill switch, install refused without the game's prologues.
+- Queue `tools/harness/queues/cp1-lothub-correct-1123.json` (one BP load, ~15 min, repro `lothub-visit`: selected Sim to
+  the farthest community lot, camera pan, home): `OK   lot hub: ready 0x3`, one world-load line, an add/remove line with
+  adds and removes > 0 after the world load, no `SKIP|FAIL lot hub`, 0 script errors, 0 watchdogs, household untouched.
+  Results: (pending).
+
+### 8.4 No leak across worlds (added 2026-11-23 with CP-2)
+
+`g_lhSubs` is a fixed 16-row table filled at install time only; `LotHubSubscribe` with an fn + ctx pair already in the
+table returns true and keeps the one row (an `Apply*` that runs twice cannot grow it), a 17th distinct row is refused and
+logged. Rows hold function pointers and the consumer's own static ctx, never a lot: the `lot` pointer is only lent to the
+callback for the call. Counters are plain `LONG`s. Nothing in the hub grows with world loads, travel or lots
+[verified: code read; selftest `TestLotHub`: duplicate subscribe keeps `g_lhSubN == 1`, full table refused]. The
+duplicate check was added on the CP-2 branch (commit "CP-1 hub: duplicate subscribe keeps one row"); cherry-pick it to
+`feature/cp1-lotgen-1123` if CP-1 merges alone.
+
+## 9. Lane A managed hook built: CP-2 `OnLotLoad` / `OnWorldChange` (2026-11-23, branch `feature/cp2-lothook-1123`, 0.36.299-cp2)
+
+docs/332 package CP-2, on CP-1. `mods/ts3fixes/src/LotHub.cs` (game side) + `LotHubCore.cs` (pure dispatch, offline
+selftest); native op 49 in `lotstream.cpp`. The hook only dispatches; it has no switch of its own and no consumer is
+subscribed in a release build, so nothing changes. It touches no Sim (dispatch only); each CP-4 consumer brings its own
+switch (default off) and household rule.
+
+### 9.1 Design choice: native queue polled once per sim frame (not a callback, not a bare generation compare)
+
+- A native-to-managed callback bridge does not exist (ts3native can only answer `Route.GetOption2` calls with a bool), so a
+  callback would need a new Mono icall path: heavier and riskier than a poll.
+- A bare "did `lhLotGen` move?" ask (one bool per frame) is exact but says nothing about *which* lot, and CP-4's consumers
+  (O18 rows keyed by lot id, DoorGen and GhostSweep per lot) need the lot. So native keeps a 64-entry queue of
+  (kind, lot id low dword `[lot+0x48]`), filled in `LotHubFire` and drained by ts3fixes, both on the sim thread: no lock,
+  no lost or doubled event.
+- Cost: no lot subscriber = no task, and the native queue is never armed (the first pop arms it): zero work. With a
+  subscriber: 1 call per frame when idle, 35 per event (pop, overflow?, remove?, 32 id bits); events are rare (camera
+  streaming, travel, Edit Town), so a frame pays ~1 call [inferred, measure in CP-5].
+- A full queue drops further events and marks overflow; the next pop hands out one `Overflow` event (kind 0, lot 0) with the
+  queue cleared, which a consumer treats as "every lot changed". World load / quit lines clear the queue
+  (`OnWorldChange` supersedes it).
+- `OnWorldChange` comes straight from Instantiator's handlers (first statement of `DiagWorldLoad`, `DiagWorldQuit`), so it
+  works without ts3native too. Lot events need ts3native with `[UserDiag] Enabled=1` and the hub installed
+  (`lhReady != 0`, op 49 hi 4); otherwise `Fixes.LotHubLotsLive` is false and consumers keep today's behaviour.
+
+### 9.2 API for CP-4
+
+```csharp
+// LotHubCore (mods/ts3fixes/src/LotHubCore.cs)
+public const int Overflow = 0, Add = 1, Remove = 2;
+public delegate void LotFn(int kind, uint lotLow);   // lotLow = low dword of the lot id (0 for Overflow)
+public delegate void WorldFn(bool load);             // true = world load finished, false = world quit
+// Fixes (LotHub.cs), sim thread, from the consumer's own switch-on path:
+Fixes.LotHubOnLotLoad(LotHubCore.LotFn f);           // starts polling at once if a world is live
+Fixes.LotHubOnWorldChange(LotHubCore.WorldFn f);
+Fixes.LotHubOff(LotHubCore.LotFn lot, LotHubCore.WorldFn world);  // switch-off path; polling ends with the last lot subscriber
+Fixes.LotHubLotsLive                                  // false = no lot events in this world (keep today's behaviour)
+```
+
+Rules: callbacks run on the sim thread (lot events: in a ts3fixes task, the frame after the game's execute; world events:
+inside the world handlers). Order = arrival order, then subscribe order; each event once. A throwing consumer is counted
+(`LotHubCore.Faults`) and skipped. Compare `lotLow` with `(uint)lot.LotId` (docs/51 I-593-1, inferred). Lot events
+queued before a world load are not delivered: that world's `OnWorldChange(true)` stands for them. Use static methods or
+long-lived delegates so a re-subscribe after reload matches the existing row.
+
+### 9.3 No leak across worlds
+
+The subscriber lists live for the session, hold distinct delegates only (equal method + target = one row, so a consumer
+that subscribes again on every world load keeps one row) and are capped at 16 each; `LotHubOff` removes rows. The hub keeps
+no per-lot state and no reference to a lot or object (ids only, as `uint`). One poll task per world: world quit bumps its
+generation and it ends; a new one starts at the next load only with a lot subscriber. Native queue: fixed 64 entries of
+ids. `LotHubCore.Subscribers` is the counter: it must stay flat across travel and return (queue below; selftest: 50
+load / quit cycles with re-subscribe).
+
+### 9.4 Tests
+
+- Managed selftest `tools/selftest/lothub` (in `selftest-all.ts`): idle frame = 1 call, arrival + subscribe order, full
+  32-bit id, 35 calls per event, overflow = one kind-0 event, per-frame cap 16 keeps order, world events once each,
+  throwing consumer skipped, 50 load / quit cycles with re-subscribe leave the count flat, unsubscribe by an equal
+  delegate, cap 16.
+- Native selftest `TestLotHub` additions: queue off until the first pop, FIFO with kind and id bits, world event clears,
+  overflow handed out first, duplicate `LotHubSubscribe` keeps one row.
+- Queue `tools/harness/queues/cp2-lothook-correct-1123.json` (one BP load, ~25 min, repro `lothook-travel`): `arm` the
+  Audit 2026-11-23: job `bp-lothook-edit-town` (repro `lothook-edit-town`, UNVERIFIED, never run): two Edit Town enter / exit rounds between pans; every `lothub: result` must read `polling True`. Code read [inferred]: `LhTask` ends only when `GameStates.IsWorldShuttingDown` is set or the world generation changes (`LotHubWorldQuit`), and `LhEnsureTask` runs only from `LotHubWorldLoad` and a new lot subscribe, so Edit Town survives if it neither sets `IsWorldShuttingDown` nor quits the world; if the job shows `polling False` after an exit, make `LhTask` skip the poll while shutting down but keep sleeping until the generation changes (no code change made: not decidable without the run).
+  cp2b (2026-11-23, no run needed to decide): the task no longer depends on that. Per frame `LotHubCore.TaskStep(current, world, live)`:
+  end only when the world goes (`LotHubWorldQuit` / `IsWorldShuttingDown`), the task is replaced or the last lot subscriber leaves; outside
+  live mode (Edit Town, CAS, Build / Buy, any substate) it waits without popping, so the native queue keeps the events (overflow past 64 =
+  one "every lot" event) and the first live frame drains them. `InWorldState.InWorldSubStateChanging` (fired before every in-world mode
+  change [verified static, InWorldState.cs]) is subscribed at world load and dropped at quit; on the change to `LiveMode` it counts
+  `mode returns` and calls `LhEnsureTask`, which re-arms (`rearms`) when the armed task's Simulator object is gone
+  (`LotHubCore.ShouldArm`). Offline selftest `tools/selftest/lothub/run.ts` covers wait / drain / end / re-arm. The job now also requires
+  one `lothub: result` line with `mode returns >= 1` (the hook fired). Build `ts3fixes.package.cp2b-lothook-1123`.
+  test consumer (`Fixes.LotHubDiag`, reflect_call only), community lot + camera pan, vacation to France and home, `arm`
+  again: `lothub:` add and remove lines with lot ids, world quit / load lines, `subscribers 2` at every read-back (flat
+  across travel and the second `arm`), faults 0, 0 script errors, 0 watchdogs, household untouched. Results: (pending).
+
+## 10. Lane A consumers built: CP-3 + CP-4 (2026-11-23, branch `feature/cp34-lanea-consumers-1123`, 0.36.299-cp34)
+
+docs/332 packages CP-3 (native) and CP-4 (managed), on CP-2. Native `native/ts3native/lanea.cpp` (included after
+`hostcalls.cpp`), managed `mods/ts3fixes/src/LaneA.cs` + `LaneACore.cs`. Every consumer has its own switch, default off;
+each only clears its own cache rows or drops the rows of an unloaded lot, so no answer changes and household Sims see what
+they see today (docs/332 H column). Builds `ts3native.asi.cp34-lanea-1123`, `ts3fixes.package.cp34-lanea-1123`.
+
+### 10.1 Consumers
+
+| Item | Switch (default) | Table | World load / quit | Lot remove | Why this is exact |
+|---|---|---|---|---|---|
+| M1 | `[LaneA] AsSimIds=0` | autshadow `simIds` | cleared at the next cut | - (Sim ids) | a Sim missing from the set gets the plain typed mark until its next `AddRow` (exact, docs/321 M1) |
+| M3 | `[LaneA] AsTier=0` | `g_asTierTab` | cleared at the next cut | - | no tier = tier 1, refreshed every cut |
+| M4 | `[LaneA] AsLotTier=0` | `g_asLotTier` | cleared at the next cut | the lot's row (rehash) | no tier = tier 1 |
+| L1 | `[LaneA] AsLite=0` | `g_asLite` | cleared at the next cut | the lot's row (rehash) | no baseline = marked whenever prints run (as at an epoch) |
+| M9 | `[LaneA] SpDoor=0` | snap `g_spDoorLots` | every slot emptied | the lot's slot emptied | an empty lot is invalid; ts3fixes re-pushes before use (`SDM_Q`), as after `SDM_INV_HI` |
+| M11 | `[LaneA] DoorHold=0` | hostcalls `g_dmxHold` | cleared on quit, generation bumped | kept | DoorGen.cs re-sends every held lot at its arm; a hold is the script lot's handler list, which outlives streaming [inferred, §595] |
+| M8 | `[LaneA] ReplanDedupe=0` | replandedupe `g_rdTab` | emptied (under `g_rdLock`) | - | rows serve within 500 ms only; nothing of the old world is served |
+| O12 | `[LaneA] EarlyOut=0` (needs `[RouteEarlyOut]`) | earlyout labels | freed on quit | rebuilt when `lhLotGen` moved | a rebuild is the same union-find |
+| O11 | none (diagnostics buffer) | `[LotStream]` pump buffer | - | - | 64 -> 256 events per pass |
+| O18 | ts3fixes `laneaenvlist` | `sExLotOff` (envlistmemoexact) | cleared on quit already (docs/323 L19) | the lot's row | a lot that streams back in is tried again |
+| L15 | ts3fixes `lanealoop` | gohome `sLastShortcut` | cleared on load and quit | - | ticks of another world are not this world's loop; a missing row = no loop mark (gohome is townie-only) |
+| M15 | ts3fixes `laneatp` | `sUfTpPlaced` | kept | - | at the 4096 cap other worlds' rows go first; not cleared on travel, so the home world's load-time cleanup still finds our placements (rule "clean up our damage on load") |
+| DoorGen per lot | ts3fixes `laneadoorgen` | - | - | add: the lot's hold re-sent (op 36) | same answer DoorGen sends at arm |
+
+Not built here (both built since, §11): **L3 GhostSweep per lot.** The footprint map is world-wide (not keyed by lot), so a per-lot sweep is a whole-map
+walk, and a removal needs the routing-world lock with no job running; during play that is a per-tick node budget plus the
+existing recheck: a design of its own (decision for Rodney: build it as its own package or keep the load-screen pass).
+**M8 per-lot validity** (route rows keyed by the lots they touch, a gain) is also not built: only the world-change reset is.
+
+Thread rules: the hub calls `LaHub` on the sim thread. Autshadow tables change only at the next cut (`LaAsApply`, first
+step of the cut, under `g_asDirtyLock` as the epoch path), the place that already owns them; the others change in the
+callback under their own lock (`g_rdLock`, `g_eoCs`) or on the sim thread that already owns them (door lots, holds). The P4
+door dump reads door lots from the worker under `__try` (diagnostic, documented as torn-tolerant); slots are emptied, never
+freed, so it never reads freed memory.
+
+Paused / no cut (audit 2026-11-23, code read [verified]): `LaAsApply` runs only from the autshadow cut; with no cut nothing is applied and `LaHub` only sets `g_laAsWorld` and appends to a 64-slot `g_laAsGone` (a 65th sets `g_laAsGoneOver`, which later clears the lot tables instead), so the pending state is bounded and does no work. With nothing pending the cut returns after three loads. When a cut does run while paused it applies at most one world reset and 64 `LaRehashDrop` passes (about 64 x 1024 rows, microseconds) under `g_asDirtyLock`: harmless, no code change.
+
+### 10.2 No leak
+
+- Every table is fixed-size or reuses its slots: autshadow and rd tables are static arrays; emptied door slots keep their
+  heap buffers and `SpDoorLotFor` reuses them before appending, so `g_spDoorN` never passes the most lots one world held
+  (selftest: 50 load / quit cycles of 10 lots, `g_spDoorN` 10 and the first slot's buffer unchanged); earlyout labels are
+  freed on quit and rebuilt on demand.
+- Rows hold ids (lot ids, Sim ids, keys), never an object the game frees.
+- Managed tables: `sExLotOff` (ids, cleared on quit, rows of unloaded lots dropped), `sLastShortcut` (ids, cleared on every
+  world change), `sUfTpPlaced` (ids + a point, capped 4096, other worlds first). Lot hub subscriptions are static delegates
+  (one row each, `subscribers 2` flat).
+- Counters: export `ts3native_lanea` (per table: on, rows now, high water, world clears, lot drops; docs/registry.md),
+  ts3fixes slots 1699-1706 (rows now / high water per managed table, doorgen per-lot sends, envlist drops). Log lines:
+  `lane a: world load|quit, spDoor a->b (slots n), doorHold .., rd .., eo .., reset ok|FAIL rows left`, `lane a: autshadow
+  reset at cut, simIds a->b, tier .., lotTier .., lite .., reset ok`, `ts3fixes: lanea: world load|quit, envlist n/hw, tp
+  n/hw, loop n/hw, doorgen lots n, envlist drops n, lots live b, subscribers n`.
+
+### 10.3 Tests
+
+- Native selftest `TestLaneA` (`lanea-test.h`): keys 0 = no subscriber, no hub = SKIP, duplicate install = one row,
+  EarlyOut refused without `[RouteEarlyOut]`; drop of one of 300 lots keeps the other 299 findable by the slot finders;
+  65 removes before a cut = lot tables cleared; door slot reuse with buffers; 50 world load / quit cycles with lot churn:
+  every reset table 0 after the cut, door slots flat at 10, lot-tier high water 9; holds cleared on quit only, kept on lot
+  remove; rd emptied; keys off = nothing changes.
+- Managed selftest `tools/selftest/lanea` (in `selftest-all.ts`): drop by low dword, overflow clears, other-world pruning,
+  high water, 50 load / quit cycles with re-subscribe (subscribers flat at 2, rows 0 after each quit, high water = one
+  world's rows).
+- Queue `tools/harness/queues/cp34-lanea-correct-1123.json` (one BP load, ~30 min, repro `lanea-travel-reload`:
+  community lot + pan, France and home, pan, save to a scratch save `LaneA-cp34-1123` and reload it, pan), every key on
+  but EarlyOut: `reset ok` at >= 3 world quits and loads, autshadow reset at the cut >= 3, managed world-load lines with
+  envlist 0, loop 0, `lots live True`, `subscribers 2`; doorgen per-lot sends > 0; no `FAIL|SKIP lane a`, no `FAIL rows
+  left`; 0 script errors, 0 watchdogs, household untouched. Results: (pending). CP-5 (the full save matrix) is next.
+
+## 11. Lane A gaps built: L3 GhostSweepLot, M8 ReplanDedupeLot, shared game-state gate (2026-11-23, branch `feature/cp4b-ghost-m8-1123`, 0.36.299-cp4b1)
+
+The two §10 "not built" items, on CP-3/CP-4. Native `lanea.cpp`, `replandedupe.cpp`, `lotstream.cpp`; managed `LotHub.cs`,
+`LaneA.cs`. Builds `ts3native.asi.cp4b1-1123`, `ts3fixes.package.cp4b1-1123`; cp4b2 (`*.cp4b2-1123`) adds the M8 A vs B counters (§11.2). All new switches default off. Static
+claims: docs/51 §597.
+
+### 11.1 L3 GhostSweepLot (`[LaneA] GhostSweepLot=0`, 1 count only, 2 remove; `GhostSweepLotVerify=0`; `GhostSweepLotNodes=2048`)
+
+**What "the full pass for that lot" is [verified disassembly].** The load-screen pass (`FpgCensus`) walks P's footprint map
+`[P+0x24]`, keeps the ids that match `FpgEntry`'s ghost signature, and calls `LotRouting_RemoveObjectFootprints 0x635700` with
+lot 0. With lot 0 that fn removes each map node of the id from the node's own quadtree Q (`FME+0xC`), skipping a node whose Q
+is listed for the id in P's second map `[P+0x3C]` (`0x635794`), and erases Q-less nodes. With a lot id it checks the lot
+(`0x628A90`, `ret 8`), takes the lot's record (`LotTable_GetOrInsert 0x62EAB0` on a hit, `ret 4`, record = node + 0x10) and
+removes the id from each Q in the record's vector `+0x74..+0x78` (`0x635885..0x6358F0`). The lot's cells of an id are its
+nodes whose Q is one of the lot's Qs. Lot ids: the hub's `[lot+0x48]` u64 (I-597-1, inferred, counted by `lotUnknown`).
+
+**Per-lot pass.** On a hub lot remove the lot id goes to a 64-entry queue (bookkeeping, any game state). At the end of a
+Simulate iteration (`GsTick`, sim thread, `SimLoopAdd`; the table grew from 8 to 16 callbacks), when the game is live and
+nothing blocks, one slice runs: whole buckets up to `NodesPerTick` nodes, `FpgEntry` on each node, ids whose node Q is one of
+the lot's Qs kept, then each kept id removed with `FpgRemove`'s rechecks (no object, not parked) and the lot form of the same
+game call (and of `DiscPfSweep`'s private-footprint key). An id with any `[P+0x3C]` row is kept (`kept3C`) for the
+load-screen pass, because the lot form has no such skip. Q-less nodes hold no cells and no lot; they stay for that pass too.
+So the cells this pass clears are exactly the cells the full pass would clear for that lot, minus the kept ids (counted).
+
+**Never blocks the sim thread.** A slice is skipped (`skipBusy`) when a discourage record is queued (the full pass drains
+first), a route job runs, the world is closing, the sim thread holds `+0x918`, or the `+0x918` try (deadline 0, through
+`LockAcquireHook`) fails. `g_rgOffSimOpen` is raised before the second job check (worker Dekker order, as `FpgCensus`). The
+slice finishes its removals before it lets the lock go, so no id is carried across ticks. A rehash between slices restarts
+the walk (`restarts`; more than 8 = given up, logged). More than 64 queued lots = one whole-map pass (lot 0: the load-screen
+pass itself, sliced). World load / quit clears the queue (the load-screen pass runs at load).
+
+**Verify (`GhostSweepLotVerify=1`).** Per removal: the id's nodes on the lot's Qs after = 0 (`verifyLeft`) and its other
+nodes unchanged (`verifyOther`). After each lot job a dry pass of the same lot must find only the `kept3C` ids again
+(`verifyLeft`). All gated at 0 by the queue.
+
+**Household.** Footprint rows of objects only; the pass removes only footprints whose object is gone (the census signature).
+No Sim is read or changed. A household lot never unloads while it is the active lot, and a household object is never a ghost
+(it exists). The household lot staying loaded while live is [inferred]; it does not matter for exactness.
+
+### 11.2 M8 ReplanDedupeLot (`[LaneA] ReplanDedupeLot=0`)
+
+Each `g_rdTab` row keeps `lhLotGen` as read before its plan ran. A row is served only while `lhLotGen` is unchanged (and
+`lhReady`); otherwise the plan runs, which is the answer without the dedupe (`rdLotDrops`). That is stricter than "drop the
+lot's rows": rows do not record the lots they touch, so any lot event refuses every older row. Rows live at most 500 ms, so
+the cost is a few extra plans after each lot event. One writer (`RdRun`) and one serve path (`RdRun`, used by Replan,
+ReplanFromPosition and the FailMemo Plan path) exist [verified grep: `g_rdTab` is written only in `RdRun` and the `LaHub`
+world reset], so there is no path that serves around the check. Any thread reads the interlocked counter (docs/321 §8.2).
+
+Design A vs B data (cp4b2, Rodney 2026-11-23; A = the rule above, B = refuse only the rows of the lot that changed). Counted
+while `ReplanDedupeLot=1`, in the `ts3native_lanea` `gs` block (v3) and logged as `m8: <why>, m8Hits H, m8Misses M,
+m8LotDrops D, m8RowsDropped R, m8WouldHit W` plus `m8 B-gain: X% of lookups (W of H+M)` at each world load / quit and on
+`Fixes.LaneAGate("m8")`:
+- `m8Hits`: keyed lookups served from a row; `m8Misses`: keyed lookups that planned.
+- `m8LotDrops` / `m8RowsDropped`: lot add / remove events (sim thread, `LaHub`) that refused at least one failed row still
+  inside its 500 ms window, and how many such rows (each row counted once, at the first event after its plan). A refuses
+  lazily, so "emptied the cache" means these rows became unservable, not a memset.
+- `m8WouldHit` (= `rdLotDrops`): a miss whose row passed key, goal, start, window and the other invalidation checks and was
+  refused only for a lot event since its plan. That is the most B could serve, since B still refuses rows of the changed lot.
+Decision number: `m8 B-gain` = `m8WouldHit / (m8Hits + m8Misses)`. Selftest `TestGsLot` covers it (2 live failed rows counted,
+success and expired rows not, second event not double-counted, the refused lookup counted once, switch off counts nothing).
+The figure comes from queue `cp4b-correct-1123` job `ip-lanea-m8-pan` (Isla Paradiso, speed 3, ~8 min of camera pans, only
+ReplanDedupe + ReplanDedupeLot on). Hollow floors (the row FAILs): raw lot events `lhLotGen >= 20` over the job window
+(`nativeRequire`, /native delta after the load; tools/probe/agent.js reads the CP-1 block at +0x6B48) and `m8Hits + m8Misses
+>= 200` lookups (the report's `m8 B-gain ... (W of L)` line, L >= 200). `m8LotDrops` and `m8WouldHit` stay informational, so a
+run where B truly gains little can still say keep A. The BP job's m8 lines are informational.
+
+### 11.3 Shared game-state gate (`SimLiveNow`, lotstream.cpp)
+
+Rodney 2026-11-23: nothing of ours runs sim-state work while the game is paused, in CAS, Buy/Build, Edit Town, travel or load
+screens or the main menu. No native helper existed (`UfcBuildBuy` reads only the Build/Buy byte), so `SimLiveNow()` is the
+one shared helper: live = the last ts3fixes push says live (`GameStates.IsLiveState`, not travelling, CAS, Edit Town,
+Build/Buy-like, not paused), the push is under 2 s old (ts3fixes re-sends every 500 ms; scripts stop in Build/Buy, so a
+stale push closes the gate), and the routing world's Build/Buy byte `world+0x97B` is 0. Unknown counts as not live; world
+load / quit reset it to unknown. ts3fixes pushes only when a native consumer asks (op 49 sub 6; `GhostSweepLot` on).
+GhostSweepLot does no work outside live mode (`skipNotLive`; only the queue grows). ReplanDedupeLot has no event work of
+its own: the compare runs inside a replan, and a refusal outside live mode is counted (`rdLotNotLive`, expected 0).
+
+### 11.4 Counters, no leak
+
+Export `ts3native_lanea` v2: rows `gsLot` (queued + running, high water, world clears, lot jobs done) and `rdLot`, then a
+`gs` block (registry). Every table is fixed: queue 64 u64 ids, one job record, ids per slice 256 on the stack, 32 Qs. Ids
+only, no pointer outlives a slice. World events clear the queue; 50 load / quit cycles in selftest leave it at 0, high water
+<= 65.
+
+### 11.5 Tests
+
+- Native selftest `TestGsLot` (`lanea-test.h`) on a fake routing world laid out as the disassembly: a lot A sweep removes
+  lot A's node of a two-lot ghost and keeps its lot B node, a lot B ghost, a `[P+0x3C]` ghost and a live object; paused, CAS
+  and the Build/Buy byte turn work away with the queue kept; a running job, a failed lock try and a queued record skip the
+  tick; a rehash mid-job restarts; count-only mode removes nothing; an unknown lot is counted; 65 lots = the whole-map pass;
+  50 world cycles keep the queue flat; a lot-0 removal is caught by `verifyOther`; the op 49 sub 5 / 6 / 7 answers; a stale
+  push is not live.
+- Queue `tools/harness/queues/cp4b-correct-1123.json` (one BP load, ~35 min, repro `lanea-gate-travel-reload`): lot unloads
+  while playing, one whole-map pass queued, ~60 s paused (no work, the gate turned it away), CAS and Build/Buy (no work),
+  unpause (drained), France and home, save-reload, verify counters 0. Results: (pending).

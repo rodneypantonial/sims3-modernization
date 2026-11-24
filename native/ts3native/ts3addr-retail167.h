@@ -842,6 +842,9 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x0099C299, 0x0099AAD9},
     {0x009B0530, 0x009AED00},
     {0x009C1B00, 0x009F0890},
+    {0x00A85DF0, 0x00000000},
+    {0x00A89030, 0x00000000},
+    {0x00A89696, 0x00000000},
     {0x00AABB80, 0x00AAA240},
     {0x00AABBC0, 0x00AAA280},
     {0x00AABE33, 0x00AAA4F3},
@@ -1684,7 +1687,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x01234360, 0x01235360},
     {0x01234374, 0x01235374},
 };
-constexpr int ts3addr_count = 1679;
+constexpr int ts3addr_count = 1682;
 // unresolved: 0x005A2C00 xref-none native/ts3native/allocsites-owners.h:16 (+1)
 // unresolved: 0x005BF1FB xref-none native/ts3native/vcallsites3.h:5
 // unresolved: 0x0060AA00 xref-none native/ts3native/allocsites-owners.h:16 (+1)
@@ -1804,3 +1807,6 @@ constexpr int ts3addr_count = 1679;
 // unresolved: 0x0065FB5A no-retail-1.67-address native/ts3native/plancand.cpp
 // unresolved: 0x0065FC9C no-retail-1.67-address native/ts3native/plancand.cpp
 // unresolved: 0x00760DE6 no-retail-1.67-address native/ts3native/tailunlock.cpp
+// unresolved: 0x00A85DF0 no-retail-1.67-address native/ts3native/eafix.cpp ([EaCrashFixes] VbOwnerDelay, docs/67 §44.1)
+// unresolved: 0x00A89030 no-retail-1.67-address native/ts3native/eafix.cpp ([EaCrashFixes] VbOwnerDelay aliases, docs/67 §44.1)
+// unresolved: 0x00A89696 no-retail-1.67-address native/ts3native/eafix.cpp ([EaCrashFixes] VbOwnerDelay aliases, docs/67 §44.1)

@@ -45,6 +45,7 @@ namespace Ts3Agent
             Dispatcher.Register("catalog_search", CatalogSearch);
             Dispatcher.Register("buy_object", BuyObject);
             Dispatcher.Register("sell_object", SellObject);
+            Dispatcher.Register("buy_delete_objects", BuyDeleteObjects);
             Dispatcher.Register("move_object", MoveObject);
             Dispatcher.Register("footprint_nudge", FootprintNudge);
             Dispatcher.Register("place_object", PlaceObject);
@@ -1203,6 +1204,41 @@ namespace Ts3Agent
             foreach (string k in new[] { "Door", "Window", "Fence", "Stair", "Gate", "Wall" })
                 if (type.IndexOf(k, StringComparison.Ordinal) >= 0) return true;
             return false;
+        }
+
+        // buy_delete_objects {max?: 30}: Buy mode only (GateHandlers, kBuyOnly). Deletes up to max objects that place_objects created,
+        // the way the player's hand tool deletes a placed object (docs/67 §44.1): the script callbacks the native hand tool sends,
+        // in its order [order inferred; handlers verified in LotManager]: HandToolCanBeSold (CanBeSoldBase), OnHandToolPickup
+        // kPickupTypeGrabbed, OnHandToolSold (NotifySellBase), OnHandToolEdit kEditTypeDeleted (OnHandToolDeletedBase), then the
+        // object is destroyed (Destroy: native object removal, scene node and draw owner teardown). No funds change (place_objects
+        // objects are free). Objects a Sim is using are skipped and reported.
+        static object BuyDeleteObjects(Args a)
+        {
+            int max = Math.Max(1, (int)a.Long("max", 30));
+            List<ulong> created = CreatedObjects();
+            List<object> deleted = new List<object>(), skipped = new List<object>();
+            foreach (ulong id in new List<ulong>(created))
+            {
+                if (deleted.Count >= max) break;
+                GameObject o = GameObject.GetObject(new ObjectGuid(id));
+                if (o == null || o.HasBeenDestroyed) { created.Remove(id); continue; }
+                if (o.InUse || o.InInventory) { skipped.Add(Util.Id(id) + " " + Util.ObjectName(o)); continue; }
+                World.HandToolEventArgs ev = new World.HandToolEventArgs(id);
+                if (!LotManager.HandToolCanBeSold(null, ev)) { skipped.Add(Util.Id(id) + " cannot be sold"); continue; }
+                string name = Util.ObjectName(o);
+                LotManager.OnHandToolPickup(null, new World.HandToolPickupEventArgs(id, ePickupTypeHandTool.kPickupTypeGrabbed, o.GetResourceKey()));
+                LotManager.OnHandToolSold(null, ev);
+                LotManager.OnHandToolEdit(null, new World.HandToolEditEventArgs(id, World.eEditTypeHandTool.kEditTypeDeleted));
+                o.Destroy();
+                created.Remove(id);
+                deleted.Add(Util.Id(id) + " " + name);
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["deleted"] = deleted;
+            r["count"] = deleted.Count;
+            r["skipped"] = skipped;
+            r["left"] = created.Count;
+            return r;
         }
 
         static object MoveObject(Args a)
