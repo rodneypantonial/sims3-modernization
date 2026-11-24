@@ -164,13 +164,44 @@ gone. Our sweeps never run at load. On top of that every pass stands down when:
   - Cleanup: phases 10-12 found 0 in both runs; the other phases found similar counts (react times 129 vs 81, Sim fields
     36 vs 38, passengers 12 vs 2, topics 1 vs 1, celebrity 4 vs 5). Stuck Sims at the end 11 vs 21, no exception.
 
+### 2.3b Pause, minimized window and modes: the pass waits (2026-11-23, built, NOT RUN)
+
+Audit 2026-11-23: the released pass (`deadrefsweep` + `deadrefcadence` ON) kept removing dead refs while the game was
+paused. Its script task runs every frame (`Simulator.Sleep(0)`), and ScriptTick and TaskObjects run while the sim takes
+0 steps (docs/85 I-85-2), but `DeadRefUnsafe` checked live mode and travel, not pause. A minimized window stops the clock
+through GameClock pause bit 2 without `CurrentGameSpeed == Pause` (docs/85 I-85-1, repro `clock-minimize-pause` PASS
+2026-10-17; docs/162 §7). Rule (Rodney 2026-11-23): nothing of ours does sim-state work while paused, in CAS, Buy/Build,
+Edit Town or menus.
+
+- Shared gate `Fixes.SimFrozenOrNotLive()` (`SimFrozen.cs`, offline part `SimFrozenCore.cs`): true when not
+  `GameStates.IsLiveState` (in-world substate LiveMode only, so Buy, Build, CAS and Edit Town are out **[verified,
+  decompiled GameStates.cs / InWorldState.SubState]**), travelling or shutting down, `Gameflow.CurrentGameSpeed ==
+  Pause`, or `SimClock.CurrentTicks` unchanged for 100 ms of real time (`Environment.TickCount`). One sim step is 1/30 s
+  and a frame of >= 33 ms posts at least one, so 100 ms without a move is a stopped clock, not a gap between steps
+  **[inferred, docs/51 I-596-1]**. Shortcut: a clock that stopped before the first call is seen 100 ms after it.
+- `DrWaitWhileFrozen` before every slice: unsafe (`DeadRefUnsafe`, so leaving live mode) ends the pass as before
+  ([410], the groups stay due); live but paused or clock stopped waits a frame at a time without a slice, keeping the
+  pass's place and its due flags (`sDeadRefObjDue`, group dirty flags), so the same pass goes on after the unpause.
+  Counter [1727] `deadref_paused_waits` = frames waited. Gathers (read-only walks) may still run paused; no holder is
+  changed until the next slice.
+- The save-time pass (`DisposeSaveHook`, phases 1-3) is unchanged: it runs inside EA's save, which a player usually
+  starts while paused.
+- Other per-frame gates checked: `UfLive` (UnseenFallbackLoop.cs) feeds `ufloopbreak`, which maxes motives, removes
+  moodlets and cleans lots in a `LoopTask`: its drain and lot loop now wait while live and frozen (`UfFrozen`), out of
+  live mode the break is still dropped. `UfSitesLive` (UnseenFallbackSites.cs) only builds the Sim list pushed to
+  ts3native: read-only, unchanged. `LiveGuard` (AutLive.cs) is a load-time check of swapped consumer methods, not a
+  state gate: unchanged.
+- No new switch: an EA-like bug fix on released code, ON with `deadrefsweep`.
+- Repro `pause-cas-buy-check` (DeadRefCheck `pausemark` / `pausestate`), queue
+  `tools/harness/queues/deadref-pause-correct-1123.json` (~15 min, not run). Build `ts3fixes.package.pausegate1`.
+
 ### 2.4 Counters
 
 [393] Get refusals, [394] aging states refused, [395] relationship keys removed, [396] relationship entries removed,
 [397] aging states removed, [398] alarm owners cleared, [399] react-time entries, [400] coworker / former boss / chess
 entries, [401] topics, [402] fishers, [403] Sim fields (pusher, talking partner, vehicle, pregnancy dad), [404] passenger
 and horseshoe entries, [2045] dartboard entries (docs/516), [2046] use-list entries (docs/517), [2047] owner entries (docs/519), [2048] disposed handlers (docs/522), [2049] celebrity reactors (docs/523), [2055] object walks of phases 10-12, [2056] ms in them, [2057] walks asked by an event (§2.3a), [405] passes finished, [406] slices, [407] longest slice us, [408] total pass ms, [409] longest
-save pass us, [410] passes refused or stopped, and items that threw. Agent names `deadrefguards_*`, `deadrefsweep_*`.
+save pass us, [410] passes refused or stopped, and items that threw, [1727] frames a pass waited while paused or with the clock stopped (§2.3b). Agent names `deadrefguards_*`, `deadrefsweep_*`.
 
 ## 3. Switches
 
@@ -198,6 +229,8 @@ Queue `tools/harness/queues/deadrefs-ageup.json` (correctness and save matrix, n
    save-data change with all three switches on: new save, overwrite twice, back-to-back, unpaused, reload in
    the same session + 60 s play, save after reload.
 5. `bp-deadrefs-travel`: travel to France with the switches on; both passes refuse while away, the guards still answer.
+6. `deadref-pause-correct-1123` (repro `pause-cas-buy-check`, §2.3b): pass started paused, 60 s paused = slices +0 with
+   paused waits rising, the same pass completes after the unpause; in CAS and Buy/Build slices +0.
 
 The matrix's byte-identical cases do not apply: these switches change the save by design. The reporter's long Bridgeport
 save chain (ErrorTrap load scans, "SimDescription Removed" per load) is the end-to-end measure; we have no such save.

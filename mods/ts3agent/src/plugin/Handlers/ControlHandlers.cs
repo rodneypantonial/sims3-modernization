@@ -1205,9 +1205,12 @@ namespace Ts3Agent
             return false;
         }
 
+        // Live or Buy mode (GateHandlers wraps it, kLiveOrBuy). In Buy mode it replays the hand tool's script callbacks around the move,
+        // the order the native hand tool sends them (World.OnHandToolPickup, OnHandToolMovement, OnHandToolEdit kEditTypePlaced) [verified static].
         static object MoveObject(Args a)
         {
-            RequireLive();
+            bool buy = SubState() == "BuyModeState";
+            if (!buy) RequireLive();
             GameObject o = FindTarget(a, "target");
             if (o is Sim || o is Lot) throw new McpException("use go_here to move sims");
             Vector3 pos;
@@ -1216,9 +1219,17 @@ namespace Ts3Agent
             Vector3 fwd = o.ForwardVector;
             if (!GlobalFunctions.FindGoodLocationNearby(o, ref pos, ref fwd))
                 throw new McpException("no free spot found there");
+            ulong id = o.ObjectId.Value;
+            if (buy) LotManager.OnHandToolPickup(null, new World.HandToolPickupEventArgs(id, ePickupTypeHandTool.kPickupTypeGrabbed, o.GetResourceKey()));
             o.SetPosition(pos);
             o.SetForward(fwd);
+            if (buy)
+            {
+                LotManager.OnHandToolMovement(null, new World.HandToolEventArgs(id));
+                LotManager.OnHandToolEdit(null, new World.HandToolEditEventArgs(id, World.eEditTypeHandTool.kEditTypePlaced));
+            }
             Dictionary<string, object> r = Util.Obj();
+            r["mode"] = buy ? "buy" : "live";
             r["moved"] = Util.ObjectName(o);
             r["position"] = Pos(o.Position);
             return r;
