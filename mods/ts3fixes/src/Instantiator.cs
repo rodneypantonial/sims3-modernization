@@ -283,6 +283,10 @@ namespace Ts3Fixes
         [Tunable] public static bool kUnseenOutfitNoSpin = true;   // ON 2026-11-20 (PR #513, his 17-job soak 11-19: taken 7,251, set ran at once 0, threw 0), needs unseenoutfitdefer (ON): an unseen townie's spin outfit change takes EA's WithoutSpin result, so the defer can hold it (UnseenOutfitNoSpin.cs, docs/809)
         [Tunable] public static bool kBoatParkGone = true;        // EA bug fix, on (shipped without repro: Rodney 11-11, static review): BoatOwnable.Park on a destroyed boat returns instead of throwing (BoatParkGone.cs, docs/257)
         [Tunable] public static bool kDeadRefCooking = true;       // ON since 2026-11-18 (save-matrix bundle, gate: matrix PASS, docs/289 §6), was opt-in: (needs kDeadRefSweep): CookingProcess handlers left on an appliance's ObjectDisposed removed, sweep phase 14 (DeadRefs.cs, docs/205 §4)
+        [Tunable] public static bool kDeadRefDelta = false;        // OFF (docs/336, LC-5 of docs/333; needs kDeadRefCadence): event-driven object passes run the owner, relationship-handler and cooking holders only on indexed holder objects (index seeded by the first walk after a load and the 24 h walk, kept by writer hooks); the same removals
+        [Tunable] public static bool kDeadRefSlimUse = false;      // OFF (docs/336, needs kDeadRefDelta): delta passes walk only objects with a non-empty use / reference / routing-reference list (hooked writers, the 17 direct EA writers through pins: exact)
+        [Tunable] public static bool kDeadRefPerLot = false;       // OFF (docs/336 §9, LC-6a, needs kDeadRefCadence): the sweep's typed phases gather Sims / fish / cars / courts / dartboards from per-lot id lists instead of filtering the world snapshot
+        [Tunable] public static bool kDeadRefDescRev = false;      // OFF (docs/333 LC-7, needs kDeadRefCadence): phase 4 steps only the descriptions holding a reference to a description disposed / Sim destroyed since its last run (reverse index), full walk every 4 sim hours
         [Tunable] public static bool kDeadRefCadence = true;       // ON (fix to default-ON deadrefsweep, docs/330): one world snapshot per pass, phases 10-12+14 merged per object, slice clock every 8 items, description-only phases run on a disposal event / last find / every 4 sim h; off = the pre-2026-11-22 pass (A/B)
         [Tunable] public static bool kDeadRefExact = false;        // OFF (docs/334, LC-1 of docs/333; needs kDeadRefCadence): exact cuts of the cadence pass, the same removals: one partition pass for the five typed lists, one ObjectDisposed read per object for the handler and cooking holders, the cooking switch and counters read per slice
         [Tunable] public static bool kViewerPushDelta = true;      // ON (fix to our default-ON viewer push, docs/330): viewer / held tables sent on change or every 500 ms, LotManager.Actors walked every 4th wake while no ride is in progress; off = both tables every 5 ticks (A/B)
@@ -391,6 +395,10 @@ namespace Ts3Fixes
         [Tunable] public static bool kStandWaitFix = false;  // standwaitfix (docs/686): in a blocked cycle of the obstacle stand-and-wait (replan failed) a Sim obeys a push or cancel, pushes the Sims in its way and, when only people block, walks on with the game's ignore-obstacles timer
         [Tunable] public static bool kStandWaitFixHousehold = false;  // standwaitfixhh: standwaitfix for household and selected Sims too (their result differs from EA's 50-minute wait)
         [Tunable] public static bool kStandWaitLog = false;  // standwaitlog: one ts3native.log line per stand-and-wait that had blocked cycles (either switch state)
+        [Tunable] public static bool kReactOverlay = true;  // reactoverlay (docs/686 §26): an NPC busy standing or seated reacts at once as EA's overlay instead of a ReactionInteraction queued behind its action; a queued one is dropped after kReactOverlayStaleMs
+        [Tunable] public static bool kReactOverlayHh = false;  // reactoverlayhh: household and selected Sims too
+        [Tunable] public static bool kReactOverlayLog = false;  // reactoverlaylog: one ts3native.log line per case
+        [Tunable] public static int kReactOverlayStaleMs = 2000;  // reactoverlay: ms of real time after which a queued reaction with no safe overlay moment is dropped (500-10000)
         [Tunable] public static int kStandWaitPassCycle = 2;  // blocked cycle from which the route is planned once without people (0 = never)
         [Tunable] public static int kStandWaitPassEvery = 3;  // blocked cycles between two such plans
         [Tunable] public static float kStandWaitPassMinutes = 5f;  // sim-minutes of the game's ignore-obstacles timer after a pass
@@ -460,6 +468,10 @@ namespace Ts3Fixes
         [Tunable] public static bool kPairSnap = false;  // pairsnap (docs/686 §20): a paired social (kiss, hug) of two Sims the player does not control, within 3 m on one level, whose placement or route fails is lined up by a short snap
         [Tunable] public static bool kPairSnapHousehold = false;  // pairsnaphh: pairsnap for pairs with a household or selected Sim (stands alone)
         [Tunable] public static bool kPairSnapLog = false;  // pairsnaplog: one ts3native.log line per act
+        [Tunable] public static bool kLineSwitch = true;  // lineswitch (docs/686 §25): an NPC waiting in a toilet, sink, shower or bath line takes a free, reachable object of the same kind on the lot after kLineSwitchMinutes
+        [Tunable] public static bool kLineSwitchHh = false;  // lineswitchhh: household and selected Sims too (actions they picked themselves only)
+        [Tunable] public static bool kLineSwitchLog = false;  // lineswitchlog: one ts3native.log line per case
+        [Tunable] public static float kLineSwitchMinutes = 2f;  // lineswitch: sim-minutes in the line before a free twin is looked for (0.5-15)
         [Tunable] public static bool kSocialReachHousehold = false;  // socialreachhh: socialreach for pairs with a household or selected Sim (stands alone)
         [Tunable] public static bool kSocialReachLog = false;  // socialreachlog: one ts3native.log line per act
         [Tunable] public static bool kUnstuck = true;  // unstuck (docs/686 §18): a Sim or pet the player does not control that failed 3 plans from one spot over 2.5 sim-minutes (or that the game's nightly stuck check found no way for) and has no normal way to a place 3 m away walks out through the objects to the nearest open place (a real walk, never through walls, at most 12 m); never a Sim that sits, lies, swims, rides or is carried

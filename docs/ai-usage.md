@@ -2795,3 +2795,7 @@ Budget per usage window (PLAN.md "Action plan"): lanes G + M 30%, lane H 50%, of
 | 2026-11-23 | 11:59 | 5h -, 7d 62% | G | ip-farmodel-bands | |
 | 2026-11-23 | 12:19 | 5h -, 7d 62% | G | sv-farmodel-bands | |
 | 2026-11-23 | 12:34 | 5h -, 7d 62% | G | bp-loopcost-ab-smoke | |
+| 2026-11-24 | 20:10 | 5h -, 7d 89% | G | bp-hookflat-readback | |
+| 2026-11-24 | 20:19 | 5h -, 7d 90% | G | bp-hookflat-vbowner-1 | |
+| 2026-11-24 | 20:28 | 5h -, 7d 90% | G | lineswitch-force | |
+| 2026-11-24 | 20:46 | 5h -, 7d 90% | G | lineswitch-force | |

@@ -526,9 +526,13 @@ namespace Ts3Agent
         // Sim.IsPointInLotSafelyRoutable (an enclosed room, a fenced corner, a pool tile), the case NRaas Overwatch and the
         // ts3fixes watchdog reset as "unroutable". Samples up to `tries` (default 40) random lot positions, one route plan
         // each, in this one call (a test hitch is fine). Error if every sample is routable.
+        // hold: true (repro poll, bp-idle-unroutable v7): no new spot. Held = within 1 m of the recorded strand spot, standing,
+        // not routing, empty queue; answers held and streak (consecutive held polls). Not held: cancel all, back onto the spot,
+        // standing, streak 0 (2026-11-24 rc1119: Go Home walked him 20 m, then a HoldingUmbrella posture, both ~3 s after the strand).
         static object SimStrand(Args a)
         {
             Sim s = Util.FindSim(a, "sim");
+            if (a.Bool("hold", false)) return SimStrandHold(s);
             Lot lot = a.Has("lot") ? FindLotByName(a.Str("lot")) : s.LotCurrent;
             if (lot == null || lot.IsWorldLot) throw new McpException("needs a non-world lot (pass lot)");
             int tries = a.Has("tries") ? (int)a.Double("tries") : 40;
@@ -541,6 +545,7 @@ namespace Ts3Agent
                 // a teleport keeps the old posture (sitting): CheckIdle only judges a standing Sim (bp-wdasync-stuck-repro-1111)
                 if (s.Posture != s.Standing) s.Posture = s.Standing;
                 sStrandSpot[s.SimDescription.SimDescriptionId] = p;
+                sStrandStreak[s.SimDescription.SimDescriptionId] = 0;
                 Dictionary<string, object> r = Util.Obj();
                 r["sim"] = s.FullName;
                 r["lot"] = lot.Name;
@@ -553,6 +558,41 @@ namespace Ts3Agent
         }
 
         static readonly Dictionary<ulong, Vector3> sStrandSpot = new Dictionary<ulong, Vector3>();
+        static readonly Dictionary<ulong, int> sStrandStreak = new Dictionary<ulong, int>();
+
+        static object SimStrandHold(Sim s)
+        {
+            ulong id = s.SimDescription.SimDescriptionId;
+            Vector3 spot;
+            if (!sStrandSpot.TryGetValue(id, out spot)) throw new McpException("sim_strand hold: no sim_strand spot recorded for " + s.FullName);
+            double d = (s.Position - spot).Length();
+            bool routing = s.SimRoutingComponent != null && s.SimRoutingComponent.IsRouting;
+            bool standing = s.Posture == s.Standing;
+            int queued = s.InteractionQueue.Count;
+            InteractionInstance cur = s.CurrentInteraction;
+            Dictionary<string, object> r = Util.Obj();
+            r["sim"] = s.FullName;
+            r["from_strand"] = Math.Round(d, 2);
+            r["posture"] = s.Posture != null ? s.Posture.GetType().Name : null;
+            r["interaction"] = cur != null ? cur.GetInteractionName() : null;
+            r["queued"] = queued;
+            r["routing"] = routing;
+            int streak;
+            sStrandStreak.TryGetValue(id, out streak);
+            bool held = d <= 1 && standing && !routing && queued == 0;
+            if (held) streak++;
+            else
+            {
+                s.InteractionQueue.CancelAllInteractions();
+                s.SetPosition(spot);
+                if (s.Posture != s.Standing) s.Posture = s.Standing;
+                streak = 0;
+            }
+            sStrandStreak[id] = streak;
+            r["held"] = held;
+            r["streak"] = streak;
+            return r;
+        }
 
         // sim_where {sim, maxDist?, notRouting?, requireStanding?}: position, lot, current interaction, routing, posture. With maxDist (m) it is a check against
         // the spot sim_strand last put the Sim on: error when he is farther away (or, with notRouting, routing), so a repro step fails setup
