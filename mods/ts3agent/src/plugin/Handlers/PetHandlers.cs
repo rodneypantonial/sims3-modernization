@@ -120,6 +120,11 @@ namespace Ts3Agent
             string sp = a.Str("species", "any").ToLowerInvariant();
             if (sp != "any" && sp != "dog" && sp != "cat") throw new McpException("species: dog, cat or any");
             List<Household> homes = TownieHomes();
+            // ownerLockDoor (docs/585 §9 verify): only homes with a CommonDoor; one door per home gets an owner-list lock of its
+            // household first (CommonDoor.SetLockTypeOwnerList, the only place EA subscribes HouseholdSimChanged), so the
+            // adoption's HouseholdSimsChanged reaches that hook. Townie homes only, never the active household.
+            bool lockDoor = a.Bool("ownerLockDoor", false);
+            if (lockDoor) homes = homes.FindAll(delegate(Household h) { return h.LotHome.GetObjects<CommonDoor>().Length > 0; });
             List<object> adopted = new List<object>(), skipped = new List<object>();
             for (int i = 0; i < n; i++)
             {
@@ -130,6 +135,13 @@ namespace Ts3Agent
                 List<Household> room = homes.FindAll(delegate(Household h) { return h.CanAddSpeciesToHousehold(pet.Species); });
                 if (room.Count == 0) { skipped.Add("no townie household with room for a " + pet.Species); continue; }
                 Household home = RandomUtil.GetRandomObjectFromList(room);
+                string locked = null;
+                if (lockDoor)
+                {
+                    CommonDoor door = home.LotHome.GetObjects<CommonDoor>()[0];
+                    door.SetLockTypeOwnerList(new List<SimDescription>(home.AllSimDescriptions));
+                    locked = "0x" + door.ObjectId.Value.ToString("X16");
+                }
                 if (!PetPoolManager.RemovePet(t, pet, true)) { skipped.Add(pet.FullName + ": not removed from " + t); continue; }
                 home.Add(pet);
                 pet.IsNeverSelectable = false;
@@ -145,6 +157,7 @@ namespace Ts3Agent
                 if (ps != null && !ps.IsKitten && !ps.IsPuppy) Sim.MakeSimGoHome(ps, false);
                 Dictionary<string, object> d = PetRow(pet, home);
                 d["instantiated"] = ps != null;
+                d["ownerLockDoor"] = locked;
                 d["adult"] = adult != null ? adult.FullName : null;
                 adopted.Add(d);
             }
