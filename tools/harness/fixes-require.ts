@@ -94,10 +94,11 @@ export async function nativeWindowStep(s: { cmd: string; args?: any }, native: (
 
 // Repro step "mustMatch": "<regex>": the step's answer (result text, or JSON when not a string) must match, else the step FAILs
 // (2026-11-15 bp-unseen-tp-goal PASSed hollow: trap "N/A", mark "no trapped NPC", cleanup "moved 0" were only logged)
-export function mustMatchFail(s: { cmd: string; mustMatch?: string }, r: { ok?: boolean; result?: unknown }): string | null {
+// "hollow": "<text>" next to mustMatch names the case that never happened: "hollow repro: <text>; ..." (profile-world FAIL line)
+export function mustMatchFail(s: { cmd: string; mustMatch?: string; hollow?: string }, r: { ok?: boolean; result?: unknown }): string | null {
   if (!s.mustMatch || !r?.ok) return null;
   const text = typeof r.result === 'string' ? r.result : JSON.stringify(r.result);
-  return new RegExp(s.mustMatch).test(text) ? null : `repro step ${s.cmd} answer does not match /${s.mustMatch}/: ${String(text).slice(0, 300)}`;
+  return new RegExp(s.mustMatch).test(text) ? null : `${s.hollow ? `hollow repro: ${s.hollow}; ` : ''}repro step ${s.cmd} answer does not match /${s.mustMatch}/: ${String(text).slice(0, 300)}`;
 }
 
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(/^\//, '')}`) {
@@ -170,6 +171,13 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(
   assert.equal(mm(lsd, 'lineswitch check (switch on, lineswitchhh off): ...; verdict: FIXED; lineswitch: switched 0; off: would 0; kept 1; plans 0; errors 0; members found=True'), null);
   assert.match(mm(lsd, 'lineswitch: switched 1; off: would 0; kept 1; plans 1; errors 0') ?? '', /does not match/);
   assert.equal(mm('x', { a: 'x' }), null);  // object answers match against their JSON
-  assert.equal(mustMatchFail({ cmd: 'c', mustMatch: 'x' }, { ok: false }), null);  // a failed step is the optional/failed rule's job
+  assert.equal(mustMatchFail({ cmd: 'c', mustMatch: 'x' }, { ok: false }), null);
+  // hollow names the case (2026-11-24 bp-dmx2-venueclock-1: pet_adopt adopted [] and venue_hours crossings never flipped)
+  const hol = mustMatchFail({ cmd: 'pet_adopt', mustMatch: '"adopted":\\[\\{', hollow: 'no adoptable pet' }, { ok: true, result: { adopted: [], skipped: ['AdoptDog pool empty'] } });
+  assert.match(hol ?? '', /^hollow repro: no adoptable pet; repro step pet_adopt answer does not match/);
+  assert.equal(mustMatchFail({ cmd: 'pet_adopt', mustMatch: '"adopted":\\[\\{', hollow: 'no adoptable pet' }, { ok: true, result: { adopted: [{ pet: 'Rex', path: 'pool AdoptCat' }] } }), null);
+  const vh = (result: unknown) => mustMatchFail({ cmd: 'venue_hours', mustMatch: '"flipped":true', hollow: 'venue hour crossed without an open-state flip' }, { ok: true, result });
+  assert.equal(vh({ pair_role: 'after', pair_open_before: false, flipped: true, open_now: true }), null);
+  assert.match(vh({ pair_role: 'after', pair_open_before: true, flipped: false, open_now: true, advanced_min: 0 }) ?? '', /^hollow repro: venue hour crossed without an open-state flip; /);  // a failed step is the optional/failed rule's job
   console.log('fixes-require selftest: PASS');
 }

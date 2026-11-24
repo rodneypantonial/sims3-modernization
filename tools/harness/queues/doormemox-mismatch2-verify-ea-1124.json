@@ -72,12 +72,13 @@
         "door memo x misses: no row 4120, other generation 311, older than DoorMemoXMs 77; live answers not unlocked (not stored) 902; asks on lots with a privacy / mod door handler (live, not kept) 12; unlocked answers doorgen did not vouch for (own door rule, special portal, no Sim, Sim not ordinary, resort; live, not kept) 0"
       ]
     },
-    "^doorgen: memo skips ": {
+    "^ts3fixes: doorgen: memo skips ": {
       "match": [
-        "doorgen: memo skips DoorSingleGender 0x28590035C1469290 on lot 0x28590035BEC1DF80 (own door rule)"
+        "ts3fixes: doorgen: memo skips DoorSingleLoungeSlats 0x28590035F9F85B50 on lot 0xF59000354AE64BD0 (router is no Sim)"
       ],
       "noMatch": [
-        "doorgen: household change 0x7AB100F5AA219C80"
+        "ts3fixes: doorgen: household Tatiana Angelista 0x7AB100F5AADA5E60 household none, stray False, service none",
+        "doorgen: memo skips DoorSingleLoungeSlats 0x28590035F9F85B50 on lot 0xF59000354AE64BD0 (router is no Sim)"
       ]
     },
     "^FAIL door memo x: ": {
@@ -372,7 +373,7 @@
     },
     {
       "id": "bp-dmx2-venueclock-1",
-      "note": "[est 6 min] DoorMemoX fix 2 forced repro 1/2 (docs/585 §9): repro doormemox-venue-clock on Baseline-BP: The Prosper Room door 0x28590035C1469290 with 4 townies and the bouncer Becca Bijou, clock moved to 3 min before and 1 min after the venue open / close hour (5 crossings, venue_hours reads the hours and IsOpenVenue back), pet_adopt (HouseholdSimChanged trigger), one vbowner churn round (P5c park + destroy) before the last crossing. DoorMemoXCheckEvery=1. Pass: as the vbowner jobs plus a doorgen: memo skips line (names the skipped door types: expect DoorSingleGender, I-608-3) and door memo x writer hooks: HouseholdSimChanged >= 1. PetPool.UpdateSimDescriptionId / Copy stay 0 by design: they run only at world load (CharacterImportOnGameLoad) and in the world-builder FixupPetPools command. Hour-crossing evidence: venue_hours replies in the repro jsonl (open_before vs open_now).",
+      "note": "[est 6 min] DoorMemoX fix 2 forced repro 1/2 (docs/585 §9): repro doormemox-venue-clock on Baseline-BP: The Prosper Room door 0x28590035C1469290 with 4 townies and the bouncer Becca Bijou, clock moved to 10 min before (paused) and 1 min after the venue open / close hour (5 crossings, venue_hours reads the hours and IsOpenVenue back), pet_adopt (HouseholdSimChanged trigger), one vbowner churn round (P5c park + destroy) before the last crossing. DoorMemoXCheckEvery=1. Pass: as the vbowner jobs plus a doorgen: memo skips line (names the skipped door types: expect DoorSingleGender, I-608-3) and door memo x writer hooks: HouseholdSimChanged >= 1. PetPool.UpdateSimDescriptionId / Copy stay 0 by design: they run only at world load (CharacterImportOnGameLoad) and in the world-builder FixupPetPools command. Hour-crossing evidence: each venue_hours after step (clock paused between the pair, no day wrap) must report flipped true (pair_open_before vs open_now, both in the repro jsonl); a crossing without a flip or pet_adopt with no pet FAILs as a hollow repro. pet_adopt: asked pool, any adoption pool, else STRESS direct create (EA pool factory); the row names its path.",
       "asi": "game-copy/eadmx2-1124/ts3native.asi",
       "iniBase": "game-copy/eadmx2-1124/ts3native.ini",
       "fixesPackage": "game-copy/eadmx2-1124/ts3fixes.package",
@@ -417,7 +418,7 @@
         "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
         "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
         "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1,
-        "^doorgen: memo skips ": 1,
+        "^ts3fixes: doorgen: memo skips ": 1,
         "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged [1-9]": 1
       },
       "logForbid": {
@@ -428,7 +429,7 @@
     },
     {
       "id": "bp-dmx2-venueclock-2",
-      "note": "[est 6 min] DoorMemoX fix 2 forced repro 2/2 (docs/585 §9): repro doormemox-venue-clock on Baseline-BP: The Prosper Room door 0x28590035C1469290 with 4 townies and the bouncer Becca Bijou, clock moved to 3 min before and 1 min after the venue open / close hour (5 crossings, venue_hours reads the hours and IsOpenVenue back), pet_adopt (HouseholdSimChanged trigger), one vbowner churn round (P5c park + destroy) before the last crossing. DoorMemoXCheckEvery=1. Pass: as the vbowner jobs plus a doorgen: memo skips line (names the skipped door types: expect DoorSingleGender, I-608-3) and door memo x writer hooks: HouseholdSimChanged >= 1. PetPool.UpdateSimDescriptionId / Copy stay 0 by design: they run only at world load (CharacterImportOnGameLoad) and in the world-builder FixupPetPools command. Hour-crossing evidence: venue_hours replies in the repro jsonl (open_before vs open_now).",
+      "note": "[est 6 min] DoorMemoX fix 2 forced repro 2/2 (docs/585 §9): repro doormemox-venue-clock on Baseline-BP: The Prosper Room door 0x28590035C1469290 with 4 townies and the bouncer Becca Bijou, clock moved to 10 min before (paused) and 1 min after the venue open / close hour (5 crossings, venue_hours reads the hours and IsOpenVenue back), pet_adopt (HouseholdSimChanged trigger), one vbowner churn round (P5c park + destroy) before the last crossing. DoorMemoXCheckEvery=1. Pass: as the vbowner jobs plus a doorgen: memo skips line (names the skipped door types: expect DoorSingleGender, I-608-3) and door memo x writer hooks: HouseholdSimChanged >= 1. PetPool.UpdateSimDescriptionId / Copy stay 0 by design: they run only at world load (CharacterImportOnGameLoad) and in the world-builder FixupPetPools command. Hour-crossing evidence: each venue_hours after step (clock paused between the pair, no day wrap) must report flipped true (pair_open_before vs open_now, both in the repro jsonl); a crossing without a flip or pet_adopt with no pet FAILs as a hollow repro. pet_adopt: asked pool, any adoption pool, else STRESS direct create (EA pool factory); the row names its path.",
       "asi": "game-copy/eadmx2-1124/ts3native.asi",
       "iniBase": "game-copy/eadmx2-1124/ts3native.ini",
       "fixesPackage": "game-copy/eadmx2-1124/ts3fixes.package",
@@ -473,7 +474,7 @@
         "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
         "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
         "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1,
-        "^doorgen: memo skips ": 1,
+        "^ts3fixes: doorgen: memo skips ": 1,
         "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged [1-9]": 1
       },
       "logForbid": {

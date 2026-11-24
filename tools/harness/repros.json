@@ -113719,7 +113719,7 @@
     "bug": "DoorMemoX=3 (docs/585 §9): door 0x28590035C1469290 (The Prosper Room, rooms 25 -> 22) answered 1 for the bouncer Becca Bijou 25 ms after another job kept 2 (eam1124c bp-vbowner-correct-1, and the same Sim / door in §8); inferred cause a door rule that reads the clock (DoorSingleGender: Lot.IsOpenVenue()), no writer to bump",
     "fix": "bugfix/doormemox-mismatch2-1124 (416adf7a): native keeps a row only for an unlocked answer ts3fixes vouched for in that ask (op 36 hi 3, DoorGenMemoNote); own door rules, special portals, non-ordinary Sims, resort lots answered live (ts3native_doorgen.unnoted)",
     "save": "Baseline-BP",
-    "note": "Repro rules (docs/TESTING.md): forced, no waiting. The Prosper Room (lot 0x28590035BEC1DF80): venue_hours reads its hours (Lot.GetHoursOfOperation: Bartending extended hours or the venue's MetaAutonomy tuning, data, not in the decompiled code) and moves the clock (SimClock.TicksAdvanced) to 3 min before the open / close hour; 4 townies teleported next to door 0x28590035C1469290 and Becca Bijou (when instantiated) sent through it and across the club; then the clock 1 min past the hour (open_now flips, read back) and the same Sims sent again at once. 5 boundary crossings (open, close, open, close, open). pet_adopt (2 dogs into a townie home) triggers the writer hook CommonDoor.HouseholdSimChanged; one vbowner churn round (place 25 objects, delete them in buy mode: the P5c park + destroy) before the last crossing. PetPool.UpdateSimDescriptionId / Copy run only at world load (CharacterImportOnGameLoad) and in the world-builder command FixupPetPools: not reachable in a session. Read: venue_hours replies (open_before != open_now on each +1 step), doorgen: memo skips line naming the door type, door memo x writer hooks line, shadow > 0 mismatch 0.",
+    "note": "Repro rules (docs/TESTING.md): forced, no waiting. The Prosper Room (lot 0x28590035BEC1DF80): venue_hours reads its hours (Lot.GetHoursOfOperation: Bartending extended hours or the venue's MetaAutonomy tuning, data, not in the decompiled code) and moves the clock (SimClock.TicksAdvanced) to 3 min before the open / close hour; 4 townies teleported next to door 0x28590035C1469290 and Becca Bijou (when instantiated) sent through it and across the club; clock 10 min before the hour (room for the door asks before it), paused, then 1 min past the hour (never a day wrap), unpaused, the same Sims sent again. Each after step must report flipped true (its open_now against the before step's; mustMatch, else FAIL: hollow repro). 5 boundary crossings (open, close, open, close, open). pet_adopt (2 dogs into a townie home) triggers the writer hook CommonDoor.HouseholdSimChanged; one vbowner churn round (place 25 objects, delete them in buy mode: the P5c park + destroy) before the last crossing. PetPool.UpdateSimDescriptionId / Copy run only at world load (CharacterImportOnGameLoad) and in the world-builder command FixupPetPools: not reachable in a session. Read: venue_hours after replies (pair_open_before, open_now, flipped true), doorgen: memo skips line naming the door type, door memo x writer hooks line, shadow > 0 mismatch 0.",
     "steps": [
       {
         "cmd": "spawn_sims",
@@ -113770,14 +113770,22 @@
         "note": "townies (NPC scope) next to door 0x28590035C1469290"
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1,
+        "note": "normal speed for the crossing (the vbowner round leaves it on ultra): ~1 game min per real s"
+      },
+      {
         "cmd": "venue_hours",
         "args": {
           "lot": "2907355265278009216",
           "jump": "open",
-          "offsetMin": -3
+          "offsetMin": -10
         },
         "waitS": 1,
-        "note": "clock to 3 min before The Prosper Room's open hour (Lot.GetHoursOfOperation); reply open_now = the state before"
+        "note": "clock to 10 min before The Prosper Room's open hour (Lot.GetHoursOfOperation): room for the ~5 game min of door asks before the boundary; this step records the before state (pair_role before)"
       },
       {
         "cmd": "go_here",
@@ -113802,7 +113810,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -113821,11 +113829,20 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 4,
         "note": "door asks before the boundary: rows kept from these (if vouched) are the old hour's",
         "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 1,
+        "pausesClock": true,
+        "note": "paused between the before and after steps: the clock moves only by the jump"
       },
       {
         "cmd": "venue_hours",
@@ -113835,7 +113852,18 @@
           "offsetMin": 1
         },
         "waitS": 0,
-        "note": "clock 4 min on, 1 min past the open hour: open_now flips (Lot.IsOpenVenue reads the clock, nothing written)"
+        "note": "paused: clock to 1 min past the open hour, never a day wrap (already past: stays); flipped = before step's open state != this one's, both logged",
+        "mustMatch": "\"flipped\":true",
+        "hollow": "venue hour crossed without an open-state flip"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 0,
+        "pausesClock": false,
+        "note": "unpaused for the door asks after the boundary"
       },
       {
         "cmd": "go_here",
@@ -113860,7 +113888,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -113879,7 +113907,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 6,
         "note": "door asks right after the boundary, within DoorMemoXMs of the rows above where routes overlap",
@@ -113900,14 +113928,22 @@
         "note": "townies (NPC scope) next to door 0x28590035C1469290"
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1,
+        "note": "normal speed for the crossing (the vbowner round leaves it on ultra): ~1 game min per real s"
+      },
+      {
         "cmd": "venue_hours",
         "args": {
           "lot": "2907355265278009216",
           "jump": "close",
-          "offsetMin": -3
+          "offsetMin": -10
         },
         "waitS": 1,
-        "note": "clock to 3 min before The Prosper Room's close hour (Lot.GetHoursOfOperation); reply open_now = the state before"
+        "note": "clock to 10 min before The Prosper Room's close hour (Lot.GetHoursOfOperation): room for the ~5 game min of door asks before the boundary; this step records the before state (pair_role before)"
       },
       {
         "cmd": "go_here",
@@ -113932,7 +113968,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -113951,11 +113987,20 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 4,
         "note": "door asks before the boundary: rows kept from these (if vouched) are the old hour's",
         "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 1,
+        "pausesClock": true,
+        "note": "paused between the before and after steps: the clock moves only by the jump"
       },
       {
         "cmd": "venue_hours",
@@ -113965,7 +114010,18 @@
           "offsetMin": 1
         },
         "waitS": 0,
-        "note": "clock 4 min on, 1 min past the close hour: open_now flips (Lot.IsOpenVenue reads the clock, nothing written)"
+        "note": "paused: clock to 1 min past the close hour, never a day wrap (already past: stays); flipped = before step's open state != this one's, both logged",
+        "mustMatch": "\"flipped\":true",
+        "hollow": "venue hour crossed without an open-state flip"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 0,
+        "pausesClock": false,
+        "note": "unpaused for the door asks after the boundary"
       },
       {
         "cmd": "go_here",
@@ -113990,7 +114046,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114009,7 +114065,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 6,
         "note": "door asks right after the boundary, within DoorMemoXMs of the rows above where routes overlap",
@@ -114030,14 +114086,22 @@
         "note": "townies (NPC scope) next to door 0x28590035C1469290"
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1,
+        "note": "normal speed for the crossing (the vbowner round leaves it on ultra): ~1 game min per real s"
+      },
+      {
         "cmd": "venue_hours",
         "args": {
           "lot": "2907355265278009216",
           "jump": "open",
-          "offsetMin": -3
+          "offsetMin": -10
         },
         "waitS": 1,
-        "note": "clock to 3 min before The Prosper Room's open hour (Lot.GetHoursOfOperation); reply open_now = the state before"
+        "note": "clock to 10 min before The Prosper Room's open hour (Lot.GetHoursOfOperation): room for the ~5 game min of door asks before the boundary; this step records the before state (pair_role before)"
       },
       {
         "cmd": "go_here",
@@ -114062,7 +114126,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114081,11 +114145,20 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 4,
         "note": "door asks before the boundary: rows kept from these (if vouched) are the old hour's",
         "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 1,
+        "pausesClock": true,
+        "note": "paused between the before and after steps: the clock moves only by the jump"
       },
       {
         "cmd": "venue_hours",
@@ -114095,7 +114168,18 @@
           "offsetMin": 1
         },
         "waitS": 0,
-        "note": "clock 4 min on, 1 min past the open hour: open_now flips (Lot.IsOpenVenue reads the clock, nothing written)"
+        "note": "paused: clock to 1 min past the open hour, never a day wrap (already past: stays); flipped = before step's open state != this one's, both logged",
+        "mustMatch": "\"flipped\":true",
+        "hollow": "venue hour crossed without an open-state flip"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 0,
+        "pausesClock": false,
+        "note": "unpaused for the door asks after the boundary"
       },
       {
         "cmd": "go_here",
@@ -114120,7 +114204,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114139,7 +114223,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 6,
         "note": "door asks right after the boundary, within DoorMemoXMs of the rows above where routes overlap",
@@ -114160,14 +114244,22 @@
         "note": "townies (NPC scope) next to door 0x28590035C1469290"
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1,
+        "note": "normal speed for the crossing (the vbowner round leaves it on ultra): ~1 game min per real s"
+      },
+      {
         "cmd": "venue_hours",
         "args": {
           "lot": "2907355265278009216",
           "jump": "close",
-          "offsetMin": -3
+          "offsetMin": -10
         },
         "waitS": 1,
-        "note": "clock to 3 min before The Prosper Room's close hour (Lot.GetHoursOfOperation); reply open_now = the state before"
+        "note": "clock to 10 min before The Prosper Room's close hour (Lot.GetHoursOfOperation): room for the ~5 game min of door asks before the boundary; this step records the before state (pair_role before)"
       },
       {
         "cmd": "go_here",
@@ -114192,7 +114284,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114211,11 +114303,20 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 4,
         "note": "door asks before the boundary: rows kept from these (if vouched) are the old hour's",
         "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 1,
+        "pausesClock": true,
+        "note": "paused between the before and after steps: the clock moves only by the jump"
       },
       {
         "cmd": "venue_hours",
@@ -114225,7 +114326,18 @@
           "offsetMin": 1
         },
         "waitS": 0,
-        "note": "clock 4 min on, 1 min past the close hour: open_now flips (Lot.IsOpenVenue reads the clock, nothing written)"
+        "note": "paused: clock to 1 min past the close hour, never a day wrap (already past: stays); flipped = before step's open state != this one's, both logged",
+        "mustMatch": "\"flipped\":true",
+        "hollow": "venue hour crossed without an open-state flip"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 0,
+        "pausesClock": false,
+        "note": "unpaused for the door asks after the boundary"
       },
       {
         "cmd": "go_here",
@@ -114250,7 +114362,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114269,7 +114381,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 6,
         "note": "door asks right after the boundary, within DoorMemoXMs of the rows above where routes overlap",
@@ -114283,7 +114395,9 @@
           "ownerLockDoor": true
         },
         "waitS": 5,
-        "note": "writer hook trigger, story-progression stand-in (a player adopts by phone): Household.Add on a townie home lot raises HouseholdSimsChanged, CommonDoor.HouseholdSimChanged runs for that lot's doors (counter writers[0])"
+        "note": "writer hook trigger, a stand-in for phone adoption (story-progression adoption): ownerLockDoor locks a door of the home first, then Household.Add raises HouseholdSimsChanged and CommonDoor.HouseholdSimChanged runs (counter writers[0]). Asked pool empty: any adoption pool; all empty: STRESS direct create by EA's pool factory (AdoptDogCreator / AdoptCatCreator.CreatePet); each row names its path",
+        "mustMatch": "\"adopted\":[{",
+        "hollow": "no adoptable pet"
       },
       {
         "cmd": "set_speed",
@@ -114369,14 +114483,22 @@
         "note": "townies (NPC scope) next to door 0x28590035C1469290"
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1,
+        "note": "normal speed for the crossing (the vbowner round leaves it on ultra): ~1 game min per real s"
+      },
+      {
         "cmd": "venue_hours",
         "args": {
           "lot": "2907355265278009216",
           "jump": "open",
-          "offsetMin": -3
+          "offsetMin": -10
         },
         "waitS": 1,
-        "note": "clock to 3 min before The Prosper Room's open hour (Lot.GetHoursOfOperation); reply open_now = the state before"
+        "note": "clock to 10 min before The Prosper Room's open hour (Lot.GetHoursOfOperation): room for the ~5 game min of door asks before the boundary; this step records the before state (pair_role before)"
       },
       {
         "cmd": "go_here",
@@ -114401,7 +114523,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114420,11 +114542,20 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 4,
         "note": "door asks before the boundary: rows kept from these (if vouched) are the old hour's",
         "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 1,
+        "pausesClock": true,
+        "note": "paused between the before and after steps: the clock moves only by the jump"
       },
       {
         "cmd": "venue_hours",
@@ -114434,7 +114565,18 @@
           "offsetMin": 1
         },
         "waitS": 0,
-        "note": "clock 4 min on, 1 min past the open hour: open_now flips (Lot.IsOpenVenue reads the clock, nothing written)"
+        "note": "paused: clock to 1 min past the open hour, never a day wrap (already past: stays); flipped = before step's open state != this one's, both logged",
+        "mustMatch": "\"flipped\":true",
+        "hollow": "venue hour crossed without an open-state flip"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 0,
+        "pausesClock": false,
+        "note": "unpaused for the door asks after the boundary"
       },
       {
         "cmd": "go_here",
@@ -114459,7 +114601,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114478,7 +114620,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 6,
         "note": "door asks right after the boundary, within DoorMemoXMs of the rows above where routes overlap",
