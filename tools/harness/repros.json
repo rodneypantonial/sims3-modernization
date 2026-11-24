@@ -27302,6 +27302,352 @@
     "expect": "as travel-roundtrip-bp, with deadrefdelta, deadrefslimuse, deadrefperlot, deadrefdescrev, deadrefdeltaverify on"
   },
   {
+    "id": "travel-roundtrip-bp-lc7on-x2",
+    "bug": "EA 1.69 BP stall after travel home (lc7-desc-correct-1124-ea bp-lc7-travel 2/2, 2026-11-24): Bridgeport loaded, household in the world, then speed Pause, sub_state none, in_travel true, no dialog; EA BP round trips never ran before (EA SV and Steam BP passed)",
+    "fix": "ts3fixes deadref-travel-1124 (docs/336 §16, LC-7g): the simler90Extras travel-merge pin no longer swaps SimDescriptionMergeTravelInfoCareer (its kinds count as untrusted only in travel-based worlds), the writer scan and its pin swaps never run inside a travel load, and the deadref hooks that run in the travel import log their first enter / done per load and degrade (cadence work off for the session) on a throw",
+    "save": "Baseline-BP",
+    "note": "UNVERIFIED (static only, 2026-11-24). travel-roundtrip-bp-lc7on twice (BP -> France -> BP x2) with the five bp-lc7-travel switches on; each return waits 120 s, then FAILs with the stall snapshot from cleanup.",
+    "steps": [
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": true,
+          "speed": "none",
+          "dialogs": true
+        },
+        "waitS": 2,
+        "note": "popups answered as in profile-world (speed none: never touches the clock)"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefdelta": true,
+          "deadrefslimuse": true,
+          "deadrefperlot": true,
+          "deadrefdescrev": true,
+          "deadrefdeltaverify": true
+        },
+        "waitS": 2,
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "deadrefdelta",
+              "equals": true
+            },
+            {
+              "path": "deadrefslimuse",
+              "equals": true
+            },
+            {
+              "path": "deadrefperlot",
+              "equals": true
+            },
+            {
+              "path": "deadrefdescrev",
+              "equals": true
+            },
+            {
+              "path": "deadrefdeltaverify",
+              "equals": true
+            }
+          ],
+          "everyS": 2,
+          "maxS": 10
+        },
+        "note": "the five switches bp-lc7-travel turns on (profile-world --fixes-on), read back"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "waitS": 10,
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "deadrefdescrev_scan_assemblies",
+              "atLeast": 2
+            },
+            {
+              "path": "deadrefdescrev_pins_nohook",
+              "atLeast": 1
+            },
+            {
+              "path": "deadrefdescrev_pins_refused",
+              "atMost": 0
+            },
+            {
+              "path": "deadrefdescrev_seeds",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "one sweep in live BP before trip 1: the writer scan runs here (never in a travel load), the simler90Extras pin counts as no-hook (pins_nohook >= 1 is the read-back of this build: lc7f had 0), the desc index seeds"
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 2,
+        "note": "needs at max (a tired Sim drops the queued trip)"
+      },
+      {
+        "cmd": "travel_vacation",
+        "args": {
+          "world": "france",
+          "days": 2
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "travel_state",
+          "all": [
+            {
+              "path": "on_vacation",
+              "equals": true
+            },
+            {
+              "path": "in_travel",
+              "equals": false
+            },
+            {
+              "path": "household"
+            }
+          ],
+          "everyS": 10,
+          "maxS": 600
+        },
+        "note": "out: queued car on the world lot"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2,
+        "note": "as bp-lc7-travel: the trip home 2 s after arrival"
+      },
+      {
+        "cmd": "travel_home",
+        "waitS": 5,
+        "until": {
+          "cmd": "travel_state",
+          "all": [
+            {
+              "path": "on_vacation",
+              "equals": false
+            },
+            {
+              "path": "in_travel",
+              "equals": false
+            },
+            {
+              "path": "household"
+            }
+          ],
+          "everyS": 10,
+          "maxS": 120
+        },
+        "note": "back to Bridgeport: the step that stalled; 120 s, then FAIL with the stall snapshot (cleanup: travel_state, patches with the deadref counters, clock_state, game_state)"
+      },
+      {
+        "cmd": "game_state",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "live mode entered (InWorldState.Startup finished)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "the clock runs at home"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "time",
+          "all": [
+            {
+              "path": "speed",
+              "equals": "Normal"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 30
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "waitS": 10,
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "deadrefdescrev_seeds",
+              "atLeast": 2
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "a sweep at home before trip 2: the index is seeded again when the trip starts"
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 2,
+        "note": "trip 2: needs at max again"
+      },
+      {
+        "cmd": "travel_vacation",
+        "args": {
+          "world": "france",
+          "days": 2
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "travel_state",
+          "all": [
+            {
+              "path": "on_vacation",
+              "equals": true
+            },
+            {
+              "path": "in_travel",
+              "equals": false
+            },
+            {
+              "path": "household"
+            }
+          ],
+          "everyS": 10,
+          "maxS": 600
+        },
+        "note": "out: queued car on the world lot"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2,
+        "note": "as bp-lc7-travel: the trip home 2 s after arrival"
+      },
+      {
+        "cmd": "travel_home",
+        "waitS": 5,
+        "until": {
+          "cmd": "travel_state",
+          "all": [
+            {
+              "path": "on_vacation",
+              "equals": false
+            },
+            {
+              "path": "in_travel",
+              "equals": false
+            },
+            {
+              "path": "household"
+            }
+          ],
+          "everyS": 10,
+          "maxS": 120
+        },
+        "note": "back to Bridgeport: the step that stalled; 120 s, then FAIL with the stall snapshot (cleanup: travel_state, patches with the deadref counters, clock_state, game_state)"
+      },
+      {
+        "cmd": "game_state",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "live mode entered (InWorldState.Startup finished)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "the clock runs at home"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "time",
+          "all": [
+            {
+              "path": "speed",
+              "equals": "Normal"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 30
+        }
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "travel_state",
+        "max": 2000
+      },
+      {
+        "cmd": "patches",
+        "max": 6000
+      },
+      {
+        "cmd": "clock_state",
+        "max": 600
+      },
+      {
+        "cmd": "game_state",
+        "max": 600
+      }
+    ],
+    "expect": "2 trips out and home, live mode and Normal speed after each return; ts3native.log has 2 x \"deadref travel step: PostTravelingFixUp reached\" and no \"deadref travel FAIL\""
+  },
+  {
     "id": "leak-travel-roundtrip-x3",
     "bug": "docs/191 travel lead (bp-memdiag-travel, 2026-10-25 14:08 UTC): one Bridgeport -> France -> Bridgeport round trip in 4 min: private +151 MB, largest free block -80 MB, rc (ResourceCache, unvalidated) 170 -> 373 MB, miCom +51, gcFree +37, eaDir +20, rest +72; one trip cannot separate a cache that fills once from growth per trip",
     "fix": "measuring only (docs/191 modules 1-2, ts3native 0.36.76 [MemDiag] + [UserDiag], ts3fixes MemSuspects, ts3agent mem_mark / mem_gc): 3 round trips with marks away / home and a forced GC at home after each",
