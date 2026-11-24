@@ -1702,6 +1702,15 @@ namespace Ts3Fixes
         // [4462-4469] makebedboth (MakeBedBoth.cs, docs/686 §13): Make Bed runs on a bed with exactly one unmade free half / second half made from the first
         // side / closed half made from the other side (first make) / kept: the half can be reached / kept: no side to make it from / errors / would (off,
         // or household without makebedbothhh) / run ended early, flags put back.
+        // [1727] deadrefsweep (DeadRefs.cs DrWaitWhileFrozen, docs/205 §2.3b): frames a pass waited while paused or with the clock stopped.
+        // [1728-1733] spread-pass pause gate (SpreadGate.cs WaitWhileFrozen, docs/205 §2.3d): frames waited while paused, clock stopped or (own
+        // tasks) out of live mode, by easpreadlots / easpreadpets / easpreaddecay / Overwatch (task starts, chain, StuckCheck, inventory) /
+        // errortrapspread / savecleanup spread.
+        // [1734-1742] pause gate group 2 (SimFrozen.cs SfWait, docs/205 §2.3c): frames held while paused, clock stopped or out of live mode by
+        // the stuck-check drain / stuck watchdog / replanspread replay; [1737] replanspread calls of household, selected, unknown-scope or
+        // non-Sim objects run at once; [1738] go-live searches dropped to the game's search (frozen while waiting); frames held by
+        // wildflowertask / disposespread / aptleave RemoveGuest / boattrip sweep; [1743] go-live searches whose later slice started frozen or
+        // not live and ran the game's B14 for the rest (autlivelate refusal / direct snap).
         const int kCounterSlots = 4660;
         static int[] sCountersCache;
         static int[] PatchCounters()
@@ -3008,6 +3017,8 @@ namespace Ts3Fixes
                 return true;
             }
             static readonly Dictionary<ulong, long> sLastShortcut = new Dictionary<ulong, long>();
+            internal static int LoopCount { get { return sLastShortcut.Count; } }  // lanealoop (LaneA.cs, docs/321 L15)
+            internal static void LoopClear() { sLastShortcut.Clear(); }
             static readonly long kLoopTicks = Sims3.Gameplay.Utilities.SimClock.ConvertToTicks(10f, Sims3.Gameplay.Utilities.TimeUnit.Minutes);
 
             // Townie, alone, standing, going to its own ordinary lot, and neither it nor that lot near the camera or the

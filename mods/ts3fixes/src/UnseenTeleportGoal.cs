@@ -28,7 +28,7 @@ namespace Ts3Fixes
     {
         const int kUfTpSlot = 1040;
 
-        struct UfTpPlace { public Vector3 At; public string World; }
+        struct UfTpPlace : LaneACore.IWorldRow { public Vector3 At; public string World; public string WorldName { get { return World; } } }
         // our teleports' placements this game session (SimDescriptionId -> spot); static, so it outlives a world load but not the game
         static readonly Dictionary<ulong, UfTpPlace> sUfTpPlaced = new Dictionary<ulong, UfTpPlace>();
 
@@ -167,7 +167,7 @@ namespace Ts3Fixes
         static void UfTpNote(Sim sim, Vector3 at)
         {
             if (sim.SimDescription == null) return;
-            if (sUfTpPlaced.Count >= 4096) sUfTpPlaced.Clear();  // shortcut: forgets older placements; a later trapped one is only counted
+            if (sUfTpPlaced.Count >= 4096 && !LaTpPrune(World.GetWorldFileName())) sUfTpPlaced.Clear();  // shortcut: forgets older placements; a later trapped one is only counted (laneatp, LaneA.cs: other worlds' rows go first)
             sUfTpPlaced[sim.SimDescription.SimDescriptionId] = new UfTpPlace { At = at, World = World.GetWorldFileName() };
         }
 

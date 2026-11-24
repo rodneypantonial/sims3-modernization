@@ -1,5 +1,151 @@
 [
   {
+    "id": "lothub-visit",
+    "bug": "none (feature check): CP-1 lot hub (docs/321 §8) must count every lot add / remove and world event while the game behaves as before",
+    "fix": "ts3native [LotHub] Enabled=1 (always on, measurement only): lhLotGen / lhAdds / lhRemoves / lhWorldGen, 'lot hub:' read-back lines at world events and powers of two",
+    "save": "Baseline-BP-Spring",
+    "steps": [
+      {"cmd": "camera", "args": {}, "note": "start pose, for the log"},
+      {"cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2},
+      {"cmd": "sim_visit_lot", "args": {"lot": "far"}, "waitS": 90, "note": "the selected Sim goes to the farthest community lot (the game picks walk or drive)"},
+      {"cmd": "camera_pan", "args": {"lots": 8, "height": 25, "seconds": 30, "passes": 2}, "waitS": 65, "note": "streams lots in and out: add and remove executes run"},
+      {"cmd": "sim_visit_lot", "args": {"lot": "home"}, "waitS": 75, "note": "and home"},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true}
+    ],
+    "watch": {"kind": "stuck", "sims": [], "minutes": 1},
+    "expect": "'lot hub:' lines with world gen >= 1 and removes >= 1; no script errors; household untouched (the hub changes nothing)"
+  },
+  {
+    "id": "lanea-travel-reload",
+    "bug": "none (feature check): CP-3/CP-4 lane A consumers (docs/321 §10) must clear their tables on every world load / quit and drop the rows of unloaded lots, so no table grows across travel, return and a save-reload",
+    "fix": "ts3native lanea.cpp ([LaneA] keys) and ts3fixes LaneA.cs (laneaenvlist, lanealoop, laneatp, laneadoorgen) on the CP-1 hub / CP-2 hook",
+    "save": "Baseline-BP-Spring",
+    "steps": [
+      {"cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2},
+      {"cmd": "sim_visit_lot", "args": {"lot": "far"}, "waitS": 90, "note": "the selected Sim goes to the farthest community lot"},
+      {"cmd": "camera_pan", "args": {"lots": 8, "height": 25, "seconds": 30, "passes": 2}, "waitS": 65, "note": "streams lots in and out: lot drops"},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true},
+      {"cmd": "sim_visit_lot", "args": {"lot": "home"}, "waitS": 75},
+      {"cmd": "set_motive", "args": {"sim": "household"}, "waitS": 2, "note": "a tired Sim drops the queued trip"},
+      {"cmd": "travel_vacation", "args": {"world": "france", "days": 2}, "waitS": 5,
+        "until": {"cmd": "travel_state", "all": [{"path": "on_vacation", "equals": true}, {"path": "in_travel", "equals": false}, {"path": "household"}], "everyS": 10, "maxS": 900},
+        "note": "world quit + load: every table reset"},
+      {"cmd": "camera_pan", "args": {"lots": 6, "height": 25, "seconds": 20, "passes": 1}, "waitS": 25, "note": "lot events in France"},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true},
+      {"cmd": "travel_home", "waitS": 5,
+        "until": {"cmd": "travel_state", "all": [{"path": "on_vacation", "equals": false}, {"path": "in_travel", "equals": false}, {"path": "household"}], "everyS": 10, "maxS": 900},
+        "note": "back to Bridgeport: tables as after the first load, not the sum"},
+      {"cmd": "camera_pan", "args": {"lots": 8, "height": 25, "seconds": 30, "passes": 1}, "waitS": 35},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true},
+      {"cmd": "save_game", "args": {"name": "LaneA-cp34-1123"}, "waitS": 5,
+        "until": {"cmd": "game_state", "all": [{"path": "save_in_progress", "equals": false}], "everyS": 2, "maxS": 180}, "note": "a scratch save, never the baseline"},
+      {"cmd": "load_save", "args": {"file": "LaneA-cp34-1123.sims3", "reload": true}, "waitS": 10,
+        "until": {"cmd": "game_state", "all": [{"path": "in_world", "equals": true}, {"path": "load_file", "equals": "LaneA-cp34-1123.sims3"}, {"path": "sub_state", "equals": "LiveModeState"}], "everyS": 5, "maxS": 300},
+        "note": "save-reload: one more world quit + load"},
+      {"cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2},
+      {"cmd": "camera_pan", "args": {"lots": 8, "height": 25, "seconds": 30, "passes": 1}, "waitS": 35},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true}
+    ],
+    "watch": {"kind": "stuck", "sims": [], "minutes": 1},
+    "switches": ["laneaenvlist", "lanealoop", "laneatp", "laneadoorgen"],
+    "expect": "'lane a: world quit / load ... reset ok' at every world event (>= 3 each), 'lane a: autshadow reset at cut ... reset ok' at the cuts that follow (>= 2: a cut needs an autshadow search, events coalesce), 'ts3fixes: lanea: world load' lines with envlist 0 and loop 0 and subscribers 2 at every load; no FAIL / SKIP lane a; no script errors; household untouched"
+  },
+  {
+    "id": "lanea-gate-travel-reload",
+    "bug": "none (feature check): L3 GhostSweepLot and M8 ReplanDedupeLot (docs/321 §11) must do no work while the game is paused, in CAS or in Build/Buy, drain their queued work after unpause, and stay bounded across lot unloads in play, travel, return and a save-reload",
+    "fix": "ts3native lanea.cpp GhostSweepLot / ReplanDedupeLot behind the shared game-state gate (lotstream.cpp SimLiveNow, pushed by ts3fixes LotHub.cs); window checks through reflect_call Fixes.LaneAGate",
+    "save": "Baseline-BP-Spring",
+    "steps": [
+      {"cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2},
+      {"cmd": "sim_visit_lot", "args": {"lot": "far"}, "waitS": 90, "note": "the selected Sim goes to the farthest community lot"},
+      {"cmd": "camera_pan", "args": {"lots": 8, "height": 25, "seconds": 30, "passes": 2}, "waitS": 65, "note": "lots unload while playing: per-lot sweeps run live"},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["requeue"]}, "waitS": 1, "mustMatch": "requeue True", "note": "one whole-map pass waiting, so the paused window has work to turn away"},
+      {"cmd": "set_speed", "args": {"speed": "pause"}, "waitS": 3},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["mark"]}, "waitS": 60, "mustMatch": "mark True", "note": "~60 s paused"},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["still"]}, "waitS": 1, "mustMatch": "still True", "note": "no sweep slice, job, removal or dedupe refusal while paused"},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["skipped"]}, "waitS": 1, "note": "informational [inferred]: GsTick runs at the end of a Simulate iteration, and none run while paused, so skipNotLive need not move here (night 1124: skipped False twice with still True); the gate is proven by still True and drained False"},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["drained"]}, "waitS": 1, "mustMatch": "drained False", "note": "still queued"},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["mark"]}, "waitS": 1, "mustMatch": "mark True"},
+      {"cmd": "cas_open", "waitS": 30, "until": {"cmd": "cas_state", "all": [{"path": "cas_ready", "equals": true}], "maxS": 180}},
+      {"cmd": "cas_close", "waitS": 20, "until": {"cmd": "cas_state", "all": [{"path": "state", "equals": "LiveModeState"}], "maxS": 180}},
+      {"cmd": "buy_open", "waitS": 15, "until": {"cmd": "cas_state", "all": [{"path": "buy_catalog"}], "maxS": 180}},
+      {"cmd": "buy_close", "waitS": 10, "until": {"cmd": "cas_state", "all": [{"path": "state", "equals": "LiveModeState"}], "maxS": 180}},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["still"]}, "waitS": 1, "mustMatch": "still True", "note": "nothing in CAS or Build/Buy either (game still paused)"},
+      {"cmd": "set_speed", "args": {"speed": "normal"}, "waitS": 90, "note": "unpaused: the queued pass drains"},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["drained"]}, "waitS": 1, "mustMatch": "drained True"},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["still"]}, "waitS": 1, "mustMatch": "still False", "note": "work ran after the unpause"},
+      {"cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2},
+      {"cmd": "sim_visit_lot", "args": {"lot": "home"}, "waitS": 75},
+      {"cmd": "set_motive", "args": {"sim": "household"}, "waitS": 2, "note": "a tired Sim drops the queued trip"},
+      {"cmd": "travel_vacation", "args": {"world": "france", "days": 2}, "waitS": 5,
+        "until": {"cmd": "travel_state", "all": [{"path": "on_vacation", "equals": true}, {"path": "in_travel", "equals": false}, {"path": "household"}], "everyS": 10, "maxS": 900},
+        "note": "world quit + load: queue cleared"},
+      {"cmd": "camera_pan", "args": {"lots": 6, "height": 25, "seconds": 20, "passes": 1}, "waitS": 25, "note": "lot unloads in France"},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true},
+      {"cmd": "travel_home", "waitS": 5,
+        "until": {"cmd": "travel_state", "all": [{"path": "on_vacation", "equals": false}, {"path": "in_travel", "equals": false}, {"path": "household"}], "everyS": 10, "maxS": 900}},
+      {"cmd": "camera_pan", "args": {"lots": 8, "height": 25, "seconds": 30, "passes": 1}, "waitS": 35},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true},
+      {"cmd": "save_game", "args": {"name": "LaneA-cp4b-1123"}, "waitS": 5,
+        "until": {"cmd": "game_state", "all": [{"path": "save_in_progress", "equals": false}], "everyS": 2, "maxS": 180}, "note": "a scratch save, never the baseline"},
+      {"cmd": "load_save", "args": {"file": "LaneA-cp4b-1123.sims3", "reload": true}, "waitS": 10,
+        "until": {"cmd": "game_state", "all": [{"path": "in_world", "equals": true}, {"path": "load_file", "equals": "LaneA-cp4b-1123.sims3"}, {"path": "sub_state", "equals": "LiveModeState"}], "everyS": 5, "maxS": 300}},
+      {"cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2},
+      {"cmd": "camera_pan", "args": {"lots": 8, "height": 25, "seconds": 30, "passes": 1}, "waitS": 40},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["ok"]}, "waitS": 1, "mustMatch": "ok True", "note": "verifyLeft, verifyOther, workNotLive, gaveUp, rdLotNotLive all 0"},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["m8"]}, "waitS": 1, "mustMatch": "m8 True", "note": "M8 A vs B report: m8: ... and m8 B-gain: X% of lookups lines into ts3native.log (docs/321 §11.2)"}
+    ],
+    "watch": {"kind": "stuck", "sims": [], "minutes": 1},
+    "switches": ["laneaenvlist", "lanealoop", "laneatp", "laneadoorgen"],
+    "expect": "every LaneAGate step answers as its mustMatch; 'ghost sweep lot: lot ... done' lines; 'lane a: world quit / load ... reset ok' >= 3 each; no FAIL / SKIP lane a, no 'FAIL left', no 'given up'; no script errors; household untouched"
+  },
+  {
+    "id": "lanea-m8-ip-pan",
+    "bug": "none (measurement): M8 ReplanDedupeLot design A vs B decision number (docs/321 §11.2) needs many lot events while NPCs replan; the BP gate repro has too few",
+    "fix": "ts3native lanea.cpp / replandedupe.cpp m8 counters (cp4b2); report through reflect_call Fixes.LaneAGate(\"m8\")",
+    "save": "Baseline-IP-Spring",
+    "steps": [
+      {"cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2, "note": "speed 3: busy NPC routing"},
+      {"cmd": "camera_pan", "args": {"lots": 8, "height": 25, "seconds": 40, "dwellS": 3, "passes": 4}, "waitS": 260, "note": "densest cluster, 3 s still at each lot so lots activate, there and back twice (~256 s)"},
+      {"cmd": "camera_pan", "args": {"lots": 24, "height": 25, "seconds": 60, "dwellS": 2, "passes": 2}, "waitS": 220, "note": "the 24 lots nearest the densest one, in x order: spans the neighbouring clusters (~216 s)"},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LaneAGate", "args": ["m8"]}, "waitS": 1, "mustMatch": "m8 True", "note": "m8: report ... and m8 B-gain: X% of lookups into ts3native.log"}
+    ],
+    "watch": {"kind": "stuck", "sims": [], "minutes": 1},
+    "expect": "lot adds / removes all through the pans; the m8: report line has m8Hits + m8Misses >= 200 on the report (lookup floor) and lhLotGen >= 20 over the window (lot-event floor); m8LotDrops and m8WouldHit informational"
+  },
+  {
+    "id": "lothook-travel",
+    "bug": "none (feature check): CP-2 managed lot hook (docs/321 §9) must deliver every lot add / remove and world change to ts3fixes consumers once, and its subscriber state must not grow across travel and return",
+    "fix": "ts3fixes LotHub.cs + LotHubCore.cs (dispatch only, no consumer in release) fed by ts3native op 49 (lotstream.cpp queue); test consumer armed by reflect_call Fixes.LotHubDiag(\"arm\")",
+    "save": "Baseline-BP-Spring",
+    "steps": [
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LotHubDiag", "args": ["arm"]}, "waitS": 1, "note": "test consumer: subscribers 2"},
+      {"cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2},
+      {"cmd": "sim_visit_lot", "args": {"lot": "far"}, "waitS": 90, "note": "the selected Sim goes to the farthest community lot"},
+      {"cmd": "camera_pan", "args": {"lots": 8, "height": 25, "seconds": 30, "passes": 2}, "waitS": 65, "note": "streams lots in and out"},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true},
+      {"cmd": "sim_visit_lot", "args": {"lot": "home"}, "waitS": 75},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LotHubDiag", "args": ["result"]}, "waitS": 1, "note": "before travel"},
+      {"cmd": "set_motive", "args": {"sim": "household"}, "waitS": 2, "note": "a tired Sim drops the queued trip"},
+      {"cmd": "travel_vacation", "args": {"world": "france", "days": 2}, "waitS": 5,
+        "until": {"cmd": "travel_state", "all": [{"path": "on_vacation", "equals": true}, {"path": "in_travel", "equals": false}, {"path": "household"}], "everyS": 10, "maxS": 900},
+        "note": "world quit + load: one OnWorldChange each"},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LotHubDiag", "args": ["result"]}, "waitS": 1, "note": "away"},
+      {"cmd": "travel_home", "waitS": 5,
+        "until": {"cmd": "travel_state", "all": [{"path": "on_vacation", "equals": false}, {"path": "in_travel", "equals": false}, {"path": "household"}], "everyS": 10, "maxS": 900},
+        "note": "back to Bridgeport"},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LotHubDiag", "args": ["arm"]}, "waitS": 1, "note": "arm again after the reload: subscribers must stay 2"},
+      {"cmd": "camera_pan", "args": {"lots": 8, "height": 25, "seconds": 30, "passes": 1}, "waitS": 35, "note": "lot events after the return"},
+      {"cmd": "camera_pan", "args": {"stop": true}, "optional": true},
+      {"cmd": "reflect_call", "args": {"path": "Ts3Fixes.Fixes.LotHubDiag", "args": ["result"]}, "waitS": 1, "note": "end"}
+    ],
+    "watch": {"kind": "stuck", "sims": [], "minutes": 1},
+    "expect": "'ts3fixes: lothub:' add and remove lines with lot ids; world quit / load lines from both trips; every read-back 'subscribers 2' and 'faults 0'; no script errors; household untouched"
+  },
+  {
     "id": "speedlock-modeswitch",
     "bug": "v0.3.0 speedlockowner (default on): Buy -> Build (or Build -> Buy) then back to live leaves the game speed locked on Pause; every time control is dead until a restart (docs/609 §5)",
     "fix": "ts3fixes GameSpeed78.cs BbOwns: a mode switch (build/buy already on) keeps the ownership its first enter took",
@@ -113858,6 +114004,278 @@
     ]
   },
   {
+    "id": "vb-owner-delete-stress",
+    "bug": "2026-11-22 tester crash with VbFreeDelay on: the draw owner of 0xA85DF0 was freed and reused while a queued draw 0xA84D00 still read its +0x70 (bridge SetStreamSource AV on a string); docs/67 §44.1",
+    "fix": "[EaCrashFixes] VbOwnerDelay=1 (0.36.299-vbowner1, needs VbFreeDelayMs > 0): owner freed VbFreeDelayMs after its dtor, +0x70 cleared",
+    "save": "any world with an active household on a home lot (Baseline-BP)",
+    "note": "apex-buy-entry-stress with a delete round at each of its 4 Buy entries: 25 EA objects placed on the home lot in view (live), then deleted right after the Buy entry with buy_delete_objects (ts3agent vbowner2: EA's hand-tool delete callbacks, then Destroy). Owner deletes show in the flush lines and the VbGuard owner ring.",
+    "expect": "no crash, 0 VB BAD, ea fix: VbFreeDelay first draw owner line, flush line owners > 0; VbGuard \"VB late owner draw\" lines = late draws the fix turned into NULL streams",
+    "steps": [
+      {
+        "cmd": "cas_state",
+        "waitS": 1,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "camera_to_tagged",
+        "args": {
+          "sim": "active",
+          "height": 12,
+          "back": 12
+        },
+        "waitS": 2,
+        "note": "camera on the active Sim at home: the objects placed next are in view"
+      },
+      {
+        "cmd": "place_objects",
+        "timeoutS": 120,
+        "args": {
+          "filter": "ea",
+          "lot": "home",
+          "count": 25,
+          "skip": 0
+        },
+        "waitS": 20,
+        "note": "round 1: 25 EA objects on the home lot, in view"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 12,
+        "note": "Buy entry #1",
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "buy_delete_objects",
+        "args": {
+          "max": 30
+        },
+        "waitS": 10,
+        "note": "round 1: the 25 deleted in Buy mode through the hand tool callbacks (CanBeSold, Pickup, Sold, Edit Deleted, Destroy) while in view: 0xA85DF0 owner deletes"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 8,
+        "note": "back to live #1",
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "camera_to_tagged",
+        "args": {
+          "sim": "active",
+          "height": 12,
+          "back": 12
+        },
+        "waitS": 2,
+        "note": "camera on the active Sim at home: the objects placed next are in view"
+      },
+      {
+        "cmd": "place_objects",
+        "timeoutS": 120,
+        "args": {
+          "filter": "ea",
+          "lot": "home",
+          "count": 25,
+          "skip": 25
+        },
+        "waitS": 20,
+        "note": "round 2: 25 EA objects on the home lot, in view"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 12,
+        "note": "Buy entry #2",
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "buy_delete_objects",
+        "args": {
+          "max": 30
+        },
+        "waitS": 10,
+        "note": "round 2: the 25 deleted in Buy mode through the hand tool callbacks (CanBeSold, Pickup, Sold, Edit Deleted, Destroy) while in view: 0xA85DF0 owner deletes"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 8,
+        "note": "back to live #2",
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "camera_to_tagged",
+        "args": {
+          "sim": "active",
+          "height": 12,
+          "back": 12
+        },
+        "waitS": 2,
+        "note": "camera on the active Sim at home: the objects placed next are in view"
+      },
+      {
+        "cmd": "place_objects",
+        "timeoutS": 120,
+        "args": {
+          "filter": "ea",
+          "lot": "home",
+          "count": 25,
+          "skip": 50
+        },
+        "waitS": 20,
+        "note": "round 3: 25 EA objects on the home lot, in view"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 12,
+        "note": "Buy entry #3",
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "buy_delete_objects",
+        "args": {
+          "max": 30
+        },
+        "waitS": 10,
+        "note": "round 3: the 25 deleted in Buy mode through the hand tool callbacks (CanBeSold, Pickup, Sold, Edit Deleted, Destroy) while in view: 0xA85DF0 owner deletes"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 8,
+        "note": "back to live #3",
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "camera_to_tagged",
+        "args": {
+          "sim": "active",
+          "height": 12,
+          "back": 12
+        },
+        "waitS": 2,
+        "note": "camera on the active Sim at home: the objects placed next are in view"
+      },
+      {
+        "cmd": "place_objects",
+        "timeoutS": 120,
+        "args": {
+          "filter": "ea",
+          "lot": "home",
+          "count": 25,
+          "skip": 75
+        },
+        "waitS": 20,
+        "note": "round 4: 25 EA objects on the home lot, in view"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 12,
+        "note": "Buy entry #4",
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "buy_delete_objects",
+        "args": {
+          "max": 30
+        },
+        "waitS": 10,
+        "note": "round 4: the 25 deleted in Buy mode through the hand tool callbacks (CanBeSold, Pickup, Sold, Edit Deleted, Destroy) while in view: 0xA85DF0 owner deletes"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 8,
+        "note": "back to live #4",
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      }
+    ]
+  },
+  {
     "id": "commodmap-fast-check",
     "bug": "CommodityInteractionMap.RemoveObject removes each pair of a moved object from each commodity list with List.Remove (one pair.Equals per element from the start): k pairs on a list of n cost ~k*n Equals chains; with ~1070 packages a mod moving many objects took 57 s / 13 s (docs/856 §4, I-566-1)",
     "fix": "ts3fixes CommodMapFast.cs: commodmapfast (exact one-pass removal per list) and commodmapshadow (plan + EA + compare), both default off, docs/313",
@@ -117573,6 +117991,1191 @@
         "note": "back to shadow (the ini value)"
       }
     ]
+  },
+  {
+    "id": "pause-cas-buy-check",
+    "bug": "audit 2026-11-23: the released dead-ref sweep (deadrefsweep + deadrefcadence ON) kept removing dead refs while the game was paused: DeadRefUnsafe checked live mode and travel, not pause; a minimized window stops the clock without CurrentGameSpeed == Pause (docs/85 I-85-1, docs/162 §7)",
+    "fix": "ts3fixes SimFrozen.cs Fixes.SimFrozenOrNotLive (shared gate) + DeadRefs.cs DrWaitWhileFrozen: paused or clock stopped = the pass waits with its place kept (deadref_paused_waits, slot 1727); leaving live mode still ends it. docs/205 §2.3b",
+    "save": "Baseline-BP",
+    "note": "Release defaults (deadrefsweep ON). DeadRefCheck pausemark / pausestate print slices, passes, refused and paused-wait counts since the mark. The sweep is started while paused, so its first slice must wait. CAS and Buy/Build: a pass started (paused) before the mode opens must run no slice inside it.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefsweep": true
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "cas_state",
+        "waitS": 1,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "pausesClock": true,
+        "waitS": 3,
+        "note": "paused from here until the unpause step"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausemark"
+          ]
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "mustMatch": "started True",
+        "waitS": 60,
+        "note": "pass started while paused; 60 s paused follow"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausestate"
+          ]
+        },
+        "mustMatch": "slices \\+0, passes \\+0, refused \\+0, pausedwaits \\+[1-9]\\d*, household (\\d+)->\\1, task alive, frozen True",
+        "note": "paused 60 s: no slice, the task waits (FAIL with slices > 0 = BROKEN: sweep acts while paused)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "pausesClock": false,
+        "waitS": 40,
+        "note": "unpause: the same pass resumes"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausestate"
+          ]
+        },
+        "mustMatch": "slices \\+[1-9]\\d*, passes \\+[12], refused \\+0, pausedwaits \\+\\d+, household (\\d+)->\\1, task none",
+        "note": "the pass finished after the unpause, never refused"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "pausesClock": true,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "mustMatch": "started True",
+        "waitS": 2,
+        "note": "a pass waiting (paused) when CAS opens"
+      },
+      {
+        "cmd": "cas_open",
+        "waitS": 10,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "cas_ready",
+              "equals": true
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausemark"
+          ]
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausestate"
+          ]
+        },
+        "mustMatch": "slices \\+0, passes \\+0, ",
+        "note": "in CAS 15 s: no slice (the pass ends on leaving live mode, refused +0/+1)"
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 10,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "sweep"
+          ]
+        },
+        "mustMatch": "started True",
+        "waitS": 2,
+        "note": "a pass waiting (paused) when Buy opens"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 10,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausemark"
+          ]
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 10,
+        "note": "Buy -> Build"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausestate"
+          ]
+        },
+        "mustMatch": "slices \\+0, passes \\+0, ",
+        "note": "in Buy and Build 20 s: no slice"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 10,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "pausesClock": false,
+        "waitS": 30
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausestate"
+          ]
+        },
+        "note": "back in live, unpaused: the household kept every member since the Buy mark and the state is safe (no active member invalid)",
+        "mustMatch": "household (\\d+)->\\1, .*\\| safe$"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        }
+      }
+    ],
+    "expect": "PASS when every mustMatch holds: paused 60 s = slices +0 with pausedwaits rising and the task alive; after the unpause the same pass completes (passes +1 or +2 with the cadence pass, refused +0); in CAS and in Buy/Build slices +0. Slices > 0 while paused or in a mode = BROKEN"
+  },
+  {
+    "id": "pausegate-spread-check",
+    "bug": "audit 2026-11-23: released spread passes acted while paused or out of live mode: venue cleanup and relationship decay (easpreadlots / easpreaddecay) checked only that the world exists, the pet build (easpreadpets) and Overwatch / ErrorTrap task starts had no gate, Overwatch chain / StuckCheck slices and ErrorTrap slices resumed while paused, the save cleanup spread ended out of live mode but not on pause",
+    "fix": "ts3fixes SpreadGate.cs WaitWhileFrozen before every slice of EaSpread.cs, OverwatchSpread.cs, OverwatchStuck.cs, ErrorTrapSpread.cs, SaveCleanupSpread.cs: paused or clock stopped = wait with the place kept (counters 1728-1733); out of live mode our own pass tasks wait too, the save cleanup ends as before, yields inside Overwatch / ErrorTrap code act as before. docs/205 §2.3d",
+    "save": "Baseline-BP",
+    "note": "Release defaults. SpreadGateCheck start runs every spread pass now without its alarm (lots, pets = test stray cat, decay, owinv / et only with NRaas Overwatch / ErrorTrap loaded, sc); mark / state print passes finished and frames waited per group since the mark, and the active household fingerprint (relationship pairs / summed liking, inventory items). Started paused, so every first slice must wait.",
+    "steps": [
+      {
+        "cmd": "cas_state",
+        "waitS": 1,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "pausesClock": true,
+        "waitS": 3,
+        "note": "paused from here until the unpause step"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "mark"
+          ]
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "start"
+          ]
+        },
+        "mustMatch": "^start: lots pets decay (owinv )?(et )?sc \\| safe",
+        "waitS": 60,
+        "note": "every pass started while paused; 60 s paused follow"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "started ([4-6]), done \\+0, waited \\1 of \\1 .*\\| household (rel \\S+ inv \\d+) -> \\2, frozen True",
+        "note": "paused 60 s: no pass finished, every one waited, household relationships and inventories unchanged (FAIL = a pass acts while paused)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "pausesClock": false,
+        "waitS": 90,
+        "note": "unpause: the same passes resume"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "started ([4-6]), done \\+\\1, ",
+        "note": "every pass finished after the unpause"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "pausesClock": true,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "start"
+          ]
+        },
+        "mustMatch": "^start: lots pets decay ",
+        "waitS": 2,
+        "note": "passes waiting (paused) when CAS opens"
+      },
+      {
+        "cmd": "cas_open",
+        "waitS": 10,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "cas_ready",
+              "equals": true
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "mark"
+          ]
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "done \\+0, .*\\| household (rel \\S+ inv \\d+) -> \\1, frozen True",
+        "note": "in CAS 15 s: no pass finished, household unchanged"
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 10,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "pausesClock": false,
+        "waitS": 60
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "started ([4-6]), done \\+[3-6], ",
+        "note": "unpaused 60 s: the passes that waited through the mode finish (save cleanup ends on leaving live mode, as before)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "pausesClock": true,
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "start"
+          ]
+        },
+        "mustMatch": "^start: lots pets decay ",
+        "waitS": 2,
+        "note": "passes waiting (paused) when Buy opens"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 10,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "mark"
+          ]
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 10,
+        "note": "Buy -> Build"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "done \\+0, .*\\| household (rel \\S+ inv \\d+) -> \\1, frozen True",
+        "note": "in Buy and Build 20 s: no pass finished, household unchanged"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 10,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "pausesClock": false,
+        "waitS": 60
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SpreadGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "started ([4-6]), done \\+[3-6], ",
+        "note": "unpaused 60 s: the passes that waited through the mode finish (save cleanup ends on leaving live mode, as before)"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        }
+      }
+    ],
+    "expect": "PASS when every mustMatch holds: paused 60 s = done +0 with every started pass waiting and the household fingerprint unchanged; after the unpause every pass finishes; in CAS and Buy/Build done +0 and household unchanged, the passes finish after returning to live. done > 0 while paused or in a mode = BROKEN"
+  },
+  {
+    "id": "pausegate-drains-check",
+    "bug": "audit 2026-11-23 group 2: released drains and one-shot tasks (stuck-check drain, stuck watchdog, replanspread replay, go-live wait, wildflowertask, disposespread, aptleave RemoveGuest, boattrip sweep) acted while paused, with the clock stopped or out of live mode (CAS, Buy/Build, Edit Town)",
+    "fix": "ts3fixes SimFrozen.cs SfWait (+ SimFrozenCore.Hold) at each site: paused / clock stopped / not live = hold the queued work a frame at a time, act on the next unfrozen live frame; replanspread runs household, selected, unknown-scope and non-Sim calls at once (EA time); go-live drops to the game search when frozen. Counters 1734-1742. docs/205 §2.3c",
+    "save": "Baseline-BP",
+    "note": "Release defaults. PauseGateCheck mark / state print action counters (stuck checks run [128], replans replayed [135], spread destroys [281], watchdog resets [31]) and the group 2 wait counters since the mark, the replanspread queue depth, and whether every active-household Sim kept its position and current interaction. replan = LotManager.ForceReplanOfAllSimRoutes (EA's own call, as Edit Town / options do); boatsweep = BtSweepSoon. Paths with no trigger verb (stuck check, watchdog, go-live, wildflower, dispose, aptleave) are watched through their action counters only.",
+    "steps": [
+      {
+        "cmd": "cas_state",
+        "waitS": 1,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 120,
+        "note": "2 min live: queues and tasks fill naturally"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "pausesClock": true,
+        "waitS": 3,
+        "note": "paused from here until the unpause step"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "mark"
+          ]
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "replan"
+          ]
+        },
+        "mustMatch": "replan: queued [1-9]\\d*",
+        "waitS": 1,
+        "note": "townie replans held; household ones ran at once (EA time)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "boatsweep"
+          ]
+        },
+        "waitS": 60,
+        "note": "60 s paused"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "acted stuckrun \\+0 replayed \\+0 destroyed \\+0 wdresets \\+0, waits .*replan \\+[1-9]\\d* replanhh \\+[1-9]\\d* .*spreadq [1-9]\\d*, household same, frozen True",
+        "note": "paused 60 s: nothing acted, the replay waits with its queue, household Sims unchanged (FAIL = a gate missed a path)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "pausesClock": false,
+        "waitS": 30,
+        "note": "unpause: held work drains"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "spreadq 0, ",
+        "note": "the held replans were replayed after the unpause"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "pausesClock": true,
+        "waitS": 2
+      },
+      {
+        "cmd": "cas_open",
+        "waitS": 5,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "cas_ready",
+              "equals": true
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "mark"
+          ]
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "acted stuckrun \\+0 replayed \\+0 destroyed \\+0 wdresets \\+0, ",
+        "note": "in CAS 15 s: nothing acted"
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 5,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 5,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "mark"
+          ]
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 10,
+        "note": "Buy -> Build"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "acted stuckrun \\+0 replayed \\+0 destroyed \\+0 wdresets \\+0, ",
+        "note": "in Buy and Build 20 s: nothing acted"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 10,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        },
+        "note": "the speed stays Pause across Buy/Build (set before buy_open); unpaused here = hollow, not a gate miss"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "acted stuckrun \\+0 replayed \\+0 destroyed \\+0 wdresets \\+0, waits .*replan \\+[1-9]\\d* .*spreadq [1-9]\\d*, ",
+        "note": "back in live, paused: the Buy/Build exit replans of townies are held (EA's ExitBuildBuyMode call), nothing replayed yet"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "pausesClock": false,
+        "waitS": 30
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.PauseGateCheck",
+          "args": [
+            "state"
+          ]
+        },
+        "mustMatch": "spreadq 0, .*frozen False",
+        "note": "unpaused: the held replans drained"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        }
+      }
+    ],
+    "expect": "PASS when every mustMatch holds: paused 60 s, in CAS and in Buy/Build the action counters stay +0, the replanspread queue holds its townie replans (household ran at once, replanhh > 0) and drains after the unpause, and the active household keeps every Sim's position and interaction across the paused window. An action counter > 0 in a frozen window = BROKEN (a gate missed a path)."
+  },
+  {
+    "id": "pausegate-unseen-hold-pause",
+    "bug": "audit 2026-11-23: [UnseenFallback] Sites / FinishWalk kept a 3 s wall-clock list age and 3 s / 10 min hold timers; a pause longer than 3 s expired every hold, so after the unpause the held unseen Sim walked on while ts3fixes still placed it at its path end (a jump)",
+    "fix": "ts3fixes UnseenFallbackSites.cs sends code 27 (frozen / thawed) while live mode is paused or the clock stands (Fixes.SimFrozenOrNotLive); ts3native unseenfbc.cpp UfcNow stops the list and hold clock while frozen and moves the stamps by the span at the thaw (pgFrozenSpans, pgFrozenHolds). docs/205 §2.3e",
+    "save": "Baseline-SV-Spring",
+    "note": "Needs [UnseenFallback] Sites=1 FinishWalk=1 (job ini) and unseenfbsites + unseenfbfinish (fixesOn). 30 far walkers at ultra speed hold FinishWalk holds; paused 60 s; the window from the pause to 3 s after the unpause must show no expired hold (ufwRelease_3) and at least one hold carried through the freeze (pgFrozenHolds). pgFrozenHolds 0 = hollow (no hold at the pause): rerun, not a PASS.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "unseenfbsites": true,
+          "unseenfbfinish": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausemark"
+          ]
+        },
+        "waitS": 1,
+        "note": "before the walk: household member mark (read-only)"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 40,
+        "note": "away from the household and the camera: holds start"
+      },
+      {
+        "cmd": "native_mark",
+        "args": {
+          "name": "pause"
+        },
+        "waitS": 0
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "pausesClock": true,
+        "waitS": 60,
+        "note": "paused 60 s with holds active (20x the 3 s list age)"
+      },
+      {
+        "cmd": "native_check",
+        "args": {
+          "name": "pause",
+          "require": "pgFrozenSpans>=1,ufwRelease_3<=0"
+        },
+        "note": "paused: ts3fixes said frozen, no hold expired"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "pausesClock": false,
+        "waitS": 3,
+        "note": "unpause: the first agent updates would expire stale holds without the fix"
+      },
+      {
+        "cmd": "native_check",
+        "args": {
+          "name": "pause",
+          "require": "ufwRelease_3<=0,pgFrozenHolds>=1"
+        },
+        "note": "FAIL ufwRelease_3 > 0 = a hold expired over the pause (BROKEN); pgFrozenHolds 0 = hollow"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausestate"
+          ]
+        },
+        "mustMatch": "household (\\d+)->\\1, ",
+        "note": "the household kept every member (read-only check)"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        }
+      }
+    ],
+    "expect": "PASS: paused 60 s with FinishWalk holds = pgFrozenSpans >= 1, no ufwRelease_3 (expired) from the pause to 3 s after the unpause, pgFrozenHolds >= 1 (carried), household count unchanged, ScriptErrors 0"
+  },
+  {
+    "id": "pausegate-buildbuy-epoch",
+    "bug": "audit 2026-11-23: a finished async route job (J_DONE, kept 5 s) collected after a Build/Buy edit could hand out a path planned in the pre-edit world; [Discourage] records deferred before RoutingSystem_OnExitBuildBuy 0x835240 applied after its rebuild",
+    "fix": "ts3native: routing epoch bumped at the OnExitBuildBuy / RebuildLotRouting gate entries and the RouteManager_OnExitBuildBuy IC; a job of an older epoch is skipped at claim or planned again synchronously at collect (pgEpochStale); deferred discourage records drained at the OnExitBuildBuy gate entry (pgBbDrains / pgBbSkips). docs/205 §2.3e",
+    "save": "Baseline-BP",
+    "note": "Release defaults ([RouteAsync], [RouteGate] Enforce=1, [Discourage], [RouteSnap]). 30 spawned Sims routing far, then Buy -> Build -> live three times while their jobs are in flight. pgEpochStale >= 1 proves a stale result was planned again (0 = hollow: no job in flight at an exit, rerun); pgBbDrains / pgBbSkips are read only.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausemark"
+          ]
+        },
+        "waitS": 1,
+        "note": "before Build/Buy: household member mark (read-only)"
+      },
+      {
+        "cmd": "native_mark",
+        "args": {
+          "name": "bb"
+        },
+        "waitS": 0
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 1,
+        "note": "round 1: route jobs in flight"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 5,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 120
+        }
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 120
+        }
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far2"
+        },
+        "waitS": 1,
+        "note": "round 2: route jobs in flight"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 5,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 120
+        }
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 120
+        }
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 1,
+        "note": "round 3: route jobs in flight"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 5,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 120
+        }
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 120
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "native_check",
+        "args": {
+          "name": "bb",
+          "require": "pgEpochStale>=1,pgBbDrains>=0,pgBbSkips>=0"
+        },
+        "note": "stale route results planned again (0 = hollow)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.DeadRefCheck",
+          "args": [
+            "pausestate"
+          ]
+        },
+        "mustMatch": "household (\\d+)->\\1, ",
+        "note": "the household kept every member (read-only check)"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        }
+      }
+    ],
+    "expect": "PASS: pgEpochStale >= 1 over three Buy/Build round trips with route jobs in flight, ScriptErrors 0, no crash, household count unchanged; read pgBbDrains / pgBbSkips"
   },
   {
     "id": "sweep-ep1",

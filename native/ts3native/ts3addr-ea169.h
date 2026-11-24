@@ -163,6 +163,9 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x00602380, 0x00603450},
     {0x0060733E, 0x0060840E},
     {0x0060D290, 0x0060E310},
+    {0x0060F020, 0x006100B0},
+    {0x0060F030, 0x006100C0},
+    {0x0060F074, 0x00610104},
     {0x006112A4, 0x00612384},
     {0x006112B9, 0x00612399},
     {0x006119F0, 0x00612A00},
@@ -425,6 +428,8 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x006DD353, 0x006DE1D3},
     {0x006E4770, 0x006E5530},
     {0x006EA260, 0x006EB070},
+    {0x006EA780, 0x006EB590},
+    {0x006EA900, 0x006EB710},
     {0x006EBE30, 0x006ECBC0},
     {0x006EBF50, 0x006ECCE0},
     {0x006EDA60, 0x006EE7F0},
@@ -598,6 +603,9 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x007935B0, 0x00000000},
     {0x00799780, 0x0079A770},
     {0x00799810, 0x0079A800},
+    {0x0079A32B, 0x0079B32B},
+    {0x007A0A70, 0x007A1A60},
+    {0x007A0AD9, 0x007A1AC9},
     {0x007B0A00, 0x007B19D0},
     {0x007B0A06, 0x007B19D6},
     {0x007B0A24, 0x007B19F4},
@@ -820,6 +828,17 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x0099C299, 0x00999949},
     {0x009B0530, 0x00000000},
     {0x009C1B00, 0x004B3D60},
+    {0x00A84D00, 0x00A836F0},
+    {0x00A84D2E, 0x00A8371E},
+    {0x00A85DF0, 0x00A84820},
+    {0x00A85E0D, 0x00A8483D},
+    {0x00A85E1D, 0x00A8484D},
+    {0x00A85E2D, 0x00A8485D},
+    {0x00A89030, 0x00A87B10},
+    {0x00A890F0, 0x00A87BD0},
+    {0x00A891CA, 0x00A87CAA},
+    {0x00A8963F, 0x00A8817F},
+    {0x00A89696, 0x00A881D6},
     {0x00AABB80, 0x00AAA740},
     {0x00AABBC0, 0x00AAA780},
     {0x00AABE33, 0x00AAA9F3},
@@ -1808,7 +1827,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
 // unresolved: 0x00D7FB53 no-ea-1.69-address native/ts3native/taskserve.cpp
 // unresolved: 0x00D7FE01 no-ea-1.69-address native/ts3native/taskserve.cpp
 // unresolved: 0x00D800FC no-ea-1.69-address native/ts3native/taskserve.cpp
-constexpr int ts3addr_count = 1633;
+constexpr int ts3addr_count = 1652;
 
 
 // unresolved: 0x00568710 no-ea-1.69-address native/ts3native/unseenanim.cpp ([AnimPhase] Split, merge 6942a6e3a)
@@ -1885,7 +1904,7 @@ constexpr int ts3addr_count = 1633;
 // unresolved: 0x00B46322 no-ea-1.69-address native/ts3native/fglprof.cpp (docs/670, docs/671)
 // unresolved: 0x00B470C0 no-ea-1.69-address native/ts3native/fglprof.cpp (docs/670, docs/671)
 // unresolved: 0x00807B30 no-ea-1.69-address native/ts3native/fglprof.cpp (docs/670, docs/671)
-// unresolved: 0x00869360 no-ea-1.69-address native/ts3native/fglprof.cpp (docs/670, docs/671)
+// unresolved: 0x00869360 (docs/51 I-604-8: EA 0x8680B0 likely, inferred) no-ea-1.69-address native/ts3native/fglprof.cpp (docs/670, docs/671)
 // unresolved: 0x00B47040 no-ea-1.69-address native/ts3native/fglprof.cpp (docs/670, docs/671)
 // unresolved: 0x00B47070 no-ea-1.69-address native/ts3native/fglprof.cpp (docs/670, docs/671)
 // unresolved: 0x00B463F0 no-ea-1.69-address native/ts3native/fglprof.cpp (docs/670, docs/671)

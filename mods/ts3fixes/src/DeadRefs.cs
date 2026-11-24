@@ -208,6 +208,14 @@ namespace Ts3Fixes
             return null;
         }
 
+        // docs/205 §2.3b (audit 2026-11-23): paused, or the clock stopped (minimized window), the pass waits a frame at a time and
+        // keeps its place and due flags, so it resumes after unpause; leaving live mode (CAS, Buy/Build, Edit Town, travel)
+        // still ends it. -1 = unsafe (stop), 0 = act now, 1 = acted after waiting. [1727] frames waited.
+        static int DrWaitWhileFrozen(int[] c)
+        {
+            return WaitWhileFrozen(1727, delegate { return DeadRefUnsafe(false) != null; });
+        }
+
         // Starts the spread pass (the hourly alarm, or the agent). False when one is running or the state is unsafe.
         public static bool DeadRefSweepStart()
         {
@@ -308,14 +316,16 @@ namespace Ts3Fixes
                     Action<object> step = merged ? (Action<object>)DrObjectStep : delegate(object o) { DeadRefStep(phase, o); };
                     while (true)
                     {
+                        int w = DrWaitWhileFrozen(c);
+                        if (w < 0) { c[410]++; return; } // left live mode (or unsafe): stop; the finally keeps the groups due
+                        if (w > 0) sDeadRefWatch.Restart(); // the wait is not slice time
                         int n = cad ? pass.RunSliceEvery(step, int.MaxValue, EaSpreadCore.kSliceUs, delegate { return sDeadRefWatch.GetElapsedTime(); }, kDeadRefClockEvery)
                                     : pass.RunSlice(step, int.MaxValue, EaSpreadCore.kSliceUs, delegate { return sDeadRefWatch.GetElapsedTime(); });
                         c[1557 + kDrPhaseNo[p]] += n;
                         DeadRefSliceDone(c);
                         if (pass.Done) break;
                         Simulator.Sleep(0);
-                        if (DeadRefUnsafe(false) != null) { c[410]++; return; } // re-check before acting again
-                        sDeadRefWatch.Restart();
+                        sDeadRefWatch.Restart(); // the re-check before acting again is DrWaitWhileFrozen at the loop top
                     }
                     sDrPhase = -1;
                     int got = DrRemovedSum(c) - got0;
@@ -1389,8 +1399,25 @@ namespace Ts3Fixes
                 }
                 case "sweep": DrAllDue(); return "sweep: started " + DeadRefSweepStart() + " (" + (DeadRefUnsafe(false) ?? "safe") + ")";
                 case "savepass": return DeadRefSavePass();
-                default: return "unknown check " + what + " (count, relget, aging, sweep, savepass; dartboards: DeadRefDartCheck, use lists: DeadRefUseListCheck, owner components: DeadRefOwnerCheck, disposed handlers: DeadRefHandlerCheck, celebrity reactors: DeadRefCelebrityCheck, cooking handlers: DeadRefCookingCheck, conversations: DeadRefConversationCheck)";
+                case "pausemark": sDrPauseMark = DrPauseNow(); return "pausemark: " + DrPauseState();
+                case "pausestate": return "pausestate: " + DrPauseState(); // pause-cas-buy-check: counts since the last pausemark
+                default: return "unknown check " + what + " (count, relget, aging, sweep, savepass, pausemark, pausestate; dartboards: DeadRefDartCheck, use lists: DeadRefUseListCheck, owner components: DeadRefOwnerCheck, disposed handlers: DeadRefHandlerCheck, celebrity reactors: DeadRefCelebrityCheck, cooking handlers: DeadRefCookingCheck, conversations: DeadRefConversationCheck)";
             }
+        }
+
+        static int[] sDrPauseMark = new int[5];
+        static int[] DrPauseNow()
+        {
+            int[] k = PatchCounters();
+            Household hh = Household.ActiveHousehold;
+            return new int[] { k[406], k[405], k[410], k[1727], hh != null ? hh.AllSimDescriptions.Count : -1 };
+        }
+
+        static string DrPauseState()
+        {
+            int[] n = DrPauseNow(), m = sDrPauseMark;
+            return "slices +" + (n[0] - m[0]) + ", passes +" + (n[1] - m[1]) + ", refused +" + (n[2] - m[2]) + ", pausedwaits +" + (n[3] - m[3]) + ", household " + m[4] + "->" + n[4]
+                + ", task " + (TaskAlive(sDeadRefTask) ? "alive" : "none") + ", frozen " + SimFrozenOrNotLive() + " | " + (DeadRefUnsafe(false) ?? "safe");
         }
 
         static string DeadRefCounts()
