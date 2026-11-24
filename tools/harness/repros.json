@@ -120895,6 +120895,16 @@
     "expect": "lineswitch_kept >= 1 with a \"lineswitch: kept, household without lineswitchhh: household Judy Bunch\" line, lineswitch_switched 0, lineswitch_errors 0; Judy waits for Lisa (EA's way).",
     "steps": [
       {
+        "cmd": "set_aging",
+        "args": {
+          "enabled": false
+        },
+        "note": "rerun2: aging off before the clock moves (Lisa Bunch's birthday is on day 15: rerun1 had a locked Have Birthday in her queue, the 1047 try Birthday Party pushes ahead of Judy's Use, so Judy never stood in the line and kept stayed 0)",
+        "waitS": 1,
+        "max": 300,
+        "setup": true
+      },
+      {
         "cmd": "switch_household",
         "args": {
           "household": "Bunch"
@@ -121024,15 +121034,41 @@
         "max": 300
       },
       {
+        "cmd": "set_active_sim",
+        "args": {
+          "sim": "Jack Bunch"
+        },
+        "note": "select Jack (home now): @type:ToiletCheap / ToiletModerate resolve nearest the SELECTED Sim; switch_household selects whoever the game picks (EA SV-Spring 2026-11-24: Ethan, away from home, so @type:ToiletCheap was a public 'Bargain John' with an empty menu and 'use' failed). Jack is outside the line under test (he uses the moderate toilet)",
+        "waitS": 2,
+        "max": 300
+      },
+      {
         "cmd": "list_interactions",
         "args": {
           "sim": "Judy Bunch",
-          "target": "@type:ToiletCheap"
+          "target": "@type:ToiletCheap",
+          "include_disabled": true
         },
-        "note": "Judy's menu on the home's cheap toilet (evidence: 'use' is on it)",
+        "note": "rerun2: Judy's menu on the home's cheap toilet, disabled entries too (why 'Use' is greyed out if it is), then poll until 'Use' is enabled (rerun1: the fixed 8 s after the teleports still gave an empty menu)",
         "waitS": 1,
         "max": 1500,
-        "optional": true
+        "optional": true,
+        "until": {
+          "cmd": "list_interactions",
+          "args": {
+            "sim": "Judy Bunch",
+            "target": "@type:ToiletCheap",
+            "query": "use"
+          },
+          "all": [
+            {
+              "path": "interactions.0.interaction",
+              "equals": "Use"
+            }
+          ],
+          "everyS": 2,
+          "maxS": 60
+        }
       },
       {
         "cmd": "set_motive",
@@ -121617,9 +121653,17 @@
     "fix": "ts3fixes ReactOverlay.cs (reactoverlay, reactoverlayhh, reactoverlaylog) docs/686 §26",
     "save": "Baseline-SV-Spring: a new Jig household on a vacant lot (made active), the reactoverlay-force places",
     "note": "reactoverlay-force on the release defaults (reactoverlay on, reactoverlayhh off, only the log switch set): every forced reaction is a household one, so EA keeps it queued behind Watch TV and the watcher never overlays or drops it. The readwalk-force lot (Jig household, Sunset Valley new game) plus a TV; the same steps are the tail of readwalk-force, so one load runs both.",
-    "expect": "reactoverlay_queued >= 1; reactoverlay_now, _later, _dropped 0; errors 0; the ReactionInteraction stays queued behind Watch TV.",
+    "expect": "reactoverlay_queued >= 1; errors 0; each forced Bea reaction answers overlaid now 0, would 0, queued 1 (the household exemption at the call; the watcher's skip is covered by the household-without-reactoverlayhh why count); the ReactionInteraction stays queued behind Watch TV. reactoverlay_now / _later / _dropped are world-wide: NPCs of the save react on their own and are in scope (rerun1: later 2 = 'overlaid from the queue after 484 ms: npc Marty Keaton, PumpFist during PlayGame'), so they are no FAIL rule here.",
     "noKeepAlive": true,
     "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "reactoverlaylog": true
+        },
+        "note": "log on from the start: every overlay / drop of the whole job is logged with its Sim scope (npc / household / selected), so the job-wide counters can be told apart (EA 2026-11-24: now 1 / later 4 before the old log step, Sims unknown)",
+        "waitS": 1
+      },
       {
         "cmd": "make_household",
         "args": {
@@ -121720,11 +121764,9 @@
         "args": {
           "type": "BedSingle",
           "name": "bed",
-          "x": 1193.6,
-          "y": 49.1,
-          "z": 1182.8
+          "near": "home"
         },
-        "note": "a single bed on the back lawn by Bo's ring (the pillow fight jig goes by it: within the 6 m clip walk)",
+        "note": "placed by the game near the home lot centre (was fixed x/z from the contributor lot: on another save the cheapest vacant lot differs, so the objects could land off the household lot = hollow). A single bed on the back lawn by Bo's ring (the pillow fight jig goes by it: within the 6 m clip walk)",
         "waitS": 3,
         "max": 300
       },
@@ -121733,9 +121775,7 @@
         "args": {
           "type": "Bookshelf",
           "name": "shelf",
-          "x": 1197.5,
-          "y": 49.1,
-          "z": 1192.5
+          "near": "home"
         },
         "note": "a bookshelf (its starter books: Read to Sleep needs a book)",
         "waitS": 3,
@@ -121841,9 +121881,7 @@
         "args": {
           "type": "TVCheap",
           "name": "tv",
-          "x": 1191.5,
-          "y": 49.1,
-          "z": 1190.5
+          "near": "home"
         },
         "note": "a TV in the yard: Watch TV is a still action with the arms free",
         "waitS": 3,
@@ -121855,12 +121893,12 @@
           "sims": [
             "Bea Jig"
           ],
-          "x": 1189.5,
-          "z": 1192.5,
+          "lot": "home",
+          "near": "TVCheap",
           "autonomy": false,
           "motives": true
         },
-        "note": "Bea near the TV",
+        "note": "Bea next to the home lot TV (lot + type: never another lot TV)",
         "waitS": 6
       },
       {
@@ -121905,7 +121943,8 @@
           ]
         },
         "note": "defaults (household): a NowOrLater reaction while she watches: EA queues it behind Watch TV (would 1)",
-        "waitS": 2
+        "waitS": 2,
+        "mustMatch": "^force: (selected|household) Bea Jig, \\w+ during WatchTV \\(\\w+\\): PlayReaction True, overlaid now 0, would 0, queued 1"
       },
       {
         "cmd": "sim_where",
@@ -121947,8 +121986,9 @@
             "force:Bea Jig|Embarrassed"
           ]
         },
-        "note": "defaults (household): the overlay plays at once, nothing queued (overlaid now 1)",
-        "waitS": 2
+        "note": "defaults (household): EA's way again, queued behind Watch TV (the household exemption: overlaid now 0)",
+        "waitS": 2,
+        "mustMatch": "^force: (selected|household) Bea Jig, \\w+ during WatchTV \\(\\w+\\): PlayReaction True, overlaid now 0, would 0, queued 1"
       },
       {
         "cmd": "sim_where",
@@ -121967,7 +122007,8 @@
           ]
         },
         "note": "defaults (household): again",
-        "waitS": 2
+        "waitS": 2,
+        "mustMatch": "^force: (selected|household) Bea Jig, \\w+ during WatchTV \\(\\w+\\): PlayReaction True, overlaid now 0, would 0, queued 1"
       },
       {
         "cmd": "sim_where",
