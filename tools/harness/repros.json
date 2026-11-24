@@ -1192,11 +1192,11 @@
         "cmd": "place_sim",
         "args": {
           "sim": "Wogan Hemlock",
-          "x": 312.4,
-          "z": 1496.7
+          "x": 389.4,
+          "z": 1360.1
         },
         "waitS": 2,
-        "note": "puts him on Hogan's diner lot: in-game lot names do not match 'Hogan'"
+        "note": "v6 2026-11-25: East Tradewinds Shipping Co., not the Community Lot diner (312.4,1496.7). On Steam no Community Lot strand ever got a 'Wogan Hemlock A1 False' verdict (8 runs 11-09..11-24: never judged at the spot, or moved ~7 m first, m1124c; EA m1124d: an EA RouteAway took him home); every PASS with his False line had the strand on another lot (East Tradewinds 1111b and rc-1119b: False at the spot, then the fix moved him ~7 m; Mike's Cornerstore v3-noapex)"
       },
       {
         "cmd": "autonomy",
@@ -1219,9 +1219,10 @@
         "cmd": "sim_strand",
         "args": {
           "sim": "Wogan Hemlock",
+          "lot": "East Tradewinds Shipping Co.",
           "tries": 400
         },
-        "note": "samples the lot for a spot failing the game's routability check and stands him there; keep the camera away (unseen townie = 60 sim-minute rule, else one sim-day). tries 400 (default 40): wdasync-fix3-1110 failed setup with 'no unroutable spot in 40 samples' (one route plan per sample, a one-off setup hitch)"
+        "note": "v6: lot named (the default s.LotCurrent is the lot he is on, which picked East Tradewinds in the passes by chance). samples the lot for a spot failing the game's routability check and stands him there; keep the camera away (unseen townie = 60 sim-minute rule, else one sim-day). tries 400 (default 40): wdasync-fix3-1110 failed setup with 'no unroutable spot in 40 samples' (one route plan per sample, a one-off setup hitch)"
       },
       {
         "cmd": "cancel_interactions",
@@ -1274,8 +1275,8 @@
     },
     "expect": "(setup: Wogan is within 1 m of the strand spot and not routing ~3 s after it; queue jobs require a 'Wogan Hemlock (A1|sync) False' verdict line. True verdicts for him are normal: at load, from his home spot, and after the fix moved him) within ~70 sim-minutes recent/moved show 'Wogan Hemlock -> watchdog reset (idle on unroutable spot)' and he stands on a routable spot of the lot (or at its front door); watchdog_idle_verdicts >= 1, safespot_checks rises by at most one per pass for him; with --set watchdogidle=false he stays put (counter flat)",
     "area": [
-      312.4,
-      1497
+      389.4,
+      1360.1
     ],
     "switches": [
       "watchdogidle"
