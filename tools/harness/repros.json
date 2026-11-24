@@ -27535,8 +27535,10 @@
         "cmd": "travel_vacation",
         "args": {
           "world": "france",
-          "days": 2
+          "days": 2,
+          "clear_recovery": true
         },
+        "note": "STRESS shortcut: trip 2 right after trip 1, so the WentToLocation recovery buff is cleared (EA refuses with 'still recovering from the previous vacation')",
         "waitS": 5,
         "until": {
           "cmd": "travel_state",
