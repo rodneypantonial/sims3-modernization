@@ -1754,9 +1754,13 @@ namespace Ts3Fixes
         // wildflowertask / disposespread / aptleave RemoveGuest / boattrip sweep; [1743] go-live searches whose later slice started frozen or
         // not live and ran the game's B14 for the rest (autlivelate refusal / direct snap).
         // [4615-4619] lineswitch (LineSwitch.cs, docs/686 §25): switched to a free twin object / would, off / kept (waited past the switch time, not
-        // switched) / plans to candidates / errors. 4610-4614 are left to the pending npcloops PR (post/npcloops-1123).        // [4660-4669] left to pending PRs (hotpaths 4660-4661, spotwaitattr up to 4665).
+        // switched) / plans to candidates / errors. 4610-4614 are left to the pending npcloops PR (post/npcloops-1123).
+        // [4660-4669] left to pending PRs (hotpaths 4660-4661, spotwaitattr up to 4665).
         // [4670-4679] reactoverlay (ReactOverlay.cs, docs/686 §26): overlaid now / from the queue / would, off / queued by EA / dropped stale /
         // would drop, off / queued that ran / their summed ms / max ms / errors.
+        // [4680-4686] linestale (LineStale.cs, docs/686 §29; the same slots as the combo branch): heads dropped / would, off / kept (household
+        // head without linestalehh) / stale kind: queued behind another action / ended without leaving the line / errors / ended, still in the
+        // use list, away from it.
         // [4700-4710] elevskip / elevtriplog (ElevSkip.cs, docs/686 §33): set through, unseen NPCs / with fade / would, off / NPC in view kept /
         // household exempt / repeat kept / no exit spot / errors / car launches / riders at launch / one-rider launches.
         // [4721] elevskiphhunseen (ElevSkip.cs, docs/686 §33): set through, household, unseen.
@@ -2749,6 +2753,9 @@ namespace Ts3Fixes
                 case "pairsnaphh": return Instantiator.kPairSnapHousehold;  // WooHooSnap.cs: the same for pairs with a household or selected Sim, off
                 case "lineswitch": return Instantiator.kLineSwitch;  // LineSwitch.cs (docs/686 §25): a Sim waiting in a toilet, sink, shower or bath line takes a free twin object of the lot after 2 sim-min, NPCs, off
                 case "lineswitchhh": return Instantiator.kLineSwitchHh;  // LineSwitch.cs (docs/686 §25): household and selected Sims too (their own autonomous actions only), off
+                case "linestale": return Instantiator.kLineStale;  // LineStale.cs (docs/686 §29): a line head whose action ended or sits queued behind another action leaves the line after 5 sim-min, NPC heads, off
+                case "linestalehh": return Instantiator.kLineStaleHh;  // LineStale.cs (docs/686 §29): household and selected heads too, off
+                case "linestalelog": return Instantiator.kLineStaleLog;  // LineStale.cs (docs/686 §29): one line per case, off
                 case "lineswitchlog": return Instantiator.kLineSwitchLog;  // LineSwitch.cs (docs/686 §25): one line per case, off
                 case "rhskipunseen": return Instantiator.kRhSkipUnseen;  // UnseenSkip.cs (docs/686 §37), off
                 case "rhskiphhunseen": return Instantiator.kRhSkipHhUnseen;  // UnseenSkip.cs (docs/686 §37), off

@@ -409,6 +409,7 @@ namespace Ts3Fixes
                     OjsLineWaitEnd(interaction, target, start, length, got, timeoutInMinutes, unsStart, viewStart);
                 }
                 FglEnd(interaction, got);
+                if (got) LstGranted(this, interaction, target);  // docs/686 §29 (LineStale.cs): who holds the line and through which action
                 if (got && target is Sims3.Gameplay.Objects.Environment.JungleGym) UnsSlideGranted(this, interaction, target);  // docs/686 §37 (UnseenSkip.cs): slidehang
                 return got;
             }

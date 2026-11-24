@@ -196,6 +196,10 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kSlideHang value="False" />
     <kSlideHangHh value="False" />
     <kLineSwitchMinutes value="2" />
+    <kLineStale value="False" />
+    <kLineStaleHh value="False" />
+    <kLineStaleLog value="False" />
+    <kLineStaleMinutes value="5" />
     <kNextPlan value="False" />
     <kNextPlanHh value="False" />
     <kNextPlanLog value="False" />

@@ -499,6 +499,10 @@ namespace Ts3Fixes
         [Tunable] public static bool kServingShareHhUnseen = false;  // servingsharehhunseen (docs/686 §37): with servingshare, unseen household Sims (not the selected Sim) at a platter off screen count as in scope; explicit opt-in that lifts the household-never-unseen rule (CLAUDE.md) for serving grabs only
         [Tunable] public static bool kSlideHang = false;  // slidehang (docs/686 §37, EA bug): an NPC on a slide's HangOutOn that holds the ladder line past EA's HangOutTimeMax with a Sim waiting behind slides down (ExitReason.Finished, as PlayOn)
         [Tunable] public static bool kSlideHangHh = false;  // slidehanghh: slidehang for household heads on an autonomous hang-out too (not the selected Sim)
+        [Tunable] public static bool kLineStale = false;  // linestale (docs/686 §29): the head of an object's line whose turn-taking action ended or waits in its queue behind another action leaves the line after kLineStaleMinutes; NPC heads
+        [Tunable] public static bool kLineStaleHh = false;  // linestalehh: household and selected heads too
+        [Tunable] public static bool kLineStaleLog = false;  // linestalelog: one ts3native.log line per case
+        [Tunable] public static float kLineStaleMinutes = 5f;  // linestale: sim-minutes a head is not coming before it leaves the line (1-60)
         [Tunable] public static float kLineSwitchMinutes = 2f;  // lineswitch: sim-minutes in the line before a free twin is looked for (0.5-15)
         [Tunable] public static bool kNextPlan = false;  // nextplan (docs/686 §38): a Sim whose queue ran empty runs EA's own autonomy pass on its own task at once, not after the manager's one-a-frame queue (NPCs: high LOD, kNextPlanNpcPerTick)
         [Tunable] public static bool kNextPlanHh = false;  // nextplanhh: household and selected Sims too; a non-active household Sim also skips EA's 5 sim-min delay after a player's action (the active Sim keeps it)

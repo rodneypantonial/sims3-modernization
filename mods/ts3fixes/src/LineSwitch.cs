@@ -301,6 +301,12 @@ namespace Ts3Fixes
                     catch (ResetException) { throw; }
                     catch (Exception e) { LswError(e); }
                 }
+                if (sLstHeads.Count > 0)  // docs/686 §29 (LineStale.cs): a head that is not coming leaves the line
+                {
+                    try { LstCheck(this, sim); }
+                    catch (ResetException) { throw; }
+                    catch (Exception e) { LstError(e); }
+                }
                 if (sUnsSlideHeads.Count > 0)  // docs/686 §37 (UnseenSkip.cs): a slide hang-out past EA's HangOutTimeMax ends
                 {
                     try { UnsSlideCheck(this, sim); }

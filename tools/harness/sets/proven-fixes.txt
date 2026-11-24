@@ -21,7 +21,7 @@
 #   unseenfbtriphold unseenmotives unseenpark unseenroute venuememo wakepark wakepoll
 #   iafailmemo deadrefexact deadrefdelta deadrefslimuse deadrefperlot deadrefdescrev
 # measurement / diagnostics / test aids:
-#   autunseencmp boatgetoutdiag bookhanddiag deadsimcount routesrc swapinvokediag wildflowerprobe deadrefexactverify deadrefdeltaverify
+#   autunseencmp boatgetoutdiag bookhanddiag deadsimcount routesrc swapinvokediag wildflowerprobe deadrefexactverify deadrefdeltaverify linestalelog
 #   simresetalarmprobe
 # test-only, registry says test (vehicle leak tests, age-up swap, dead-Sim hollowing, joyride costume):
 #   ageupswap deadsimhollow vehfrankentaxi vehgetinleak vehparkreserve vehprotestcar vehseatdestroy
@@ -44,7 +44,7 @@
 #   viewlenienthh viewlenientlog
 #   socialreachhh socialreachlog
 #   unstuckhh unstucklog
-#   lineswitchhh lineswitchlog
+#   lineswitchhh lineswitchlog linestale linestalehh
 #   fridgelinehh fridgelinefill
 #   woohoosnap woohoosnaphh pairsnap pairsnaphh woohoosnaplog pairsnaplog
 #   crowdporthh crowdportlog
