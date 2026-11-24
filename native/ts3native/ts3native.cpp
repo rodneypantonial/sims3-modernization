@@ -18,7 +18,8 @@
 #ifdef TS3N_RFTEST
 #define TS3NATIVE_VERSION "0.36.189-rftest1"  // docs/89 §18: repro ops 30-34, never a release
 #else
-#define TS3NATIVE_VERSION "0.36.304-dmx2-1124"  // bugfix/doormemox-mismatch2-1124 on test/ea-m1124c: DoorMemoX=3 keeps a row only for answers doorgen vouched for in that ask (docs/585 §9)
+#define TS3NATIVE_VERSION "0.36.305-dmx2b-1124"  // + writer-hook counters (op 36 hi 5-7, ts3native_doorgen.writers)
+// was "0.36.304-dmx2-1124"  // bugfix/doormemox-mismatch2-1124 on test/ea-m1124c: DoorMemoX=3 keeps a row only for answers doorgen vouched for in that ask (docs/585 §9)
 // was "0.36.303-m1124b"  // master set m1124b: m1124 + test/bundle-day-1124 (pausegate-all, vb-owner-uaf, cp34 lanea cut rules, cp4b) + pickup gate + lc7f + EA laptop fixes (deadref travel return, DoorMemoX generation, EA 1.69 bundle rows)
 // was "0.36.301-eabundle1124b"  // EA 1.69 build of bundle1124: eafinal2 EA rows + bytes (union), TS3A_R removed, VbFreeDelay EA wrapper dtors + SlaveUnlink as on test/ea-parity-final; was "0.36.301-eabundle1124" (without the eafix.cpp EA port); was "0.36.301-bundle1124" test/bundle-day-1124 (not master): m1123c + bugfix/pausegate-all-1123 + bugfix/vb-owner-uaf-1123 (vbowner4) + bugfix/cp34-lanea-cut-rules-1124 (cp34b) + feature/cp4b-ghost-m8-1123 (cp4b2); counters v223 + v224, 6877 int32
 // was "0.36.301-eabundle1124"  // EA 1.69 build of bundle1124: eafinal2 EA rows + bytes (union), TS3A_R removed as on test/ea-parity-final; was "0.36.301-bundle1124" test/bundle-day-1124 (not master): m1123c + bugfix/pausegate-all-1123 + bugfix/vb-owner-uaf-1123 (vbowner4) + bugfix/cp34-lanea-cut-rules-1124 (cp34b) + feature/cp4b-ghost-m8-1123 (cp4b2); counters v223 + v224, 6877 int32
@@ -3470,8 +3471,10 @@ struct ReadyDrainCounters { volatile LONG mode, budgetUs, polls, served, saved, 
 // + why the cross-job memo missed (any DoorMemoX mode): no row for the key, a row of another generation / delegate set, a row past
 // DoorMemoXMs, and live answers that are not "unlocked" (never stored)
 // + exempt: acting-mode (1, 3) asks of a household, selected or unknown-scope job (only unseen and seen-NPC jobs use the memo)
-struct DmxScriptGen { volatile LONG gen, armed, bumps, unarmedAsks, missCold, missGen, missAge, notUnlocked, exempt, held, unnoted; };
-extern "C" __declspec(dllexport) DmxScriptGen ts3native_doorgen = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+// writers[3] (docs/585 §9, op 36 hi 5-7): calls of the writer hooks added in §9 (CommonDoor.HouseholdSimChanged,
+// PetPool.UpdateSimDescriptionId, PetPool.Copy), so a verify run reads back that each one ran
+struct DmxScriptGen { volatile LONG gen, armed, bumps, unarmedAsks, missCold, missGen, missAge, notUnlocked, exempt, held, unnoted, writers[3]; };
+extern "C" __declspec(dllexport) DmxScriptGen ts3native_doorgen = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, {0, 0, 0}};
 extern "C" __declspec(dllexport) ReadyDrainCounters ts3native_readydrain = {0, 2000, 0, 0, 0, 0, 0, 3000, 300, 0, 0};
 // [RouteAsync] TaskServe (default 0, taskserve.cpp, docs/637): after every script task run (the four call sites of
 // ScriptHost_RunTask 0xD7F000) the job owner serves the managed call the route worker has posted, instead of leaving it for
@@ -3699,6 +3702,9 @@ static void MaybeLogCounters(ULONGLONG now) {
         Log("door memo x mode 3: armed %ld, managed input bumps %ld, asks before arming %ld, hits %ld miss %ld inval %ld shadow %ld "
             "mismatch %ld, household / unknown asks not answered from it %ld", ts3native_doorgen.armed, ts3native_doorgen.bumps, ts3native_doorgen.unarmedAsks, c.dmxHit, c.dmxMiss,
             c.dmxInval, c.dmxShadow, c.dmxMismatch, ts3native_doorgen.exempt);
+    if (c.dmxMode == 3 || ts3native_doorgen.armed)
+        Log("door memo x writer hooks: CommonDoor.HouseholdSimChanged %ld, PetPool.UpdateSimDescriptionId %ld, PetPool.Copy %ld",
+            ts3native_doorgen.writers[0], ts3native_doorgen.writers[1], ts3native_doorgen.writers[2]);
     if (c.dmxMode)
         Log("door memo x misses: no row %ld, other generation %ld, older than DoorMemoXMs %ld; live answers not unlocked (not stored) %ld; "
             "asks on lots with a privacy / mod door handler (live, not kept) %ld; unlocked answers doorgen did not vouch for (own door rule, "

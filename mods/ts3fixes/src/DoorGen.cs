@@ -188,6 +188,13 @@ namespace Ts3Fixes
             try { DiagSend(kDoorGenOp, id != 0 ? DoorShareCore.IdHash(id) : 0u, (ushort)(DoorShareCore.kSrcOpBase + src)); } catch (Exception) { }  // hi 1 / 2 are DoorGenHold's
         }
 
+        // docs/585 §9: op 36 hi 5 / 6 / 7 = HouseholdSimChanged / PetPool.UpdateSimDescriptionId / PetPool.Copy ran (native counts only)
+        static void DoorGenWriter(ushort hi)
+        {
+            if (!sDoorGenOn) return;
+            try { DiagSend(kDoorGenOp, 0u, hi); } catch (Exception) { }
+        }
+
         static void DoorGenBumpDoor(int src, object door)
         {
             if (!sDoorGenOn) return;
@@ -215,7 +222,7 @@ namespace Ts3Fixes
             public void Lock2Orig(CommonDoor.tLock t, SimDescription o) { }
             public void Lock3Hook(CommonDoor.tLock t, SimDescription o, int room) { Lock3Orig(t, o, room); DoorGenBumpDoor(DoorShareCore.kSrcLock, this); }
             public void Lock3Orig(CommonDoor.tLock t, SimDescription o, int room) { }
-            public void ListHook(List<SimDescription> l) { ListOrig(l); DoorGenBumpDoor(DoorShareCore.kSrcOwnerList, this); }
+            public void ListHook(List<SimDescription> l) { ListOrig(l); DoorGenBumpDoor(DoorShareCore.kSrcOwnerList, this); DoorGenWriter(5); }
             public void ListOrig(List<SimDescription> l) { }
             public void AddHook(Sim s) { AddOrig(s); DoorGenBumpDoor(DoorShareCore.kSrcOwnerList, this); }
             public void AddOrig(Sim s) { }
@@ -375,9 +382,9 @@ namespace Ts3Fixes
         // household change: IsStray can turn true there
         public class DoorGenPoolHook
         {
-            public bool RenumberHook(ulong o, ulong n) { bool r = RenumberOrig(o, n); DoorGenBump(DoorShareCore.kSrcHousehold, 0); return r; }
+            public bool RenumberHook(ulong o, ulong n) { bool r = RenumberOrig(o, n); DoorGenBump(DoorShareCore.kSrcHousehold, 0); DoorGenWriter(6); return r; }
             public bool RenumberOrig(ulong o, ulong n) { return false; }
-            public void CopyHook(PetPool p) { CopyOrig(p); DoorGenBump(DoorShareCore.kSrcHousehold, 0); }
+            public void CopyHook(PetPool p) { CopyOrig(p); DoorGenBump(DoorShareCore.kSrcHousehold, 0); DoorGenWriter(7); }
             public void CopyOrig(PetPool p) { }
         }
 

@@ -357,6 +357,10 @@ static void TestAskLent() {
     for (int i = 0; i < 3; i++) t_hcJob++, assert(HcAsk(lot) == 2);
     assert(g_hcFakeCalls == c0 + 3 && k.dmxShadow == sh0 + 3 && k.dmxHit == hit2);
     g_dmxEvery = 8;
+    // op 36 hi 5-7: the §9 writer hooks are counted apart, the generation does not move (their source bump does)
+    { const LONG w0 = ts3native_doorgen.writers[0], w2 = ts3native_doorgen.writers[2], gen = ts3native_doorgen.gen;
+      DmxScriptOp(0, 5), DmxScriptOp(0, 7), DmxScriptOp(0, 7);
+      assert(ts3native_doorgen.writers[0] == w0 + 1 && ts3native_doorgen.writers[2] == w2 + 2 && ts3native_doorgen.gen == gen); }
     g_hcFakeNote = 3;
     ts3native_doorgen.armed = sArmed, t_hcScope = 0;
     k.dmxMode = 0;

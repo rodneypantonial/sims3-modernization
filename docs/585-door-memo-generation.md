@@ -240,3 +240,16 @@ later "locked" answer meets no row (no mismatch); a hi 3 note keeps it and the n
 
 Household: unchanged; household, selected and unknown scope always ask live and are compared [verified, selftest].
 Edition: the managed rule and the native change are the same on Steam and EA; the Steam asi compiles (0.36.304-dmx2-1124).
+
+Writer-hook counters (0.36.305-dmx2b-1124): each new hook also sends op 36 hi 5 / 6 / 7; native counts them in
+`ts3native_doorgen.writers[3]` and logs `door memo x writer hooks: CommonDoor.HouseholdSimChanged N, PetPool.UpdateSimDescriptionId N,
+PetPool.Copy N` at session end. Triggers [verified, static]: `HouseholdSimChanged` runs on `Household.HouseholdSimsChanged` of a lot
+that has doors (`SetHouseholdCallback`): repro step `pet_adopt` (a dog into a townie home lot). `PetPool.UpdateSimDescriptionId` is
+called only from `CharacterImportOnGameLoad.PopulateDescriptionsInWorldMap` (world load) and `PetPool.Copy` only from
+`PetPoolManager.FixupPools` (world-builder command `CharacterImportCommands.FixupPetPools`): no in-session player action reaches
+them, so the verify reads 0 there and only requires the line.
+
+Forced repro `doormemox-venue-clock` (rewritten): agent `venue_hours` with `lot` reads The Prosper Room's hours
+(`Lot.GetHoursOfOperation`: Bartending extended hours or the venue's MetaAutonomy tuning, data, not code) and with `jump` moves
+the clock (`SimClock.TicksAdvanced`, as `AddOneHour` does) to the open / close hour + `offsetMin`: -3, Sims sent through door
+0x28590035C1469290 (4 townies + Becca Bijou), then +1 (`open_now` flips, read back), the same Sims sent again; 5 crossings.

@@ -174,6 +174,7 @@ static u8 DmxScriptOp(DWORD lo, DWORD sub) {  // sim thread (UserDiag); sub = Di
         InterlockedExchange(&g_dmxNoteHash, (LONG)lo);
         return 1;
     }
+    if (sub >= 5 && sub <= 7) { InterlockedIncrement(&ts3native_doorgen.writers[sub - 5]); return 1; }  // §9 writer hook ran (count only)
     if (sub >= DS_SRC_OP_BASE) {
         InterlockedIncrement(&ts3native_doorgen.gen);
         InterlockedIncrement(&ts3native_doorgen.bumps);
