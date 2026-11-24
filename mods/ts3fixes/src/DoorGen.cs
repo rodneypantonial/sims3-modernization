@@ -7,6 +7,7 @@ using Sims3.Gameplay.ActorSystems;
 using Sims3.Gameplay.Controllers;
 using Sims3.Gameplay.Interfaces;
 using Sims3.Gameplay.Objects;
+using Sims3.Gameplay.PetSystems;
 using Sims3.Gameplay.Roles;
 using Sims3.Gameplay.Services;
 using Sims3.Gameplay.CAS;
@@ -35,7 +36,11 @@ namespace Ts3Fixes
     // and closing (ResortManager set_Closed, DoUpdate when Closed changed, CreateNewVIPDoorGroup, RemoveDoorFromVIPRoom,
     // FindVIPRoomData when it created a row, RefreshVIPRooms, VIPRoomData.AddGuest / RemoveGuest), gender, age and visible
     // pregnancy (SimDescription set_Gender / set_Age / set_IsVisuallyPregnant: gender doors, diving board), every household
-    // change (SimDescription.OnHouseholdChanged: also the pet pool's and temporary households' paths) and Sim.set_Service.
+    // change (SimDescription.OnHouseholdChanged: also the pet pool's and temporary households' paths) and Sim.set_Service,
+    // the owner-list cleanup CommonDoor.HouseholdSimChanged and the pool writers PetPool.UpdateSimDescriptionId / Copy.
+    // docs/585 §9: ts3native keeps a row only for an answer this file vouched for during that very ask (DoorGenMemoNote):
+    // doors with their own rule (single-gender doors follow the clock), special portals, routers that are no Sim, Sims
+    // outside the ordinary class and resort lots are always asked live, so their inputs need no hook here.
     // Not covered: inputs of portal types with their own IsAllowedThrough beyond these (elevators, box stalls, horse jumps,
     // spiral stairs, pools, tube elevators, ladders) and world-switch role teardown (RoleManager.DestroyAllRoleBots: travel
     // starts a new world and table). Those stay on the native 1-in-8 re-ask, the self-disable and DoorMemoXMs.
@@ -89,6 +94,59 @@ namespace Ts3Fixes
             Patch(typeof(SimDescription), "set_Gender", new Type[] { typeof(CASAgeGenderFlags) }, typeof(DoorGenDescHook), "GenderHook", "GenderOrig");
             Patch(typeof(SimDescription), "set_Age", new Type[] { typeof(CASAgeGenderFlags) }, typeof(DoorGenDescHook), "AgeHook", "AgeOrig");
             Patch(typeof(SimDescription), "set_IsVisuallyPregnant", new Type[] { typeof(bool) }, typeof(DoorGenDescHook), "PregHook", "PregOrig");
+            // docs/585 §9: the owner-list cleanup when a Sim leaves the lot's household (EA's direct mOwnerList.Remove, no setter),
+            // and the pet pool writers that make a Sim a stray without a household change (an id renumbered, a pool copied in)
+            Patch(typeof(CommonDoor), "HouseholdSimChanged", new Type[] { typeof(Sims3.Gameplay.CAS.HouseholdEvent), typeof(IActor), typeof(Household) }, typeof(DoorGenDoorHook), "OwnerGoneHook", "OwnerGoneOrig");
+            Patch(typeof(PetPool), "UpdateSimDescriptionId", new Type[] { typeof(ulong), typeof(ulong) }, typeof(DoorGenPoolHook), "RenumberHook", "RenumberOrig");
+            Patch(typeof(PetPool), "Copy", new Type[] { typeof(PetPool) }, typeof(DoorGenPoolHook), "CopyHook", "CopyOrig");
+        }
+
+        // docs/585 §9: the hook after LotManager.PortalLockedCallback (DoorShare.cs DoorShareCbHook) calls this for every
+        // "unlocked" answer, inside the served call, so ts3native's worker reads the note right after its own live ask. Sub 3 =
+        // the answer depends only on inputs this file bumps: the lot runs the game's handler alone and event 59 the game's
+        // callback alone, the router is a Sim of DoorShare's ordinary class (no horse, stray, tomb mummy, proprietor, service,
+        // IgnoreDoorLocks), and the portal is a Door with CommonDoor's own rule on a lot that is no resort, or a portal no rule
+        // of the handler names. Sub 4 = anything else, kept live by ts3native: a single-gender door (its rule reads
+        // Lot.IsOpenVenue, the clock: bp-vbowner 11-24, the bouncer at The Prosper Room, 2 -> 1 within 25 ms with no bump), a
+        // turnstile, a secret or non-animated door, elevators, poles, ladders, pools, a router that is no Sim, a resort lot
+        // (VIP rooms read real estate and services), a lot with a privacy or mod handler. An error = sub 4.
+        // Why ordinary-only puts are enough for the Sim side: a Sim leaving the class (service ends, role ends, flag cleared)
+        // only ever restricts back to the answer it had while ordinary; entering it from outside starts with no row; becoming a
+        // stray (household or pool: bumped), a tomb mummy (occult: bumped) are the only ordinary -> locked paths.
+        static int sDgSkipNotes;
+        static readonly Dictionary<Type, bool> sDgSkipTypes = new Dictionary<Type, bool>();
+        static void DoorGenMemoNote(ulong lotId, ulong simId, ulong portalId, int from, int to)
+        {
+            uint h = DoorShareCore.NoteHash(portalId, simId, from, to);
+            string why = null;
+            GameObject p = null;
+            try
+            {
+                Lot lot = LotManager.GetLot(lotId);
+                Sim actor = new ObjectGuid(simId).ObjectFromId<Sim>();
+                p = new ObjectGuid(portalId).ObjectFromId<GameObject>();
+                Door door = p as Door;
+                if (lot == null || p == null) why = "no lot or portal";
+                else if (!DshLotPure(lot) || !DshWorldPure()) why = "extra handler";
+                else if (actor == null) why = "router is no Sim";
+                else if (DshWhy(actor) != 0) why = "Sim not ordinary";
+                else if (DshSpecial(p)) why = "special portal";
+                else if (door != null && !DshCommonRule(door.GetType())) why = "own door rule";
+                else if (door != null && (door.LotCurrent == null || door.LotCurrent.CommercialLotSubType == CommercialLotSubType.kEP10_Resort)) why = "resort lot";
+            }
+            catch (ResetException) { throw; }
+            catch (Exception) { why = "error"; }
+            try { DiagSend(kDoorGenOp, h, why == null ? (ushort)3 : (ushort)4); } catch (Exception) { }
+            if (why == null || p == null || sDgSkipNotes >= 40) return;
+            try
+            {
+                Type t = p.GetType();
+                if (sDgSkipTypes.ContainsKey(t)) return;
+                sDgSkipTypes[t] = true;
+                sDgSkipNotes++;
+                DiagLine("doorgen: memo skips " + t.Name + " 0x" + portalId.ToString("X16") + " on lot 0x" + lotId.ToString("X16") + " (" + why + ")");
+            }
+            catch (Exception) { }
         }
 
         // world load: read the switch once and arm the native side (op 36 lo 1); off = nothing is sent all session
@@ -162,6 +220,8 @@ namespace Ts3Fixes
             public void AddHook(Sim s) { AddOrig(s); DoorGenBumpDoor(DoorShareCore.kSrcOwnerList, this); }
             public void AddOrig(Sim s) { }
             public void RemoveHook(Sim s) { RemoveOrig(s); DoorGenBumpDoor(DoorShareCore.kSrcOwnerList, this); }
+            public void OwnerGoneHook(Sims3.Gameplay.CAS.HouseholdEvent e, IActor m, Household old) { OwnerGoneOrig(e, m, old); DoorGenBumpDoor(DoorShareCore.kSrcOwnerList, this); }
+            public void OwnerGoneOrig(Sims3.Gameplay.CAS.HouseholdEvent e, IActor m, Household old) { }
             public void RemoveOrig(Sim s) { }
         }
 
@@ -309,6 +369,16 @@ namespace Ts3Fixes
             // IsGreetedOnLot, SelectedHousehold locks and the home-lot test read it
             public void HouseholdHook(Household h, bool home) { HouseholdOrig(h, home); DoorGenBump(DoorShareCore.kSrcHousehold, 0); DoorGenNote("household", (SimDescription)(object)this); }
             public void HouseholdOrig(Household h, bool home) { }
+        }
+
+        // PetPool.UpdateSimDescriptionId (a description renumbered) and Copy (a pool restored) put ids in a pool with no
+        // household change: IsStray can turn true there
+        public class DoorGenPoolHook
+        {
+            public bool RenumberHook(ulong o, ulong n) { bool r = RenumberOrig(o, n); DoorGenBump(DoorShareCore.kSrcHousehold, 0); return r; }
+            public bool RenumberOrig(ulong o, ulong n) { return false; }
+            public void CopyHook(PetPool p) { CopyOrig(p); DoorGenBump(DoorShareCore.kSrcHousehold, 0); }
+            public void CopyOrig(PetPool p) { }
         }
 
         public class DoorGenLotHook

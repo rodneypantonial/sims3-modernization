@@ -689,6 +689,9 @@ DoorGenDoorHook.Lock2Hook,CommonDoor,SetLockTypeAndOwner,DoorGen.cs,Lock2Orig,no
 DoorGenDoorHook.Lock3Hook,CommonDoor,SetLockTypeAndOwner,DoorGen.cs,Lock3Orig,no,no path to a yield in 2 overload(s),DoorGen,keep
 DoorGenDoorHook.ListHook,CommonDoor,SetLockTypeOwnerList,DoorGen.cs,ListOrig,no,no path to a yield in 1 overload(s),DoorGen,keep
 DoorGenDoorHook.AddHook,CommonDoor,AddToOwnerList,DoorGen.cs,AddOrig,no,no path to a yield in 1 overload(s),DoorGen,keep
+DoorGenDoorHook.OwnerGoneHook,CommonDoor,HouseholdSimChanged,DoorGen.cs,OwnerGoneOrig,no,no path to a yield in 1 overload(s),DoorGen,keep
+DoorGenPoolHook.RenumberHook,PetPool,UpdateSimDescriptionId,DoorGen.cs,RenumberOrig,no,no path to a yield in 1 overload(s),PetPool.UpdateSimDescriptionId (a description renumbered) and Copy (a pool restored) put ids in a pool with,keep
+DoorGenPoolHook.CopyHook,PetPool,Copy,DoorGen.cs,CopyOrig,no,no path to a yield in 1 overload(s),PetPool.UpdateSimDescriptionId (a description renumbered) and Copy (a pool restored) put ids in a pool with,keep
 DoorGenDoorHook.RemoveHook,CommonDoor,RemoveFromOwnerList,DoorGen.cs,RemoveOrig,no,no path to a yield in 1 overload(s),DoorGen,keep
 DoorGenHouseholdHook.GreetHook,Household,AddGreetedLotToHousehold,DoorGen.cs,GreetOrig,yes,Household::AddGreetedLotToHousehold > Household::AddLearnRichInformation > .. 8 .. > Simulator::Sleep,DoorGen,"keep, stub remap (SavedStacks.cs)"
 DoorGenHouseholdHook.UngreetHook,Household,RemoveGreetedLotForHousehold,DoorGen.cs,UngreetOrig,no,no path to a yield in 1 overload(s),DoorGen,keep

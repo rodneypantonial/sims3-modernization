@@ -327,6 +327,37 @@ static void TestAskLent() {
     for (DWORD l = 1; l <= 33; l++) DmxHoldSet(0x9000 + l, true);  // overflow: every lot held
     assert(DmxHeld(700) && DmxHeld(0));
     assert(DmxScriptOp(1, 0) == 1 && !DmxHeld(700) && !DmxHeld(0x9001));  // arm clears
+    // docs/585 §9 (Becca Bijou, the bouncer of The Prosper Room, at a single-gender door whose answer follows the venue's
+    // opening hours): an "unlocked" answer is kept only with the ask's own sub 3 note. Not vouched for (sub 4), no note, or a
+    // note for another ask: live, not kept, so the next job asks live too and a later "locked" answer meets no stale row
+    static const DWORD kNoKeep[] = {4, 0, 5};
+    DWORD lot = 800;
+    for (DWORD n : kNoKeep) {
+        const LONG un0 = ts3native_doorgen.unnoted, mm1 = k.dmxMismatch;
+        g_hcFakeNote = n, g_hcFakeAns = 2, t_hcJob++, g_dmxSelf = 0;
+        c0 = g_hcFakeCalls;
+        assert(HcAsk(lot) == 2 && g_hcFakeCalls == c0 + 1 && ts3native_doorgen.unnoted == un0 + 1);
+        g_hcFakeAns = 1, t_hcJob++, g_dmxSelf = 0;  // 25 ms later the venue opened: "locked"
+        assert(HcAsk(lot) == 1 && g_hcFakeCalls == c0 + 2 && k.dmxMismatch == mm1 && k.dmxMode == 3);
+        lot++;
+    }
+    // vouched for (sub 3): kept, the next job's ask is a memo hit; a "locked" answer sends no note and counts nothing here
+    g_hcFakeNote = 3, g_hcFakeAns = 2, t_hcJob++, g_dmxSelf = 0;
+    c0 = g_hcFakeCalls;
+    const LONG un1 = ts3native_doorgen.unnoted;
+    assert(HcAsk(lot) == 2 && g_hcFakeCalls == c0 + 1);
+    t_hcJob++, g_dmxSelf = 0;
+    assert(HcAsk(lot) == 2 && g_hcFakeCalls == c0 + 1 && ts3native_doorgen.unnoted == un1);
+    g_hcFakeAns = 1, t_hcJob++;
+    assert(HcAsk(lot + 1) == 1 && ts3native_doorgen.unnoted == un1);
+    // test-only DoorMemoXCheckEvery=1: a valid row is never answered from, every one is asked live and compared
+    g_hcFakeAns = 2, g_dmxEvery = 1;
+    const LONG sh0 = k.dmxShadow, hit2 = k.dmxHit;
+    c0 = g_hcFakeCalls;
+    for (int i = 0; i < 3; i++) t_hcJob++, assert(HcAsk(lot) == 2);
+    assert(g_hcFakeCalls == c0 + 3 && k.dmxShadow == sh0 + 3 && k.dmxHit == hit2);
+    g_dmxEvery = 8;
+    g_hcFakeNote = 3;
     ts3native_doorgen.armed = sArmed, t_hcScope = 0;
     k.dmxMode = 0;
     t_hcJob = 0;

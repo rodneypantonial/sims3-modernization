@@ -1212,7 +1212,7 @@ ts3fixes `DiagSend(op, lo)` (`UserDiag.cs`): `Route.GetOption2` with optHi = `0x
 | 20-29 | `discourage.cpp` | [Discourage] GhostTest |
 | 30-34 | `discourage.cpp` | docs/89 §18 repro footprint window (`TS3N_RFTEST` builds only) |
 | 35 | `gvro.cpp` | gvattr: the next plan's source class and scope (docs/250 §7.0) |
-| 36 | `DoorGen.cs` / `hostcalls.cpp` | doorgen: hi 0 = lo 1 arms DoorMemoX=3, lo 0 bumps the managed door-input generation (older packages); hi 1 / 2 = the lot whose low dword is lo is held / free (an extra PortalPathPlan handler); hi 16 + source (docs/674 §9, `DoorShareCore.kSrc*`, `DS_SRC_OP_BASE`) = a bump from that source, lo = `DsIdHash` of the door or lot (0 = neither): DoorMemoX's generation moves on every one, `[RouteSnap] DoorShare`'s stamps by the source's scope |
+| 36 | `DoorGen.cs` / `hostcalls.cpp` | doorgen: hi 0 = lo 1 arms DoorMemoX=3, lo 0 bumps the managed door-input generation (older packages); hi 1 / 2 = the lot whose low dword is lo is held / free (an extra PortalPathPlan handler); hi 3 / 4 = the "unlocked" answer just given is vouched for / not, lo = DsNoteHash of the ask (docs/585 §9); hi 16 + source (docs/674 §9, `DoorShareCore.kSrc*`, `DS_SRC_OP_BASE`) = a bump from that source, lo = `DsIdHash` of the door or lot (0 = neither): DoorMemoX's generation moves on every one, `[RouteSnap] DoorShare`'s stamps by the source's scope |
 | 37 | `Responsive631.cs` | playerfirst: route lo is player-ordered, for its next START; answers 1 when `[RouteAsync] PlayerFirst=1` (docs/631) |
 | 40 | `doorshare.cpp` | doorshare (docs/674): the class of route lo's follower for its next START, hi 0-15 = bit 0 ordinary Sim, bit 1 the selected Sim's own command, bit 2 the follower is no Sim (boat, car), bits 3-15 a fold of the follower's object id; neither class bit set: bits 3-15 = why not (1 no description, 2 horse, 3 stray, 4 tomb mummy, 5 proprietor, 6 service, 7 IgnoreDoorLocks); answers 1 when `[RouteSnap] DoorShare` is on |
 | 41 | `doorshare.cpp` | doorshare (docs/674): the door answer just given by `LotManager.PortalLockedCallback` is "unlocked" and does not depend on the router; lo = hash of the ask (portal id, router id, rooms), hi 0-15 = kind (1 plain door open to anybody, 2 portal no rule names, 3 any portal for a router that is no Sim) |
@@ -1258,6 +1258,7 @@ Separate struct of `LONG`, not versioned (`[RouteSnap] DoorMemoX=3`, switch `doo
 | 0x10-0x1F | `missCold` (no row for the key), `missGen` (row of another generation / delegate set), `missAge` (row older than DoorMemoXMs), `notUnlocked` (live answers not "unlocked", never stored); any DoorMemoX mode, "door memo x misses:" line |
 | 0x20-0x23 | `exempt`: mode 1 / 3 asks of a household, selected or unknown-scope job, asked live (docs/585 §5); "door memo x mode 3:" line |
 | 0x24-0x27 | `held`: mode 3 asks on a lot with a privacy / mod door handler (op 36 hi 1), asked live, not kept or compared (docs/585 §6); "door memo x misses:" line |
+| 0x28-0x2B | `unnoted`: mode 3 "unlocked" answers with no op 36 hi 3 note for that ask (own door rule, special portal, no Sim, Sim not ordinary, resort, older package), live, not kept (docs/585 §9); "door memo x misses:" line |
 
 ## ts3native `ts3native_slavelink` export (`SlaveLinkCounters` in `native/ts3native/eafix.cpp`)
 
