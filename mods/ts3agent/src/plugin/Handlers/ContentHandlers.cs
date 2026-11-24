@@ -183,7 +183,10 @@ namespace Ts3Agent
                 Dictionary<string, object> d = Util.Obj();
                 AddOrigin(d, k);
                 placed.Add(d);
-                GameObject go = GlobalFunctions.CreateObjectOutOfWorld(k) as GameObject;
+                // EA app 1.69: a catalog product whose script class is missing throws ("unable to get proxy") instead of returning null
+                GameObject go;
+                try { go = GlobalFunctions.CreateObjectOutOfWorld(k) as GameObject; }
+                catch (Exception e) { d["error"] = "the game could not create it: " + e.Message; continue; }
                 if (go == null) { d["error"] = "the game could not create it"; continue; }
                 created.Add(go.ObjectId.Value);
                 d["id"] = Util.Id(go.ObjectId);
