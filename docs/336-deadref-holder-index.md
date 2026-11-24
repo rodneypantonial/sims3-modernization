@@ -688,3 +688,53 @@ AssignSchool, ImportContent) [verified offline], so the LC-7e hooks cover it.
 
 Mask 0, pins 3 hooked / 1 no-hook / 0 mismatch / 0 refused; ts3native.log has `deadrefdescrev scan:` lines. The smoke keeps
 `deadrefdescrev_untrusted<=0` (the one third-party writer in that set is now pinned) and adds `_pins_hooked>=3`.
+
+## 16. LC-7g: EA 1.69 travel return stalled with the five switches on (2026-11-24)
+
+### 16.1 Failure
+
+EA app 1.69.47, Bridgeport -> France -> Bridgeport, eafinal2 asi + ini, ts3fixes lc7f: arm E (deadrefdelta, deadrefslimuse,
+deadrefperlot, deadrefdescrev, deadrefdeltaverify on) stalled on the first return 3/3; arm C (same package, switches off) and
+arm A (vanilla) passed (live 66-67 s after travel_home) [verified, queue lc7-travel-triage-ea-1124]. Stall snapshot: travel
+phase EndVacation, `inworld_post_init` false (InWorldState.Startup never got past `ImportTravellingHousehold`), in_travel
+true, Pause, household 2/2 in the world, empty Sim and managed stacks, no script error, no ts3fixes error line.
+
+### 16.2 What differs between E and C on the return path
+
+- The deadref hooks are swapped in both arms (ApplyDeadRefs, not switch-gated); with the switches on they only act on a live
+  index. Every index (sDrIdx, sDd, sPl) is reset in StartDeadRefSweep on OnWorldLoadFinished, which runs before
+  InWorldState.Startup (ToInWorldState.OnWorldLoadFinished), and the sweep refuses while travelling or on vacation
+  (DeadRefUnsafe), so during the import every hook returns at its `Live` / `Seeded` test [verified, code]. The stall counters
+  agree: descrev runs 0, all verify / sweep counters 0.
+- `deadrefdelta_sims_marked` / `_descs_marked` (157 / 343) count kSimDestroyed / kSimDescriptionDisposed events; the listener
+  runs in both arms and `DeltaIndex.Mark` returns at once while unseeded. Marking writes only our dictionaries, never a Sim,
+  SimDescription or MiniSimDescription [verified, DeadRefsDelta.cs DrIdxMarkEvent, DeadRefsCore.cs Mark].
+- The one E-only change that runs inside the import: the writer scan (run at the France load, under the travel load
+  screen) body-swapped `simler90Extras.Other.SimDescriptionMergeTravelInfoCareer` (pin hook "Dirty", slot S2V). simler90's
+  `SimDescription.MergeTravelInformation(SimDescription)` calls it as its last statement, and EA's
+  `ImportTravellingHousehold` calls that for each returning traveller; France arrival never calls it, so the first call of
+  the swapped method is the return [verified, decompiled simler90 UPDATE242 and EA GameStates]. A static private method of a
+  third-party assembly called from another assembly was never swapped before. That the swap is what stops the import is
+  inferred: no stack, no log line (I-602-16).
+
+### 16.3 Fix
+
+- The simler90Extras pin takes the new hook kind "TravelWorld": no swap, counted no-hook (`_pins_nohook`); the method writes
+  only when `GameUtils.IsAnyTravelBasedWorld()` (its first test), so in a travel-based world its kinds join the run's
+  untrusted mask (DdGather: those kinds walk every description, exact), elsewhere it is covered. The import-time merge needs
+  nothing: every load resets the index and the first run seeds. Slot S2V and DdPinS2V0Hook removed.
+- The writer scan (and every pin swap) no longer runs in a travel load; the first live sweep scans.
+- Our hooks that run in the travel import (Occupation.ImportContent, ObjectOwnerComponent.ImportContent,
+  CareerManager.AssignJob / AssignSchool, Pregnancy.StartFromMerge) log `deadref travel step: <hook> enter|done` once per
+  travel load, plus `ImportTravellingHousehold load finished` and `PostTravelingFixUp reached (import done)`
+  (GameStates.TravelComplete). A throw of our bookkeeping logs `deadref travel FAIL: <hook>: <exception>` once and turns the
+  cadence work off for the session (DrCadence false: full walks, as deadrefcadence off). The game's own calls are unchanged.
+- No Sim behaviour change: the hooks and the index are bookkeeping only (household rule unaffected).
+
+### 16.4 Verify
+
+Queue `deadref-travel-verify-ea-1124` (EA laptop), repro `travel-roundtrip-bp-lc7on-x2`: a live sweep before each trip
+(scan in live BP, `_pins_nohook >= 1` = this build), two trips, each return 120 s then FAIL with the stall snapshot (cleanup).
+PASS: 4 `PostTravelingFixUp reached` lines, no `deadref travel FAIL`. Steam: no Steam bp-lc7-travel result found; the Steam
+test install has the same simler90Extras hash (pinned there first), so Steam runs the same swap; whether it stalls there is
+unknown (EA's 1.69 Mono differs from Steam's, inferred).

@@ -435,8 +435,10 @@ namespace Ts3Fixes
             new Pin("NRaasWoohooer", "NRaas.WoohooerSpace.Proxies.PregnancyProxy", "CopyPregnancy", "(" + kPreg + "," + kPreg + ")", 0x8f541ac5e93fe2c5UL, KPregnancy, "CopyPregnancy"),
             // LC-7f (docs/336 §15): simler90 Gameplay Core Mod UPDATE242 (test install): its SimDescription.MergeTravelInformation calls
             // Other.SimDescriptionMergeTravelInfoCareer, which stores a Clone of the imported Sim's School in mSchool (and its
-            // job / retired career into QuitCareers / mRetiredCareer, which phase 4 does not walk); a dirty hook seeds the next run
-            new Pin("simler90Extras", "simler90Extras.Other", "SimDescriptionMergeTravelInfoCareer", "(" + kSd + "," + kSd + ")", 0xc88127ea403a709cUL, KCoworkers | KFormerBoss, "Dirty"),
+            // job / retired career into QuitCareers / mRetiredCareer, which phase 4 does not walk). LC-7g (docs/336 §16): no body swap
+            // (the EA 1.69 travel return stalled in ImportTravellingHousehold with it); it writes only in a travel-based world
+            // (its first test), so there its kinds count as untrusted (DdGather), elsewhere it is covered
+            new Pin("simler90Extras", "simler90Extras.Other", "SimDescriptionMergeTravelInfoCareer", "(" + kSd + "," + kSd + ")", 0xc88127ea403a709cUL, KCoworkers | KFormerBoss, "TravelWorld"),
         };
 
         // The method p names in a (declared, by SigKey), or null

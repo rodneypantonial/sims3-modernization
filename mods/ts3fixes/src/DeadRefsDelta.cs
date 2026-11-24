@@ -267,8 +267,10 @@ namespace Ts3Fixes
         {
             public bool ImportHook(ResKeyTable resKeyTable, ObjectIdTable objIdTable, IPropertyStreamReader reader)
             {
+                DrTravelStep("ObjectOwnerComponent.ImportContent", "enter");
                 bool ok = ImportOrig(resKeyTable, objIdTable, reader);
-                DrIdxNote(Owner);
+                try { DrIdxNote(Owner); } catch (Exception e) { DrTravelFail("ObjectOwnerComponent.ImportContent", e); }
+                DrTravelStep("ObjectOwnerComponent.ImportContent", "done");
                 return ok;
             }
             public bool ImportOrig(ResKeyTable resKeyTable, ObjectIdTable objIdTable, IPropertyStreamReader reader) { return false; } // ObjectOwnerComponent.ImportContent

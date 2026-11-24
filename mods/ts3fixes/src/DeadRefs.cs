@@ -116,7 +116,37 @@ namespace Ts3Fixes
         // phases array index -> the phase number of the header list (index 12 is phase 14, cooking; 13 is phase 13)
         static readonly int[] kDrPhaseNo = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 13, 15 };
 
-        static bool DrCadence() { return ShortcutOn("deadrefcadence"); }
+        static bool DrCadence() { return !sDrTravelOff && ShortcutOn("deadrefcadence"); }
+
+        // LC-7g (docs/336 §16): our deadref hooks that run inside EA's travel import (InWorldState.Startup:
+        // ImportTravellingHousehold .. PostTravelingFixUp, one catch (Exception) {} in EA, so a throw or a stop there leaves
+        // the return home half done). Each logs its first enter / done per travel load to ts3native.log, so the last line is
+        // the last step reached. A throw of our bookkeeping is logged once and turns the cadence work (delta, per-lot, desc
+        // index) off for the session: the sweep then walks everything, as with deadrefcadence off. The game's call is unchanged.
+        static readonly Dictionary<string, bool> sDrTravelSteps = new Dictionary<string, bool>();
+        static bool sDrTravelOff;
+        static void DrTravelStep(string hook, string step)
+        {
+            try
+            {
+                if (!GameStates.IsTravelling || sDrTravelSteps.Count >= 64 || !DrIndexSwitches()) return;
+                string k = hook + " " + step;
+                if (sDrTravelSteps.ContainsKey(k)) return;
+                sDrTravelSteps[k] = true;
+                if (!DiagLine("deadref travel step: " + k)) ShortcutLog("deadref travel step: " + k);
+            }
+            catch (Exception) { PatchCounters()[410]++; }
+        }
+        static bool DrIndexSwitches() { return ShortcutOn("deadrefdelta") || ShortcutOn("deadrefperlot") || ShortcutOn("deadrefdescrev"); } // steps only with an index switch on
+        static void DrTravelImported() { DrTravelStep("PostTravelingFixUp", "reached (import done)"); } // GameStates.TravelComplete
+        static void DrTravelFail(string hook, Exception e)
+        {
+            PatchCounters()[410]++;
+            if (sDrTravelOff) return;
+            sDrTravelOff = true;
+            string l = "deadref travel FAIL: " + hook + ": " + e.GetType().Name + ": " + e.Message + "; deadref cadence work off for the session (full walks, as deadrefcadence off)";
+            try { if (!DiagLine(l)) ShortcutLog(l); } catch (Exception) { ShortcutLog(l); }
+        }
         static bool DrDescPhase(int p) { return p <= 2 || p == 5; }
 
         // every removal counter of the sweep's phases: a run that moved one found something
@@ -196,6 +226,8 @@ namespace Ts3Fixes
             sDeadRefDisposedListener = EventTracker.AddListener(EventTypeId.kSimDescriptionDisposed, OnDeadRefDescEvent);
             if (sDdPregListener != null) EventTracker.RemoveListener(sDdPregListener);
             sDdPregListener = EventTracker.AddListener(EventTypeId.kGotPregnant, OnDdPregEvent); // LC-7b: a pregnancy start notes the mother
+            sDrTravelSteps.Clear(); // LC-7g: steps are logged once per load
+            if (GameStates.IsTravelling && DrIndexSwitches()) { DrTravelStep("ImportTravellingHousehold", "load finished"); GameStates.TravelComplete += DrTravelImported; } // EA clears the event with the travel data
             DrIdxLoadReset(); DdLoadReset(); // docs/336, docs/333 LC-7: a new world; the first object pass walks every object and seeds the index
             DrAllDue(); // descriptions a load left invalid (no Fixup) sent no event: the first pass runs everything
             sDeadRefAlarm = AlarmManager.Global.AddAlarmRepeating(1f, TimeUnit.Hours, delegate { DeadRefSweepStart(); }, 1f, TimeUnit.Hours, "Ts3Fixes.DeadRefSweep", AlarmType.NeverPersisted, null);

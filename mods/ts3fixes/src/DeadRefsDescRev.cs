@@ -70,6 +70,7 @@ namespace Ts3Fixes
         static readonly DescRevIndex<SimDescription> sDd = new DescRevIndex<SimDescription>();
         static bool sDdOpen, sDdDelta, sDdVerify;
         static int sDdUntrusted = -1; // DescWriterScan mask; -1 = not scanned yet (assemblies do not change after the start)
+        static int sDdTravelKinds; // LC-7g: kinds of pinned writers that write only in a travel-based world (no hook)
         static DescWriterScan.Result sDdScan;
         static int sDdScanUs, sDdKinds; // sDdKinds: the untrusted mask of the open delta run
         static EventListener sDdPregListener;
@@ -114,7 +115,9 @@ namespace Ts3Fixes
             sDd.Reset(); sDdOpen = sDdDelta = false; sDdTaken = sDdLeft = sDdDuringDesc = sDdDuringSim = null;
             c[1755]++; DdGauges(c);
             sDdDirty = false; sDdStartH = -1f; sDdDirtyHour = -1;
-            if (ShortcutOn("deadrefdescrev")) DdUntrusted(); // under the load screen, not in the first live sweep
+            // under the load screen, not in the first live sweep; never inside a travel load (LC-7g: the scan installs pinned
+            // hooks; EA's InWorldState.Startup imports the travellers after this, inside one catch-all): the first sweep scans
+            if (ShortcutOn("deadrefdescrev") && !Sims3.Gameplay.GameStates.IsTravelling) DdUntrusted();
         }
 
         // The untrusted kinds, scanned on first use.
@@ -156,8 +159,10 @@ namespace Ts3Fixes
                         List<string> mism = new List<string>();
                         foreach (KeyValuePair<DescWriterScan.Pin, MethodBase> pm in DescWriterScan.MatchPins(a, DescWriterScan.Pins, mism))
                         {
-                            if (pm.Key.Hook != null && !DdPinHook(pm.Key, pm.Value)) { c[1774]++; DdScanLine("deadrefdescrev pin refused: " + n + " " + pm.Key.Key); continue; }
-                            c[pm.Key.Hook != null ? 1772 : 1775]++;
+                            bool travel = pm.Key.Hook == "TravelWorld"; // LC-7g: no swap, untrusted in travel-based worlds (DdGather)
+                            if (travel) sDdTravelKinds |= pm.Key.Kind;
+                            else if (pm.Key.Hook != null && !DdPinHook(pm.Key, pm.Value)) { c[1774]++; DdScanLine("deadrefdescrev pin refused: " + n + " " + pm.Key.Key); continue; }
+                            c[pm.Key.Hook != null && !travel ? 1772 : 1775]++;
                             if (al == allowed) al = new Dictionary<string, bool>(allowed);
                             DescWriterScan.Cover(al, pm.Value);
                         }
@@ -398,7 +403,7 @@ namespace Ts3Fixes
                 return ToObjects(Household.EverySimDescription());
             }
             sDdDelta = true; c[1744]++;
-            sDdKinds = sDdUntrusted;
+            sDdKinds = sDdUntrusted | (sDdTravelKinds != 0 && GameUtils.IsAnyTravelBasedWorld() ? sDdTravelKinds : 0);
             c[1754] += sDd.Prune(DescGone);
             int fromKeys, fromUnkeyed;
             sDdTaken = sDd.Idx.TakeHolders(out fromKeys, out fromUnkeyed);
@@ -623,13 +628,23 @@ namespace Ts3Fixes
         // rehire from QuitCareers): note its owner after the store (null = removal, nothing new held)
         public class DdAssignJobHook
         {
-            public bool JobHook(Occupation c) { try { return JobOrig(c); } finally { if (c != null) DdNote(c.OwnerDescription); } }
+            public bool JobHook(Occupation c)
+            {
+                DrTravelStep("CareerManager.AssignJob", "enter");
+                try { return JobOrig(c); }
+                finally { try { if (c != null) DdNote(c.OwnerDescription); } catch (Exception e) { DrTravelFail("CareerManager.AssignJob", e); } DrTravelStep("CareerManager.AssignJob", "done"); }
+            }
             public bool JobOrig(Occupation c) { return false; }
         }
 
         public class DdAssignSchoolHook
         {
-            public bool SchoolHook(School s) { try { return SchoolOrig(s); } finally { if (s != null) DdNote(s.OwnerDescription); } }
+            public bool SchoolHook(School s)
+            {
+                DrTravelStep("CareerManager.AssignSchool", "enter");
+                try { return SchoolOrig(s); }
+                finally { try { if (s != null) DdNote(s.OwnerDescription); } catch (Exception e) { DrTravelFail("CareerManager.AssignSchool", e); } DrTravelStep("CareerManager.AssignSchool", "done"); }
+            }
             public bool SchoolOrig(School s) { return false; }
         }
 
@@ -655,8 +670,11 @@ namespace Ts3Fixes
         {
             public bool ImportHook(ResKeyTable resKeyTable, ObjectIdTable objIdTable, IPropertyStreamReader reader)
             {
+                DrTravelStep("Occupation.ImportContent", "enter");
                 bool ok = ImportOrig(resKeyTable, objIdTable, reader);
-                DdNoteHeld(DdOwner(this)); // CareerManager assigns mJob / mSchool after this returns: the owner is stepped next run
+                try { DdNoteHeld(DdOwner(this)); } // CareerManager assigns mJob / mSchool after this returns: the owner is stepped next run
+                catch (Exception e) { DrTravelFail("Occupation.ImportContent", e); }
+                DrTravelStep("Occupation.ImportContent", "done");
                 return ok;
             }
             public bool ImportOrig(ResKeyTable resKeyTable, ObjectIdTable objIdTable, IPropertyStreamReader reader) { return false; } // Occupation.ImportContent (FormerBoss)
@@ -676,7 +694,13 @@ namespace Ts3Fixes
 
         public static class DdPregMergeHook
         {
-            public static void MergeHook(Sim woman, Pregnancy incomingPreg) { MergeOrig(woman, incomingPreg); if (woman != null) DdNote(woman.SimDescription); }
+            public static void MergeHook(Sim woman, Pregnancy incomingPreg)
+            {
+                DrTravelStep("Pregnancy.StartFromMerge", "enter");
+                MergeOrig(woman, incomingPreg);
+                try { if (woman != null) DdNote(woman.SimDescription); } catch (Exception e) { DrTravelFail("Pregnancy.StartFromMerge", e); }
+                DrTravelStep("Pregnancy.StartFromMerge", "done");
+            }
             public static void MergeOrig(Sim woman, Pregnancy incomingPreg) { } // Pregnancy.StartFromMerge
         }
 

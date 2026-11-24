@@ -24,7 +24,6 @@ namespace Ts3Fixes
             kDdSlots["I1B"] = new Type[] { typeof(DdPinI1B0Hook), typeof(DdPinI1B1Hook), typeof(DdPinI1B2Hook), typeof(DdPinI1B3Hook) };
             kDdSlots["I2B"] = new Type[] { typeof(DdPinI2B0Hook), typeof(DdPinI2B1Hook), typeof(DdPinI2B2Hook), typeof(DdPinI2B3Hook) };
             kDdSlots["S3V"] = new Type[] { typeof(DdPinS3V0Hook), typeof(DdPinS3V1Hook), typeof(DdPinS3V2Hook), typeof(DdPinS3V3Hook) };
-            kDdSlots["S2V"] = new Type[] { typeof(DdPinS2V0Hook) }; // LC-7f: simler90Extras (one build)
             kDdSlots["S3B"] = new Type[] { typeof(DdPinS3B0Hook), typeof(DdPinS3B1Hook), typeof(DdPinS3B2Hook), typeof(DdPinS3B3Hook) };
             return kDdSlots;
         }
@@ -106,7 +105,6 @@ namespace Ts3Fixes
         public static class DdPinS3V1Hook { public static void Hook(object a0, object a1, bool a2) { try { Orig(a0, a1, a2); } finally { DdDirty(); } } public static void Orig(object a0, object a1, bool a2) { } }
         public static class DdPinS3V2Hook { public static void Hook(object a0, object a1, bool a2) { try { Orig(a0, a1, a2); } finally { DdDirty(); } } public static void Orig(object a0, object a1, bool a2) { } }
         public static class DdPinS3V3Hook { public static void Hook(object a0, object a1, bool a2) { try { Orig(a0, a1, a2); } finally { DdDirty(); } } public static void Orig(object a0, object a1, bool a2) { } }
-        public static class DdPinS2V0Hook { public static void Hook(object a0, object a1) { try { Orig(a0, a1); } finally { DdDirty(); } } public static void Orig(object a0, object a1) { } }
         public static class DdPinS3B0Hook { public static bool Hook(object a0, object a1, object a2) { try { return Orig(a0, a1, a2); } finally { DdDirty(); } } public static bool Orig(object a0, object a1, object a2) { return false; } }
         public static class DdPinS3B1Hook { public static bool Hook(object a0, object a1, object a2) { try { return Orig(a0, a1, a2); } finally { DdDirty(); } } public static bool Orig(object a0, object a1, object a2) { return false; } }
         public static class DdPinS3B2Hook { public static bool Hook(object a0, object a1, object a2) { try { return Orig(a0, a1, a2); } finally { DdDirty(); } } public static bool Orig(object a0, object a1, object a2) { return false; } }
