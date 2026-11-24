@@ -180,6 +180,11 @@ static LONG DmxGen() {
     static const int kEv[] = {5, 7, 9, 0x0A, 0x0D, 0x0E, 0x0F, 0x10};
     LONG g = 0;
     for (int i = 4; i <= 14; i++) g += k.snIc[i];
+    // docs/585 §8: also DestroyPortalHandle (16), OnExitBuildBuy (22: rooms may have new numbers, DoorShare's own rule),
+    // DoorLockStateChanged (24: RotatingWallDoor calls it without SetLockTypeAndOwner), BuildRoutingData (29), BulldozeLot
+    // (30) and the houseboat lot create / delete (31, 32); all rare, so the hit rate does not move
+    static const int kIc[] = {16, 22, 24, 29, 30, 31, 32};
+    for (int i : kIc) g += k.snIc[i];
     for (int e : kEv) g += k.snWev[e];
     if (k.dmxMode == 3) g += ts3native_doorgen.gen;  // mode 3: the managed inputs (DoorGen.cs) too
     return g;
