@@ -113715,6 +113715,624 @@
     "expect": "ON arm: 'OK   host map iter fix' with 'TestRehash', no crash, 'host map iter:' lines up to 20, each 're-found by id % buckets' (or by scan) and 'fixed'; 'in no chain' 0 expected. OFF arm (Repair=0): the same lines with 'passed to EA (Repair=0)', then most likely the 0xD71E7D AV (erase chain walk) or a later heap fault from the write into the freed bucket array"
   },
   {
+    "id": "doormemox-venue-clock",
+    "bug": "DoorMemoX=3 (docs/585 §9): door 0x28590035C1469290 (The Prosper Room, rooms 25 -> 22) answered 1 for the bouncer Becca Bijou 25 ms after another job kept 2 (eam1124c bp-vbowner-correct-1, and the same Sim / door in §8); inferred cause a door rule that reads the clock (DoorSingleGender: Lot.IsOpenVenue()), no writer to bump",
+    "fix": "bugfix/doormemox-mismatch2-1124 (416adf7a): native keeps a row only for an unlocked answer ts3fixes vouched for in that ask (op 36 hi 3, DoorGenMemoNote); own door rules, special portals, non-ordinary Sims, resort lots answered live (ts3native_doorgen.unnoted)",
+    "save": "Baseline-BP",
+    "note": "Repro rules (docs/TESTING.md): forced, no waiting. 4 picked townies teleported next to the nearest DoorSingleGender, the clock jumped across opening / closing hours (clock_hour, 8 rounds), the townies sent through the door right after each jump (asks of the old hour may still sit as rows from other jobs), plus one vbowner churn round (place 25 objects on the home lot, delete them in buy mode: the P5c park + destroy) and a door round right after it. Run with DoorMemoXCheckEvery=1 so every valid row is compared. Read: doorgen: memo skips DoorSingleGender line (the door type is never kept), door memo x misses: unnoted > 0, shadow > 0 mismatch 0.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 8
+        },
+        "waitS": 5,
+        "note": "background NPC door asks for memo rows"
+      },
+      {
+        "cmd": "pick_sims",
+        "args": {
+          "age": "youngadult,adult",
+          "count": 4,
+          "townies": true,
+          "noPets": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "picked:1",
+            "picked:2",
+            "picked:3",
+            "picked:4"
+          ],
+          "near": "@type:DoorSingleGender"
+        },
+        "waitS": 4,
+        "note": "townies (NPC scope) next to the nearest single-gender door"
+      },
+      {
+        "cmd": "clock_hour",
+        "args": {
+          "hour": 9
+        },
+        "waitS": 1,
+        "note": "jump across a venue opening / closing hour: the door rule follows Lot.IsOpenVenue(), nothing is written"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:1",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:2",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:3",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:4",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 6,
+        "note": "door asks right after the clock jump, other jobs may hold a row of the old hour",
+        "optional": true
+      },
+      {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "picked:1",
+            "picked:2",
+            "picked:3",
+            "picked:4"
+          ],
+          "near": "@type:DoorSingleGender"
+        },
+        "waitS": 4,
+        "note": "townies (NPC scope) next to the nearest single-gender door"
+      },
+      {
+        "cmd": "clock_hour",
+        "args": {
+          "hour": 10
+        },
+        "waitS": 1,
+        "note": "jump across a venue opening / closing hour: the door rule follows Lot.IsOpenVenue(), nothing is written"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:1",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:2",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:3",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:4",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 6,
+        "note": "door asks right after the clock jump, other jobs may hold a row of the old hour",
+        "optional": true
+      },
+      {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "picked:1",
+            "picked:2",
+            "picked:3",
+            "picked:4"
+          ],
+          "near": "@type:DoorSingleGender"
+        },
+        "waitS": 4,
+        "note": "townies (NPC scope) next to the nearest single-gender door"
+      },
+      {
+        "cmd": "clock_hour",
+        "args": {
+          "hour": 17
+        },
+        "waitS": 1,
+        "note": "jump across a venue opening / closing hour: the door rule follows Lot.IsOpenVenue(), nothing is written"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:1",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:2",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:3",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:4",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 6,
+        "note": "door asks right after the clock jump, other jobs may hold a row of the old hour",
+        "optional": true
+      },
+      {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "picked:1",
+            "picked:2",
+            "picked:3",
+            "picked:4"
+          ],
+          "near": "@type:DoorSingleGender"
+        },
+        "waitS": 4,
+        "note": "townies (NPC scope) next to the nearest single-gender door"
+      },
+      {
+        "cmd": "clock_hour",
+        "args": {
+          "hour": 18
+        },
+        "waitS": 1,
+        "note": "jump across a venue opening / closing hour: the door rule follows Lot.IsOpenVenue(), nothing is written"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:1",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:2",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:3",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:4",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 6,
+        "note": "door asks right after the clock jump, other jobs may hold a row of the old hour",
+        "optional": true
+      },
+      {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "picked:1",
+            "picked:2",
+            "picked:3",
+            "picked:4"
+          ],
+          "near": "@type:DoorSingleGender"
+        },
+        "waitS": 4,
+        "note": "townies (NPC scope) next to the nearest single-gender door"
+      },
+      {
+        "cmd": "clock_hour",
+        "args": {
+          "hour": 20
+        },
+        "waitS": 1,
+        "note": "jump across a venue opening / closing hour: the door rule follows Lot.IsOpenVenue(), nothing is written"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:1",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:2",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:3",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:4",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 6,
+        "note": "door asks right after the clock jump, other jobs may hold a row of the old hour",
+        "optional": true
+      },
+      {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "picked:1",
+            "picked:2",
+            "picked:3",
+            "picked:4"
+          ],
+          "near": "@type:DoorSingleGender"
+        },
+        "waitS": 4,
+        "note": "townies (NPC scope) next to the nearest single-gender door"
+      },
+      {
+        "cmd": "clock_hour",
+        "args": {
+          "hour": 21
+        },
+        "waitS": 1,
+        "note": "jump across a venue opening / closing hour: the door rule follows Lot.IsOpenVenue(), nothing is written"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:1",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:2",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:3",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:4",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 6,
+        "note": "door asks right after the clock jump, other jobs may hold a row of the old hour",
+        "optional": true
+      },
+      {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "picked:1",
+            "picked:2",
+            "picked:3",
+            "picked:4"
+          ],
+          "near": "@type:DoorSingleGender"
+        },
+        "waitS": 4,
+        "note": "townies (NPC scope) next to the nearest single-gender door"
+      },
+      {
+        "cmd": "clock_hour",
+        "args": {
+          "hour": 2
+        },
+        "waitS": 1,
+        "note": "jump across a venue opening / closing hour: the door rule follows Lot.IsOpenVenue(), nothing is written"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:1",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:2",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:3",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:4",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 6,
+        "note": "door asks right after the clock jump, other jobs may hold a row of the old hour",
+        "optional": true
+      },
+      {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "picked:1",
+            "picked:2",
+            "picked:3",
+            "picked:4"
+          ],
+          "near": "@type:DoorSingleGender"
+        },
+        "waitS": 4,
+        "note": "townies (NPC scope) next to the nearest single-gender door"
+      },
+      {
+        "cmd": "clock_hour",
+        "args": {
+          "hour": 3
+        },
+        "waitS": 1,
+        "note": "jump across a venue opening / closing hour: the door rule follows Lot.IsOpenVenue(), nothing is written"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:1",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:2",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:3",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:4",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 6,
+        "note": "door asks right after the clock jump, other jobs may hold a row of the old hour",
+        "optional": true
+      },
+      {
+        "cmd": "camera_to_tagged",
+        "args": {
+          "sim": "active",
+          "height": 12,
+          "back": 12
+        },
+        "waitS": 2,
+        "note": "camera on the active Sim at home: the objects placed next are in view"
+      },
+      {
+        "cmd": "place_objects",
+        "timeoutS": 120,
+        "args": {
+          "filter": "ea",
+          "lot": "home",
+          "count": 25,
+          "skip": 0
+        },
+        "waitS": 20,
+        "note": "round 1: 25 EA objects on the home lot, in view"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 12,
+        "note": "Buy entry #1",
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "buy_catalog"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "buy_delete_objects",
+        "args": {
+          "max": 30
+        },
+        "waitS": 10,
+        "note": "round 1: the 25 deleted in Buy mode through the hand tool callbacks (CanBeSold, Pickup, Sold, Edit Deleted, Destroy) while in view: 0xA85DF0 owner deletes"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 8,
+        "note": "back to live #1",
+        "until": {
+          "cmd": "cas_state",
+          "all": [
+            {
+              "path": "state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "maxS": 180
+        }
+      },
+      {
+        "cmd": "clock_hour",
+        "args": {
+          "hour": 19
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:1",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:2",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:3",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 0,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "sim": "picked:4",
+          "target": "@type:DoorSingleGender"
+        },
+        "waitS": 6,
+        "note": "door asks right after the clock jump, other jobs may hold a row of the old hour",
+        "optional": true
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      }
+    ],
+    "expect": "no FAIL door memo x and no door memo x shadow line; a doorgen: memo skips DoorSingleGender line; unnoted > 0; shadow > 0 mismatch 0; no script errors"
+  },
+  {
     "id": "doormemox-privacy",
     "bug": "DoorMemoX=3 (docs/585 §6): PrivacySituation's Lot.PortalPathPlan handler answers from the asking Sim's current interaction, which no generation tracks; sv-hhsearch 2026-11-16 logged FAIL door memo x (household dog, room 1 -> 4)",
     "fix": "bugfix/doormemox-privacy-1117: DoorGen.cs sends op 36 hi 1/2 per lot handler add / remove and at arm; native asks on held lots skip the memo (ts3native_doorgen.held)",
