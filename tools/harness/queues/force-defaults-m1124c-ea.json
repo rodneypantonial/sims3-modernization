@@ -27,7 +27,7 @@
  "jobs": [
   {
    "id": "lineswitch-force",
-   "note": "[est 12 min] Release defaults (no ini or switch overrides; only the repro's log switches): kLineSwitch on, kLineSwitchHh off, read back in the ts3fixes settings line. Repro lineswitch-force-defaults: the forced case is a household Sim, so the exemption must hold and the switch must still see it (counters lineswitch_kept>=1,lineswitch_switched<1,lineswitch_errors<1). 0 script errors.",
+   "note": "EA 2026-11-24 fix (bugfix/ea-force-defaults-repros-1124): the kept line is logged as \"ts3fixes: lineswitch: ...\" (userdiag.cpp prefixes every ts3fixes DiagLine), so the old ^lineswitch: rule could never match; repro selects Jack after the home teleport (@type: resolves nearest the selected Sim). [est 12 min] Release defaults (no ini or switch overrides; only the repro's log switches): kLineSwitch on, kLineSwitchHh off, read back in the ts3fixes settings line. Repro lineswitch-force-defaults: the forced case is a household Sim, so the exemption must hold and the switch must still see it (counters lineswitch_kept>=1,lineswitch_switched<1,lineswitch_errors<1). 0 script errors.",
    "asi": "game-copy/eam1124c/ts3native.asi",
    "iniBase": "game-copy/eam1124c/ts3native.ini",
    "fixesPackage": "game-copy/eam1124c/ts3fixes.package",
@@ -41,9 +41,9 @@
    "logRequire": {
     "^ts3native 0\\.36\\.303-eam1124b2 ": 1,
     "^ts3fixes: settings on: (.*, )?kLineSwitch(, |$)": 1,
-    "^lineswitch: kept, household without lineswitchhh: household Judy Bunch, ": 1,
     "^release: 0.36.303-eam1124b2 EA$": 1,
-    "^host build: EA app 1.69.47": 1
+    "^host build: EA app 1.69.47": 1,
+    "^ts3fixes: lineswitch: kept, household without lineswitchhh: household Judy Bunch, ": 1
    },
    "save": "Baseline-SV-Spring",
    "run": {
@@ -92,15 +92,6 @@
       "ts3fixes: settings off: kLineSwitchHh"
      ]
     },
-    "^lineswitch: kept, household without lineswitchhh: household Judy Bunch, ": {
-     "match": [
-      "lineswitch: kept, household without lineswitchhh: household Judy Bunch, UseToilet ToiletCheap, waited 4.9 sim-min"
-     ],
-     "noMatch": [
-      "lineswitch: switched: household Judy Bunch, UseToilet ToiletCheap -> ToiletModerate (other room, 8.7 m, waited 2.0 sim-min)",
-      "lineswitch: kept, player's action: household Lisa Bunch, UseToilet ToiletCheap, waited 2.1 sim-min"
-     ]
-    },
     "^release: 0.36.303-eam1124b2 EA$": {
      "match": [
       "release: 0.36.303-eam1124b2 EA"
@@ -120,6 +111,16 @@
       "host build: Steam 1.67",
       "host build: retail 1.67"
      ]
+    },
+    "^ts3fixes: lineswitch: kept, household without lineswitchhh: household Judy Bunch, ": {
+     "match": [
+      "ts3fixes: lineswitch: kept, household without lineswitchhh: household Judy Bunch, UseToilet ToiletCheap, waited 4.9 sim-min"
+     ],
+     "noMatch": [
+      "lineswitch: kept, household without lineswitchhh: household Judy Bunch, UseToilet ToiletCheap, waited 4.9 sim-min",
+      "ts3fixes: lineswitch: switched: household Judy Bunch, UseToilet ToiletCheap -> ToiletModerate (other room, 8.7 m, waited 2.0 sim-min)",
+      "ts3fixes: lineswitch: kept, player's action: household Lisa Bunch, UseToilet ToiletCheap, waited 2.1 sim-min"
+     ]
     }
    },
    "scriptErrorsMax": 0,
@@ -129,7 +130,7 @@
   },
   {
    "id": "reactoverlay-force",
-   "note": "[est 12 min] Release defaults (no ini or switch overrides; only the repro's log switches): kReactOverlay on, kReactOverlayHh off, read back in the ts3fixes settings line. Repro reactoverlay-force-defaults: the forced case is a household Sim, so the exemption must hold and the switch must still see it (counters reactoverlay_queued>=1,reactoverlay_now<1,reactoverlay_later<1,reactoverlay_dropped<1,reactoverlay_errors<1). 0 script errors.",
+   "note": "EA 2026-11-24 fix (bugfix/ea-force-defaults-repros-1124): job-wide reactoverlay_now/_later/_dropped < 1 also counted NPC overlays (EA: now 1, later 4 while Bea's own forced reactions all stayed queued, overlaid 0): kReactOverlay is ON for NPCs, so those are the switch working. Household rule now per Sim: repro mustMatch \"overlaid now 0, would 0, queued [1-9]\" on each forced Bea step, logForbid on any overlay or drop of a household / selected Sim (log on from the first step); fixesRequire keeps queued>=1, errors<1. Repro objects placed on the home lot (was fixed x/z from the contributor lot). [est 12 min] Release defaults (no ini or switch overrides; only the repro's log switches): kReactOverlay on, kReactOverlayHh off, read back in the ts3fixes settings line. Repro reactoverlay-force-defaults: the forced case is a household Sim, so the exemption must hold and the switch must still see it (counters reactoverlay_queued>=1,reactoverlay_now<1,reactoverlay_later<1,reactoverlay_dropped<1,reactoverlay_errors<1). 0 script errors.",
    "asi": "game-copy/eam1124c/ts3native.asi",
    "iniBase": "game-copy/eam1124c/ts3native.ini",
    "fixesPackage": "game-copy/eam1124c/ts3fixes.package",
@@ -153,7 +154,7 @@
      "noSamplers": true,
      "minutes": 5,
      "repro": "reactoverlay-force-defaults",
-     "fixesRequire": "reactoverlay_queued>=1,reactoverlay_now<1,reactoverlay_later<1,reactoverlay_dropped<1,reactoverlay_errors<1",
+     "fixesRequire": "reactoverlay_queued>=1,reactoverlay_errors<1",
      "noProf": true
     }
    },
@@ -212,11 +213,24 @@
       "host build: Steam 1.67",
       "host build: retail 1.67"
      ]
+    },
+    "^ts3fixes: reactoverlay: (overlaid now|overlaid from the queue after \\d+ ms|dropped stale after \\d+ ms \\([^)]*\\)): (household|selected) ": {
+     "match": [
+      "ts3fixes: reactoverlay: overlaid now: household Bea Jig, Startled during WatchTV (StandingPosture)",
+      "ts3fixes: reactoverlay: overlaid from the queue after 2400 ms: selected Bea Jig, Embarrassed during WatchTV (StandingPosture)",
+      "ts3fixes: reactoverlay: dropped stale after 5100 ms (routing): household Kit Jig, Startled during nothing (StandingPosture)"
+     ],
+     "noMatch": [
+      "ts3fixes: reactoverlay: overlaid now: npc Gunther Goth, Startled during WatchTV (StandingPosture)",
+      "ts3fixes: reactoverlay: overlaid from the queue after 2400 ms: npc Bella Goth, Embarrassed during Eat (SittingPosture)",
+      "ts3fixes: reactoverlay: would overlay: household Bea Jig, Startled during WatchTV (StandingPosture)"
+     ]
     }
    },
    "scriptErrorsMax": 0,
    "logForbid": {
-    "^ts3fixes: settings on: (.*, )?kReactOverlayHh(, |$)": 0
+    "^ts3fixes: settings on: (.*, )?kReactOverlayHh(, |$)": 0,
+    "^ts3fixes: reactoverlay: (overlaid now|overlaid from the queue after \\d+ ms|dropped stale after \\d+ ms \\([^)]*\\)): (household|selected) ": 0
    }
   }
  ]

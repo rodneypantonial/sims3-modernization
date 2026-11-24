@@ -121024,6 +121024,15 @@
         "max": 300
       },
       {
+        "cmd": "set_active_sim",
+        "args": {
+          "sim": "Jack Bunch"
+        },
+        "note": "select Jack (home now): @type:ToiletCheap / ToiletModerate resolve nearest the SELECTED Sim; switch_household selects whoever the game picks (EA SV-Spring 2026-11-24: Ethan, away from home, so @type:ToiletCheap was a public 'Bargain John' with an empty menu and 'use' failed). Jack is outside the line under test (he uses the moderate toilet)",
+        "waitS": 2,
+        "max": 300
+      },
+      {
         "cmd": "list_interactions",
         "args": {
           "sim": "Judy Bunch",
@@ -121621,6 +121630,14 @@
     "noKeepAlive": true,
     "steps": [
       {
+        "cmd": "patches",
+        "args": {
+          "reactoverlaylog": true
+        },
+        "note": "log on from the start: every overlay / drop of the whole job is logged with its Sim scope (npc / household / selected), so the job-wide counters can be told apart (EA 2026-11-24: now 1 / later 4 before the old log step, Sims unknown)",
+        "waitS": 1
+      },
+      {
         "cmd": "make_household",
         "args": {
           "name": "Jig",
@@ -121720,11 +121737,9 @@
         "args": {
           "type": "BedSingle",
           "name": "bed",
-          "x": 1193.6,
-          "y": 49.1,
-          "z": 1182.8
+          "near": "home"
         },
-        "note": "a single bed on the back lawn by Bo's ring (the pillow fight jig goes by it: within the 6 m clip walk)",
+        "note": "placed by the game near the home lot centre (was fixed x/z from the contributor lot: on another save the cheapest vacant lot differs, so the objects could land off the household lot = hollow). A single bed on the back lawn by Bo's ring (the pillow fight jig goes by it: within the 6 m clip walk)",
         "waitS": 3,
         "max": 300
       },
@@ -121733,9 +121748,7 @@
         "args": {
           "type": "Bookshelf",
           "name": "shelf",
-          "x": 1197.5,
-          "y": 49.1,
-          "z": 1192.5
+          "near": "home"
         },
         "note": "a bookshelf (its starter books: Read to Sleep needs a book)",
         "waitS": 3,
@@ -121841,9 +121854,7 @@
         "args": {
           "type": "TVCheap",
           "name": "tv",
-          "x": 1191.5,
-          "y": 49.1,
-          "z": 1190.5
+          "near": "home"
         },
         "note": "a TV in the yard: Watch TV is a still action with the arms free",
         "waitS": 3,
@@ -121855,12 +121866,12 @@
           "sims": [
             "Bea Jig"
           ],
-          "x": 1189.5,
-          "z": 1192.5,
+          "lot": "home",
+          "near": "TVCheap",
           "autonomy": false,
           "motives": true
         },
-        "note": "Bea near the TV",
+        "note": "Bea next to the home lot TV (lot + type: never another lot TV)",
         "waitS": 6
       },
       {
@@ -121905,6 +121916,7 @@
           ]
         },
         "note": "defaults (household): a NowOrLater reaction while she watches: EA queues it behind Watch TV (would 1)",
+        "mustMatch": "overlaid now 0, would 0, queued [1-9]",
         "waitS": 2
       },
       {
@@ -121948,6 +121960,7 @@
           ]
         },
         "note": "defaults (household): the overlay plays at once, nothing queued (overlaid now 1)",
+        "mustMatch": "overlaid now 0, would 0, queued [1-9]",
         "waitS": 2
       },
       {
@@ -121967,6 +121980,7 @@
           ]
         },
         "note": "defaults (household): again",
+        "mustMatch": "overlaid now 0, would 0, queued [1-9]",
         "waitS": 2
       },
       {
