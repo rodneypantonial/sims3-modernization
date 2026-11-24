@@ -235,6 +235,17 @@ static void TestAskLent() {
     t_hcJob = 19;
     assert(HcAsk(403) == 2 && k.dmxInval == 5);
     g_dmxTicks = g_qpf.QuadPart / 4;
+    // docs/585 §8: the routing ICs outside 4-14 that change rooms, door locks or lots move the generation too
+    static const int kGenIc[] = {16, 22, 24, 29, 30, 31, 32};
+    t_hcJob = 100;
+    for (int ic : kGenIc) {
+        t_hcJob++, g_hcFakeAns = 2;
+        assert(HcAsk(404) == 2);  // kept under the current generation
+        const LONG inv = k.dmxInval;
+        k.snIc[ic]++;
+        t_hcJob++, g_hcFakeAns = 1;
+        assert(HcAsk(404) == 1 && k.dmxInval == inv + 1);  // the row no longer holds: live ask
+    }
     // shadow: the flip clears, valid rows asked anyway and compared
     k.dmxMode = 2;
     t_hcJob = 20, g_hcFakeAns = 2;

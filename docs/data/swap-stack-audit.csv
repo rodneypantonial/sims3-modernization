@@ -694,6 +694,8 @@ DoorGenBuffHook.RemHook,BuffOnFire,OnRemoval,DoorGen.cs,RemOrig,yes,BuffOnFire::
 DoorGenBuffHook2.AddHook,BuffTorched,OnAddition,DoorGen.cs,AddOrig,yes,BuffTorched::OnAddition > BuffOnFire::OnAddition > .. 3 .. > Simulator::Sleep,DoorGen,"keep, stub remap (SavedStacks.cs)"
 DoorGenBuffHook2.RemHook,BuffTorched,OnRemoval,DoorGen.cs,RemOrig,yes,BuffTorched::OnRemoval > BuffOnFire::OnRemoval > .. 4 .. > StateMachineClient::RequestState,DoorGen,"keep, stub remap (SavedStacks.cs)"
 DoorGenSimHook.FlagHook,Sim,FlagSet,DoorGen.cs,FlagOrig,no,no path to a yield in 1 overload(s),DoorGen,keep
+DoorGenDescHook.HouseholdHook,SimDescription,OnHouseholdChanged,DoorGen.cs,HouseholdOrig,no,no path to a yield in 1 overload(s),DoorGen,keep
+DoorGenSimHook.ServiceHook,Sim,set_Service,DoorGen.cs,ServiceOrig,no,no path to a yield in 1 overload(s),DoorGen,keep
 DoorGenOccultHook.AddHook,OccultManager,AddOccultType,DoorGen.cs,AddOrig,yes,OccultManager::AddOccultType > OccultManager::AddOccultType > OccultPlantSim::OnAddition > Simulator::Sleep,DoorGen,"keep, stub remap (SavedStacks.cs)"
 DoorGenOccultHook.RemHook,OccultManager,RemoveOccultType,DoorGen.cs,RemOrig,yes,OccultManager::RemoveOccultType > OccultPlantSim::OnRemoval > Simulator::Sleep,DoorGen,"keep, stub remap (SavedStacks.cs)"
 DoorGenRoleHook.CreateHook,Role,CreateRole,DoorGen.cs,CreateOrig,yes,Role::CreateRole > Proprietor::StartRole > .. 3 .. > StateMachineClient::RequestState,DoorGen,"keep, stub remap (SavedStacks.cs)"
