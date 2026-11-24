@@ -49,7 +49,7 @@
 // EA app 1.69 asi only (the Steam and retail asi keep their bytes): RC m1124d (rc/m1124d 65fcaca1) incl. the EA parity port.
 // Not a quoted TS3NATIVE_VERSION define, so queue.ts / pr-preflight.ts / experimental.ts still read the Steam version above.
 #if defined(TS3A_TABLE) && !defined(TS3A_RETAIL) && !defined(TS3N_RFTEST)
-#define TS3NATIVE_VERSION_EA "0.36.305-eam1124d2-hbdet"
+#define TS3NATIVE_VERSION_EA "0.36.305-eam1124d2hbdet"
 #undef TS3NATIVE_VERSION
 #define TS3NATIVE_VERSION TS3NATIVE_VERSION_EA
 #endif
