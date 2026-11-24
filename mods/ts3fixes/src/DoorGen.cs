@@ -8,6 +8,7 @@ using Sims3.Gameplay.Controllers;
 using Sims3.Gameplay.Interfaces;
 using Sims3.Gameplay.Objects;
 using Sims3.Gameplay.Roles;
+using Sims3.Gameplay.Services;
 using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
 using Sims3.SimIFace;
@@ -33,7 +34,8 @@ namespace Ts3Fixes
     // (Role.CreateRole, Role.RemoveSimFromRole, RoleManagerTask.FillInWorldRole, which clears other Sims' roles), resort VIP data
     // and closing (ResortManager set_Closed, DoUpdate when Closed changed, CreateNewVIPDoorGroup, RemoveDoorFromVIPRoom,
     // FindVIPRoomData when it created a row, RefreshVIPRooms, VIPRoomData.AddGuest / RemoveGuest), gender, age and visible
-    // pregnancy (SimDescription set_Gender / set_Age / set_IsVisuallyPregnant: gender doors, diving board).
+    // pregnancy (SimDescription set_Gender / set_Age / set_IsVisuallyPregnant: gender doors, diving board), every household
+    // change (SimDescription.OnHouseholdChanged: also the pet pool's and temporary households' paths) and Sim.set_Service.
     // Not covered: inputs of portal types with their own IsAllowedThrough beyond these (elevators, box stalls, horse jumps,
     // spiral stairs, pools, tube elevators, ladders) and world-switch role teardown (RoleManager.DestroyAllRoleBots: travel
     // starts a new world and table). Those stay on the native 1-in-8 re-ask, the self-disable and DoorMemoXMs.
@@ -64,6 +66,9 @@ namespace Ts3Fixes
             Patch(typeof(BuffTorched), "OnRemoval", new Type[] { typeof(BuffManager), typeof(BuffInstance) }, typeof(DoorGenBuffHook2), "RemHook", "RemOrig");
             // IgnoreDoorLocks
             Patch(typeof(Sim), "FlagSet", new Type[] { typeof(Sim.SimFlags), typeof(bool) }, typeof(DoorGenSimHook), "FlagHook", "FlagOrig");
+            // docs/585 §8: a Sim's household on every path (pet pool, temporary households) and its service
+            Patch(typeof(SimDescription), "OnHouseholdChanged", new Type[] { typeof(Household), typeof(bool) }, typeof(DoorGenDescHook), "HouseholdHook", "HouseholdOrig");
+            Patch(typeof(Sim), "set_Service", new Type[] { typeof(Service) }, typeof(DoorGenSimHook), "ServiceHook", "ServiceOrig");
             // occults (tomb mummy)
             Patch(typeof(OccultManager), "AddOccultType", new Type[] { typeof(OccultTypes), typeof(bool), typeof(bool), typeof(bool), typeof(OccultBaseClass) }, typeof(DoorGenOccultHook), "AddHook", "AddOrig");
             Patch(typeof(OccultManager), "RemoveOccultType", new Type[] { typeof(OccultTypes) }, typeof(DoorGenOccultHook), "RemHook", "RemOrig");
@@ -208,6 +213,28 @@ namespace Ts3Fixes
                 if (watch && s.FlagIsSet(Sim.SimFlags.IgnoreDoorLocks) != before) DoorGenBump(DoorShareCore.kSrcIgnoreLocks, 0);
             }
             public void FlagOrig(Sim.SimFlags f, bool v) { }
+            // CommonDoor.IsAllowedThrough: a police, firefighter, reaper, burglar, repoman or social worker service ignores locks
+            public void ServiceHook(Service v) { ServiceOrig(v); DoorGenBump(DoorShareCore.kSrcRole, 0); DoorGenNote("service", ((Sim)(object)this).SimDescription); }
+            public void ServiceOrig(Service v) { }
+        }
+
+        // docs/585 §8: names the Sim behind a Sim-side bump (first 40 per session), so a later "door memo x shadow" key's actor
+        // can be matched to the change that came before it
+        static int sDgNotes;
+        static void DoorGenNote(string what, SimDescription d)
+        {
+            if (!sDoorGenOn || sDgNotes >= 40) return;
+            try
+            {
+                Sim s = d != null ? d.CreatedSim : null;
+                if (s == null) return;  // not in the world: routes nothing
+                sDgNotes++;
+                Household h = d.Household;
+                DiagLine("doorgen: " + what + " " + d.FullName + " 0x" + s.ObjectId.Value.ToString("X16") + " household "
+                    + (h == null ? "none" : h.IsPetHousehold ? "pet" : h.IsServiceNpcHousehold ? "service" : h.IsTouristHousehold ? "tourist" : h.IsActive ? "active" : "other")
+                    + ", stray " + d.IsStray + ", service " + (d.Service != null ? d.Service.ServiceType.ToString() : "none"));
+            }
+            catch (Exception) { }
         }
 
         public class DoorGenOccultHook
@@ -277,6 +304,11 @@ namespace Ts3Fixes
             public void AgeOrig(CASAgeGenderFlags a) { }
             public void PregHook(bool v) { PregOrig(v); DoorGenBump(DoorShareCore.kSrcDesc, 0); }
             public void PregOrig(bool v) { }
+            // the only writer of SimDescription.Household besides Delete: Household.Add / Remove and also AddTemporary /
+            // RemoveTemporary and PetPool.AddPet / RemovePet (AddSilent), which Household.Add / Remove never see. IsStray,
+            // IsGreetedOnLot, SelectedHousehold locks and the home-lot test read it
+            public void HouseholdHook(Household h, bool home) { HouseholdOrig(h, home); DoorGenBump(DoorShareCore.kSrcHousehold, 0); DoorGenNote("household", (SimDescription)(object)this); }
+            public void HouseholdOrig(Household h, bool home) { }
         }
 
         public class DoorGenLotHook
