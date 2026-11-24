@@ -1,15 +1,33 @@
 {
-  "note": "EA laptop (EA app 1.69.47, TS3.exe, EA launch, DXVK, no Apex): verify of DoorMemoX fix 2, bugfix/doormemox-mismatch2-1124 416adf7a (docs/585 §9, ledger I-608-3/4), after eam1124c bp-vbowner-correct-1 logged door memo x shadow: answer 1, other job's 2 (25 ms before) for the bouncer Becca Bijou at door 0x28590035C1469290 (same Sim / door as §8). 5 x vb-owner-delete-stress + 2 x doormemox-venue-clock (forced clock flips at a single-gender door + P5c churn) in one game (reuseSession), DoorMemoX=3, DoorMemoXCheckEvery=1 (test-only: every valid row compared), DoorMemoXMs=250. Expected about 2 k compares per game minute, ~10 k per 5-min vbowner job, ~70 k for the queue: lowers the odds, does not reach the >= 10 M target (pre-fix rate 1 in ~900 k compares).",
+  "note": "EA laptop (EA app 1.69.47, TS3.exe, EA launch, DXVK, no Apex): verify of DoorMemoX fix 2, bugfix/doormemox-mismatch2-1124 416adf7a (docs/585 §9, ledger I-608-3/4), after eam1124c bp-vbowner-correct-1 logged door memo x shadow: answer 1, other job's 2 (25 ms before) for the bouncer Becca Bijou at door 0x28590035C1469290 (same Sim / door as §8). 5 x vb-owner-delete-stress + 2 x doormemox-venue-clock (forced clock flips at a single-gender door + P5c churn) in one game (reuseSession); every job reads back the writer hook counters line, DoorMemoX=3, DoorMemoXCheckEvery=1 (test-only: every valid row compared), DoorMemoXMs=250. Expected about 2 k compares per game minute, ~10 k per 5-min vbowner job, ~70 k for the queue: lowers the odds, does not reach the >= 10 M target (pre-fix rate 1 in ~900 k compares).",
   "rewind": "auto",
   "stopQueueOnFail": false,
   "regexCases": {
-    "^ts3native 0\\.36\\.304-dmx2-1124 ": {
+    "^ts3native 0\\.36\\.305-dmx2b-1124 ": {
       "match": [
-        "ts3native 0.36.304-dmx2-1124 2026-11-24 21:30:00"
+        "ts3native 0.36.305-dmx2b-1124 2026-11-24 21:40:00"
       ],
       "noMatch": [
         "ts3native 0.36.303-eam1124b2 2026-11-24 20:46:09",
-        "ts3native 0.36.304-dmx2-1124b 2026-11-24 21:30:00"
+        "ts3native 0.36.304-dmx2-1124 2026-11-24 21:30:00"
+      ]
+    },
+    "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": {
+      "match": [
+        "door memo x writer hooks: CommonDoor.HouseholdSimChanged 0, PetPool.UpdateSimDescriptionId 0, PetPool.Copy 0",
+        "door memo x writer hooks: CommonDoor.HouseholdSimChanged 3, PetPool.UpdateSimDescriptionId 0, PetPool.Copy 1"
+      ],
+      "noMatch": [
+        "door memo x mode 3: armed 1, managed input bumps 109"
+      ]
+    },
+    "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged [1-9]": {
+      "match": [
+        "door memo x writer hooks: CommonDoor.HouseholdSimChanged 2, PetPool.UpdateSimDescriptionId 0, PetPool.Copy 0"
+      ],
+      "noMatch": [
+        "door memo x writer hooks: CommonDoor.HouseholdSimChanged 0, PetPool.UpdateSimDescriptionId 0, PetPool.Copy 0",
+        "door memo x writer hooks: CommonDoor.HouseholdSimChanged 0, PetPool.UpdateSimDescriptionId 1, PetPool.Copy 1"
       ]
     },
     "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": {
@@ -88,7 +106,7 @@
       "asi": "game-copy/eadmx2-1124/ts3native.asi",
       "iniBase": "game-copy/eadmx2-1124/ts3native.ini",
       "fixesPackage": "game-copy/eadmx2-1124/ts3fixes.package",
-      "pinReason": "EA laptop: EA build 0.36.304-dmx2-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 416adf7a (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; agent = the session default (no agent change)",
+      "pinReason": "EA laptop: EA build 0.36.305-dmx2b-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 (fix 416adf7a + writer-hook counters) (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; ts3agent from the fix branch (venue_hours lot / jump)",
       "releaseDefaults": true,
       "gameArgs": [
         "-disablestoryprogression"
@@ -122,17 +140,19 @@
         }
       },
       "logRequire": {
-        "^ts3native 0\\.36\\.304-dmx2-1124 ": 1,
+        "^ts3native 0\\.36\\.305-dmx2b-1124 ": 1,
         "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
         "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
         "^door memo x: test: every 1\\. valid row asked live and compared": 1,
         "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
-        "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1
+        "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
+        "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1
       },
       "logForbid": {
         "^FAIL door memo x: ": 0,
         "^door memo x shadow: ": 0
-      }
+      },
+      "agentPackage": "game-copy/eadmx2-1124/ts3agent.package"
     },
     {
       "id": "bp-dmx2-vbowner-2",
@@ -140,7 +160,7 @@
       "asi": "game-copy/eadmx2-1124/ts3native.asi",
       "iniBase": "game-copy/eadmx2-1124/ts3native.ini",
       "fixesPackage": "game-copy/eadmx2-1124/ts3fixes.package",
-      "pinReason": "EA laptop: EA build 0.36.304-dmx2-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 416adf7a (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; agent = the session default (no agent change)",
+      "pinReason": "EA laptop: EA build 0.36.305-dmx2b-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 (fix 416adf7a + writer-hook counters) (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; ts3agent from the fix branch (venue_hours lot / jump)",
       "releaseDefaults": true,
       "gameArgs": [
         "-disablestoryprogression"
@@ -174,17 +194,19 @@
         }
       },
       "logRequire": {
-        "^ts3native 0\\.36\\.304-dmx2-1124 ": 1,
+        "^ts3native 0\\.36\\.305-dmx2b-1124 ": 1,
         "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
         "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
         "^door memo x: test: every 1\\. valid row asked live and compared": 1,
         "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
-        "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1
+        "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
+        "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1
       },
       "logForbid": {
         "^FAIL door memo x: ": 0,
         "^door memo x shadow: ": 0
-      }
+      },
+      "agentPackage": "game-copy/eadmx2-1124/ts3agent.package"
     },
     {
       "id": "bp-dmx2-vbowner-3",
@@ -192,7 +214,7 @@
       "asi": "game-copy/eadmx2-1124/ts3native.asi",
       "iniBase": "game-copy/eadmx2-1124/ts3native.ini",
       "fixesPackage": "game-copy/eadmx2-1124/ts3fixes.package",
-      "pinReason": "EA laptop: EA build 0.36.304-dmx2-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 416adf7a (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; agent = the session default (no agent change)",
+      "pinReason": "EA laptop: EA build 0.36.305-dmx2b-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 (fix 416adf7a + writer-hook counters) (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; ts3agent from the fix branch (venue_hours lot / jump)",
       "releaseDefaults": true,
       "gameArgs": [
         "-disablestoryprogression"
@@ -226,17 +248,19 @@
         }
       },
       "logRequire": {
-        "^ts3native 0\\.36\\.304-dmx2-1124 ": 1,
+        "^ts3native 0\\.36\\.305-dmx2b-1124 ": 1,
         "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
         "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
         "^door memo x: test: every 1\\. valid row asked live and compared": 1,
         "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
-        "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1
+        "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
+        "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1
       },
       "logForbid": {
         "^FAIL door memo x: ": 0,
         "^door memo x shadow: ": 0
-      }
+      },
+      "agentPackage": "game-copy/eadmx2-1124/ts3agent.package"
     },
     {
       "id": "bp-dmx2-vbowner-4",
@@ -244,7 +268,7 @@
       "asi": "game-copy/eadmx2-1124/ts3native.asi",
       "iniBase": "game-copy/eadmx2-1124/ts3native.ini",
       "fixesPackage": "game-copy/eadmx2-1124/ts3fixes.package",
-      "pinReason": "EA laptop: EA build 0.36.304-dmx2-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 416adf7a (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; agent = the session default (no agent change)",
+      "pinReason": "EA laptop: EA build 0.36.305-dmx2b-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 (fix 416adf7a + writer-hook counters) (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; ts3agent from the fix branch (venue_hours lot / jump)",
       "releaseDefaults": true,
       "gameArgs": [
         "-disablestoryprogression"
@@ -278,17 +302,19 @@
         }
       },
       "logRequire": {
-        "^ts3native 0\\.36\\.304-dmx2-1124 ": 1,
+        "^ts3native 0\\.36\\.305-dmx2b-1124 ": 1,
         "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
         "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
         "^door memo x: test: every 1\\. valid row asked live and compared": 1,
         "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
-        "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1
+        "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
+        "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1
       },
       "logForbid": {
         "^FAIL door memo x: ": 0,
         "^door memo x shadow: ": 0
-      }
+      },
+      "agentPackage": "game-copy/eadmx2-1124/ts3agent.package"
     },
     {
       "id": "bp-dmx2-vbowner-5",
@@ -296,7 +322,7 @@
       "asi": "game-copy/eadmx2-1124/ts3native.asi",
       "iniBase": "game-copy/eadmx2-1124/ts3native.ini",
       "fixesPackage": "game-copy/eadmx2-1124/ts3fixes.package",
-      "pinReason": "EA laptop: EA build 0.36.304-dmx2-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 416adf7a (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; agent = the session default (no agent change)",
+      "pinReason": "EA laptop: EA build 0.36.305-dmx2b-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 (fix 416adf7a + writer-hook counters) (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; ts3agent from the fix branch (venue_hours lot / jump)",
       "releaseDefaults": true,
       "gameArgs": [
         "-disablestoryprogression"
@@ -330,25 +356,27 @@
         }
       },
       "logRequire": {
-        "^ts3native 0\\.36\\.304-dmx2-1124 ": 1,
+        "^ts3native 0\\.36\\.305-dmx2b-1124 ": 1,
         "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
         "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
         "^door memo x: test: every 1\\. valid row asked live and compared": 1,
         "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
-        "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1
+        "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
+        "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1
       },
       "logForbid": {
         "^FAIL door memo x: ": 0,
         "^door memo x shadow: ": 0
-      }
+      },
+      "agentPackage": "game-copy/eadmx2-1124/ts3agent.package"
     },
     {
       "id": "bp-dmx2-venueclock-1",
-      "note": "[est 6 min] DoorMemoX fix 2 forced repro 1/2 (docs/585 §9): repro doormemox-venue-clock on Baseline-BP: townies at the nearest single-gender door, clock jumped across opening / closing hours, sent through the door after each jump, plus one vbowner churn round (P5c park + destroy) and a door round after it. DoorMemoXCheckEvery=1. Pass: as the vbowner jobs plus a doorgen: memo skips line (names the skipped door types: expect DoorSingleGender, I-608-3).",
+      "note": "[est 6 min] DoorMemoX fix 2 forced repro 1/2 (docs/585 §9): repro doormemox-venue-clock on Baseline-BP: The Prosper Room door 0x28590035C1469290 with 4 townies and the bouncer Becca Bijou, clock moved to 3 min before and 1 min after the venue open / close hour (5 crossings, venue_hours reads the hours and IsOpenVenue back), pet_adopt (HouseholdSimChanged trigger), one vbowner churn round (P5c park + destroy) before the last crossing. DoorMemoXCheckEvery=1. Pass: as the vbowner jobs plus a doorgen: memo skips line (names the skipped door types: expect DoorSingleGender, I-608-3) and door memo x writer hooks: HouseholdSimChanged >= 1. PetPool.UpdateSimDescriptionId / Copy stay 0 by design: they run only at world load (CharacterImportOnGameLoad) and in the world-builder FixupPetPools command. Hour-crossing evidence: venue_hours replies in the repro jsonl (open_before vs open_now).",
       "asi": "game-copy/eadmx2-1124/ts3native.asi",
       "iniBase": "game-copy/eadmx2-1124/ts3native.ini",
       "fixesPackage": "game-copy/eadmx2-1124/ts3fixes.package",
-      "pinReason": "EA laptop: EA build 0.36.304-dmx2-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 416adf7a (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; agent = the session default (no agent change)",
+      "pinReason": "EA laptop: EA build 0.36.305-dmx2b-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 (fix 416adf7a + writer-hook counters) (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; ts3agent from the fix branch (venue_hours lot / jump)",
       "releaseDefaults": true,
       "gameArgs": [
         "-disablestoryprogression"
@@ -382,26 +410,29 @@
         }
       },
       "logRequire": {
-        "^ts3native 0\\.36\\.304-dmx2-1124 ": 1,
+        "^ts3native 0\\.36\\.305-dmx2b-1124 ": 1,
         "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
         "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
         "^door memo x: test: every 1\\. valid row asked live and compared": 1,
         "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
         "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
-        "^doorgen: memo skips ": 1
+        "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1,
+        "^doorgen: memo skips ": 1,
+        "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged [1-9]": 1
       },
       "logForbid": {
         "^FAIL door memo x: ": 0,
         "^door memo x shadow: ": 0
-      }
+      },
+      "agentPackage": "game-copy/eadmx2-1124/ts3agent.package"
     },
     {
       "id": "bp-dmx2-venueclock-2",
-      "note": "[est 6 min] DoorMemoX fix 2 forced repro 2/2 (docs/585 §9): repro doormemox-venue-clock on Baseline-BP: townies at the nearest single-gender door, clock jumped across opening / closing hours, sent through the door after each jump, plus one vbowner churn round (P5c park + destroy) and a door round after it. DoorMemoXCheckEvery=1. Pass: as the vbowner jobs plus a doorgen: memo skips line (names the skipped door types: expect DoorSingleGender, I-608-3).",
+      "note": "[est 6 min] DoorMemoX fix 2 forced repro 2/2 (docs/585 §9): repro doormemox-venue-clock on Baseline-BP: The Prosper Room door 0x28590035C1469290 with 4 townies and the bouncer Becca Bijou, clock moved to 3 min before and 1 min after the venue open / close hour (5 crossings, venue_hours reads the hours and IsOpenVenue back), pet_adopt (HouseholdSimChanged trigger), one vbowner churn round (P5c park + destroy) before the last crossing. DoorMemoXCheckEvery=1. Pass: as the vbowner jobs plus a doorgen: memo skips line (names the skipped door types: expect DoorSingleGender, I-608-3) and door memo x writer hooks: HouseholdSimChanged >= 1. PetPool.UpdateSimDescriptionId / Copy stay 0 by design: they run only at world load (CharacterImportOnGameLoad) and in the world-builder FixupPetPools command. Hour-crossing evidence: venue_hours replies in the repro jsonl (open_before vs open_now).",
       "asi": "game-copy/eadmx2-1124/ts3native.asi",
       "iniBase": "game-copy/eadmx2-1124/ts3native.ini",
       "fixesPackage": "game-copy/eadmx2-1124/ts3fixes.package",
-      "pinReason": "EA laptop: EA build 0.36.304-dmx2-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 416adf7a (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; agent = the session default (no agent change)",
+      "pinReason": "EA laptop: EA build 0.36.305-dmx2b-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 (fix 416adf7a + writer-hook counters) (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; ts3agent from the fix branch (venue_hours lot / jump)",
       "releaseDefaults": true,
       "gameArgs": [
         "-disablestoryprogression"
@@ -435,18 +466,21 @@
         }
       },
       "logRequire": {
-        "^ts3native 0\\.36\\.304-dmx2-1124 ": 1,
+        "^ts3native 0\\.36\\.305-dmx2b-1124 ": 1,
         "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
         "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
         "^door memo x: test: every 1\\. valid row asked live and compared": 1,
         "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
         "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
-        "^doorgen: memo skips ": 1
+        "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1,
+        "^doorgen: memo skips ": 1,
+        "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged [1-9]": 1
       },
       "logForbid": {
         "^FAIL door memo x: ": 0,
         "^door memo x shadow: ": 0
-      }
+      },
+      "agentPackage": "game-copy/eadmx2-1124/ts3agent.package"
     }
   ]
 }
