@@ -90,7 +90,7 @@ import { leadInCut, sliceFrames } from './session-reuse.ts';
 import { reproSave } from './repro-save.ts';
 import { focusGame, giveFocusBack } from './focus-game.ts';
 import { mayBeStuck } from './stuck-rule.ts';
-import { captureHang, clockStep, hangDir, stuckRunning, watchGame } from './game-alive.ts';
+import { captureHang, clockStep, devicePauseStep, hangDir, stuckRunning, watchGame } from './game-alive.ts';
 import { startMachineLoad, summarize } from './machine-load.ts';
 import { BIN, GAME_EXE } from './game-exe.ts';
 import { report as camSweepReport, segmentsOf, table as camSweepTable, verdict as camSweepVerdict } from './camera-sweep-report.ts';
@@ -265,7 +265,7 @@ rng.simMinutes.start = (await ag('time')).result?.minutes_total ?? null;
 // Build/Buy/CAS/Edit Town pause the clock by design (game-alive.ts clockStep): there the agent answering is the progress check
 let pauseDeclared = false; // a repro step with "pausesClock": true|false sets it (reproStep)
 const clockGuard = (async () => {
-  const st = { last: rng.simMinutes.start as number | null, misses: 0 } as Parameters<typeof clockStep>[0];
+  const st = { last: rng.simMinutes.start as number | null, misses: 0 } as Parameters<typeof clockStep>[0], dev = { misses: 0 };
   for (const end = Date.now() + secs * 1000; !stopped && Date.now() < end;) {
     await sleep(30000);
     if (env && !values['no-env-guard']) {  // keep skew sources out during the run (idempotent; only acts on winter, extreme cold or a full moon)
@@ -274,7 +274,9 @@ const clockGuard = (async () => {
     }
     const t = (await ag('time').catch(() => null))?.result ?? null;
     const sub = t && (/^Pause/i.test(t.speed) || t.minutes_total === st.last) ?(await ag('game_state').catch(() => null))?.result?.sub_state : undefined;
-    const why = clockStep(st, t, { subState: sub, declared: pauseDeclared });
+    // device pause (bit 4) fails on its own reason, also in a pause by design: only a stopped clock pays for the clock_state call
+    const cs0 = t && (/^Pause/i.test(t.speed) || t.minutes_total === st.last) ? (await ag('clock_state').catch(() => null))?.result ?? null : null;
+    const why = devicePauseStep(dev, cs0) || clockStep(st, t, { subState: sub, declared: pauseDeclared });
     if (!why) continue;
     console.log(`${stamp()} FAIL: ${why} (fail-fast guard)`);
     // pause bits, game dt, speed and window state at the trip (docs/85 §6: minimize pause = bit 2, device pause = bit 4)
@@ -284,8 +286,10 @@ const clockGuard = (async () => {
     // which modal holds the clock (title, buttons) and whether a world switch is under way (story-smoke 2026-10-23)
     const pd = await ag('pending_dialogs').catch(() => null), gs = await ag('game_state').catch(() => null);
     console.log(`${stamp()} at the trip: dialog ${JSON.stringify(pd?.ok ? pd.result : pd?.error).slice(0, 400)}; sub_state ${gs?.result?.sub_state ?? '?'}, world ${gs?.result?.load_file ?? '?'}`);
+    const transit = !!gs?.ok && !gs.result?.sub_state; // world loaded or loading, live mode never entered (a world switch that stalled)
+    if (transit) console.log(`${stamp()} at the trip: travel_state ${JSON.stringify((await ag('travel_state').catch(() => null))?.result ?? null).slice(0, 300)}`);
     // not paused and no dialog: the sim thread may be spinning; stacks + Mono frames + dump before the kill
-    if (stuckRunning(cs.ok ? cs.result : null, pd?.ok ? pd.result : null)) console.log(`${stamp()} at the trip: ${await captureHang(join(hangDir(), `clockstuck-${values.tag}`)).catch(e => `hang capture failed: ${e}`)}`);
+    if (stuckRunning(cs.ok ? cs.result : null, pd?.ok ? pd.result : null, transit)) console.log(`${stamp()} at the trip: ${await captureHang(join(hangDir(), `clockstuck-${values.tag}`)).catch(e => `hang capture failed: ${e}`)}`);
     // what the autopilot did meanwhile: a dialog answered in a loop shows here (2026-11-03: a wish dialog under the age-up dialog,
     // 210 answers in 60 s, seen only in the upkeep log)
     const ap = await ag('autopilot').catch(() => null), cl: string[] = ap?.result?.cleared ?? [];
