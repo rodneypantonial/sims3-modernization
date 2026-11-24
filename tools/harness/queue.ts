@@ -74,6 +74,8 @@
 // logForbid: { "<regex>": max lines } over the same copy (0 = the line must not appear, e.g. a replay audit MISMATCH); more turns the row FAIL.
 // apexLogRequire / apexLogForbid: the same two rules over the job's kept -ApexRadiance_LOG.txt copy (this job's lines only, keepApexLogs):
 // Apex switch and version read-back (docs/301); failed rules say "apex log /re/ ...", a missing copy is FAIL UNKNOWN.
+// s3ppLogRequire / s3ppLogForbid: the same two rules over Bin/Sims3Performance.log (S3PP), kept as <prefix>-Sims3Performance.log
+// (S3PP compat smoke 2026-11-24: game version, [GCBL] bypass, [GCHEAP], [STBL509] lines); failed rules say "s3pp log /re/ ...".
 // regexCases: { "<regex>": { match: [line, ...], noMatch: [line, ...] } } (AGENTS.md: every regex tested against real lines): when
 // present, every logRequire / logForbid / apexLogRequire / apexLogForbid regex needs >= 1 real line it matches and >= 1 it must not;
 // checked at parse (--dry-run too).
@@ -307,7 +309,7 @@ import { jsonlRows, queueFile, rowTiming, timingText } from './run-verdict.ts';
 import { loadRun as hitchRun, runIters, toolCosts, toolsOn, withBaseIni } from './hitch-ab.ts';
 import { mergeFile as mergeCallsites } from '../callsite-db.ts';
 import { asiCheck, asiVersion, fixesCheck, loadDb, logVersionCheck, packageTuning, testedBuild, type Build } from '../builds.ts';
-import { COMMUNITY, defaultSpec as vanillaSpec, install as vanillaInstall, mfile as vanillaMf, ourModsSpec, problems as vanillaProblems, restore as vanillaRestore, vanilla as vanillaEnv } from './vanilla.ts';
+import { community, defaultSpec as vanillaSpec, install as vanillaInstall, mfile as vanillaMf, ourModsSpec, problems as vanillaProblems, restore as vanillaRestore, vanilla as vanillaEnv } from './vanilla.ts';
 import { inventory as modInventory, modClash, MOD_SET_RE, scriptAsmLine } from '../mod-set.ts';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
@@ -385,13 +387,13 @@ function machineCols(tag: string) { return tag ? { head: ' machine |', sep: '---
 function machineField(tag: string): { machineTag?: string } { return tag ? { machineTag: tag } : {}; }
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
   save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; modSet?: string; run: { repro?: string; saveReload?: string[]; script?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
-    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; fixedwork?: number | boolean; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; quitJobs?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string }; rewindGames?: { n: number; profile: { minutes: number; seed?: number; fixesOn?: string; fixesOff?: string }; ab?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; optionsIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; apexProfiler?: boolean; apexToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; d3d9Dll?: string; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; apexLogRequire?: Record<string, number>; apexLogForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; report?: string[]; stopQueueOnFail?: boolean; crashHunt?: boolean; scriptErrorsMax?: number; scriptErrorsAllow?: string[]; scriptErrorsReport?: string[]; scriptErrorsReportBefore?: string; timeoutMin?: number; pin?: false | PinOpts;
+    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; fixedwork?: number | boolean; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; quitJobs?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string }; rewindGames?: { n: number; profile: { minutes: number; seed?: number; fixesOn?: string; fixesOff?: string }; ab?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; optionsIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; apexProfiler?: boolean; apexToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; d3d9Dll?: string; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; apexLogRequire?: Record<string, number>; apexLogForbid?: Record<string, number>; s3ppLogRequire?: Record<string, number>; s3ppLogForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; report?: string[]; stopQueueOnFail?: boolean; crashHunt?: boolean; scriptErrorsMax?: number; scriptErrorsAllow?: string[]; scriptErrorsReport?: string[]; scriptErrorsReportBefore?: string; timeoutMin?: number; pin?: false | PinOpts;
   saveMatrix?: { fixes?: 'all' | 'shipped' }; regexCases?: Record<string, { match: string[]; noMatch: string[] }>; fixesBuild?: string; fixesPackage?: string; iniBase?: string; dogfood?: boolean; pinReason?: string; rerunOf?: string; retryOf?: string; kcOf?: string; expectHang?: string; shadowCheck?: boolean; quitsGame?: boolean; skipIfMissing?: boolean; ourMods?: false; rewind?: false; rewindRequire?: 'snapshot' | 'rewind'; checkAt?: 'end' | Record<string, 'end'>; expectFail?: boolean; agentPackage?: string };
 
 function checkRegexCases(cases: Record<string, { match?: unknown; noMatch?: unknown }>, res: string[], at: string, requireAll = true) {
   if (requireAll) for (const re of res) if (!cases[re]) throw new Error(`${at}: regexCases has no case for /${re}/`);
   for (const [re, c] of Object.entries(cases)) {
-    if (requireAll && !res.includes(re)) throw new Error(`${at}: regexCases /${re}/ is no logRequire / logForbid / apexLogRequire / apexLogForbid key`);
+    if (requireAll && !res.includes(re)) throw new Error(`${at}: regexCases /${re}/ is no logRequire / logForbid / apexLogRequire / apexLogForbid / s3ppLogRequire / s3ppLogForbid key`);
     const ok = (l: unknown) => Array.isArray(l) && l.length > 0 && l.every(x => typeof x === 'string');
     if (!ok(c.match) || !ok(c.noMatch)) throw new Error(`${at}: regexCases /${re}/ needs match and noMatch lists of >= 1 line`);
     const r = new RegExp(re);
@@ -411,7 +413,7 @@ function versionPinMiss(j: { asi?: string; logRequire?: Record<string, number> }
 }
 
 // every top-level job key queue.ts reads (Job type plus the optional extras); anything else is a typo or a profile key at the wrong level
-const JOB_KEYS = new Set(['id', 'dogfood', 'quitsGame', 'note', 'expectHang', 'asi', 'ini', 'defaultIni', 'optionsIni', 's3ppIni', 's3ssToml', 'apexProfiler', 'apexToml', 'dxvkConf', 'd3d9Dll', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'iniBase', 'scriptErrorsAllow', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'modSet', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'apexLogRequire', 'apexLogForbid', 'regexCases', 'noiseCheck', 'earlyGates', 'report', 'routingFailFast', 'scriptErrorsMax', 'scriptErrorsReport', 'scriptErrorsReportBefore', 'stopQueueOnFail', 'crashHunt', 'reuseSession', 'rewind', 'releaseDefaults', 'skipIfMissing', 'ourMods', 'agentArm', 'rewindRequire', 'checkAt', 'expectFail', 'agentPackage']);
+const JOB_KEYS = new Set(['id', 'dogfood', 'quitsGame', 'note', 'expectHang', 'asi', 'ini', 'defaultIni', 'optionsIni', 's3ppIni', 's3ssToml', 'apexProfiler', 'apexToml', 'dxvkConf', 'd3d9Dll', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'iniBase', 'scriptErrorsAllow', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'modSet', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'apexLogRequire', 'apexLogForbid', 's3ppLogRequire', 's3ppLogForbid', 'regexCases', 'noiseCheck', 'earlyGates', 'report', 'routingFailFast', 'scriptErrorsMax', 'scriptErrorsReport', 'scriptErrorsReportBefore', 'stopQueueOnFail', 'crashHunt', 'reuseSession', 'rewind', 'releaseDefaults', 'skipIfMissing', 'ourMods', 'agentArm', 'rewindRequire', 'checkAt', 'expectFail', 'agentPackage']);
 // ---- vanilla mode (docs/236): what a job may not ask for without ts3native/ts3fixes, and the checks the row names as N/A
 // results md cell: at most `max` chars, cut at an item boundary (", " / "; " / "<br>") and marked, never inside a number
 // (docs/277 §1: the cut at 400 turned aut_l0_pairn_hh 397 / 3163 into "3" / "316"; full values stay in the jsonl row)
@@ -619,13 +621,13 @@ export function parseQueue(json: unknown): Job[] {
     if (j.timeoutMin !== undefined && !(j.timeoutMin > 0)) throw new Error(`${at}: timeoutMin must be > 0`);
     if (j.minCounters !== undefined && !(Number.isInteger(j.minCounters) && j.minCounters > 0)) throw new Error(`${at}: minCounters must be a positive integer (a counters version)`);
     if (j.nativeRequire !== undefined) { const lint = startupDeltaLint(j.nativeRequire); if (lint.length) throw new Error(`${at}: ${lint.join('; ')}`); }
-    for (const k of ['logRequire', 'apexLogRequire'] as const) if (j[k] !== undefined) for (const [re, n] of Object.entries(j[k]!)) { new RegExp(re); if (!(Number.isInteger(n) && n > 0)) throw new Error(`${at}: ${k} "${re}" must map to a positive integer`); }
-    for (const k of ['logForbid', 'apexLogForbid'] as const) if (j[k] !== undefined) for (const [re, n] of Object.entries(j[k]!)) { new RegExp(re); if (!(Number.isInteger(n) && n >= 0)) throw new Error(`${at}: ${k} "${re}" must map to an integer >= 0`); }
+    for (const k of ['logRequire', 'apexLogRequire', 's3ppLogRequire'] as const) if (j[k] !== undefined) for (const [re, n] of Object.entries(j[k]!)) { new RegExp(re); if (!(Number.isInteger(n) && n > 0)) throw new Error(`${at}: ${k} "${re}" must map to a positive integer`); }
+    for (const k of ['logForbid', 'apexLogForbid', 's3ppLogForbid'] as const) if (j[k] !== undefined) for (const [re, n] of Object.entries(j[k]!)) { new RegExp(re); if (!(Number.isInteger(n) && n >= 0)) throw new Error(`${at}: ${k} "${re}" must map to an integer >= 0`); }
     checkCheckAt(j.checkAt, j.logRequire, at);
     if (j.expectFail !== undefined && typeof j.expectFail !== 'boolean') throw new Error(`${at}: expectFail must be true or false`);
     if (j.agentPackage === undefined && !Array.isArray(json) && (json as any).agentPackage !== undefined) j.agentPackage = (json as any).agentPackage; // queue-level default
     if (j.agentPackage !== undefined && !(typeof j.agentPackage === 'string' && /ts3agent\.package/.test(j.agentPackage) && !j.agentPackage.includes('..'))) throw new Error(`${at}: agentPackage must be a ts3agent package path (e.g. game-copy/ts3agent.package.<tag>)`);
-    if (j.regexCases !== undefined) checkRegexCases(j.regexCases, [...Object.keys(j.logRequire ?? {}), ...Object.keys(j.logForbid ?? {}), ...Object.keys(j.apexLogRequire ?? {}), ...Object.keys(j.apexLogForbid ?? {}), ...(j.scriptErrorsReportBefore !== undefined ? j.scriptErrorsReport ?? [] : [])], at);
+    if (j.regexCases !== undefined) checkRegexCases(j.regexCases, [...Object.keys(j.logRequire ?? {}), ...Object.keys(j.logForbid ?? {}), ...Object.keys(j.apexLogRequire ?? {}), ...Object.keys(j.apexLogForbid ?? {}), ...Object.keys(j.s3ppLogRequire ?? {}), ...Object.keys(j.s3ppLogForbid ?? {}), ...(j.scriptErrorsReportBefore !== undefined ? j.scriptErrorsReport ?? [] : [])], at);
     if (j.scriptErrorsReportBefore !== undefined && (typeof j.scriptErrorsReportBefore !== 'string' || !j.scriptErrorsReport?.length || !j.run.profile?.repro)) throw new Error(`${at}: scriptErrorsReportBefore needs a step note string, scriptErrorsReport and profile.repro`);
     if (j.routingFailFast !== undefined) {
       checkFailFast(j.routingFailFast, at);
@@ -997,6 +999,9 @@ export function lastSave(text: string): { result: number; totalMs: number } | nu
 // age-save.ts "HH:MM:SS saved <name>" -> name (checkpoints <name>-dayN, then the final <name>)
 export const savedName = (line: string) => line.match(/^\d\d:\d\d:\d\d saved (\S+)\s*$/)?.[1] ?? null;
 // nativeRequire: flatDelta (fixes-require.ts, shared with the native_mark / native_check repro steps)
+// logRequire / logForbid text: the early and end checks read the log the same way (utf8: ts3native writes "§" as C2 A7; a latin1
+// read made it "Â§" and the early check missed every "§44" rule, bp-vbowner-correct-1 m1124b 2026-11-24)
+export const ruleLogText = (f: string) => readFileSync(f, 'utf8');
 // logRequire: { "<regex>": min lines } over this job's ts3native.log copy; failed rules as text
 export function logFails(text: string, req: Record<string, number>): string[] {
   return Object.entries(req).flatMap(([re, min]) => { const n = text.split(/\r?\n/).filter(l => new RegExp(re).test(l)).length; return n >= min ? [] : [`log /${re}/ ${n} lines (want >= ${min})`]; });
@@ -1351,6 +1356,7 @@ export function logForbidFails(text: string, forb: Record<string, number>): stri
 }
 // apexLogRequire / apexLogForbid over the kept Apex log: the same rules, failed ones prefixed "apex "
 export const apexLogFails = (text: string, req: Record<string, number>, forb: Record<string, number> = {}) => [...logFails(text, req), ...logForbidFails(text, forb)].map(f => `apex ${f}`);
+export const s3ppLogFails = (text: string, req: Record<string, number>, forb: Record<string, number> = {}) => [...logFails(text, req), ...logForbidFails(text, forb)].map(f => `s3pp ${f}`);
 const delta = (a: any, b: any) => (a && b ?Object.fromEntries(Object.keys(b).filter(k => typeof b[k] === 'number' && typeof a[k] === 'number' && b[k] !== a[k]).map(k => [k, b[k] - a[k]])) : null);
 
 // verdict lines of a child's output: repro.ts "<id>: PASS (...)", "FAIL: ...", save-matrix.ts "<case>: PASS", "summary: ..."
@@ -1807,6 +1813,12 @@ if (values['self-check']) {
     assert.throws(() => aj({ apexLogForbid: { 'On at': 0 }, regexCases: { 'On at': { match: ['x'], noMatch: ['y'] } } }), /does not match/);
     assert.equal(aj({ apexLogRequire: { 'On at': 1 }, regexCases: { 'On at': { match: [on], noMatch: ['Index built'] } } }).length, 1);
     assert.deepEqual(vanillaRefusals(aj({ asi: 'none', apexLogForbid: { x: 0 } })[0]), ['apexLogForbid']);
+    // s3ppLogRequire / s3ppLogForbid: same rules over Sims3Performance.log (real S3PP 1.0.0-beta2-gctest1 Steam line)
+    const gcbl = '[INFO] [GCBL] black-list bypass ON at 0x00E4A560 (located by known address). The script heap may now reuse free blocks it used to refuse.';
+    assert.deepEqual(s3ppLogFails(gcbl, { 'GCBL\\] black-list bypass ON': 1, 'GCHEAP': 2 }, { 'NOT active': 0 }), ['s3pp log /GCHEAP/ 0 lines (want >= 2)']);
+    assert.throws(() => aj({ s3ppLogRequire: { x: 0 } }), /s3ppLogRequire/);
+    assert.throws(() => aj({ s3ppLogForbid: { 'NOT active': 0 }, regexCases: {} }), /no case for \/NOT active\//);
+    assert.equal(aj({ s3ppLogRequire: { 'bypass ON': 1 }, regexCases: { 'bypass ON': { match: [gcbl], noMatch: ['[GCBL] black-list bypass is NOT active'] } } }).length, 1);
   }
   { // regexCases: the 11-09 miss (#d+ matched the letter d) is refused, a tested pair passes, an untested regex is refused
     const rc = (regexCases: object, logRequire: object = { '^save #\\d+ ok': 1 }) => parseQueue([{ id: 'v', asi: 'x', save: 'S', logRequire, regexCases, run: { soak: { minutes: 1 } } }]);
@@ -2523,6 +2535,13 @@ if (values['self-check']) {
     assert.deepEqual(earlyLogFails(log, req, 'end', '*end'), [], 'job checkAt end: no early check');
     assert.deepEqual(earlyLogFails(log, req, undefined, '["^gcsize: "]'), ['log /^gcsize: / 1 lines (want >= 20) at an expectLog step'], 'named step: full count');
     assert.equal(earlyLogFails(log, req, undefined, '*').length, 2, 'expectLog true: every early rule, full count');
+    { // m1124b vbowner-correct-1: a UTF-8 "§" line read back by the shared reader matches the § rule, a line without "on:" does not
+      const d = mkdtempSync(join(tmpdir(), 'q-rulelog-')), f = join(d, 'ts3native.log'), re = '^crash forensics: VB guard .docs/67 §44. on: release ring 2048';
+      writeFileSync(f, 'crash forensics: VB guard (docs/67 §44) on: release ring 2048, owner delete ring 2048\ncrash forensics: VB guard (docs/67 §44) off\n', 'utf8');
+      assert.deepEqual(earlyLogFails(ruleLogText(f), { [re]: 1 }, undefined, '*end'), [], '§ line matches after the shared read');
+      assert.equal(logFails(ruleLogText(f), { [re]: 2 }).length, 1, 'the "off" line does not match');
+      rmSync(d, { recursive: true, force: true });
+    }
     const pj = (x: object) => parseQueue([{ id: 'n', asi: 'x', save: 'S', logRequire: { a: 1 }, run: { soak: { minutes: 1 } }, ...x }])[0];
     assert.equal(pj({ checkAt: { a: 'end' } }).checkAt!['a' as never], 'end');
     assert.throws(() => pj({ checkAt: { b: 'end' } }), /checkAt \/b\//);
@@ -2810,9 +2829,9 @@ if (values['dry-run']) {
     console.log(`  1 node tools/harness/cycle.ts --restart`);
     if (VANILLA) console.log('  2 vanilla read-back (no *.asi, no ts3native.*, no ts3fixes, agent/wininet/d3d9 sha): a miss FAILs before the game starts; no asi, ini or ts3fixes copy');
     else if (j.ourMods === false) {
-      const miss = COMMUNITY.filter(c => !existsSync(join(BIN, c)));
+      const miss = community().filter(c => !existsSync(join(BIN, c)));
       console.log(`  2 ourMods false: move Bin/ts3native.asi + .ini + .log + autshadow.jsonl, Mods/Packages/ts3fixes*.package, scriptCache.package to ${ourModsSpec().stash} (manifest first, sha read back); no asi, ini or ts3fixes copy`);
-      console.log(`  2 stays loaded: ${COMMUNITY.join(', ')}, the other Mods, ts3agent + ts3-nointro packages, Frida probe${miss.length ? `  ** MISSING: ${miss.join(', ')}: the job refuses **` : ''}`);
+      console.log(`  2 stays loaded: ${community().join(', ')}, the other Mods, ts3agent + ts3-nointro packages, Frida probe${miss.length ? `  ** MISSING: ${miss.join(', ')}: the job refuses **` : ''}`);
       console.log('  8 proof: FAIL if Bin/ts3native.log appears, /native answers, ts3fixes.applied is set or a patches counter rises; moved back + sha read back in every outcome');
     } else {
     console.log(`  2 asi ${j.asi === 'tested' ? 'tested build' : j.asi}${existsSync(a) ? '' : '  ** MISSING: the job refuses before touching the game **'}${staleAsi(j) ? `  ** STALE: ${staleAsi(j)}; the job refuses **` : ''} -> Bin/ts3native.asi`);
@@ -2836,6 +2855,7 @@ if (values['dry-run']) {
     if (j.run.worldimage && !existsSync(String(ji!['WorldImage.Helper']))) console.log(`  3 ** helper MISSING: build native\\worldimage\\build.cmd; the job refuses before touching the game **`);
     if (j.defaultIni) console.log(`  3 Bin/Default.ini + ${Object.entries(j.defaultIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
     if (j.optionsIni) console.log(`  3 <user>/Options.ini + ${Object.entries(j.optionsIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
+    if (j.s3ppLogRequire || j.s3ppLogForbid) console.log(`  8 Bin/Sims3Performance.log kept; s3pp log rules: ${[...Object.entries(j.s3ppLogRequire ?? {}).map(([r, n]) => `/${r}/ >= ${n}`), ...Object.entries(j.s3ppLogForbid ?? {}).map(([r, n]) => `/${r}/ <= ${n}`)].join(', ')}`);
     if (j.s3ppIni) console.log(`  3 Bin/Sims3Performance.ini + ${Object.entries(j.s3ppIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
     if (j.d3d9Dll) console.log(`  3 Bin/d3d9.dll replaced by ${j.d3d9Dll}${existsSync(join(ROOT, j.d3d9Dll)) ? '' : '  ** MISSING **'}   (DXVK dll saved as d3d9.dll.dxvk-bak, put back and read back after the job)`);
     if (j.dxvkConf) console.log(`  3 Bin/dxvk.conf + ${Object.entries(j.dxvkConf).map(([k, v]) => `${k} = ${v}`).join(', ')}${existsSync(DXVK_CONF) ? '' : '  ** MISSING **'}   (put back after the job)`);
@@ -2943,7 +2963,7 @@ function earlyLogGuard(j: Job): (line: string) => string {
   return line => {
     const m = line.match(CHECKPOINT_RE);
     if (!m) return '';
-    let text = ''; try { text = readFileSync(LOG, 'latin1'); } catch { return ''; } // no log: the end check names it
+    let text = ''; try { text = ruleLogText(LOG); } catch { return ''; } // no log: the end check names it
     const fails = earlyLogFails(text, j.logRequire!, j.checkAt, m[1]);
     return fails.length ? `FAIL early: ${fails.join('; ')}` : '';
   };
@@ -3574,10 +3594,10 @@ for (const [n, j] of jobs.entries()) {
       if (vp.length) throw new Error(`vanilla read-back: ${vp.join('; ')}; refused before the game started`);
     } else if (j.ourMods === false) { // after --restart, which installs build/ts3fixes.package; install read-back failing leaves the manifest for restoreStart
       if (gameRunning()) throw new Error(`ourMods false: ${GAME_EXE} still running, nothing moved`);
-      const miss = COMMUNITY.filter(c => !existsSync(join(BIN, c)));
+      const miss = community().filter(c => !existsSync(join(BIN, c)));
       if (miss.length) throw new Error(`ourMods false: community file ${miss.join(', ')} missing from Bin; refused before the game started`);
       const m = vanillaInstall(ourModsSpec());
-      row.ourMods = { removed: m.entries.map(e => e.rel), kept: [...COMMUNITY, 'other Mods', 'ts3agent.package', 'ts3-nointro.package', 'Frida probe'], na: OURMODS_NA };
+      row.ourMods = { removed: m.entries.map(e => e.rel), kept: [...community(), 'other Mods', 'ts3agent.package', 'ts3-nointro.package', 'Frida probe'], na: OURMODS_NA };
       log(`${j.id}: ourMods false: ${row.ourMods.removed.join(', ')} moved to ${ourModsSpec().stash}, read back ok`);
     } else {
     installFixesPackage(j);
@@ -4024,7 +4044,7 @@ for (const [n, j] of jobs.entries()) {
   const logGone = (j.logRequire || j.logForbid) && !(row.nativeLog && existsSync(row.nativeLog));
   // log rules read every copy of the job: a save matrix restarts the game for its reloads, and the final copy only has the last
   // load (2026-11-04: the matrix phase's verdict lines were in the -matrix- copy and the rule saw 0)
-  const ruleLog = (j.logRequire || j.logForbid) ? ruleLogs(row).map(f => readFileSync(f, 'utf8')).join('\n') : '';
+  const ruleLog = (j.logRequire || j.logForbid) ? ruleLogs(row).map(ruleLogText).join('\n') : '';
   if (logGone) { row.verdict.push('FAIL: UNKNOWN: no ts3native.log copy, log rules not checked'); row.pass = false; } // docs/236: absent log is not "no lines"
   if (j.nativeRequire || j.logRequire) {
     const fails = [...(j.nativeRequire ? checkRequire(j.nativeRequire, row.nativeDelta) : []),
@@ -4087,6 +4107,18 @@ for (const [n, j] of jobs.entries()) {
       const at = readFileSync(`${ap}-ApexRadiance_LOG.txt`, 'utf8'), req = apexLogFails(at, j.apexLogRequire ?? {}), bad = apexLogFails(at, {}, j.apexLogForbid ?? {});
       if (j.apexLogRequire) row.verdict.push(req.length ? `FAIL: apex log events not fired: ${req.join('; ')}` : 'PASS: apex log lines present');
       if (j.apexLogForbid) row.verdict.push(bad.length ? `FAIL: forbidden apex log lines: ${bad.join('; ')}` : 'PASS: no forbidden apex log lines');
+      if (req.length || bad.length) row.pass = false;
+    }
+  }
+  if (j.s3ppLogRequire || j.s3ppLogForbid) { // S3PP read-back: the same rules over this job's Bin/Sims3Performance.log copy
+    // shortcut: whole file (S3PP rewrites it at each launch); a reused session's copy also holds earlier jobs' lines, slice it like apexLogOff if one needs that
+    const S3PP_LOG = join(BIN, 'Sims3Performance.log'), kept = `${ap}-Sims3Performance.log`;
+    if (!launched || !existsSync(S3PP_LOG)) { row.verdict.push('FAIL: UNKNOWN: no Bin/Sims3Performance.log, s3pp log rules not checked'); row.pass = false; }
+    else {
+      copyFileSync(S3PP_LOG, kept); log(`${j.id}: kept Sims3Performance.log`);
+      const t = readFileSync(kept, 'utf8'), req = s3ppLogFails(t, j.s3ppLogRequire ?? {}), bad = s3ppLogFails(t, {}, j.s3ppLogForbid ?? {});
+      if (j.s3ppLogRequire) row.verdict.push(req.length ? `FAIL: s3pp log events not fired: ${req.join('; ')}` : 'PASS: s3pp log lines present');
+      if (j.s3ppLogForbid) row.verdict.push(bad.length ? `FAIL: forbidden s3pp log lines: ${bad.join('; ')}` : 'PASS: no forbidden s3pp log lines');
       if (req.length || bad.length) row.pass = false;
     }
   }

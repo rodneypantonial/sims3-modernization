@@ -1,0 +1,88 @@
+{
+ "note": "s3pp-compat-1124 (2026-11-24): S3PP tester build 1.0.0-beta2-gctest1 (game-copy/s3pp/1.0.0-beta2-gctest1, asi sha256 f61d9b14f603, 613376 bytes = 599 KB; not in git) next to our RC set m1124d on Apex + bridge (Bin state apex, tools/turbo-compat.ts). Rebuilt from the run of 2026-11-24 00:17 UTC (build cd648f975, set m1123c, PASS; probe-out/s3pp-gctest1-1124 copy), smoke only (Rodney 2026-11-24: only the smoke, also on the EA laptop). INSTALL by hand (queue.ts has no S3PP asi key; same method as apex311-compat-1112 and probe-out/queue/chain-s3pp-inner-1124.sh): 1) node tools/turbo-compat.ts snapshot probe-out/s3pp-gctest1-1124/bin-before; 2) copy Bin/Sims3Performance.asi + .ini aside; 3) copy the gctest1 asi + ini from game-copy/s3pp/1.0.0-beta2-gctest1/ into Bin; 4) run this queue; 5) put the saved asi + ini back and compare with bin-before. S3PP read-back inside the job: s3ppLogRequire / s3ppLogForbid over Bin/Sims3Performance.log (kept as <prefix>-Sims3Performance.log, which also holds the per-patch installed / disabled / install FAILED lines), edition-neutral: game version Steam 1.67 or EA App 1.69, [GCBL] bypass ON (GC_is_black_listed found and patched), >= 2 [GCHEAP] lines, [STBL509] active (Steam) or DRY-RUN RESULT (EA), patch count line. EA copy: change only the asi / iniBase / fixesPackage pins and the ts3native version regex (and its regexCases). Our 'diag: Bin add-ons:' line proves the 599 KB S3PP asi is in Bin; the BlackListCapKB OK line proves our GC_promote_black_lists patch still installs next to their GC_is_black_listed patch. Run: node tools/harness/queue.ts tools/harness/queues/s3pp-compat-1124.json",
+ "stopQueueOnFail": true,
+ "rewind": "off",
+ "regexCases": {
+  "^ts3native 0\\.36\\.305-m1124d ": {
+   "match": ["ts3native 0.36.305-m1124d 2026-11-24 13:40:00"],
+   "noMatch": ["ts3native 0.36.305-m1124d2 2026-11-24 13:40:00", "ts3native 0.36.299-m1123c 2026-11-23 13:02:46"]
+  },
+  "^diag: Bin add-ons:.*Sims3Performance\\.asi 599 KB": {
+   "match": ["diag: Bin add-ons: ApexRadiance.asi 13550 KB v4.0.6.0, MonoPatcher.asi 80 KB, Sims3Performance.asi 599 KB, ts3native.asi 2900 KB"],
+   "noMatch": ["diag: Bin add-ons: ApexRadiance.asi 13550 KB v4.0.6.0, Sims3Performance.asi 562 KB, ts3native.asi 2900 KB", "diag: Bin add-ons: none"]
+  },
+  "^OK +GC black-list spacing cap: 0x[0-9A-F]{8}": {
+   "match": ["OK   GC black-list spacing cap: 0x00E4A856 (2 bytes x2)"],
+   "noMatch": ["SKIP GC black-list spacing cap: 0x00E4A856 bytes differ", "gc black-list cap off (BlackListCapKB=0)"]
+  },
+  "^(SKIP|FAIL) +GC black-list": {
+   "match": ["SKIP GC black-list spacing cap: 0x00E4A856 bytes differ", "FAIL GC black-list spacing cap"],
+   "noMatch": ["OK   GC black-list spacing cap: 0x00E4A856"]
+  },
+  "^\\[\\w+\\] Game version: (Steam 1\\.67|EA App 1\\.69)\\.": {
+   "match": ["[INFO] Game version: Steam 1.67.2.024037 [0x52DEC247]", "[INFO] Game version: EA App 1.69.47.024017 [0x00000000]"],
+   "noMatch": ["[INFO] Sims3Performance v1.0.0-beta2-gctest1 starting", "[INFO] Game version: unknown [0x00000000]"]
+  },
+  "^\\[\\w+\\] \\d+ patch\\(es\\) registered, \\d+ installed": {
+   "match": ["[INFO] 11 patch(es) registered, 10 installed", "[INFO] 9 patch(es) registered, 7 installed"],
+   "noMatch": ["[INFO] Registered patch: Thread Stack Diet", "[INFO]   installed 'Thread Stack Diet'"]
+  },
+  "^\\[\\w+\\] \\[GCBL\\] black-list bypass ON at 0x[0-9A-F]{8} ": {
+   "match": ["[INFO] [GCBL] black-list bypass ON at 0x00E4A560 (located by known address). The script heap may now reuse free blocks it used to refuse. Set GcBlacklistBypass=0 in the ini to go back."],
+   "noMatch": ["[INFO] [GCBL] black-list bypass already present at 0x00E4A560; not touching it", "[WARN] [GCBL] black-list bypass is NOT active this session: pattern not found on EA App 1.69. Nothing was changed."]
+  },
+  "\\[GCBL\\] black-list bypass is NOT active": {
+   "match": ["[WARN] [GCBL] black-list bypass is NOT active this session: pattern not found on EA App 1.69. Nothing was changed."],
+   "noMatch": ["[INFO] [GCBL] black-list bypass ON at 0x00E4A560 (located by known address)."]
+  },
+  "^\\[\\w+\\] \\[GCHEAP\\] ": {
+   "match": ["[INFO] [GCHEAP] readout every 300 s; script-heap size available on this build (address-space numbers are always available)", "[INFO] [GCHEAP] +5 min: script heap 356 MB in 8 sections, 307 collections | address space: 1777 MB free, largest free block 1678 MB, 1999 MB committed | bypass ON"],
+   "noMatch": ["[INFO]   installed 'Script Heap Readout (tester build)'", "[INFO] Registered patch: Script Heap Readout (tester build)"]
+  },
+  "^\\[\\w+\\] \\[STBL509\\] (active; |DRY-RUN RESULT: )": {
+   "match": ["[INFO] [STBL509] active; buckets=509 object=0x830 savedPerTable=29640 bytes sites=47 selfTest=ctor/insert/find/clear-pass serializePaths=byte-validated", "[INFO] [STBL509] DRY-RUN RESULT: sites pattern-resolved=47/47 byte-validated=47/47 anchors=5"],
+   "noMatch": ["[INFO] [STBL509] EA DRY-RUN (diagnostic only, NO patching): verifying 47 sites + 5 anchors", "[WARN] [STBL509] refusing late install: localized-string service already exists"]
+  },
+  "\\[STBL509\\] .*(self-test FAILED|rollback FAILED|refusing late install)": {
+   "match": ["[ERROR] [STBL509] guarded ctor/insert/find/clear self-test FAILED; reverting", "[WARN] [STBL509] refusing late install: localized-string service already exists"],
+   "noMatch": ["[INFO] [STBL509] active; buckets=509 object=0x830 savedPerTable=29640 bytes sites=47 selfTest=ctor/insert/find/clear-pass serializePaths=byte-validated"]
+  }
+ },
+ "jobs": [
+  {
+   "id": "bp-s3ppgc-smoke",
+   "note": "[est 12 min] SMOKE: BP 5 min speed 3, m1124d release defaults, S3PP 1.0.0-beta2-gctest1 in Bin (installed by hand, see queue note). PASS = version read back, Bin add-ons line names the 599 KB S3PP asi, our black-list cap patch OK, S3PP log: game version, [GCBL] bypass ON, >= 2 [GCHEAP] lines, [STBL509] active / DRY-RUN RESULT, patch count; 0 script errors, no crash or hang. Stops the queue on fail.",
+   "asi": "game-copy/ts3native.asi.m1124d",
+   "iniBase": "game-copy/ts3native.ini.m1124d",
+   "fixesPackage": "game-copy/ts3fixes.package.m1124d",
+   "pinReason": "RC set m1124d (merge/m1124d 287442e72, 0.36.305-m1124d), the newest set on 2026-11-24; first run was on m1123c (cd648f975)",
+   "releaseDefaults": true,
+   "save": "Baseline-BP",
+   "gameArgs": ["-disablestoryprogression"],
+   "minCounters": 1,
+   "scriptErrorsMax": 0,
+   "noiseCheck": false,
+   "shadowCheck": false,
+   "timeoutMin": 25,
+   "ini": { "UserDiag.Enabled": 1 },
+   "run": { "profile": { "minutes": 5, "seed": 12345, "noSamplers": true } },
+   "logRequire": {
+    "^ts3native 0\\.36\\.305-m1124d ": 1,
+    "^diag: Bin add-ons:.*Sims3Performance\\.asi 599 KB": 1,
+    "^OK +GC black-list spacing cap: 0x[0-9A-F]{8}": 1
+   },
+   "logForbid": { "^(SKIP|FAIL) +GC black-list": 0 },
+   "s3ppLogRequire": {
+    "^\\[\\w+\\] Game version: (Steam 1\\.67|EA App 1\\.69)\\.": 1,
+    "^\\[\\w+\\] \\d+ patch\\(es\\) registered, \\d+ installed": 1,
+    "^\\[\\w+\\] \\[GCBL\\] black-list bypass ON at 0x[0-9A-F]{8} ": 1,
+    "^\\[\\w+\\] \\[GCHEAP\\] ": 2,
+    "^\\[\\w+\\] \\[STBL509\\] (active; |DRY-RUN RESULT: )": 1
+   },
+   "s3ppLogForbid": {
+    "\\[GCBL\\] black-list bypass is NOT active": 0,
+    "\\[STBL509\\] .*(self-test FAILED|rollback FAILED|refusing late install)": 0
+   }
+  }
+ ]
+}

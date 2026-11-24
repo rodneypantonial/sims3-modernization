@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using Sims3.Gameplay.Actors;
 using Sims3.Gameplay.ActorSystems;
@@ -704,8 +705,40 @@ namespace Ts3Agent
         // venue_hours {reset?: false} (read-only, repro aut-live-venue-hour): opening and closing hours of every community
         // lot with hours (Lot.GetHoursOfOperation: venue tuning HourOpen/HourClose or bar hours), the next such boundary from
         // now in sim hours, and how many boundaries the clock crossed since the reset (AppDomain data, minutes_total based).
+        // docs/585 §9 repro: "lot" = one venue by name: its hours (Lot.GetHoursOfOperation) and Lot.IsOpenVenue(); "jump" = open | close moves
+        // the clock forward (SimClock.TicksAdvanced, like AddOneHour) to that boundary + offsetMin (default -3: just before it)
+        static object VenueLot(Args a)
+        {
+            string name = a.Str("lot");
+            Lot lot = null;
+            ulong lid;
+            if (ulong.TryParse(name, NumberStyles.Integer, CultureInfo.InvariantCulture, out lid)) lot = LotManager.GetLot(lid);
+            if (lot == null) foreach (Lot l in LotManager.AllLots)
+                if (l != null && string.Compare(l.Name, name, true, CultureInfo.InvariantCulture) == 0) { lot = l; break; }
+            if (lot == null) throw new McpException("venue_hours: no lot named " + name);
+            float open = -1f, close = -1f;
+            bool has = lot.GetHoursOfOperation(ref open, ref close);
+            Dictionary<string, object> r = Util.Obj();
+            r["lot"] = lot.LotId.ToString("X16");
+            r["open"] = open; r["close"] = close; r["has_hours"] = has;
+            r["open_before"] = lot.IsOpenVenue();
+            r["hour_before"] = Math.Round(SimClock.HoursPassedOfDay, 3);
+            if (a.Has("jump"))
+            {
+                if (!has) throw new McpException("venue_hours: " + name + " has no hours of operation");
+                double edge = (a.Str("jump") == "close" ? close : open) * 60.0 + a.Double("offsetMin", -3);
+                double delta = ((edge - SimClock.HoursPassedOfDay * 60.0) % 1440.0 + 1440.0) % 1440.0;
+                SimClock.TicksAdvanced += SimClock.ConvertToTicks((float)delta, TimeUnit.Minutes);
+                r["advanced_min"] = Math.Round(delta, 1);
+            }
+            r["hour"] = Math.Round(SimClock.HoursPassedOfDay, 3);
+            r["open_now"] = lot.IsOpenVenue();
+            return r;
+        }
+
         static object VenueHours(Args a)
         {
+            if (a.Has("lot")) return VenueLot(a);
             Dictionary<string, double> st = DomainState<Dictionary<string, double>>("ts3agent.venue_hours");
             double now = SimClock.ConvertFromTicks(SimClock.CurrentTicks, TimeUnit.Minutes);
             List<float> hours = new List<float>();
