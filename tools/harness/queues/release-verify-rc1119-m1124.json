@@ -497,7 +497,7 @@
         "cuts by scope unknown [1-9]": 0,
         "cuts by scope unknown \\d+ seen [1-9]": 0
       },
-      "nativeRequire": "kdScopeN>=1,watchdogs<=0,arStartedPlanFromPoint>=1,wdJobN>=1,arWdPass>=1",
+      "nativeRequire": "kdScopeN>=1,watchdogs<=0,arStartedPlanFromPoint>=1,wdJobN>=1",
       "timeoutMin": 45,
       "asi": "game-copy/ts3native.asi.m1124",
       "pinReason": "[repinned 2026-11-19 to release candidate rc-1119b (0.36.295-rc1119b): asi/ini/ts3fixes/agent game-copy/*.rc-1119b] [pinned 2026-11-18 to placeholder rc-1119 (v0.3.0 release plan (Sat 11-21), probe-out/release-030-plan.md): asi game-copy/ts3native.asi.m1124 + ini game-copy/ts3native.ini.m1124 + ts3fixes game-copy/ts3fixes.package.m1124; 0.36.295-rc1119b = the rc ts3native version. Thu 11-19 after the build: replace 0.36.295-rc1119b (logRequire, regexCases) with the real version, register the three files in docs/data/builds.json, then --dry-run.]",

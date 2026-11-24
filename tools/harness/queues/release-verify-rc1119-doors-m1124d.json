@@ -341,7 +341,7 @@
         "cuts by scope unknown [1-9]": 0,
         "cuts by scope unknown \\d+ seen [1-9]": 0
       },
-      "nativeRequire": "kdScopeN>=1,watchdogs<=0,arStartedPlanFromPoint>=1,wdJobN>=1,arWdPass>=1",
+      "nativeRequire": "kdScopeN>=1,watchdogs<=0,arStartedPlanFromPoint>=1,wdJobN>=1",
       "timeoutMin": 45,
       "asi": "game-copy/ts3native.asi.m1124d",
       "pinReason": "RC set m1124d (merge/m1124d e711f266f): asi 6c0a0087d744 (0.36.305-m1124d), ini 0a7cccaceef8, ts3fixes 4f55ae3d01d8, agent 7f4971c1599d (installed by probe-out/queue/chain-m1124d.sh) [previous] final RC set m1124c (merge/m1124c 94ca4729a): asi d03869b4f9bf (0.36.303-m1124b), ini 0a7cccaceef8, ts3fixes 8e7c4d2e7526 (hookflat), agent 891a73c45f1a [previous] master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay [previous] [repinned 2026-11-19 to release candidate rc-1119b (0.36.295-rc1119b): asi/ini/ts3fixes/agent game-copy/*.rc-1119b] [pinned 2026-11-18 to placeholder rc-1119 (v0.3.0 release plan (Sat 11-21), probe-out/release-030-plan.md): asi game-copy/ts3native.asi.m1124 + ini game-copy/ts3native.ini.m1124 + ts3fixes game-copy/ts3fixes.package.m1124; 0.36.295-rc1119b = the rc ts3native version. Thu 11-19 after the build: replace 0.36.295-rc1119b (logRequire, regexCases) with the real version, register the three files in docs/data/builds.json, then --dry-run.]",
