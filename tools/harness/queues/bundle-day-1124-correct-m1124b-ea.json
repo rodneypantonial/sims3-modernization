@@ -1,17 +1,18 @@
 {
- "note": "EA copy (EA laptop, TS3_MACHINE=ea-laptop TS3_LAUNCH=ea, correctness only, no timing) of bundle-day-1124-correct-m1124b: asi/ini/ts3fixes from game-copy/eam1124b/ (EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a); version read-back adds \"release: 0.36.303-m1124b EA\" and \"host build: EA app 1.69.47\" (regexCases); Apex / Bin add-on and VB guard \"on\" lines dropped (EA laptop runs DXVK, no Apex; VB guard is Steam 1.67 only); run.profile.noProf (the stutter profiler cannot inject on this EA laptop).  [Steam] DoorMemoX verify folded into bp-vbowner-correct-1..6 (shadow check on, DoorMemoX=3 read-backs, 0 mismatch). m1124b repin (2026-11-24, merge/m1124b): bundle-day-1124-correct pinned to master set m1124b (0.36.303-m1124b); sv-pausegate-unseen-hold-pause now waits on @ufwHeldNow (06c8176b) and keeps the read-only sites-loop diag reads. [previous] bundle-day-1124-correct (2026-11-24, WRITTEN, NOT RUN): one combined build (bundle1124 = pausegate-all + vbowner4 + cp34b + cp4b2 on m1123c, branch test/bundle-day-1124, not master) and one correctness queue for four day queues (pausegate-rerun-1124, vbowner-correct-1124-rerun1-1124, cp34-lanea-correct-1123-rerun1-1124, cp4b-correct-1123-rerun1-1124), grouped per world: Baseline-BP (pausegate 4 windows in one load; vbowner 6 jobs on one more load via reuseSession), Baseline-SV-Spring (pausegate unseen hold), Baseline-BP-Spring (cp34 + cp4b travel / save-reload, own job). Every source check kept (mustMatch steps in the repros, logRequire / logForbid unions, nativeRequire, fixesRequire). Bin state apex + RTX Remix bridge, Apex latest. Est ~112 min vs ~200 min as separate jobs. No IP job (cp4b ip-lanea-m8-pan stays out, hollow).",
+ "note": "Repinned 2026-11-24 to the EA parity build eam1124b2 (game-copy/eam1124b2/, 0.36.303-eam1124b2; version read-backs and their regexCases moved, 0.36.303-m1124b now a noMatch). EA copy (EA laptop, TS3_MACHINE=ea-laptop TS3_LAUNCH=ea, correctness only, no timing) of bundle-day-1124-correct-m1124b: asi/ini/ts3fixes from game-copy/eam1124b/ (EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a); version read-back adds \"release: 0.36.303-m1124b EA\" and \"host build: EA app 1.69.47\" (regexCases); Apex / Bin add-on and VB guard \"on\" lines dropped (EA laptop runs DXVK, no Apex; VB guard is Steam 1.67 only); run.profile.noProf (the stutter profiler cannot inject on this EA laptop).  [Steam] DoorMemoX verify folded into bp-vbowner-correct-1..6 (shadow check on, DoorMemoX=3 read-backs, 0 mismatch). m1124b repin (2026-11-24, merge/m1124b): bundle-day-1124-correct pinned to master set m1124b (0.36.303-m1124b); sv-pausegate-unseen-hold-pause now waits on @ufwHeldNow (06c8176b) and keeps the read-only sites-loop diag reads. [previous] bundle-day-1124-correct (2026-11-24, WRITTEN, NOT RUN): one combined build (bundle1124 = pausegate-all + vbowner4 + cp34b + cp4b2 on m1123c, branch test/bundle-day-1124, not master) and one correctness queue for four day queues (pausegate-rerun-1124, vbowner-correct-1124-rerun1-1124, cp34-lanea-correct-1123-rerun1-1124, cp4b-correct-1123-rerun1-1124), grouped per world: Baseline-BP (pausegate 4 windows in one load; vbowner 6 jobs on one more load via reuseSession), Baseline-SV-Spring (pausegate unseen hold), Baseline-BP-Spring (cp34 + cp4b travel / save-reload, own job). Every source check kept (mustMatch steps in the repros, logRequire / logForbid unions, nativeRequire, fixesRequire). Bin state apex + RTX Remix bridge, Apex latest. Est ~112 min vs ~200 min as separate jobs. No IP job (cp4b ip-lanea-m8-pan stays out, hollow).",
  "rewind": "auto",
  "stopQueueOnFail": false,
  "regexCases": {
-  "^ts3native 0\\.36\\.303-m1124b ": {
+  "^ts3native 0\\.36\\.303-eam1124b2 ": {
    "match": [
-    "ts3native 0.36.303-m1124b 2026-11-25 00:30:00"
+    "ts3native 0.36.303-eam1124b2 2026-11-25 00:30:00"
    ],
    "noMatch": [
     "ts3native 0.36.301-m1124 2026-11-24 10:52:04",
     "ts3native 0.36.302-dmxgen1124 2026-11-24 13:00:00",
     "ts3native 0.36.303-m1124b2 2026-11-25 00:30:00",
-    "ts3native 0.36.302-eadmxgen1124 2026-11-24 13:00:00"
+    "ts3native 0.36.302-eadmxgen1124 2026-11-24 13:00:00",
+    "ts3native 0.36.303-m1124b 2026-11-25 00:30:00"
    ]
   },
   "^OK   ea fix: VbFreeDelay .docs/67 §44.: VB wrappers freed 2000 ms": {
@@ -274,14 +275,15 @@
     "door memo x mode 3: armed 1, managed input bumps 9, asks before arming 0, hits 10 miss 5 inval 0 shadow 0 mismatch 0, household / unknown asks not answered from it 4"
    ]
   },
-  "^release: 0.36.303-m1124b EA$": {
+  "^release: 0.36.303-eam1124b2 EA$": {
    "match": [
-    "release: 0.36.303-m1124b EA"
+    "release: 0.36.303-eam1124b2 EA"
    ],
    "noMatch": [
-    "release: 0.36.303-m1124b retail",
+    "release: 0.36.303-eam1124b2 retail",
     "release: 0.36.300-eafinal2 EA",
-    "release: 0.36.303-m1124b2 EA"
+    "release: 0.36.303-m1124b2 EA",
+    "release: 0.36.303-m1124b EA"
    ]
   },
   "^host build: EA app 1.69.47": {
@@ -298,10 +300,10 @@
   {
    "id": "bp-vbowner-correct-1",
    "note": "[est 5 min] vbowner-correct-1124-rerun1-1124 bp-vbowner-correct-1 on the bundle build: fresh Baseline-BP load (a job with profile.repros keeps its frames session, so no reuse across it), repro vb-owner-delete-stress (4 Buy entries x 25 visible objects deleted in Buy mode, place_objects timeoutS 120). Pass as the source job: no crash, no VB BAD / VB guard at AV, start-up lines (version, VB guard on, VbFreeDelay, VbOwnerDelay OK, alias copy 1 call site; the load part of the log is kept per window), 0 script errors. The once-per-process line \"first draw owner ... delayed\" is required in bp-vbowner-correct-1 only. A failed carry-over check reloads the save (fresh start), so the window still runs. A crash or VB BAD = FAIL (stop at the first, it names the owner and its delete). Household untouched: render-memory fix only. DoorMemoX verify folded in (was doormemox-verify-m1124b): DoorMemoX=3 (every 8th valid row re-asked and compared = the self-check), DoorMemoXMs=250, doorgen on, queue shadow check on. Also pass: door memo x OK line, doorgen armed, mode-3 summary with shadow >= 1, mismatch 0 and the household / unknown asks counter (those asks always take the live host call, hostcalls.cpp npc gate), no FAIL door memo x, no door memo x shadow line.",
-   "asi": "game-copy/eam1124b/ts3native.asi",
-   "iniBase": "game-copy/eam1124b/ts3native.ini",
-   "fixesPackage": "game-copy/eam1124b/ts3fixes.package",
-   "pinReason": "EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
+   "asi": "game-copy/eam1124b2/ts3native.asi",
+   "iniBase": "game-copy/eam1124b2/ts3native.ini",
+   "fixesPackage": "game-copy/eam1124b2/ts3fixes.package",
+   "pinReason": "EA parity build eam1124b2 (bugfix/ea-parity-into-m1124b: rc/m1124b + the EA 1.69 parity port from test/ea-parity-final-run, AutShadow.Races 7): ts3native-ea169.asi.eam1124b2 (0.36.303-eam1124b2, sha256 2fe27f55c141, ea-build.bat), ts3native-ea169.ini.eam1124b2 (EA rc ini, sha256 7100a11b3255), ts3fixes/agent as eam1124b. Was: EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
    "releaseDefaults": true,
    "gameArgs": [
     "-disablestoryprogression"
@@ -335,7 +337,7 @@
     }
    },
    "logRequire": {
-    "^ts3native 0\\.36\\.303-m1124b ": 1,
+    "^ts3native 0\\.36\\.303-eam1124b2 ": 1,
     "^OK   ea fix: VbFreeDelay .docs/67 §44.: VB wrappers freed 2000 ms": 1,
     "^OK   ea fix: VbOwnerDelay .docs/67 §44\\.1.: draw owners of 0xA85DF0 freed 2000 ms": 1,
     "^ea fix: VbFreeDelay: first draw owner 0x[0-9A-F]{8} delayed": 1,
@@ -343,7 +345,7 @@
     "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
     "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
     "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0, household / unknown asks not answered from it \\d+": 1,
-    "^release: 0.36.303-m1124b EA$": 1,
+    "^release: 0.36.303-eam1124b2 EA$": 1,
     "^host build: EA app 1.69.47": 1
    },
    "logForbid": {
@@ -356,10 +358,10 @@
   {
    "id": "bp-vbowner-correct-2",
    "note": "[est 5 min] vbowner-correct-1124-rerun1-1124 bp-vbowner-correct-2 on the bundle build: the same game as bp-vbowner-correct-1 (reuseSession maxJobs 10, identical start: asi, ini, package, save, args; rewind group in Bin state apex-rewind), repro vb-owner-delete-stress (4 Buy entries x 25 visible objects deleted in Buy mode, place_objects timeoutS 120). Pass as the source job: no crash, no VB BAD / VB guard at AV, start-up lines (version, VB guard on, VbFreeDelay, VbOwnerDelay OK, alias copy 1 call site; the load part of the log is kept per window), 0 script errors. The once-per-process line \"first draw owner ... delayed\" is required in bp-vbowner-correct-1 only. A failed carry-over check reloads the save (fresh start), so the window still runs. A crash or VB BAD = FAIL (stop at the first, it names the owner and its delete). Household untouched: render-memory fix only. DoorMemoX verify folded in (was doormemox-verify-m1124b): DoorMemoX=3 (every 8th valid row re-asked and compared = the self-check), DoorMemoXMs=250, doorgen on, queue shadow check on. Also pass: door memo x OK line, doorgen armed, mode-3 summary with shadow >= 1, mismatch 0 and the household / unknown asks counter (those asks always take the live host call, hostcalls.cpp npc gate), no FAIL door memo x, no door memo x shadow line.",
-   "asi": "game-copy/eam1124b/ts3native.asi",
-   "iniBase": "game-copy/eam1124b/ts3native.ini",
-   "fixesPackage": "game-copy/eam1124b/ts3fixes.package",
-   "pinReason": "EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
+   "asi": "game-copy/eam1124b2/ts3native.asi",
+   "iniBase": "game-copy/eam1124b2/ts3native.ini",
+   "fixesPackage": "game-copy/eam1124b2/ts3fixes.package",
+   "pinReason": "EA parity build eam1124b2 (bugfix/ea-parity-into-m1124b: rc/m1124b + the EA 1.69 parity port from test/ea-parity-final-run, AutShadow.Races 7): ts3native-ea169.asi.eam1124b2 (0.36.303-eam1124b2, sha256 2fe27f55c141, ea-build.bat), ts3native-ea169.ini.eam1124b2 (EA rc ini, sha256 7100a11b3255), ts3fixes/agent as eam1124b. Was: EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
    "releaseDefaults": true,
    "gameArgs": [
     "-disablestoryprogression"
@@ -393,14 +395,14 @@
     }
    },
    "logRequire": {
-    "^ts3native 0\\.36\\.303-m1124b ": 1,
+    "^ts3native 0\\.36\\.303-eam1124b2 ": 1,
     "^OK   ea fix: VbFreeDelay .docs/67 §44.: VB wrappers freed 2000 ms": 1,
     "^OK   ea fix: VbOwnerDelay .docs/67 §44\\.1.: draw owners of 0xA85DF0 freed 2000 ms": 1,
     "^OK   ea fix VbOwnerDelay alias copy 0xA89696 -> 0xA89030: 1 call sites": 1,
     "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
     "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
     "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0, household / unknown asks not answered from it \\d+": 1,
-    "^release: 0.36.303-m1124b EA$": 1,
+    "^release: 0.36.303-eam1124b2 EA$": 1,
     "^host build: EA app 1.69.47": 1
    },
    "logForbid": {
@@ -413,10 +415,10 @@
   {
    "id": "bp-vbowner-correct-3",
    "note": "[est 5 min] vbowner-correct-1124-rerun1-1124 bp-vbowner-correct-3 on the bundle build: the same game as bp-vbowner-correct-1 (reuseSession maxJobs 10, identical start: asi, ini, package, save, args; rewind group in Bin state apex-rewind), repro vb-owner-delete-stress (4 Buy entries x 25 visible objects deleted in Buy mode, place_objects timeoutS 120). Pass as the source job: no crash, no VB BAD / VB guard at AV, start-up lines (version, VB guard on, VbFreeDelay, VbOwnerDelay OK, alias copy 1 call site; the load part of the log is kept per window), 0 script errors. The once-per-process line \"first draw owner ... delayed\" is required in bp-vbowner-correct-1 only. A failed carry-over check reloads the save (fresh start), so the window still runs. A crash or VB BAD = FAIL (stop at the first, it names the owner and its delete). Household untouched: render-memory fix only. DoorMemoX verify folded in (was doormemox-verify-m1124b): DoorMemoX=3 (every 8th valid row re-asked and compared = the self-check), DoorMemoXMs=250, doorgen on, queue shadow check on. Also pass: door memo x OK line, doorgen armed, mode-3 summary with shadow >= 1, mismatch 0 and the household / unknown asks counter (those asks always take the live host call, hostcalls.cpp npc gate), no FAIL door memo x, no door memo x shadow line.",
-   "asi": "game-copy/eam1124b/ts3native.asi",
-   "iniBase": "game-copy/eam1124b/ts3native.ini",
-   "fixesPackage": "game-copy/eam1124b/ts3fixes.package",
-   "pinReason": "EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
+   "asi": "game-copy/eam1124b2/ts3native.asi",
+   "iniBase": "game-copy/eam1124b2/ts3native.ini",
+   "fixesPackage": "game-copy/eam1124b2/ts3fixes.package",
+   "pinReason": "EA parity build eam1124b2 (bugfix/ea-parity-into-m1124b: rc/m1124b + the EA 1.69 parity port from test/ea-parity-final-run, AutShadow.Races 7): ts3native-ea169.asi.eam1124b2 (0.36.303-eam1124b2, sha256 2fe27f55c141, ea-build.bat), ts3native-ea169.ini.eam1124b2 (EA rc ini, sha256 7100a11b3255), ts3fixes/agent as eam1124b. Was: EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
    "releaseDefaults": true,
    "gameArgs": [
     "-disablestoryprogression"
@@ -450,14 +452,14 @@
     }
    },
    "logRequire": {
-    "^ts3native 0\\.36\\.303-m1124b ": 1,
+    "^ts3native 0\\.36\\.303-eam1124b2 ": 1,
     "^OK   ea fix: VbFreeDelay .docs/67 §44.: VB wrappers freed 2000 ms": 1,
     "^OK   ea fix: VbOwnerDelay .docs/67 §44\\.1.: draw owners of 0xA85DF0 freed 2000 ms": 1,
     "^OK   ea fix VbOwnerDelay alias copy 0xA89696 -> 0xA89030: 1 call sites": 1,
     "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
     "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
     "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0, household / unknown asks not answered from it \\d+": 1,
-    "^release: 0.36.303-m1124b EA$": 1,
+    "^release: 0.36.303-eam1124b2 EA$": 1,
     "^host build: EA app 1.69.47": 1
    },
    "logForbid": {
@@ -470,10 +472,10 @@
   {
    "id": "bp-vbowner-correct-4",
    "note": "[est 5 min] vbowner-correct-1124-rerun1-1124 bp-vbowner-correct-4 on the bundle build: the same game as bp-vbowner-correct-1 (reuseSession maxJobs 10, identical start: asi, ini, package, save, args; rewind group in Bin state apex-rewind), repro vb-owner-delete-stress (4 Buy entries x 25 visible objects deleted in Buy mode, place_objects timeoutS 120). Pass as the source job: no crash, no VB BAD / VB guard at AV, start-up lines (version, VB guard on, VbFreeDelay, VbOwnerDelay OK, alias copy 1 call site; the load part of the log is kept per window), 0 script errors. The once-per-process line \"first draw owner ... delayed\" is required in bp-vbowner-correct-1 only. A failed carry-over check reloads the save (fresh start), so the window still runs. A crash or VB BAD = FAIL (stop at the first, it names the owner and its delete). Household untouched: render-memory fix only. DoorMemoX verify folded in (was doormemox-verify-m1124b): DoorMemoX=3 (every 8th valid row re-asked and compared = the self-check), DoorMemoXMs=250, doorgen on, queue shadow check on. Also pass: door memo x OK line, doorgen armed, mode-3 summary with shadow >= 1, mismatch 0 and the household / unknown asks counter (those asks always take the live host call, hostcalls.cpp npc gate), no FAIL door memo x, no door memo x shadow line.",
-   "asi": "game-copy/eam1124b/ts3native.asi",
-   "iniBase": "game-copy/eam1124b/ts3native.ini",
-   "fixesPackage": "game-copy/eam1124b/ts3fixes.package",
-   "pinReason": "EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
+   "asi": "game-copy/eam1124b2/ts3native.asi",
+   "iniBase": "game-copy/eam1124b2/ts3native.ini",
+   "fixesPackage": "game-copy/eam1124b2/ts3fixes.package",
+   "pinReason": "EA parity build eam1124b2 (bugfix/ea-parity-into-m1124b: rc/m1124b + the EA 1.69 parity port from test/ea-parity-final-run, AutShadow.Races 7): ts3native-ea169.asi.eam1124b2 (0.36.303-eam1124b2, sha256 2fe27f55c141, ea-build.bat), ts3native-ea169.ini.eam1124b2 (EA rc ini, sha256 7100a11b3255), ts3fixes/agent as eam1124b. Was: EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
    "releaseDefaults": true,
    "gameArgs": [
     "-disablestoryprogression"
@@ -507,14 +509,14 @@
     }
    },
    "logRequire": {
-    "^ts3native 0\\.36\\.303-m1124b ": 1,
+    "^ts3native 0\\.36\\.303-eam1124b2 ": 1,
     "^OK   ea fix: VbFreeDelay .docs/67 §44.: VB wrappers freed 2000 ms": 1,
     "^OK   ea fix: VbOwnerDelay .docs/67 §44\\.1.: draw owners of 0xA85DF0 freed 2000 ms": 1,
     "^OK   ea fix VbOwnerDelay alias copy 0xA89696 -> 0xA89030: 1 call sites": 1,
     "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
     "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
     "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0, household / unknown asks not answered from it \\d+": 1,
-    "^release: 0.36.303-m1124b EA$": 1,
+    "^release: 0.36.303-eam1124b2 EA$": 1,
     "^host build: EA app 1.69.47": 1
    },
    "logForbid": {
@@ -527,10 +529,10 @@
   {
    "id": "bp-vbowner-correct-5",
    "note": "[est 5 min] vbowner-correct-1124-rerun1-1124 bp-vbowner-correct-5 on the bundle build: the same game as bp-vbowner-correct-1 (reuseSession maxJobs 10, identical start: asi, ini, package, save, args; rewind group in Bin state apex-rewind), repro vb-owner-delete-stress (4 Buy entries x 25 visible objects deleted in Buy mode, place_objects timeoutS 120). Pass as the source job: no crash, no VB BAD / VB guard at AV, start-up lines (version, VB guard on, VbFreeDelay, VbOwnerDelay OK, alias copy 1 call site; the load part of the log is kept per window), 0 script errors. The once-per-process line \"first draw owner ... delayed\" is required in bp-vbowner-correct-1 only. A failed carry-over check reloads the save (fresh start), so the window still runs. A crash or VB BAD = FAIL (stop at the first, it names the owner and its delete). Household untouched: render-memory fix only. DoorMemoX verify folded in (was doormemox-verify-m1124b): DoorMemoX=3 (every 8th valid row re-asked and compared = the self-check), DoorMemoXMs=250, doorgen on, queue shadow check on. Also pass: door memo x OK line, doorgen armed, mode-3 summary with shadow >= 1, mismatch 0 and the household / unknown asks counter (those asks always take the live host call, hostcalls.cpp npc gate), no FAIL door memo x, no door memo x shadow line.",
-   "asi": "game-copy/eam1124b/ts3native.asi",
-   "iniBase": "game-copy/eam1124b/ts3native.ini",
-   "fixesPackage": "game-copy/eam1124b/ts3fixes.package",
-   "pinReason": "EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
+   "asi": "game-copy/eam1124b2/ts3native.asi",
+   "iniBase": "game-copy/eam1124b2/ts3native.ini",
+   "fixesPackage": "game-copy/eam1124b2/ts3fixes.package",
+   "pinReason": "EA parity build eam1124b2 (bugfix/ea-parity-into-m1124b: rc/m1124b + the EA 1.69 parity port from test/ea-parity-final-run, AutShadow.Races 7): ts3native-ea169.asi.eam1124b2 (0.36.303-eam1124b2, sha256 2fe27f55c141, ea-build.bat), ts3native-ea169.ini.eam1124b2 (EA rc ini, sha256 7100a11b3255), ts3fixes/agent as eam1124b. Was: EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
    "releaseDefaults": true,
    "gameArgs": [
     "-disablestoryprogression"
@@ -564,14 +566,14 @@
     }
    },
    "logRequire": {
-    "^ts3native 0\\.36\\.303-m1124b ": 1,
+    "^ts3native 0\\.36\\.303-eam1124b2 ": 1,
     "^OK   ea fix: VbFreeDelay .docs/67 §44.: VB wrappers freed 2000 ms": 1,
     "^OK   ea fix: VbOwnerDelay .docs/67 §44\\.1.: draw owners of 0xA85DF0 freed 2000 ms": 1,
     "^OK   ea fix VbOwnerDelay alias copy 0xA89696 -> 0xA89030: 1 call sites": 1,
     "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
     "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
     "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0, household / unknown asks not answered from it \\d+": 1,
-    "^release: 0.36.303-m1124b EA$": 1,
+    "^release: 0.36.303-eam1124b2 EA$": 1,
     "^host build: EA app 1.69.47": 1
    },
    "logForbid": {
@@ -584,10 +586,10 @@
   {
    "id": "bp-vbowner-correct-6",
    "note": "[est 5 min] vbowner-correct-1124-rerun1-1124 bp-vbowner-correct-6 on the bundle build: the same game as bp-vbowner-correct-1 (reuseSession maxJobs 10, identical start: asi, ini, package, save, args; rewind group in Bin state apex-rewind), repro vb-owner-delete-stress (4 Buy entries x 25 visible objects deleted in Buy mode, place_objects timeoutS 120). Pass as the source job: no crash, no VB BAD / VB guard at AV, start-up lines (version, VB guard on, VbFreeDelay, VbOwnerDelay OK, alias copy 1 call site; the load part of the log is kept per window), 0 script errors. The once-per-process line \"first draw owner ... delayed\" is required in bp-vbowner-correct-1 only. A failed carry-over check reloads the save (fresh start), so the window still runs. A crash or VB BAD = FAIL (stop at the first, it names the owner and its delete). Household untouched: render-memory fix only. DoorMemoX verify folded in (was doormemox-verify-m1124b): DoorMemoX=3 (every 8th valid row re-asked and compared = the self-check), DoorMemoXMs=250, doorgen on, queue shadow check on. Also pass: door memo x OK line, doorgen armed, mode-3 summary with shadow >= 1, mismatch 0 and the household / unknown asks counter (those asks always take the live host call, hostcalls.cpp npc gate), no FAIL door memo x, no door memo x shadow line.",
-   "asi": "game-copy/eam1124b/ts3native.asi",
-   "iniBase": "game-copy/eam1124b/ts3native.ini",
-   "fixesPackage": "game-copy/eam1124b/ts3fixes.package",
-   "pinReason": "EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
+   "asi": "game-copy/eam1124b2/ts3native.asi",
+   "iniBase": "game-copy/eam1124b2/ts3native.ini",
+   "fixesPackage": "game-copy/eam1124b2/ts3fixes.package",
+   "pinReason": "EA parity build eam1124b2 (bugfix/ea-parity-into-m1124b: rc/m1124b + the EA 1.69 parity port from test/ea-parity-final-run, AutShadow.Races 7): ts3native-ea169.asi.eam1124b2 (0.36.303-eam1124b2, sha256 2fe27f55c141, ea-build.bat), ts3native-ea169.ini.eam1124b2 (EA rc ini, sha256 7100a11b3255), ts3fixes/agent as eam1124b. Was: EA app 1.69.47 build of master set m1124b (rc/m1124b abab2853): ts3native-ea169.asi.eam1124b (0.36.303-m1124b, sha256 9bd655581d64, ea-build.bat), ts3native-ea169.ini.eam1124b (EA rc ini, sha256 723337afcef9), ts3fixes.package.eam1124b (EA refs, sha256 1373dbf7c797, tuning b7018ac0bf65 = Steam m1124b), agent 891a73c45f1a [Steam: master set m1124b (0.36.303-m1124b, merge/m1124b faeb5436e): asi d03869b4f9bf, ini 0a7cccaceef8, ts3fixes 619a552ed189, agent 891a73c45f1a; + Dalexlol #715 lineswitch, #716 reactoverlay]",
    "releaseDefaults": true,
    "gameArgs": [
     "-disablestoryprogression"
@@ -621,14 +623,14 @@
     }
    },
    "logRequire": {
-    "^ts3native 0\\.36\\.303-m1124b ": 1,
+    "^ts3native 0\\.36\\.303-eam1124b2 ": 1,
     "^OK   ea fix: VbFreeDelay .docs/67 §44.: VB wrappers freed 2000 ms": 1,
     "^OK   ea fix: VbOwnerDelay .docs/67 §44\\.1.: draw owners of 0xA85DF0 freed 2000 ms": 1,
     "^OK   ea fix VbOwnerDelay alias copy 0xA89696 -> 0xA89030: 1 call sites": 1,
     "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
     "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
     "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0, household / unknown asks not answered from it \\d+": 1,
-    "^release: 0.36.303-m1124b EA$": 1,
+    "^release: 0.36.303-eam1124b2 EA$": 1,
     "^host build: EA app 1.69.47": 1
    },
    "logForbid": {
