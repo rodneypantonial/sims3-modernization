@@ -89,6 +89,7 @@
  "UnseenFallback": ["unseenfb.cpp", "unseenfbc.cpp"],
  "UnseenGhost": ["ghost.cpp"],
  "UnseenAnim": ["unseenanim.cpp"],
+ "SeqWatch": ["unseenanim.cpp"],
  "UnseenRootMotion": ["unseenrm.cpp"],
  "UnseenTable": ["unseentable.cpp"],
  "UnseenCost": ["unseencost.cpp"],

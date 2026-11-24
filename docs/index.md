@@ -348,7 +348,7 @@ One entry per doc or doc group, moved from `CLAUDE.md` (2026-10-31) so sessions 
 - `docs/165-main-thread-waits.md` (2026-10-22, static + one capture): which lock the render thread waits on in `ts3native.asi` frames; how much of the frame is ours.
 - `docs/168-hitch-confidence-scenarios.md` (2026-10-22, tools dry-run): hitch-ab.ts Confidence table, natural vs forced play, per-action scenario cost, profiler cost.
 - `docs/170-faster-tests.md` (2026-10-22, ledger §272): `run.profile.repros`, several repros per load in one queue job.
-- `docs/173-crash-567121.md` (2026-10-22, triage, ledger §283): crash at `0x00567121`, SequenceController drains its node list, job `bp-profcost-on-2`.
+- `docs/173-crash-567121.md` (2026-10-22, triage, ledger §283): crash at `0x00567121`, SequenceController drains its node list, job `bp-profcost-on-2`. §7 (2026-11-25, ledger §610): the EA hbstart freeze (eam1124d2) is the same empty-list state inside the last drop call; EA chain mapped by sigmap; `[SeqWatch]` (off, log only, `unseenanim.cpp`, export `ts3native_seqwatch`, site `0x56718B` / EA `0x566D2B`) + [UnseenAnim] debt notes `aaReuse` / `aaRigChg` / `aaOwedPar`; build 0.36.305-eam1124d2-hbdet; queue `hbhang-detector-1125-ea` (run twice); harness job key `hangCapture`.
 - `docs/176-foreign-replan.md` (2026-10-23, ts3native 0.36.29, counters v101, not run, ledger §286): `[RouteAsync] ForeignKinds`, Isla Paradiso ReplanFromPosition freezes.
 - `docs/177-route-job-goal-generation.md` (2026-10-23, static): route job goal candidate generation, duplicate ring, footprint refcount race; P-G, D1.
 - `docs/178-next-routing-targets.md` (2026-10-23, static + runs): routing targets after v0.1.5 ranked by player-visible hitch value.

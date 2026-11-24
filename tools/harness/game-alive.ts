@@ -18,7 +18,8 @@ import { BIN, GAME_EXE, gameRunning, seenPids } from './game-exe.ts';
 
 const STARTED = new Date().toISOString(); // crash pickup: reports since this process started, of the game PIDs it saw
 
-const LIMIT_MS = 60000;
+// queue job hangCapture.limitS (queue.ts sets TS3_HANG_LIMIT_S for its children): a shorter frozen-heartbeat limit, 20-60 s
+const LIMIT_MS = Math.min(60, Math.max(20, Number(process.env.TS3_HANG_LIMIT_S) || 60)) * 1000;
 // world load grace: the probe answers with agentstatus worldLoaded false (world unloaded, loading screen) while the frozen
 // heartbeat is the load itself. Travel loads took 46-68 s and grew per trip; the France -> home load was killed at 68 s
 // (float5-round4 all-off-1, 2026-11-09).
@@ -301,8 +302,10 @@ export async function captureHang(dir: string, o: { port?: number; get?: HangGet
   const pre = join(dir, `hang-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`), put = (n: string, v: unknown) => writeFileSync(`${pre}-${n}.json`, JSON.stringify(v, null, 1));
   const sims: any[] = [];
   let fails = 0, sampleTimedOut = false;
-  for (let i = 0; i < 5 && fails < 2 && left() > 0; i++) { // two failures in a row: the probe is dead, go on
-    if (i) await sleepMs(Math.min(o.spacingMs ?? 1000, Math.max(0, left())));
+  // queue job hangCapture.samples / spacingMs (TS3_HANG_SAMPLES 2-20, TS3_HANG_SPACING_MS 100-1000): denser sim-stack samples of a spin
+  const nSamples = Math.min(20, Math.max(2, Number(process.env.TS3_HANG_SAMPLES) || 5)), spacing = o.spacingMs ?? Math.min(1000, Math.max(100, Number(process.env.TS3_HANG_SPACING_MS) || 1000));
+  for (let i = 0; i < nSamples && fails < 2 && left() > 0; i++) { // two failures in a row: the probe is dead, go on
+    if (i) await sleepMs(Math.min(spacing, Math.max(0, left())));
     const r = await get('simstack?frames=32', 4000).catch(err);
     if (/timeout|cap reached/.test(r.error ?? '')) sampleTimedOut = true;
     fails = r.stack?.length ? 0 : fails + 1;

@@ -49,7 +49,7 @@
 // EA app 1.69 asi only (the Steam and retail asi keep their bytes): RC m1124d (rc/m1124d 65fcaca1) incl. the EA parity port.
 // Not a quoted TS3NATIVE_VERSION define, so queue.ts / pr-preflight.ts / experimental.ts still read the Steam version above.
 #if defined(TS3A_TABLE) && !defined(TS3A_RETAIL) && !defined(TS3N_RFTEST)
-#define TS3NATIVE_VERSION_EA "0.36.305-eam1124d2"
+#define TS3NATIVE_VERSION_EA "0.36.305-eam1124d2-hbdet"
 #undef TS3NATIVE_VERSION
 #define TS3NATIVE_VERSION TS3NATIVE_VERSION_EA
 #endif
@@ -7139,6 +7139,7 @@ static void Run(HMODULE self) {
         keepLog = ApplyUnseenGhost(ini) || keepLog;  // docs/202 §3.9.5: last, a layer below every 0x833560 owner
         keepLog = ApplyUnseenCost(ini) || keepLog;   // docs/227: before the unseen hooks fire (no call sites of its own)
         keepLog = ApplyUnseenAnim(ini) || keepLog;   // docs/144 §3.4: the animation pass and pose call sites (no other owner)
+        keepLog = ApplySeqWatch(ini) || keepLog;     // docs/173 §7: SequenceController node-loop detector (off; log only)
         keepLog = ApplyAnimPhase(ini) || keepLog;    // docs/22 §6 G10: timers at four call sites inside 0x940430 (off)
         keepLog = ApplyStallWatch(ini) || keepLog;   // docs/67 §25: sim stall sampler (off; simloop.cpp iteration hook)
         keepLog = ApplyModTime(ini) || keepLog;      // docs/298: [Diag] ModTime (off; one more simloop.cpp callback + a sampler thread)

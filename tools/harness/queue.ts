@@ -411,7 +411,7 @@ function versionPinMiss(j: { asi?: string; logRequire?: Record<string, number> }
 }
 
 // every top-level job key queue.ts reads (Job type plus the optional extras); anything else is a typo or a profile key at the wrong level
-const JOB_KEYS = new Set(['id', 'dogfood', 'quitsGame', 'note', 'expectHang', 'asi', 'ini', 'defaultIni', 'optionsIni', 's3ppIni', 's3ssToml', 'apexProfiler', 'apexToml', 'dxvkConf', 'd3d9Dll', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'iniBase', 'scriptErrorsAllow', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'modSet', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'apexLogRequire', 'apexLogForbid', 'regexCases', 'noiseCheck', 'earlyGates', 'report', 'routingFailFast', 'scriptErrorsMax', 'scriptErrorsReport', 'scriptErrorsReportBefore', 'stopQueueOnFail', 'crashHunt', 'reuseSession', 'rewind', 'releaseDefaults', 'skipIfMissing', 'ourMods', 'agentArm', 'rewindRequire', 'checkAt', 'expectFail', 'agentPackage']);
+const JOB_KEYS = new Set(['id', 'dogfood', 'quitsGame', 'note', 'expectHang', 'asi', 'ini', 'defaultIni', 'optionsIni', 's3ppIni', 's3ssToml', 'apexProfiler', 'apexToml', 'dxvkConf', 'd3d9Dll', 'gameArgs', 'fixes', 'fixesBuild', 'fixesPackage', 'iniBase', 'scriptErrorsAllow', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'modSet', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'apexLogRequire', 'apexLogForbid', 'regexCases', 'noiseCheck', 'earlyGates', 'report', 'routingFailFast', 'scriptErrorsMax', 'scriptErrorsReport', 'scriptErrorsReportBefore', 'stopQueueOnFail', 'crashHunt', 'reuseSession', 'rewind', 'releaseDefaults', 'skipIfMissing', 'ourMods', 'agentArm', 'hangCapture', 'rewindRequire', 'checkAt', 'expectFail', 'agentPackage']);
 // ---- vanilla mode (docs/236): what a job may not ask for without ts3native/ts3fixes, and the checks the row names as N/A
 // results md cell: at most `max` chars, cut at an item boundary (", " / "; " / "<br>") and marked, never inside a number
 // (docs/277 §1: the cut at 400 turned aut_l0_pairn_hh 397 / 3163 into "3" / "316"; full values stay in the jsonl row)
@@ -3479,6 +3479,8 @@ for (const [n, j] of jobs.entries()) {
   const closeLost = () => { closedByUs = gameRunning(); return closeGame(probe?.pid); };
   const logFile = join(OUT, `${queueName}-${date}-${j.id}.log`), logOff = existsSync(logFile) ? statSync(logFile).size : 0;
   process.env.TS3_AGENT_ARM = (j as any).agentArm ?? ''; // agentArm: agent command cycle.ts sends with {arm:true} before load_save
+  const hc = (j as any).hangCapture ?? {}; // hangCapture {limitS, samples, spacingMs}: game-alive.ts captureHang / deadReason in the children
+  process.env.TS3_HANG_LIMIT_S = String(hc.limitS ?? ''), process.env.TS3_HANG_SAMPLES = String(hc.samples ?? ''), process.env.TS3_HANG_SPACING_MS = String(hc.spacingMs ?? '');
   process.env.TS3_HANG_DIR = join(OUT, `${profileTag(j)}-hang`); // children capture a hung game here before the kill (game-alive.ts captureHang)
   const sections = [...new Set(Object.keys(j.ini ?? {}).map(k => k.split('.')[0]))];
   const s = saveOf(j)!;

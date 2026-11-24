@@ -1336,3 +1336,12 @@ Separate struct of `LONG`, `version` 1 (`[HitchAttr] HitchMs` / `RouteLockMs`, d
 | 0x00-0x17 | `version`, `hitchUs` (HitchMs), `lockLogUs` (RouteLockMs), `frames`, `hitches`, `hitchMs` |
 | 0x18-0x67 | `causeN[10]`, `causeMs[10]` (by cause class: sync-plan / job-wait / lock918 / other-lock / gc / limiter / sim-cpu / off-cpu / mixed / unknown) |
 | 0x68-0xAF | `+0x918` waits of the sim / main thread: `lkWaits`, `lkUs`, `lkMaxUs`, `lkLines`, `lkDropped`, `lkWorkerN/Us`, `lkJobEndN/Us`, `lkJob250N/Us`, `lkOtherN/Us`, `lkMainN/Us`; `hitchLock250`; `lines`, `dropped` ("hitch:" lines) |
+
+## ts3native `ts3native_seqwatch` export (`SeqWatchCounters` in `native/ts3native/unseenanim.cpp`)
+
+Separate struct of `LONG`, `version` 1 (`[SeqWatch]`, docs/173 §7; log only). No ts3fixes counter slot. Append fields at the end only.
+
+| Offsets | Fields |
+|---|---|
+| 0x00-0x27 | `version`, `on`, `iterN`, `calls` (node-loop drops), `emptyNext` (drops that empty the list), `longLoops` (runs of IterN drops), `depthMax`, `depth`, `curCtrl`, `curTrack` |
+| 0x28-0x37 | `lines` (seq watch lines asked, 64 written), `aaReuse`, `aaRigChg`, `aaOwedPar` ([UnseenAnim] debt dropped on a reused address / paid after a TrackManager change / paid at a parent hold) |

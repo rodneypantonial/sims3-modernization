@@ -389,3 +389,54 @@ static void TestAnimPhase() {
     printf("anim phase: four timing wrappers pass registers and arguments through, count; install refuses without the game's calls\n");
     TestAnimSplit();
 }
+
+// TestSeqWatch ([SeqWatch], docs/173 §7): the drop thunk passes every argument to EA's call unchanged, counts a drop that empties
+// the list (anchor at controller + 0x30 pointing at itself), a run of IterN drops for one controller + track, nesting depth
+// (restored after the call), and the [UnseenAnim] debt notes (TrackManager change, parent-hold pay, reuse drop)
+static struct { void* node; void* ctrl; int stop; int n; bool nest; } g_sqFake;
+static void __fastcall SqFakeDrop(void* node, void*, void* ctrl, int stop) {
+    g_sqFake.node = node, g_sqFake.ctrl = ctrl, g_sqFake.stop = stop, g_sqFake.n++;
+    if (g_sqFake.nest) { g_sqFake.nest = false; SqDropThunk(node, NULL, ctrl, stop); }
+}
+static void TestSeqWatch() {
+    SeqWatchCounters& c = ts3native_seqwatch;
+    const SeqWatchCounters saved = c;
+    const SqDropFn origSave = g_sqDropOrig;
+    g_sqDropOrig = SqFakeDrop;
+    c.on = 1, c.iterN = 100;
+    u8 ctrl[0x48] = {}, ctrl2[0x48] = {};
+    DWORD node[8] = {0, 0x11, 0, 0, 0, 0, 0x777, 0};  // copy: obj, key, flags, f, f, pad; +0x18 = the finished track
+    void* other = &node[7];
+    *(void**)(ctrl + 0x30) = other;  // not empty
+    *(void**)(ctrl2 + 0x30) = ctrl2 + 0x30;  // empty
+    const LONG e0 = c.emptyNext, l0 = c.longLoops, k0 = c.calls;
+    SqDropThunk(node, NULL, ctrl, 1);
+    assert(g_sqFake.node == node && g_sqFake.ctrl == ctrl && g_sqFake.stop == 1 && c.emptyNext == e0 && t_sqDepth == 0 && c.depth == 0);
+    assert((DWORD)c.curTrack == 0x777 && c.curCtrl == (LONG)(uintptr_t)ctrl);
+    SqDropThunk(node, NULL, ctrl2, 1);
+    assert(c.emptyNext == e0 + 1);
+    for (int i = 0; i < 100; i++) SqDropThunk(node, NULL, ctrl, 1);  // with the first call above: 101 drops, the 100th is the line
+    assert(c.longLoops == l0 + 1 && c.calls == k0 + 102);
+    g_sqFake.nest = true;
+    SqDropThunk(node, NULL, ctrl2, 0);
+    assert(c.depthMax >= 2 && t_sqDepth == 0 && c.depth == 0 && c.emptyNext == e0 + 3);
+    // [UnseenAnim] debt notes: TrackManager [[actor+0x24]+0xB0]
+    u8 rig[0xB4] = {}, actor[0x28] = {};
+    *(void**)(actor + 0x24) = rig;
+    *(void**)(rig + 0xB0) = (void*)0x5000;
+    assert(AaTm(actor) == (void*)0x5000);
+    AaSlot s = {};
+    s.tm = (void*)0x4000;
+    const LONG r0 = c.aaRigChg, p0 = c.aaOwedPar;
+    AaPayCheck(actor, &s, 1, 2, 0.1f, false);
+    assert(c.aaRigChg == r0 + 1 && c.aaOwedPar == p0);
+    s.tm = (void*)0x5000;
+    AaPayCheck(actor, &s, 1, 2, 0.1f, true);
+    assert(c.aaRigChg == r0 + 1 && c.aaOwedPar == p0 + 1);
+    c.on = 0;
+    assert(AaTm(actor) == NULL);  // off: never read
+    g_sqDropOrig = origSave;
+    c = saved;
+    memset(t_sqRun, 0, sizeof t_sqRun);
+    printf("selftest seq watch ok\n");
+}

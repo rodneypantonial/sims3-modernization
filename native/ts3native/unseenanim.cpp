@@ -30,7 +30,7 @@ static AaPoseFn g_aaPoseOrig = (AaPoseFn)(uintptr_t)AA_POSE;
 static AaPassFn g_aaPassOrig = (AaPassFn)(uintptr_t)AA_PASS;
 enum { AA_VMAX = 64, AA_SLOTS = 4096 };  // 4096: non-Sim actors share the table since Objects (~480 per pass on BP)
 enum { AAH_PARENT, AAH_NEARVIS, AAH_VIEWER, AAH_NOVIEW, AAH_SLOT, AAH_CAP, AAH_VISFULL, AAH_NOCLASS, AAH_N };
-struct AaSlot { void* actor; DWORD lo, hi; float owed; DWORD pass; };  // pass: last pass the actor was asked (stale check)
+struct AaSlot { void* actor; DWORD lo, hi; float owed; DWORD pass; void* tm; };  // pass: last pass the actor was asked (stale check); tm: [SeqWatch] TrackManager when the debt started
 static_assert(offsetof(Ts3nCounters, aaSlotReset) == 0x5A8C && offsetof(Ts3nCounters, rmSlMissHold) == 0x5A94, "counters v156 (docs/registry.md)");
 static AaSlot g_aaSlot[AA_SLOTS];
 static struct { float pos[AA_VMAX][3]; int n; bool full; } g_aaVis[2];  // [g_aaCur] = this pass, other = last pass
@@ -50,8 +50,8 @@ static float g_aaHardCap = 1.5f;
 // same address with the same owner (debt older than 2 x Every passes is dropped, aaStale) and a new actor list (table cleared,
 // aaSlotReset). Pose-path render messages carry the owner handle and no payload manager (0x958430, 0x940310), see §3.5.
 // Event ring for the exception handler (AaDrainFaultDump): the last 64 skip / owed-run / snap / drop decisions, sim thread.
-enum { AAE_SKIP, AAE_OWEDRUN, AAE_SNAP, AAE_FLUSHOFF, AAE_STALE, AAE_RESET, AAE_N };
-static const char* const kAaEv[AAE_N] = {"skip", "owed-run", "snap", "flush-off", "stale-drop", "reset"};
+enum { AAE_SKIP, AAE_OWEDRUN, AAE_SNAP, AAE_FLUSHOFF, AAE_STALE, AAE_RESET, AAE_REUSE, AAE_RIGCHG, AAE_OWEDPAR, AAE_N };
+static const char* const kAaEv[AAE_N] = {"skip", "owed-run", "snap", "flush-off", "stale-drop", "reset", "reuse-drop", "rig-changed", "owed-parented"};
 struct AaEv { void* actor; DWORD lo, hi, pass; LONG owedUs; u8 act, obj; };
 static AaEv g_aaEv[64];
 static DWORD g_aaEvN;
@@ -59,6 +59,31 @@ static void* g_aaList;
 static void AaEvAdd(int act, const void* actor, DWORD lo, DWORD hi, float owed, bool obj) {
     AaEv& e = g_aaEv[g_aaEvN++ & 63];
     e.actor = (void*)actor, e.lo = lo, e.hi = hi, e.pass = g_aaPass, e.owedUs = (LONG)(owed * 1e6f), e.act = (u8)act, e.obj = obj;
+}
+// [SeqWatch] (docs/173 §7, EA hang 2026-11-24 ip-ubrel-hbstart-repro): log-only detector. Own exported block (counters layout
+// unchanged): `on`, then the SequenceController node-loop drop calls (0x56718B), drops that empty the list (the loop reads
+// its anchor next: the 0x567121 AV of docs/173, the EA livelock), runs of > IterN drops for one controller + track, deepest
+// nesting of the drop call, the current nesting and controller / track (read by the hang capture), lines written, and three
+// [UnseenAnim] debt events: a slot whose actor address came back with another Sim (debt dropped), debt paid to an actor
+// whose TrackManager changed since the debt started, debt paid at a parent hold (boat / vehicle placement).
+struct SeqWatchCounters { LONG version, on, iterN, calls, emptyNext, longLoops, depthMax; volatile LONG depth, curCtrl, curTrack; LONG lines, aaReuse, aaRigChg, aaOwedPar; };
+extern "C" __declspec(dllexport) SeqWatchCounters ts3native_seqwatch = {1};
+enum { SQ_LINES = 64 };
+static bool SqLine() { return ts3native_seqwatch.on && InterlockedIncrement(&ts3native_seqwatch.lines) <= SQ_LINES; }
+// the actor's TrackManager ([actor+0x24]+0xB0, header above), NULL when unreadable; only read with [SeqWatch] on
+static void* AaTm(const void* actor) {
+    if (!ts3native_seqwatch.on) return NULL;
+    __try { const u8* rig = *(const u8* const*)((const u8*)actor + 0x24); return rig ? *(void* const*)(rig + 0xB0) : NULL; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return NULL; }
+}
+// a deferred debt whose target changed before it was paid (counted always; logged with [SeqWatch] on, 64 lines a session)
+static void AaDebtNote(int act, void* actor, DWORD lo, DWORD hi, float owed, void* tmWas, void* tmNow) {
+    SeqWatchCounters& c = ts3native_seqwatch;
+    InterlockedIncrement(act == AAE_REUSE ? &c.aaReuse : act == AAE_RIGCHG ? &c.aaRigChg : &c.aaOwedPar);
+    AaEvAdd(act, actor, lo, hi, owed, false);
+    if (SqLine())
+        Log("seq watch: unseen anim %s: actor %08lX Sim %08lX%08lX owed %ld us, TrackManager %08lX -> %08lX, pass %lu", kAaEv[act],
+            (DWORD)(uintptr_t)actor, hi, lo, (LONG)(owed * 1e6f), (DWORD)(uintptr_t)tmWas, (DWORD)(uintptr_t)tmNow, g_aaPass);
 }
 // docs/321 L4: the home slot was (actor >> 4) & 4095, direct-mapped. Actor objects sit at addresses whose bits 4-15 repeat
 // (16,909 / 8,891 / 1,182 collision holds in 10 min on BP / IP / SV with ~480 actors per pass), so the home is now a
@@ -330,6 +355,12 @@ static void AaChk(const LARGE_INTEGER& t0) {
     InterlockedIncrement(&ts3native_counters.aaChkN);
     UsAdd(&ts3native_counters.aaChkUs, TicksSince(t0));
 }
+// [SeqWatch]: debt about to be paid in one call; its TrackManager changed since the debt started, or it is paid at a parent hold
+static void AaPayCheck(void* actor, const AaSlot* s, DWORD lo, DWORD hi, float owed, bool parented) {
+    void* const tm = AaTm(actor);
+    if (s->tm && tm && tm != s->tm) AaDebtNote(AAE_RIGCHG, actor, lo, hi, owed, s->tm, tm);
+    if (parented) AaDebtNote(AAE_OWEDPAR, actor, lo, hi, owed, s->tm, tm);
+}
 static void __fastcall AaPoseThunk(void* actor, void* edx, float dt) {
     Ts3nCounters& k = ts3native_counters;
     if (GetCurrentThreadId() != g_aaTid) { g_aaPoseOrig(actor, edx, dt); return; }
@@ -348,13 +379,17 @@ static void __fastcall AaPoseThunk(void* actor, void* edx, float dt) {
     float pos[3] = {};
     bool parented = false;
     const int c = UnObjClass(owner, &kind, pos, &parented);
+    const bool parReal = parented;  // [SeqWatch]: a real parent (vehicle, boat, horse, carried), not the household hold below
     if (UtHeldObj(owner)) {  // docs/249: a household Sim always animates (PushHeld); kdAaHeldIn = the four class counters' sum
         InterlockedIncrement(&k.kdAaHeldIn);
         InterlockedIncrement(c == 0 ? &k.kdAaHeldSeen : c < 0 ? &k.kdAaHeldNoClass : parented ? &k.kdAaHeldPar : &k.kdAaHeld);
         parented = true;
     }
     AaSlot* s = AaSlotOf(actor, (DWORD)g_aaEvery);
-    if (s->actor == actor && (s->lo != lo || s->hi != hi)) s->actor = NULL, s->owed = 0;  // address reused by another Sim
+    if (s->actor == actor && (s->lo != lo || s->hi != hi)) {  // address reused by another Sim
+        if (s->owed > 0) AaDebtNote(AAE_REUSE, actor, s->lo, s->hi, s->owed, s->tm, NULL);
+        s->actor = NULL, s->owed = 0;
+    }
     const bool mine = s->actor == actor;
     const float owed = mine ? s->owed : 0;
     if (c == 0) {
@@ -367,6 +402,7 @@ static void __fastcall AaPoseThunk(void* actor, void* edx, float dt) {
         if (owed > 0) {
             InterlockedIncrement(c == 0 ? &k.aaSnap : k.aaMode != 1 ? &k.aaFlushOff : &k.aaHold[AAH_NOCLASS]);
             AaEvAdd(c == 0 ? AAE_SNAP : k.aaMode != 1 ? AAE_FLUSHOFF : AAE_OWEDRUN, actor, lo, hi, owed, false);
+            AaPayCheck(actor, s, lo, hi, owed, parReal);
         }
         if (mine) s->owed = 0;
         AaChk(tc);
@@ -376,6 +412,7 @@ static void __fastcall AaPoseThunk(void* actor, void* edx, float dt) {
     const int why = AaHoldWhy(parented, pos, s, mine, owed, dt);
     if (why < 0 && (g_aaPass + (DWORD)((uintptr_t)actor >> 4)) % (DWORD)g_aaEvery != 0) {
         if (!mine) s->actor = actor, s->lo = lo, s->hi = hi, s->pass = g_aaPass;
+        if (owed <= 0) s->tm = AaTm(actor);  // [SeqWatch]: the TrackManager this debt is taken under
         s->owed = owed + dt;
         InterlockedIncrement(&k.aaSkipped);
         AaEvAdd(AAE_SKIP, actor, lo, hi, s->owed, false);
@@ -384,7 +421,7 @@ static void __fastcall AaPoseThunk(void* actor, void* edx, float dt) {
         return;
     }
     if (why >= 0) InterlockedIncrement(&k.aaHold[why]);
-    if (owed > 0) InterlockedIncrement(&k.aaOwedRuns), AaEvAdd(AAE_OWEDRUN, actor, lo, hi, owed, false);
+    if (owed > 0) InterlockedIncrement(&k.aaOwedRuns), AaEvAdd(AAE_OWEDRUN, actor, lo, hi, owed, false), AaPayCheck(actor, s, lo, hi, owed, parReal);
     if (mine) s->owed = 0;
     AaChk(tc);
     AaRun(actor, edx, dt + owed, 1);
@@ -466,7 +503,7 @@ static bool ApplyUnseenAnim(const wchar_t* ini) {
 // Exception handler hook (ts3native.cpp XcptLog, crash triage 2026-11-02): a wild call (eip in no module) whose return address
 // is the render-message destroy in FrameDb_DrainEvents (0x59386B: `ecx=[msg+4]; call [[ecx]](msg+0x10)`, docs/144 §3.5): the
 // message (pushed arg = msg+0x10), 32 bytes at its payload manager and our last 64 [UnseenAnim] decisions. Reads guarded.
-static void AaHex(const char* what, DWORD at, int n) {
+static void AaHex(const char* what, DWORD at, int n, const char* pre = "drain fault") {
     char d[3 * 0x50 + 1] = "";
     int len = 0;
     for (int i = 0; i < n; i++) {
@@ -474,7 +511,7 @@ static void AaHex(const char* what, DWORD at, int n) {
         __try { v = *(const u8*)(uintptr_t)(at + i); } __except (EXCEPTION_EXECUTE_HANDLER) { SCpy(d + len, sizeof d - len, " unreadable"); break; }
         len += SFmt(d + len, sizeof d - len, i % 4 ? "%02X" : " %02X", v);
     }
-    Log("  drain fault: %s 0x%08lX:%s", what, at, d);
+    Log("  %s: %s 0x%08lX:%s", pre, what, at, d);
 }
 static void AaDrainFaultDump(const CONTEXT* c) {
     static volatile LONG once;
@@ -492,6 +529,91 @@ static void AaDrainFaultDump(const CONTEXT* c) {
         Log("  aa event -%lu: %s %s actor %08lX owner %08lX%08lX owed %ld us pass %lu", i, e.act < AAE_N ? kAaEv[e.act] : "?",
             e.obj ? "obj" : "sim", (DWORD)(uintptr_t)e.actor, e.hi, e.lo, e.owedUs, e.pass);
     }
+}
+
+// [SeqWatch] (docs/173 §7): the drop call in SequenceController_OnTrackFinished's node loop [verified disassembly, Steam 1.67;
+// EA 1.69 by sigmap, unique, same bytes]: 0x5670A0 (listener this = controller + 0x28; arg 1 the finished track) keeps popping
+// the first node and calls 0x566650(node copy; controller, 1) for each node that is not (key == track, flag 2); the loop head
+// 0x567103 never tests for an empty list (docs/173 §2). Site 0x56718B `call 0x566650`, thiscall(ecx = the popped node's copy
+// at loop esp+0x18; controller, bool), `ret 8`. The finished track sits at loop esp+0x30 = copy + 0x18 (four pushes + 0x1C of
+// locals; checked on the 2026-11-24 EA dump: copy + 0x18 holds OnTrackFinished's arg 1). Before EA's call: the list is empty
+// (this node was the last: when the call returns, the loop reads the anchor as a node) and the run of drops for one
+// controller + track per nesting level; one line each per controller. Log only: EA's call always runs, unchanged.
+typedef void(__fastcall* SqDropFn)(void* node, void* edx, void* ctrl, int stop);
+static const DWORD SQ_DROP_CALL = TS3A(0x0056718B), SQ_DROP = TS3A(0x00566650);
+static SqDropFn g_sqDropOrig = (SqDropFn)(uintptr_t)SQ_DROP;
+enum { SQ_DEPTH = 16, SQ_SEEN = 64 };
+static __declspec(thread) LONG t_sqDepth;
+static __declspec(thread) struct { void* ctrl; DWORD track, run; } t_sqRun[SQ_DEPTH];
+static void* g_sqSeen[SQ_SEEN];
+static LONG g_sqSeenN;
+// first report for this controller (64 controllers a session, then counters only)
+static bool SqFirst(void* ctrl) {
+    for (LONG i = 0, n = g_sqSeenN < SQ_SEEN ? g_sqSeenN : SQ_SEEN; i < n; i++)
+        if (g_sqSeen[i] == ctrl) return false;
+    const LONG i = InterlockedIncrement(&g_sqSeenN) - 1;
+    if (i >= SQ_SEEN) return false;
+    g_sqSeen[i] = ctrl;
+    return true;
+}
+static void SqReport(const char* what, void* node, void* ctrl, int stop, DWORD track, DWORD run) {
+    if (!SqFirst(ctrl) || !SqLine()) return;
+    DWORD key = 0, flags = 0, obj = 0, vt = 0;
+    __try {
+        obj = *(const DWORD*)node, key = *((const DWORD*)node + 1), flags = *((const DWORD*)node + 2);
+        if (obj) vt = *(const DWORD*)(uintptr_t)obj;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    DWORD owedNow = 0;  // [UnseenAnim] owed time paid in this pass so far (owed-run / snap / flush-off events)
+    for (DWORD i = 0; i < 64 && i < g_aaEvN; i++) {
+        const AaEv& e = g_aaEv[(g_aaEvN - 1 - i) & 63];
+        if (e.pass != g_aaPass) break;
+        if (e.act == AAE_OWEDRUN || e.act == AAE_SNAP || e.act == AAE_FLUSHOFF) owedNow++;
+    }
+    Log("seq watch: %s: controller %08lX track %08lX, dropped node key %08lX flags %lX obj %08lX (vtbl %08lX), stop %d, depth %ld, "
+        "run %lu; [UnseenAnim] %s pass %lu, %lu owed pays this pass; Sim: no verified controller -> actor link (see aa events)",
+        what, (DWORD)(uintptr_t)ctrl, track, key, flags, obj, vt, stop, t_sqDepth, run, g_aaOn ? "on" : "off", g_aaPass, owedNow);
+    AaHex("controller", (DWORD)(uintptr_t)ctrl, 0x48, "seq watch");
+    AaHex("track", track, 0x40, "seq watch");
+    for (DWORD i = 0; i < 8 && i < g_aaEvN; i++) {
+        const AaEv& e = g_aaEv[(g_aaEvN - 1 - i) & 63];
+        Log("  seq watch: aa event -%lu: %s %s actor %08lX owner %08lX%08lX owed %ld us pass %lu", i, e.act < AAE_N ? kAaEv[e.act] : "?",
+            e.obj ? "obj" : "sim", (DWORD)(uintptr_t)e.actor, e.hi, e.lo, e.owedUs, e.pass);
+    }
+}
+static void __fastcall SqDropThunk(void* node, void* edx, void* ctrl, int stop) {
+    SeqWatchCounters& c = ts3native_seqwatch;
+    InterlockedIncrement(&c.calls);
+    DWORD track = 0;
+    bool empty = false;
+    __try {
+        track = *(const DWORD*)((const u8*)node + 0x18);
+        const u8* anchor = (const u8*)ctrl + 0x30;
+        empty = *(const u8* const*)anchor == anchor;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    const LONG d = t_sqDepth;
+    DWORD run = 1;
+    if (d < SQ_DEPTH) {
+        auto& r = t_sqRun[d];
+        if (r.ctrl == ctrl && r.track == track) run = ++r.run; else r.ctrl = ctrl, r.track = track, r.run = 1;
+    }
+    if (empty) InterlockedIncrement(&c.emptyNext), SqReport("list empty before the drop (loop reads its anchor next)", node, ctrl, stop, track, run);
+    if (run == (DWORD)c.iterN) InterlockedIncrement(&c.longLoops), SqReport("long drop run", node, ctrl, stop, track, run);
+    t_sqDepth = d + 1;
+    Max(&c.depthMax, d + 1);
+    c.depth = d + 1, c.curCtrl = (LONG)(uintptr_t)ctrl, c.curTrack = (LONG)track;
+    g_sqDropOrig(node, edx, ctrl, stop);
+    t_sqDepth = d, c.depth = d;
+}
+// [SeqWatch] Enabled=1 (default 0): the drop call site; IterN (default 10000, 100..1000000) = the long-run line
+static bool ApplySeqWatch(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"SeqWatch", L"Enabled", 0, ini)) return false;
+    SeqWatchCounters& c = ts3native_seqwatch;
+    c.iterN = Clamp((LONG)GetPrivateProfileIntW(L"SeqWatch", L"IterN", 10000, ini), 100, 1000000);
+    const CallSite site[] = {{SQ_DROP_CALL, SQ_DROP, (void*)SqDropThunk}};
+    c.on = PatchCalls("seq watch (node-loop drop 0x56718B)", site, 1) ? 1 : 0;
+    Log("%s seq watch: on %ld, IterN=%ld; SequenceController node loop: empty list before a drop, long drop runs, nesting "
+        "(ts3native_seqwatch); [UnseenAnim] debt reuse / TrackManager change / parent-hold pays logged", c.on ? "OK  " : "FAIL", c.on, c.iterN);
+    return true;
 }
 
 // [AnimPhase] (docs/22 §6, docs/23 Next big wins #8 gate G10; counters v201 an*): per-phase timers inside rig pose 0x940430,

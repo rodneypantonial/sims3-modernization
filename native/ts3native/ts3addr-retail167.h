@@ -66,6 +66,8 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x0050B300, 0x0050B6D0},
     {0x005172E0, 0x005176F0},
     {0x0054DD80, 0x0054E0A0},
+    {0x00566650, 0x00000000},
+    {0x0056718B, 0x00000000},
     {0x00568710, 0x00568B50},
     {0x00568A6C, 0x00568EAC},
     {0x00568B28, 0x00568F68},
@@ -1694,7 +1696,7 @@ constexpr unsigned long ts3addr_pairs[][2] = {
     {0x01234374, 0x01235374},
 };
 // cullrace-1123 (docs/338): 0x0059A500 0x006E4720 0x006F3C3B 0x006F401B verified in the retail 1.67 exe (call targets, prologues)
-constexpr int ts3addr_count = 1688;
+constexpr int ts3addr_count = 1690;
 // unresolved: 0x0061A340 no-retail-row native/ts3native/eafix.cpp (VbFreeDelay, retail stub logs SKIP; docs/314 §5)
 // unresolved: 0x0061A410 no-retail-row native/ts3native/eafix.cpp (VbFreeDelay, retail stub logs SKIP; docs/314 §5)
 // unresolved: 0x005A2C00 xref-none native/ts3native/allocsites-owners.h:16 (+1)
@@ -1819,3 +1821,5 @@ constexpr int ts3addr_count = 1688;
 // unresolved: 0x00A85DF0 no-retail-1.67-address native/ts3native/eafix.cpp ([EaCrashFixes] VbOwnerDelay, docs/67 §44.1)
 // unresolved: 0x00A89030 no-retail-1.67-address native/ts3native/eafix.cpp ([EaCrashFixes] VbOwnerDelay aliases, docs/67 §44.1)
 // unresolved: 0x00A89696 no-retail-1.67-address native/ts3native/eafix.cpp ([EaCrashFixes] VbOwnerDelay aliases, docs/67 §44.1)
+// unresolved: 0x00566650 no-retail-row native/ts3native/unseenanim.cpp ([SeqWatch] test detector, SKIPs on retail; docs/173 §7)
+// unresolved: 0x0056718B no-retail-row native/ts3native/unseenanim.cpp ([SeqWatch] test detector, SKIPs on retail; docs/173 §7)

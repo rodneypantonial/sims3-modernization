@@ -14980,6 +14980,7 @@ int main(int argc, char** argv) {
     TestUnseenBand();
     TestUnseenGhost();
     TestUnseenAnim();
+    TestSeqWatch();
     TestAnimPhase();
     TestStallWatch();
     TestModTime();
