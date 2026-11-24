@@ -121210,7 +121210,7 @@
         "note": "end: kept 1 (household without lineswitchhh), switched 0, errors 0",
         "waitS": 1,
         "max": 1500,
-        "mustMatch": "switched 0; .*kept [1-9]\\d*; .*errors 0"
+        "mustMatch": "switched 0; .*kept [1-9]\\d*( \\([^)]*\\))?; .*errors 0"
       }
     ],
     "cleanup": [
