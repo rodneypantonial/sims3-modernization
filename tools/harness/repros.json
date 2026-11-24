@@ -121021,25 +121021,51 @@
         "cmd": "setup_sims",
         "args": {
           "sims": [
-            "Jack Bunch",
-            "Lisa Bunch",
-            "Judy Bunch"
+            "Lisa Bunch"
           ],
           "lot": "home",
           "near": "ToiletCheap",
           "autonomy": false
         },
-        "note": "rerun1: teleport the three home next to their cheap toilet (on Baseline-SV-Spring they were not at home at 20:00: @type:ToiletCheap, the one nearest Jack, was 'Bargain John' with an empty menu for Judy, and do_interaction 'use' found nothing); fails loudly when the home lot has no ToiletCheap",
+        "note": "rerun3: only Lisa (the toilet's user) is teleported to the home's cheap toilet. Before, all three stood in a 0.5 m row centred on the toilet: rerun3 had Jack 0.5 m from the toilet on its slot, Lisa's Replan FailedBecauseNoDestinationSpecified, her Use dropped and Judy took the free toilet (no line, kept 0, plans 0). STRESS shortcut: Teleport Me Here (testingcheats) instead of the walk home (rerun1: on Baseline-SV-Spring they were not at home at 20:00); fails loudly when the home lot has no ToiletCheap",
         "waitS": 8,
         "max": 300
       },
       {
         "cmd": "set_active_sim",
         "args": {
-          "sim": "Jack Bunch"
+          "sim": "Lisa Bunch"
         },
-        "note": "select Jack (home now): @type:ToiletCheap / ToiletModerate resolve nearest the SELECTED Sim; switch_household selects whoever the game picks (EA SV-Spring 2026-11-24: Ethan, away from home, so @type:ToiletCheap was a public 'Bargain John' with an empty menu and 'use' failed). Jack is outside the line under test (he uses the moderate toilet)",
+        "note": "select Lisa (home now, at the cheap toilet): @type:ToiletCheap / ToiletModerate resolve nearest the SELECTED Sim, so they are the toilets of her bathroom side; switch_household selects whoever the game picks (EA SV-Spring 2026-11-24: Ethan, away from home, so @type:ToiletCheap was a public 'Bargain John'). Lisa only occupies the toilet; the Sim under test is Judy (not selected)",
         "waitS": 2,
+        "max": 300
+      },
+      {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "Jack Bunch"
+          ],
+          "lot": "home",
+          "near": "@type:ToiletModerate",
+          "autonomy": false
+        },
+        "note": "rerun3: Jack alone at the moderate toilet he will use (off the cheap toilet's slot). STRESS shortcut: Teleport Me Here",
+        "waitS": 4,
+        "max": 300
+      },
+      {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "Judy Bunch"
+          ],
+          "lot": "home",
+          "near": "Mailbox",
+          "autonomy": false
+        },
+        "note": "rerun3: Judy home but away from both toilets (the mailbox) until Lisa is on the cheap toilet. STRESS shortcut: Teleport Me Here",
+        "waitS": 8,
         "max": 300
       },
       {
@@ -121119,9 +121145,24 @@
           "target": "@type:ToiletCheap",
           "interaction": "use"
         },
-        "note": "defaults: Lisa uses the cheap toilet",
-        "waitS": 8,
-        "max": 300
+        "note": "defaults: Lisa uses the cheap toilet; rerun3: then poll until she is on it (the toilet's users list), so the line Judy joins exists",
+        "waitS": 1,
+        "max": 300,
+        "until": {
+          "cmd": "object_details",
+          "args": {
+            "target": "@type:ToiletCheap"
+          },
+          "all": [
+            {
+              "path": "used_by.0",
+              "equals": "Lisa Bunch"
+            }
+          ],
+          "everyS": 1,
+          "maxS": 45,
+          "hollow": "Lisa never got on the cheap toilet in 45 s (her Use dropped: no line can form)"
+        }
       },
       {
         "cmd": "do_interaction",
@@ -121135,6 +121176,21 @@
         "max": 300
       },
       {
+        "cmd": "setup_sims",
+        "args": {
+          "sims": [
+            "Judy Bunch"
+          ],
+          "lot": "home",
+          "near": "@type:ToiletCheap",
+          "autonomy": false,
+          "motives": false
+        },
+        "note": "rerun3: Judy to the cheap toilet now that Lisa is on it (motives false keeps her Bladder -70). STRESS shortcut: Teleport Me Here",
+        "waitS": 4,
+        "max": 300
+      },
+      {
         "cmd": "do_interaction",
         "args": {
           "sim": "Judy Bunch",
@@ -121142,9 +121198,23 @@
           "interaction": "use",
           "autonomous": true
         },
-        "note": "defaults: Judy's own pick: the cheap toilet; both toilets taken, so EA's first-pass substitution finds nothing and she waits in Lisa's line",
-        "waitS": 20,
-        "max": 300
+        "note": "defaults: Judy's own pick: the cheap toilet; both toilets taken, so EA's first-pass substitution finds nothing and she waits in Lisa's line. rerun3: poll until LineSwitch planned a free twin for a waiting Sim (lineswitch_plans, world-wide: an NPC case could also count; logRequire names Judy)",
+        "waitS": 1,
+        "max": 300,
+        "until": {
+          "cmd": "patches",
+          "args": {},
+          "all": [
+            {
+              "path": "lineswitch_plans",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 2,
+          "maxS": 90,
+          "show": "lineswitch_",
+          "hollow": "no line formed in 90 s (no 2 sim-min wait with a free twin toilet)"
+        }
       },
       {
         "cmd": "queues",
