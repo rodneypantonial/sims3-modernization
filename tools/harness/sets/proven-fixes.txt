@@ -18,9 +18,9 @@
 #   seasonimposter seasonimpostercold seasonmarkercache spatialcache stuckcheckbusy stuckcheckcap stuckchecknear stuckcheckown
 #   tooltipthrottle unseenbroadcast unseencars unseenenv unseenfbfinish unseenfbloopbreak unseenfbsites unseenfbtrip
 #   unseenfbtriphold unseenmotives unseenpark unseenroute venuememo wakepark wakepoll
-#   iafailmemo deadrefexact
+#   iafailmemo deadrefexact deadrefdelta deadrefslimuse deadrefperlot deadrefdescrev
 # measurement / diagnostics / test aids:
-#   autunseencmp boatgetoutdiag bookhanddiag deadsimcount routesrc swapinvokediag wildflowerprobe deadrefexactverify
+#   autunseencmp boatgetoutdiag bookhanddiag deadsimcount routesrc swapinvokediag wildflowerprobe deadrefexactverify deadrefdeltaverify
 # test-only, registry says test (vehicle leak tests, age-up swap, dead-Sim hollowing, joyride costume):
 #   ageupswap deadsimhollow vehfrankentaxi vehgetinleak vehparkreserve vehprotestcar vehseatdestroy
 # leak / save-data fixes, opt-in until measured (changes save data or not proven in game):
@@ -29,7 +29,7 @@
 # gameplay fixes not proven yet: opt-in until verified, or built with no recorded in-game off/on verdict:
 #   firegreet
 #   fglinbound fglinboundhh
-#   standwaitfix standwaitfixhh standwaitlog
+#   standwaitfix standwaitfixhh standwaitlog reactoverlayhh reactoverlaylog
 #   sharelaneshh laddersharehh spiralsharehh simpass simpasshh angleentry angleentryhh lanewaitlog
 #   blockedusehh
 #   makebedbothhh makebedbothlog
@@ -41,6 +41,7 @@
 #   viewlenienthh viewlenientlog
 #   socialreachhh socialreachlog
 #   unstuckhh unstucklog
+#   lineswitchhh lineswitchlog
 #   woohoosnap woohoosnaphh pairsnap pairsnaphh woohoosnaplog pairsnaplog
 #   crowdporthh crowdportlog
 #   awardkeep boatgetoutguard bsrefund convturn eanullguards indoorcap
