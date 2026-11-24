@@ -126157,5 +126157,23 @@
       }
     ],
     "expect": "no crash; final step passes (state done, rows >= 1); \"isweep done <pack> state done\" in ts3native.log; script errors from EA interactions are findings (scriptErrorsReport), a Ts3Fixes / Ts3Agent frame FAILs"
+  },
+  {
+    "id": "ea-packs-readback",
+    "bug": "EA app laptop: a launch path that skips Sims3Launcher LoadOption.ini (or a different exe) can start the game with fewer packs (2026-11-02 base-game-only); a pack-dependent test then runs hollow",
+    "fix": "none (harness check): the game's own GameUtils.sProductFlags must list the same 20 products as the Sims3Launcher.exe swap runs (EA laptop 2026-11-24 14:3x UTC, GetProductFlags 2093055 = 0x1FEFFF = LoadOption selectedflags 001fefff)",
+    "save": "any",
+    "note": "reads the product flags the running game loaded",
+    "expect": "the full EA laptop product list (20 entries)",
+    "steps": [
+      {
+        "cmd": "reflect_get",
+        "args": {
+          "path": "Sims3.SimIFace.GameUtils.sProductFlags"
+        },
+        "note": "installed products as the game sees them",
+        "mustMatch": "^BaseGame, EP1, SP1, EP2, SP2, EP3, SP3, EP4, SP4, EP5, SP5, EP6, SP7, EP7, EP8, SP8, EP9, EP10, SP9, EP11$"
+      }
+    ]
   }
 ]
