@@ -129,7 +129,7 @@ the 24 h walk. Measured by `_from_keys`, `_from_unkeyed`, `_slim_walked` / `_sli
   10 min natural play with all three on (household-untouched counters, a seed walk, >= 1 delta pass, verify >= 1000 objects,
   0 holder misses, leak gates `_verify_stale<=0`, `_verify_over_live<=0`, `_overflows<=0`, `_resets>=1`); BP 10 min without
   verify (the real slim path, `_slim_passes>=1`); the eight docs/330 deadref repros with all three on
-  (`bp-deadrefs-check` saves and reloads in one session: `_resets>=2` shows the index reset at the reload).
+  (`bp-deadrefs-saves` saves and reloads in one session: `_resets>=2` shows the index reset at the reload; `bp-deadrefs-check` has neither step).
 - `tools/harness/queues/lc5-delta-time-1123.json` (TIMING, needs quiet machine, ~1 h 50 min): smoke, then BP / IP / SV 25 min
   in-load ABBA `--ab deadrefdelta` with `deadrefslimuse` on in both arms. Each on slice starts unseeded (the off arm resets the
   index), so its first pass is a seed walk: the on arm understates the gain.
@@ -263,7 +263,7 @@ Measured by `deadrefperlot_gather_us`, `deadrefcadence_snapshots` and the phase 
 - `tools/harness/queues/lc6a-perlot-correct-1123.json` (correctness, any machine, ~3 h 15 min, 13 jobs): the LC-5 queue with
   `deadrefperlot` added to every job (bundle style): smoke; BP / IP / SV 10 min with verify (holder and use misses 0, per-lot
   miss / extra / over-live 0, the LC-5 leak gates); BP 10 min without verify (`deadrefperlot_gathers>=1`); the eight docs/330
-  repros (`bp-deadrefs-check` reloads: `deadrefdelta_resets>=2`, `deadrefperlot_seeds>=2`).
+  repros (`bp-deadrefs-saves` reloads: `deadrefdelta_resets>=2`, `deadrefperlot_seeds>=2`).
   Audit additions 2026-11-23 (repros UNVERIFIED, never run): `bp-lc6a-buy-edit` (repro `lc6a-buy-edit-verify`: a dartboard and a car
   moved live, moved again inside Buy mode and sold in Buy mode, per-lot verify miss / extra 0, `deadrefperlot_gathers>=2`; the Buy-mode
   move needs agent `ts3agent.package.lc6a2-1123`: `move_object` in Buy mode replays the hand tool's script callbacks in native order,
@@ -358,7 +358,7 @@ runs), [1750] `verify_checked`, [1751] `verify_miss`, [1752] `verify_extra`, [17
 - `ts3fixes.package.lc7-desc-reverse-1123` (copy `game-copy/ts3fixes.package.lc7a`), agent
   `ts3agent.package.lc7-desc-reverse-1123` (copy `game-copy/ts3agent.package.lc7a`).
 - `lc7-desc-correct-1124` (correctness, any machine, ~2 h): smoke; BP / IP / SV 10 min with verify; BP real delta
-  path; save-reload (`bp-deadrefs-check`); travel round trip x3 (`leak-travel-roundtrip-x3`); 60 s pause
+  path; save-reload (`bp-deadrefs-saves`); travel round trip x3 (`leak-travel-roundtrip-x3`); 60 s pause
   (`pause-cas-buy-check`: no slice counter moves).
 - `lc7-desc-time-1124` (timing, needs a quiet machine, NOT scheduled): `--ab deadrefdescrev` with LC-5 / LC-6a on in both
   arms, BP / IP / SV 25 min ABBA after a smoke.

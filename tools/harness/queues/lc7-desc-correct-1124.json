@@ -269,7 +269,7 @@
   },
   {
    "id": "bp-lc7-save-reload",
-   "note": "[est 14 min] Save-reload: repro bp-deadrefs-check (the docs/330 deadref row: saves and reloads) with LC-5 / LC-6a / LC-7 + verify on. Pass: the repro rows as in lc6a, a reset at each load (resets >= 2) and a fresh seed after the reload (seeds >= 2), 0 misses / extras, no overflow.",
+   "note": "[est 20 min] Save-reload: repro bp-deadrefs-saves (the docs/330 deadref save row: 7 saves, then a same-session reload; bp-deadrefs-check has no save or reload step, EA run 2026-11-24 resets 1 < 2) with LC-5 / LC-6a / LC-7 + verify on. Pass: the repro rows as in lc6a, a reset at each load (resets >= 2) and a fresh seed after the reload (seeds >= 2), 0 misses / extras, no overflow.",
    "asi": "game-copy/ts3native.asi.m1123",
    "iniBase": "game-copy/ts3native.ini.m1123",
    "fixesPackage": "game-copy/ts3fixes.package.lc7f",
@@ -283,13 +283,13 @@
    "scriptErrorsMax": 0,
    "noiseCheck": false,
    "save": "Baseline-BP",
-   "timeoutMin": 23,
+   "timeoutMin": 30,
    "run": {
     "profile": {
      "seed": 12345,
-     "minutes": 8,
+     "minutes": 12,
      "noSamplers": true,
-     "repro": "bp-deadrefs-check",
+     "repro": "bp-deadrefs-saves",
      "fixesOn": "deadrefdelta,deadrefslimuse,deadrefperlot,deadrefdescrev,deadrefdeltaverify",
      "fixesRequire": "deadrefcadence_snapshots>=1,deadrefdescrev_seeds>=2,deadrefdescrev_resets>=2,deadrefdescrev_verify_miss<=0,deadrefdescrev_verify_extra<=0,deadrefdescrev_overflows<=0,deadrefdescrev_scan_assemblies>=2,deadrefdescrev_scan_unreadable<=0,deadrefdescrev_untrusted<=0,deadrefdescrev_pins_mismatch<=0,deadrefdescrev_pins_refused<=0",
      "fixesReport": "deadrefsweep,deadrefcadence,deadrefdelta,deadrefperlot,deadrefdescrev"
