@@ -27003,6 +27003,305 @@
     "expect": "if the leak is real: wpl (and wq for IceCreamMaker / DeepFryerVegas) +1 per round, not dropping at gc-after; equal counts across rounds = no subscription per purchase for this object"
   },
   {
+    "id": "travel-roundtrip-bp",
+    "bug": "EA 1.69 BP stall after travel home (lc7-desc-correct-1124-ea bp-lc7-travel 2/2, 2026-11-24): Bridgeport loaded, household in the world, then speed Pause, sub_state none, in_travel true, no dialog; EA BP round trips never ran before (EA SV and Steam BP passed)",
+    "fix": "triage only (lc7-travel-triage-ea-1124): one BP -> France -> BP trip through repro.ts, no profile-world upkeep (keep_alive / decline_requests / test_env guard), no mem_mark / mem_gc, so it also runs with our mods out",
+    "save": "Baseline-BP",
+    "note": "UNVERIFIED (static only, 2026-11-24). Agent commands only (ourMods false OK). PASS = home, live mode, clock at Normal. Travel saves go to the travel slot, Baseline-BP is hash-checked by queue.ts.",
+    "steps": [
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": true,
+          "speed": "none",
+          "dialogs": true
+        },
+        "waitS": 2,
+        "note": "popups answered as in profile-world (speed none: never touches the clock)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 2,
+        "note": "needs at max (a tired Sim drops the queued trip)"
+      },
+      {
+        "cmd": "travel_vacation",
+        "args": {
+          "world": "france",
+          "days": 2
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "travel_state",
+          "all": [
+            {
+              "path": "on_vacation",
+              "equals": true
+            },
+            {
+              "path": "in_travel",
+              "equals": false
+            },
+            {
+              "path": "household"
+            }
+          ],
+          "everyS": 10,
+          "maxS": 600
+        },
+        "note": "out: queued car on the world lot"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2,
+        "note": "as bp-lc7-travel: the trip home 2 s after arrival"
+      },
+      {
+        "cmd": "travel_home",
+        "waitS": 5,
+        "until": {
+          "cmd": "travel_state",
+          "all": [
+            {
+              "path": "on_vacation",
+              "equals": false
+            },
+            {
+              "path": "in_travel",
+              "equals": false
+            },
+            {
+              "path": "household"
+            }
+          ],
+          "everyS": 10,
+          "maxS": 300
+        },
+        "note": "back to Bridgeport: the step that stalled (Pause, no sub-state, in_travel true); travel_state then shows travel_phase and inworld_post_init"
+      },
+      {
+        "cmd": "game_state",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "live mode entered (InWorldState.Startup finished)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "the clock runs at home"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "time",
+          "all": [
+            {
+              "path": "speed",
+              "equals": "Normal"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 30
+        }
+      }
+    ],
+    "expect": "trip out and home; game_state LiveModeState after the return; time speed Normal"
+  },
+  {
+    "id": "travel-roundtrip-bp-lc7on",
+    "bug": "EA 1.69 BP stall after travel home (lc7-desc-correct-1124-ea bp-lc7-travel 2/2, 2026-11-24): Bridgeport loaded, household in the world, then speed Pause, sub_state none, in_travel true, no dialog; EA BP round trips never ran before (EA SV and Steam BP passed)",
+    "fix": "triage only (lc7-travel-triage-ea-1124): one BP -> France -> BP trip through repro.ts, no profile-world upkeep (keep_alive / decline_requests / test_env guard), no mem_mark / mem_gc, so it also runs with our mods out",
+    "save": "Baseline-BP",
+    "note": "UNVERIFIED (static only, 2026-11-24). travel-roundtrip-bp with the five bp-lc7-travel switches on in the load (patches read-back); needs ts3fixes lc7f.",
+    "steps": [
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": true,
+          "speed": "none",
+          "dialogs": true
+        },
+        "waitS": 2,
+        "note": "popups answered as in profile-world (speed none: never touches the clock)"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "deadrefdelta": true,
+          "deadrefslimuse": true,
+          "deadrefperlot": true,
+          "deadrefdescrev": true,
+          "deadrefdeltaverify": true
+        },
+        "waitS": 2,
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "deadrefdelta",
+              "equals": true
+            },
+            {
+              "path": "deadrefslimuse",
+              "equals": true
+            },
+            {
+              "path": "deadrefperlot",
+              "equals": true
+            },
+            {
+              "path": "deadrefdescrev",
+              "equals": true
+            },
+            {
+              "path": "deadrefdeltaverify",
+              "equals": true
+            }
+          ],
+          "everyS": 2,
+          "maxS": 10
+        },
+        "note": "the five switches bp-lc7-travel turns on (profile-world --fixes-on), read back"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 2,
+        "note": "needs at max (a tired Sim drops the queued trip)"
+      },
+      {
+        "cmd": "travel_vacation",
+        "args": {
+          "world": "france",
+          "days": 2
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "travel_state",
+          "all": [
+            {
+              "path": "on_vacation",
+              "equals": true
+            },
+            {
+              "path": "in_travel",
+              "equals": false
+            },
+            {
+              "path": "household"
+            }
+          ],
+          "everyS": 10,
+          "maxS": 600
+        },
+        "note": "out: queued car on the world lot"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2,
+        "note": "as bp-lc7-travel: the trip home 2 s after arrival"
+      },
+      {
+        "cmd": "travel_home",
+        "waitS": 5,
+        "until": {
+          "cmd": "travel_state",
+          "all": [
+            {
+              "path": "on_vacation",
+              "equals": false
+            },
+            {
+              "path": "in_travel",
+              "equals": false
+            },
+            {
+              "path": "household"
+            }
+          ],
+          "everyS": 10,
+          "maxS": 300
+        },
+        "note": "back to Bridgeport: the step that stalled (Pause, no sub-state, in_travel true); travel_state then shows travel_phase and inworld_post_init"
+      },
+      {
+        "cmd": "game_state",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "live mode entered (InWorldState.Startup finished)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "the clock runs at home"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "time",
+          "all": [
+            {
+              "path": "speed",
+              "equals": "Normal"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 30
+        }
+      }
+    ],
+    "expect": "as travel-roundtrip-bp, with deadrefdelta, deadrefslimuse, deadrefperlot, deadrefdescrev, deadrefdeltaverify on"
+  },
+  {
     "id": "leak-travel-roundtrip-x3",
     "bug": "docs/191 travel lead (bp-memdiag-travel, 2026-10-25 14:08 UTC): one Bridgeport -> France -> Bridgeport round trip in 4 min: private +151 MB, largest free block -80 MB, rc (ResourceCache, unvalidated) 170 -> 373 MB, miCom +51, gcFree +37, eaDir +20, rest +72; one trip cannot separate a cache that fills once from growth per trip",
     "fix": "measuring only (docs/191 modules 1-2, ts3native 0.36.76 [MemDiag] + [UserDiag], ts3fixes MemSuspects, ts3agent mem_mark / mem_gc): 3 round trips with marks away / home and a forced GC at home after each",

@@ -301,7 +301,7 @@ import { jsonlRows, queueFile, rowTiming, timingText } from './run-verdict.ts';
 import { loadRun as hitchRun, runIters, toolCosts, toolsOn, withBaseIni } from './hitch-ab.ts';
 import { mergeFile as mergeCallsites } from '../callsite-db.ts';
 import { asiCheck, asiVersion, fixesCheck, loadDb, logVersionCheck, packageTuning, testedBuild, type Build } from '../builds.ts';
-import { COMMUNITY, defaultSpec as vanillaSpec, install as vanillaInstall, mfile as vanillaMf, ourModsSpec, problems as vanillaProblems, restore as vanillaRestore, vanilla as vanillaEnv } from './vanilla.ts';
+import { community, defaultSpec as vanillaSpec, install as vanillaInstall, mfile as vanillaMf, ourModsSpec, problems as vanillaProblems, restore as vanillaRestore, vanilla as vanillaEnv } from './vanilla.ts';
 import { inventory as modInventory, modClash, MOD_SET_RE, scriptAsmLine } from '../mod-set.ts';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
@@ -2703,9 +2703,9 @@ if (values['dry-run']) {
     console.log(`  1 node tools/harness/cycle.ts --restart`);
     if (VANILLA) console.log('  2 vanilla read-back (no *.asi, no ts3native.*, no ts3fixes, agent/wininet/d3d9 sha): a miss FAILs before the game starts; no asi, ini or ts3fixes copy');
     else if (j.ourMods === false) {
-      const miss = COMMUNITY.filter(c => !existsSync(join(BIN, c)));
+      const miss = community().filter(c => !existsSync(join(BIN, c)));
       console.log(`  2 ourMods false: move Bin/ts3native.asi + .ini + .log + autshadow.jsonl, Mods/Packages/ts3fixes*.package, scriptCache.package to ${ourModsSpec().stash} (manifest first, sha read back); no asi, ini or ts3fixes copy`);
-      console.log(`  2 stays loaded: ${COMMUNITY.join(', ')}, the other Mods, ts3agent + ts3-nointro packages, Frida probe${miss.length ? `  ** MISSING: ${miss.join(', ')}: the job refuses **` : ''}`);
+      console.log(`  2 stays loaded: ${community().join(', ')}, the other Mods, ts3agent + ts3-nointro packages, Frida probe${miss.length ? `  ** MISSING: ${miss.join(', ')}: the job refuses **` : ''}`);
       console.log('  8 proof: FAIL if Bin/ts3native.log appears, /native answers, ts3fixes.applied is set or a patches counter rises; moved back + sha read back in every outcome');
     } else {
     console.log(`  2 asi ${j.asi === 'tested' ? 'tested build' : j.asi}${existsSync(a) ? '' : '  ** MISSING: the job refuses before touching the game **'}${staleAsi(j) ? `  ** STALE: ${staleAsi(j)}; the job refuses **` : ''} -> Bin/ts3native.asi`);
@@ -3430,10 +3430,10 @@ for (const [n, j] of jobs.entries()) {
       if (vp.length) throw new Error(`vanilla read-back: ${vp.join('; ')}; refused before the game started`);
     } else if (j.ourMods === false) { // after --restart, which installs build/ts3fixes.package; install read-back failing leaves the manifest for restoreStart
       if (gameRunning()) throw new Error(`ourMods false: ${GAME_EXE} still running, nothing moved`);
-      const miss = COMMUNITY.filter(c => !existsSync(join(BIN, c)));
+      const miss = community().filter(c => !existsSync(join(BIN, c)));
       if (miss.length) throw new Error(`ourMods false: community file ${miss.join(', ')} missing from Bin; refused before the game started`);
       const m = vanillaInstall(ourModsSpec());
-      row.ourMods = { removed: m.entries.map(e => e.rel), kept: [...COMMUNITY, 'other Mods', 'ts3agent.package', 'ts3-nointro.package', 'Frida probe'], na: OURMODS_NA };
+      row.ourMods = { removed: m.entries.map(e => e.rel), kept: [...community(), 'other Mods', 'ts3agent.package', 'ts3-nointro.package', 'Frida probe'], na: OURMODS_NA };
       log(`${j.id}: ourMods false: ${row.ourMods.removed.join(', ')} moved to ${ourModsSpec().stash}, read back ok`);
     } else {
     installFixesPackage(j);
