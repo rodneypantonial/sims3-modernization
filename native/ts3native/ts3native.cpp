@@ -43,6 +43,13 @@
 // + feature/pccheck-1120 ([PcCheck] read-only PC check, docs/299, Notify default 0); its own builds keep "0.36.295-pccheck3"
 // + feature/keep-options-gpu-1119 ([EaCrashFixes] KeepOptionsOnGpuChange, docs/37 §12, default 0); its own builds keep "0.36.296-keepopt2"
 #endif
+// EA app 1.69 asi only (the Steam and retail asi keep their bytes): m1124b + the EA parity port (bugfix/ea-parity-into-m1124b).
+// Not a quoted TS3NATIVE_VERSION define, so queue.ts / pr-preflight.ts / experimental.ts still read the Steam version above.
+#if defined(TS3A_TABLE) && !defined(TS3A_RETAIL) && !defined(TS3N_RFTEST)
+#define TS3NATIVE_VERSION_EA "0.36.303-eam1124b2"
+#undef TS3NATIVE_VERSION
+#define TS3NATIVE_VERSION TS3NATIVE_VERSION_EA
+#endif
 
 typedef unsigned char u8;
 
