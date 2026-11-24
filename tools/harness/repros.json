@@ -118875,12 +118875,28 @@
         "note": "before the walk: household member mark (read-only)"
       },
       {
+        "cmd": "native_mark",
+        "args": {
+          "name": "live"
+        },
+        "waitS": 0
+      },
+      {
         "cmd": "crowd_go",
         "args": {
           "to": "far"
         },
-        "waitS": 40,
+        "waitS": 5,
         "note": "away from the household and the camera: holds start"
+      },
+      {
+        "cmd": "native_check",
+        "args": {
+          "name": "live",
+          "require": "@ufwHeldNow>=1",
+          "untilS": 120
+        },
+        "note": "pause only while a FinishWalk hold is live (ufwHolds - ufwRelease_0..3); none in 120 s = hollow. A fixed 40 s wait paused with 0 held on EA 1.69 (bundle-day-1124-rest-rerun1-ea: pgFrozenHolds 0)"
       },
       {
         "cmd": "native_mark",
