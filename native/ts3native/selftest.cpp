@@ -15112,6 +15112,7 @@ int main(int argc, char** argv) {
     TestThumbLod();
     TestOutfitFirstCore();   // docs/684 §9
     TestOutfitFirstPick();
+    TestTsCallBytes();       // per-build rel32 in the pick / outfit-swap check bytes
     TestCombasePattern();
     puts("selftest ok");
     return 0;
