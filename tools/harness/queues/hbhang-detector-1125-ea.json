@@ -1,0 +1,249 @@
+{
+ "note": "hbhang detector rerun (docs/173 §7, RUN TWICE: 2-clean-runs rule): ip-ubrel-hbstart-repro on EA eam1124d2-hbdet = eam1124d2 (rc/m1124d + EA define) + [SeqWatch] log-only detector; froze on eam1124d2 2026-11-24 (dump ts3w-42520-20261124T155959, sim thread in a drop call of SequenceController_OnTrackFinished with the controller list empty). Same save, seed, repro, minutes and ini as release-verify-rc1119-door-m1124d2-ea ip-ubrel-hbstart-repro-rc1119, plus SeqWatch.Enabled=1 (IterN 10000) and hangCapture {limitS 30, samples 10, spacingMs 250}. Detector lines are REPORTED, not FAIL rules: read `seq watch:` lines and the ts3native_seqwatch export from the copied <job>-ts3native.log / hang capture. Pass = the hbstart repro verdict as before.",
+ "stopQueueOnFail": false,
+ "jobs": [
+  {
+   "asi": "game-copy/eam1124d2-hbdet/ts3native.asi",
+   "releaseDefaults": true,
+   "minCounters": 912,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "pinReason": "EA crash-triage build eam1124d2-hbdet (bugfix/unseenanim-trackfinish-livelock-1125): ts3native-ea169.asi.eam1124d2hbdet (0.36.305-eam1124d2hbdet, ea-build.bat), ini/ts3fixes/agent = eam1124d2 (7100a11b3255 / 3245b5ac9746 / 7f4971c1599d)",
+   "ini": {
+    "RouteAsync.ForeignKinds": 4,
+    "RouteAsync.ForeignKindsMode": 1,
+    "RouteAsync.KdA10ForeignMs": 1000,
+    "HitchAttr.Enabled": 1,
+    "RouteAsync.LogFallbackMs": 20,
+    "SeqWatch.Enabled": 1,
+    "SeqWatch.IterN": 10000
+   },
+   "id": "ip-hbhang-detector-run1",
+   "save": "Baseline-IP-Spring",
+   "noiseCheck": false,
+   "note": "[run 1 of 2] [release-verify-1112e: copy of release-verify-1111 on rc1111d asi/ini + rc1111e package] [release-verify-1111: copy of release-verify-1110 ip-ubrel-hbstart-repro on pair rc1111] [est 20 min] (c) Forced repro ip-houseboat-leave-loop (residents home, then every townie on a houseboat leaves): judged on left_dirty 0, houseboat_leave {check}, houseboats moved none, 0 stuck; the shortcut count is reported (11 on 11-07), not a floor.",
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "noSamplers": true,
+     "fixesReport": "unseenboat,boatreplan_",
+     "minutes": 12,
+     "repro": "ip-houseboat-leave-loop",
+     "noProf": true
+    }
+   },
+   "timeoutMin": 25,
+   "iniBase": "game-copy/eam1124d2-hbdet/ts3native.ini",
+   "fixesPackage": "game-copy/eam1124d2-hbdet/ts3fixes.package",
+   "logRequire": {
+    "^ts3native 0\\.36\\.305-eam1124d2hbdet ": 1,
+    "^release: 0\\.36\\.305-eam1124d2hbdet EA$": 1,
+    "^host build: EA app 1.69.47": 1,
+    "^OK   seq watch: on 1, IterN=10000;": 1,
+    "^OK   unseen anim: ready 0x3, mode 1, Every=4 ": 1
+   },
+   "regexCases": {
+    "^ts3native 0\\.36\\.305-eam1124d2hbdet ": {
+     "match": [
+      "ts3native 0.36.305-eam1124d2hbdet 2026-11-25 17:00:00"
+     ],
+     "noMatch": [
+      "ts3native 0.36.305-eam1124d2 2026-11-25 00:30:00",
+      "ts3native 0.36.305-m1124d 2026-11-24 21:36:00",
+      "ts3native 0.36.305-eam1124d 2026-11-24 21:36:00"
+     ]
+    },
+    "^release: 0\\.36\\.305-eam1124d2hbdet EA$": {
+     "match": [
+      "release: 0.36.305-eam1124d2hbdet EA"
+     ],
+     "noMatch": [
+      "release: 0.36.305-eam1124d2 EA",
+      "release: 0.36.305-eam1124d2hbdet retail",
+      "release: 0.36.305-eam1124d2hbdetX EA"
+     ]
+    },
+    "^host build: EA app 1.69.47": {
+     "match": [
+      "host build: EA app 1.69.47"
+     ],
+     "noMatch": [
+      "host build: Steam 1.67",
+      "host build: retail 1.67"
+     ]
+    },
+    "^OK   seq watch: on 1, IterN=10000;": {
+     "match": [
+      "OK   seq watch: on 1, IterN=10000; SequenceController node loop: empty list before a drop, long drop runs, nesting (ts3native_seqwatch); [UnseenAnim] debt reuse / TrackManager change / parent-hold pays logged"
+     ],
+     "noMatch": [
+      "FAIL seq watch: on 0, IterN=10000; SequenceController node loop",
+      "SKIP seq watch (node-loop drop 0x56718B): call at 0x00566D2B is not a call to 0x005661F0, nothing written"
+     ]
+    },
+    "^OK   unseen anim: ready 0x3, mode 1, Every=4 ": {
+     "match": [
+      "OK   unseen anim: ready 0x3, mode 1, Every=4 MaxOwedMs=250 NearVisM=10 CapPasses=4 HardCapMs=1500; unseen Sims' non-root-motion pose calls summed over Every passes (--ab unseenanim)"
+     ],
+     "noMatch": [
+      "FAIL unseen anim: ready 0x0, mode 0, Every=4 MaxOwedMs=250",
+      "OK   unseen anim objects: ready 0x0, mode 0, ObjEvery=4"
+     ]
+    }
+   },
+   "hangCapture": {
+    "limitS": 30,
+    "samples": 10,
+    "spacingMs": 250
+   },
+   "rerunOf": "ip-ubrel-hbstart-repro-rc1119"
+  },
+  {
+   "asi": "game-copy/eam1124d2-hbdet/ts3native.asi",
+   "releaseDefaults": true,
+   "minCounters": 912,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "pinReason": "EA crash-triage build eam1124d2-hbdet (bugfix/unseenanim-trackfinish-livelock-1125): ts3native-ea169.asi.eam1124d2hbdet (0.36.305-eam1124d2hbdet, ea-build.bat), ini/ts3fixes/agent = eam1124d2 (7100a11b3255 / 3245b5ac9746 / 7f4971c1599d)",
+   "ini": {
+    "RouteAsync.ForeignKinds": 4,
+    "RouteAsync.ForeignKindsMode": 1,
+    "RouteAsync.KdA10ForeignMs": 1000,
+    "HitchAttr.Enabled": 1,
+    "RouteAsync.LogFallbackMs": 20,
+    "SeqWatch.Enabled": 1,
+    "SeqWatch.IterN": 10000
+   },
+   "id": "ip-hbhang-detector-run2",
+   "save": "Baseline-IP-Spring",
+   "noiseCheck": false,
+   "note": "[run 2 of 2] [release-verify-1112e: copy of release-verify-1111 on rc1111d asi/ini + rc1111e package] [release-verify-1111: copy of release-verify-1110 ip-ubrel-hbstart-repro on pair rc1111] [est 20 min] (c) Forced repro ip-houseboat-leave-loop (residents home, then every townie on a houseboat leaves): judged on left_dirty 0, houseboat_leave {check}, houseboats moved none, 0 stuck; the shortcut count is reported (11 on 11-07), not a floor.",
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "noSamplers": true,
+     "fixesReport": "unseenboat,boatreplan_",
+     "minutes": 12,
+     "repro": "ip-houseboat-leave-loop",
+     "noProf": true
+    }
+   },
+   "timeoutMin": 25,
+   "iniBase": "game-copy/eam1124d2-hbdet/ts3native.ini",
+   "fixesPackage": "game-copy/eam1124d2-hbdet/ts3fixes.package",
+   "logRequire": {
+    "^ts3native 0\\.36\\.305-eam1124d2hbdet ": 1,
+    "^release: 0\\.36\\.305-eam1124d2hbdet EA$": 1,
+    "^host build: EA app 1.69.47": 1,
+    "^OK   seq watch: on 1, IterN=10000;": 1,
+    "^OK   unseen anim: ready 0x3, mode 1, Every=4 ": 1
+   },
+   "regexCases": {
+    "^ts3native 0\\.36\\.305-eam1124d2hbdet ": {
+     "match": [
+      "ts3native 0.36.305-eam1124d2hbdet 2026-11-25 17:00:00"
+     ],
+     "noMatch": [
+      "ts3native 0.36.305-eam1124d2 2026-11-25 00:30:00",
+      "ts3native 0.36.305-m1124d 2026-11-24 21:36:00",
+      "ts3native 0.36.305-eam1124d 2026-11-24 21:36:00"
+     ]
+    },
+    "^release: 0\\.36\\.305-eam1124d2hbdet EA$": {
+     "match": [
+      "release: 0.36.305-eam1124d2hbdet EA"
+     ],
+     "noMatch": [
+      "release: 0.36.305-eam1124d2 EA",
+      "release: 0.36.305-eam1124d2hbdet retail",
+      "release: 0.36.305-eam1124d2hbdetX EA"
+     ]
+    },
+    "^host build: EA app 1.69.47": {
+     "match": [
+      "host build: EA app 1.69.47"
+     ],
+     "noMatch": [
+      "host build: Steam 1.67",
+      "host build: retail 1.67"
+     ]
+    },
+    "^OK   seq watch: on 1, IterN=10000;": {
+     "match": [
+      "OK   seq watch: on 1, IterN=10000; SequenceController node loop: empty list before a drop, long drop runs, nesting (ts3native_seqwatch); [UnseenAnim] debt reuse / TrackManager change / parent-hold pays logged"
+     ],
+     "noMatch": [
+      "FAIL seq watch: on 0, IterN=10000; SequenceController node loop",
+      "SKIP seq watch (node-loop drop 0x56718B): call at 0x00566D2B is not a call to 0x005661F0, nothing written"
+     ]
+    },
+    "^OK   unseen anim: ready 0x3, mode 1, Every=4 ": {
+     "match": [
+      "OK   unseen anim: ready 0x3, mode 1, Every=4 MaxOwedMs=250 NearVisM=10 CapPasses=4 HardCapMs=1500; unseen Sims' non-root-motion pose calls summed over Every passes (--ab unseenanim)"
+     ],
+     "noMatch": [
+      "FAIL unseen anim: ready 0x0, mode 0, Every=4 MaxOwedMs=250",
+      "OK   unseen anim objects: ready 0x0, mode 0, ObjEvery=4"
+     ]
+    }
+   },
+   "hangCapture": {
+    "limitS": 30,
+    "samples": 10,
+    "spacingMs": 250
+   },
+   "rerunOf": "ip-ubrel-hbstart-repro-rc1119"
+  }
+ ],
+ "regexCases": {
+  "^ts3native 0\\.36\\.305-eam1124d2hbdet ": {
+   "match": [
+    "ts3native 0.36.305-eam1124d2hbdet 2026-11-25 17:00:00"
+   ],
+   "noMatch": [
+    "ts3native 0.36.305-eam1124d2 2026-11-25 00:30:00",
+    "ts3native 0.36.305-m1124d 2026-11-24 21:36:00",
+    "ts3native 0.36.305-eam1124d 2026-11-24 21:36:00"
+   ]
+  },
+  "^release: 0\\.36\\.305-eam1124d2hbdet EA$": {
+   "match": [
+    "release: 0.36.305-eam1124d2hbdet EA"
+   ],
+   "noMatch": [
+    "release: 0.36.305-eam1124d2 EA",
+    "release: 0.36.305-eam1124d2hbdet retail",
+    "release: 0.36.305-eam1124d2hbdetX EA"
+   ]
+  },
+  "^host build: EA app 1.69.47": {
+   "match": [
+    "host build: EA app 1.69.47"
+   ],
+   "noMatch": [
+    "host build: Steam 1.67",
+    "host build: retail 1.67"
+   ]
+  },
+  "^OK   seq watch: on 1, IterN=10000;": {
+   "match": [
+    "OK   seq watch: on 1, IterN=10000; SequenceController node loop: empty list before a drop, long drop runs, nesting (ts3native_seqwatch); [UnseenAnim] debt reuse / TrackManager change / parent-hold pays logged"
+   ],
+   "noMatch": [
+    "FAIL seq watch: on 0, IterN=10000; SequenceController node loop",
+    "SKIP seq watch (node-loop drop 0x56718B): call at 0x00566D2B is not a call to 0x005661F0, nothing written"
+   ]
+  },
+  "^OK   unseen anim: ready 0x3, mode 1, Every=4 ": {
+   "match": [
+    "OK   unseen anim: ready 0x3, mode 1, Every=4 MaxOwedMs=250 NearVisM=10 CapPasses=4 HardCapMs=1500; unseen Sims' non-root-motion pose calls summed over Every passes (--ab unseenanim)"
+   ],
+   "noMatch": [
+    "FAIL unseen anim: ready 0x0, mode 0, Every=4 MaxOwedMs=250",
+    "OK   unseen anim objects: ready 0x0, mode 0, ObjEvery=4"
+   ]
+  }
+ }
+}
