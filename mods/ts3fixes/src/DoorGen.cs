@@ -10,6 +10,7 @@ using Sims3.Gameplay.Objects;
 using Sims3.Gameplay.Roles;
 using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
+using Sims3.Gameplay.Utilities;
 using Sims3.SimIFace;
 using Sims3.SimIFace.CAS;
 using Sims3.UI.Hud;
@@ -33,7 +34,8 @@ namespace Ts3Fixes
     // (Role.CreateRole, Role.RemoveSimFromRole, RoleManagerTask.FillInWorldRole, which clears other Sims' roles), resort VIP data
     // and closing (ResortManager set_Closed, DoUpdate when Closed changed, CreateNewVIPDoorGroup, RemoveDoorFromVIPRoom,
     // FindVIPRoomData when it created a row, RefreshVIPRooms, VIPRoomData.AddGuest / RemoveGuest), gender, age and visible
-    // pregnancy (SimDescription set_Gender / set_Age / set_IsVisuallyPregnant: gender doors, diving board).
+    // pregnancy (SimDescription set_Gender / set_Age / set_IsVisuallyPregnant: gender doors, diving board), venue hours (a
+    // non-residential lot with a gender door is held out of the memo, DoorGenHold).
     // Not covered: inputs of portal types with their own IsAllowedThrough beyond these (elevators, box stalls, horse jumps,
     // spiral stairs, pools, tube elevators, ladders) and world-switch role teardown (RoleManager.DestroyAllRoleBots: travel
     // starts a new world and table). Those stay on the native 1-in-8 re-ask, the self-disable and DoorMemoXMs.
@@ -71,6 +73,10 @@ namespace Ts3Fixes
             Patch(typeof(Role), "CreateRole", new Type[] { typeof(RoleData), typeof(SimDescription), typeof(IRoleGiver) }, typeof(DoorGenRoleHook), "CreateHook", "CreateOrig");
             Patch(typeof(Role), "RemoveSimFromRole", Type.EmptyTypes, typeof(DoorGenRoleHook), "RemoveHook", "RemoveOrig");
             Patch(typeof(RoleManagerTask), "FillInWorldRole", new Type[] { typeof(Role.RoleType), typeof(IRoleGiver), typeof(List<SimDescription>), typeof(List<SimDescription>) }, typeof(DoorGenRoleTaskHook), "FillHook", "FillOrig");
+            // service workers: CommonDoor.IsAllowedThrough lets a Sim with a Service through some locks (issue #438, aptbig mismatch)
+            Patch(typeof(Sim), "set_Service", new Type[] { typeof(Sims3.Gameplay.Services.Service) }, typeof(DoorGenServiceHook), "SetHook", "SetOrig");
+            Patch(typeof(Sims3.Gameplay.Services.Service), "EndService", new Type[] { typeof(SimDescription) }, typeof(DoorGenServiceHook), "EndHook", "EndOrig");
+            Patch(typeof(Sims3.Gameplay.Services.Service), "CreateNpcSim", new Type[] { typeof(SimDescription), typeof(Vector3) }, typeof(DoorGenServiceHook), "NpcHook", "NpcOrig");
             // resort VIP data and closing
             Patch(typeof(ResortManager), "set_Closed", new Type[] { typeof(bool) }, typeof(DoorGenResortHook), "ClosedHook", "ClosedOrig");
             Patch(typeof(ResortManager), "DoUpdate", Type.EmptyTypes, typeof(DoorGenResortHook), "UpdateHook", "UpdateOrig");
@@ -92,13 +98,66 @@ namespace Ts3Fixes
             sDoorGenOn = ShortcutOn("doorgen");
             if (!sDoorGenOn) return;
             DoorGenSend(1);
+            sDgHeld.Clear();  // native cleared its holds on arm
             foreach (Lot lot in LotManager.AllLots) DoorGenHold(lot);  // privacy situations restored before the switch was read
+            AlarmManager.Global.AddAlarmRepeating(10f, TimeUnit.Minutes, DoorGenPoll, 10f, TimeUnit.Minutes, "ts3fixes doorgen mismatch names", AlarmType.NeverPersisted, null);
+        }
+
+        // ts3native keeps the last door memo x mismatch (op 42, hostcalls.cpp DmxKeyOp) until read: every 10 sim minutes this
+        // names its lot, Sim and door while they likely still exist, to find the input DoorGen misses (issue #438). One bit per
+        // DiagSend (it returns a bool): 352 calls per mismatch; native keeps one waiting at most, an older one answers 0.
+        const int kDoorKeyOp = 42;
+        static void DoorGenPoll()
+        {
+            try
+            {
+                // shortcut: gender doors placed (or lot types changed) after world load are held up to 10 sim minutes late; hook
+                // door placement if a mismatch ever names one
+                foreach (Lot lot in LotManager.AllLots) DoorGenHold(lot);
+                if (!DiagSend(kDoorKeyOp, 0, 0)) return;
+                uint[] w = new uint[11];
+                for (uint b = 0; b < 352; b++) if (DiagSend(kDoorKeyOp, b, 1)) w[b >> 5] |= 1u << (int)(b & 31);
+                DiagSend(kDoorKeyOp, 0, 2);
+                DiagLine("doorgen mismatch: live answer " + w[9] + ", memo " + w[10] + ", lot " + DgName(w[0], w[1]) + ", Sim " + DgName(w[2], w[3])
+                    + ", door " + DgName(w[4], w[5]) + ", rooms " + w[6] + " " + w[7] + ", initialLocked " + w[8]);
+            }
+            catch (ResetException) { throw; }
+            catch (Exception) { }
+        }
+
+        static string DgName(uint lo, uint hi)
+        {
+            ulong id = (ulong)hi << 32 | lo;
+            string s = id.ToString("X16");
+            try
+            {
+                object o = GameObject.GetObject(new ObjectGuid(id));
+                Sim sim = o as Sim;
+                if (sim != null)
+                    return s + " " + sim.FullName + " (" + (sim.Household != null ? "household " + sim.Household.Name : "no household")
+                        + (sim.Service != null ? ", service " + sim.Service.GetType().Name : "")
+                        + (sim.SimDescription.AssignedRole != null ? ", role " + sim.SimDescription.AssignedRole.Type : "")
+                        + (sim.SimDescription.IsStray ? ", stray" : "") + ")";
+                CommonDoor d = o as CommonDoor;
+                if (d != null) return s + " " + d.GetType().Name + " (lock " + d.LockType + ")";
+                Lot l = o as Lot;
+                if (l == null && o == null) l = LotManager.GetLot(id);
+                if (l != null) return s + " lot '" + l.Name + "'" + (l.IsResidentialLot ? " (residential)" : "");
+                if (o != null) return s + " " + o.GetType().Name;
+            }
+            catch (ResetException) { throw; }
+            catch (Exception) { }
+            return s + " (not found)";
         }
 
         // A lot's PortalPathPlan handlers beyond EA's Sim.OnPortalPathPlan (PrivacySituation, mods) answer from the asking Sim's
         // current interaction, which nothing bumps: the native memo leaves such a lot alone (op 36 hi 1 = held, 2 = free; key is
         // the lot id's low dword). Unknown (field missing, error) = held.
+        // Also held: a non-residential lot with a gender door. DoorSingleGender.IsAllowedThrough stops the other gender there only
+        // while Lot.IsOpenVenue(), which reads SimClock: the answer flips at opening and closing time with no input to bump
+        // (Banzai Lounge bouncer, doorhunt 2026-11-24). Sent only on a change: each send bumps the native generation.
         static FieldInfo sDgLotHandlers;
+        static readonly Dictionary<ulong, bool> sDgHeld = new Dictionary<ulong, bool>();  // lot id -> held state last sent
         static void DoorGenHold(Lot lot)
         {
             if (!sDoorGenOn || lot == null) return;
@@ -111,8 +170,13 @@ namespace Ts3Fixes
                 else if (d != null)
                     foreach (Delegate h in d.GetInvocationList())
                         if (h.Method.DeclaringType != typeof(Sim) || h.Method.Name != "OnPortalPathPlan") { held = true; break; }
+                if (!held && !lot.IsResidentialLot) held = lot.GetObjects<DoorSingleGender>().Length > 0;
             }
+            catch (ResetException) { throw; }
             catch (Exception) { held = true; }
+            bool was;
+            if (sDgHeld.TryGetValue(lot.LotId, out was) && was == held) return;
+            sDgHeld[lot.LotId] = held;
             try { DiagSend(kDoorGenOp, (uint)lot.LotId, held ? (ushort)1 : (ushort)2); } catch (Exception) { }
         }
 
@@ -224,6 +288,37 @@ namespace Ts3Fixes
             public static Role CreateOrig(RoleData d, SimDescription s, IRoleGiver g) { return null; }
             public void RemoveHook() { RemoveOrig(); DoorGenBump(DoorShareCore.kSrcRole, 0); }
             public void RemoveOrig() { }
+        }
+
+        // SimDescription.Service is a field, so these three cover its writers: Sim.Service's setter (most sites), and the
+        // two Service methods that write the field. shortcut: Service.CheckIfSimsShouldBeRemovedFromPool and the two
+        // TimeTravelerSituation writes are not covered; hook them if #438 mismatches come back with a service Sim.
+        public class DoorGenServiceHook
+        {
+            public void SetHook(Sims3.Gameplay.Services.Service v)
+            {
+                Sim s = (Sim)(object)this;
+                bool before = s.SimDescription != null && s.SimDescription.Service != null;
+                SetOrig(v);
+                if (before != (v != null)) DoorGenBump(DoorShareCore.kSrcRole, 0);
+            }
+            public void SetOrig(Sims3.Gameplay.Services.Service v) { }
+            public bool EndHook(SimDescription d)
+            {
+                bool before = d != null && d.Service != null;
+                bool r = EndOrig(d);
+                if (before && d.Service == null) DoorGenBump(DoorShareCore.kSrcRole, 0);
+                return r;
+            }
+            public bool EndOrig(SimDescription d) { return false; }
+            public Sim NpcHook(SimDescription d, Vector3 pos)
+            {
+                Sims3.Gameplay.Services.Service before = d != null ? d.Service : null;
+                Sim r = NpcOrig(d, pos);
+                if (d != null && d.Service != before) DoorGenBump(DoorShareCore.kSrcRole, 0);
+                return r;
+            }
+            public Sim NpcOrig(SimDescription d, Vector3 pos) { return null; }
         }
 
         public class DoorGenRoleTaskHook
