@@ -118321,9 +118321,9 @@
             "start"
           ]
         },
-        "mustMatch": "^start: lots pets decay (owinv )?(et )?sc \\| safe",
+        "mustMatch": "^start: lots pets decay (owinv )?(et )?(sc )?\\| safe",
         "waitS": 60,
-        "note": "every pass started while paused; 60 s paused follow"
+        "note": "every pass started while paused; 60 s paused follow. sc only with the save cleanup on (kSaveCleanup, kSaveCleanupAggressive or kSnapshotCap > 0; all off in the release defaults, SaveCleanupSpreadStart returns false): EA laptop 2026-11-24 answered 'start: lots pets decay owinv | safe'"
       },
       {
         "cmd": "reflect_call",
