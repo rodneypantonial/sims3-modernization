@@ -133,7 +133,7 @@ for (const s of r.steps ?? []) {
       const why = await guard();
       if (why) await fail(`${stamp()} FAIL: ${why}`);
       if (u.failOn && get(last?.result, u.failOn)) await fail(`${stamp()} FAIL: ${s.cmd} ${u.failOn}: ${JSON.stringify(last.result).slice(0, 400)}`);
-      if (Date.now() - t0 > (u.maxS ?? 300) * 1000) await fail(`${stamp()} FAIL: ${s.cmd} until ${JSON.stringify(u.all)} not met in ${u.maxS ?? 300} s: ${JSON.stringify(show(last?.result, u.show) ?? last?.error).slice(0, u.show ? 1200 : 200)}`);
+      if (Date.now() - t0 > (u.maxS ?? 300) * 1000) await fail(`${stamp()} FAIL: ${s.cmd} until ${JSON.stringify(u.all)} not met in ${u.maxS ?? 300} s: ${JSON.stringify(show(last?.result, u.show) ?? last?.error).slice(0, u.show ? 1200 : 2000)}`); // 2000: a timed-out poll keeps the whole state (travel_state travel_phase / inworld_post_init were cut at 200)
       await sleep((u.everyS ?? 5) * 1000);
     }
     console.log(`${stamp()}   until met after ${((Date.now() - t0) / 1000).toFixed(0)} s: ${JSON.stringify(show(last.result, u.show)).slice(0, u.show ? 1200 : 160)}`);
