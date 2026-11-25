@@ -1,0 +1,236 @@
+{
+ "note": "EA copy 2026-11-25 (EA laptop, correctness only): venueclock jobs of m1124d-repro-fixes-rerun1-1125 (#728 pet_adopt mustMatch escape) on eam1124d2; the wdasync v7 job there is superseded by v9 (wdasync-stuck-v9-1125-m1124d2-ea), drop it. [source] m1124d-repro-fixes-rerun1-1125 (2026-11-25, bugfix/m1124d-repro-fixes-1125 off merge/m1124d 35e5dc1c8): RC set m1124d, agent m1124d + sim_strand hold (game-copy/ts3agent.package.m1124d-repro1125). Reruns the two jobs of chain-m1124d that FAILed twice in setup. (1) bp-dmx2s-venueclock-1/-2: repros.json doormemox-venue-clock pet_adopt mustMatch was the unescaped /\"adopted\":[{/ (Invalid regular expression: Unterminated character class), now /\"adopted\":\\[\\{/ with regexCases; venueclock-2 never ran (STOP after venueclock-1 in the reuseSession queue). (2) bp-wdasync-stuck-repro-rc1119 (repro bp-idle-unroutable v7): run 2011 Go Home walked Wogan 20.4 m from the strand spot within ~3 s, run 2117 he stood in posture HoldingUmbrella (snow still falling after the realistic snow -> sun request); now test_env fixed sunny spring polled until Sunny, and sim_strand hold polls every 1 s until he held the spot 2 polls in a row (re-strands him otherwise), hollow labels on both caps. Fix behaviour unchanged. Runs from a checkout with this branch's repros.json. [previous] Steam copy for m1124d (2026-11-24, merge/m1124d): pinned to RC set m1124d (0.36.305-m1124d: m1124c + lineswitch rerun5 + DoorMemoX fix 2); version read-back and its regexCases moved to 0.36.305-m1124d. Runs on Steam 1.67 + Apex latest + RTX Remix bridge (Bin state apex), agent m1124d (venue_hours, pet_adopt ownerLockDoor). [previous] EA laptop (EA app 1.69.47, TS3.exe, EA launch, DXVK, no Apex): verify of DoorMemoX fix 2, bugfix/doormemox-mismatch2-1124 416adf7a (docs/585 §9, ledger I-608-3/4), after eam1124c bp-vbowner-correct-1 logged door memo x shadow: answer 1, other job's 2 (25 ms before) for the bouncer Becca Bijou at door 0x28590035C1469290 (same Sim / door as §8). 5 x vb-owner-delete-stress + 2 x doormemox-venue-clock (forced clock flips at a single-gender door + P5c churn) in one game (reuseSession); every job reads back the writer hook counters line, DoorMemoX=3, DoorMemoXCheckEvery=1 (test-only: every valid row compared), DoorMemoXMs=250. Expected about 2 k compares per game minute, ~10 k per 5-min vbowner job, ~70 k for the queue: lowers the odds, does not reach the >= 10 M target (pre-fix rate 1 in ~900 k compares).",
+ "rewind": "auto",
+ "stopQueueOnFail": false,
+ "regexCases": {
+  "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": {
+   "match": [
+    "door memo x writer hooks: CommonDoor.HouseholdSimChanged 0, PetPool.UpdateSimDescriptionId 0, PetPool.Copy 0",
+    "door memo x writer hooks: CommonDoor.HouseholdSimChanged 3, PetPool.UpdateSimDescriptionId 0, PetPool.Copy 1"
+   ],
+   "noMatch": [
+    "door memo x mode 3: armed 1, managed input bumps 109"
+   ]
+  },
+  "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged [1-9]": {
+   "match": [
+    "door memo x writer hooks: CommonDoor.HouseholdSimChanged 2, PetPool.UpdateSimDescriptionId 0, PetPool.Copy 0"
+   ],
+   "noMatch": [
+    "door memo x writer hooks: CommonDoor.HouseholdSimChanged 0, PetPool.UpdateSimDescriptionId 0, PetPool.Copy 0",
+    "door memo x writer hooks: CommonDoor.HouseholdSimChanged 0, PetPool.UpdateSimDescriptionId 1, PetPool.Copy 1"
+   ]
+  },
+  "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": {
+   "match": [
+    "OK   door memo x: DoorMemoX=3 (answers from other jobs, ts3fixes doorgen inputs in the generation (acts once armed)), max age 250 ms, unlocked answers only (switch dmxMode +0x5014, --ab doormemox)"
+   ],
+   "noMatch": [
+    "OK   door memo x: DoorMemoX=2 (shadow: ask and compare), max age 250 ms, unlocked answers only (switch dmxMode +0x5014, --ab doormemox)",
+    "SKIP door memo x: DoorMemoX=3 needs the route snapshot's World_FireEvent hook and IC slots (snReady 0x2)"
+   ]
+  },
+  "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": {
+   "match": [
+    "door memo x: ts3fixes doorgen armed (DoorMemoX=3 inputs tracked)"
+   ],
+   "noMatch": [
+    "door memo x mode 3: armed 0, managed input bumps 0, asks before arming 12, hits 0 miss 0 inval 0 shadow 0 mismatch 0, household / unknown asks not answered from it 0"
+   ]
+  },
+  "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": {
+   "match": [
+    "door memo x mode 3: armed 1, managed input bumps 109, asks before arming 0, hits 0 miss 5463 inval 353 shadow 9674 mismatch 0, household / unknown asks not answered from it 403"
+   ],
+   "noMatch": [
+    "door memo x mode 3: armed 1, managed input bumps 83, asks before arming 0, hits 0 miss 0 inval 0 shadow 0 mismatch 0, household / unknown asks not answered from it 0",
+    "door memo x mode 3: armed 1, managed input bumps 124, asks before arming 0, hits 8260 miss 10272 inval 712 shadow 1579 mismatch 1, household / unknown asks not answered from it 1030"
+   ]
+  },
+  "^door memo x: test: every 1\\. valid row asked live and compared": {
+   "match": [
+    "door memo x: test: every 1. valid row asked live and compared (DoorMemoXCheckEvery)"
+   ],
+   "noMatch": [
+    "door memo x: test: every 2. valid row asked live and compared (DoorMemoXCheckEvery)"
+   ]
+  },
+  "^door memo x misses: .*resort; live, not kept\\) [1-9]": {
+   "match": [
+    "door memo x misses: no row 4120, other generation 311, older than DoorMemoXMs 77; live answers not unlocked (not stored) 902; asks on lots with a privacy / mod door handler (live, not kept) 0; unlocked answers doorgen did not vouch for (own door rule, special portal, no Sim, Sim not ordinary, resort; live, not kept) 1688"
+   ],
+   "noMatch": [
+    "door memo x misses: no row 4120, other generation 311, older than DoorMemoXMs 77; live answers not unlocked (not stored) 902; asks on lots with a privacy / mod door handler (live, not kept) 12; unlocked answers doorgen did not vouch for (own door rule, special portal, no Sim, Sim not ordinary, resort; live, not kept) 0"
+   ]
+  },
+  "^ts3fixes: doorgen: memo skips ": {
+   "match": [
+    "ts3fixes: doorgen: memo skips DoorSingleLoungeSlats 0x28590035F9F85B50 on lot 0xF59000354AE64BD0 (router is no Sim)"
+   ],
+   "noMatch": [
+    "ts3fixes: doorgen: household Tatiana Angelista 0x7AB100F5AADA5E60 household none, stray False, service none",
+    "doorgen: memo skips DoorSingleLoungeSlats 0x28590035F9F85B50 on lot 0xF59000354AE64BD0 (router is no Sim)"
+   ]
+  },
+  "^FAIL door memo x: ": {
+   "match": [
+    "FAIL door memo x: a memo answer differed from the live ask in mode 1: DoorMemoX off for this session"
+   ],
+   "noMatch": [
+    "OK   door memo x: DoorMemoX=3 (answers from other jobs, ts3fixes doorgen inputs in the generation (acts once armed)), max age 250 ms, unlocked answers only (switch dmxMode +0x5014, --ab doormemox)",
+    "FAIL door share: a shared answer differed from the live ask: DoorShare off for this session"
+   ]
+  },
+  "^door memo x shadow: ": {
+   "match": [
+    "door memo x shadow: answer 1, other job's 2 (7 ms before), key BEC1DF80 28590035 A70A1940 7AB100F5 C1469290 28590035 0019 0016 00"
+   ],
+   "noMatch": [
+    "door memo shadow: answer 1, first ask 2, key 8B52BB30 6C11001B 6A938280 F87500F5 5F050F00 6C110020 0001 0004 00 (job 12)",
+    "door memo x mode 3: armed 1, managed input bumps 124, asks before arming 0, hits 6321 miss 9647 inval 712 shadow 1275 mismatch 1, household / unknown asks not answered from it 1030"
+   ]
+  },
+  "^ts3native 0\\.36\\.305-eam1124d2 ": {
+   "match": [
+    "ts3native 0.36.305-eam1124d2 2026-11-24 21:36:00"
+   ],
+   "noMatch": [
+    "ts3native 0.36.305-m1124d 2026-11-24 21:36:00",
+    "ts3native 0.36.305-eam1124d 2026-11-24 21:36:00"
+   ]
+  },
+  "^release: 0.36.305-eam1124d2 EA$": {
+   "match": [
+    "release: 0.36.305-eam1124d2 EA"
+   ],
+   "noMatch": [
+    "release: 0.36.305-eam1124d2",
+    "release: 0.36.305-eam1124d EA"
+   ]
+  },
+  "^host build: EA app 1.69.47": {
+   "match": [
+    "host build: EA app 1.69.47 (TS3.exe)"
+   ],
+   "noMatch": [
+    "host build: Steam 1.67.2"
+   ]
+  }
+ },
+ "jobs": [
+  {
+   "id": "bp-dmx2s-venueclock-1-ea",
+   "note": "[Steam m1124d copy, Apex + bridge] [est 6 min] DoorMemoX fix 2 forced repro 1/2 (docs/585 §9): repro doormemox-venue-clock on Baseline-BP: The Prosper Room door 0x28590035C1469290 with 4 townies and the bouncer Becca Bijou, clock moved to 10 min before (paused) and 1 min after the venue open / close hour (5 crossings, venue_hours reads the hours and IsOpenVenue back), pet_adopt (HouseholdSimChanged trigger), one vbowner churn round (P5c park + destroy) before the last crossing. DoorMemoXCheckEvery=1. Pass: as the vbowner jobs plus a doorgen: memo skips line (names the skipped door types: expect DoorSingleGender, I-608-3) and door memo x writer hooks: HouseholdSimChanged >= 1. PetPool.UpdateSimDescriptionId / Copy stay 0 by design: they run only at world load (CharacterImportOnGameLoad) and in the world-builder FixupPetPools command. Hour-crossing evidence: each venue_hours after step (clock paused between the pair, no day wrap) must report flipped true (pair_open_before vs open_now, both in the repro jsonl); a crossing without a flip or pet_adopt with no pet FAILs as a hollow repro. pet_adopt: asked pool, any adoption pool, else STRESS direct create (EA pool factory); the row names its path. rerun1-1125: pet_adopt mustMatch regex escaped (was a JS SyntaxError, the step never checked).",
+   "asi": "game-copy/eam1124d2/ts3native.asi",
+   "iniBase": "game-copy/eam1124d2/ts3native.ini",
+   "fixesPackage": "game-copy/eam1124d2/ts3fixes.package",
+   "pinReason": "EA laptop eam1124d2 (final EA RC, test/ea-m1124d2 8df446a2): asi 0.36.305-eam1124d2, ini/ts3fixes game-copy/eam1124d2; agent ts3agent.package.idlenow1125 5b83cc785e97 (= Steam m1124d-idlenow1125, build-agent.ts of e1794960 sources, deterministic). [Steam] RC set m1124d (merge/m1124d e711f266f): asi 6c0a0087d744 (0.36.305-m1124d), ini 0a7cccaceef8, ts3fixes 4f55ae3d01d8, agent 18852232f1d7 (agentPackage) [previous] EA laptop: EA build 0.36.305-dmx2b-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 (fix 416adf7a + writer-hook counters) (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; ts3agent from the fix branch (venue_hours lot / jump)",
+   "releaseDefaults": true,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "minCounters": 1,
+   "shadowCheck": false,
+   "scriptErrorsMax": 0,
+   "noiseCheck": false,
+   "save": "Baseline-BP",
+   "timeoutMin": 21,
+   "reuseSession": {
+    "maxJobs": 10
+   },
+   "ini": {
+    "Crash.Log": 1,
+    "CrashForensics.Light": 1,
+    "RouteSnap.DoorMemoX": 3,
+    "RouteSnap.DoorMemoXMs": 250,
+    "EaCrashFixes.VbFreeDelayMs": 2000,
+    "EaCrashFixes.VbOwnerDelay": 1,
+    "RouteSnap.DoorMemoXCheckEvery": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 22351,
+     "minutes": 6,
+     "noSamplers": true,
+     "fixesOn": "doorgen,deadrefsweep,deadrefcadence,easpreadlots,easpreadpets,easpreaddecay,errortrapspread,overwatchchain,stuckcheckasync,watchdog,replanspread,wildflowertask,disposespread",
+     "repro": "doormemox-venue-clock",
+     "noProf": true
+    }
+   },
+   "logRequire": {
+    "^ts3native 0\\.36\\.305-eam1124d2 ": 1,
+    "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
+    "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
+    "^door memo x: test: every 1\\. valid row asked live and compared": 1,
+    "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
+    "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
+    "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1,
+    "^ts3fixes: doorgen: memo skips ": 1,
+    "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged [1-9]": 1,
+    "^release: 0.36.305-eam1124d2 EA$": 1,
+    "^host build: EA app 1.69.47": 1
+   },
+   "logForbid": {
+    "^FAIL door memo x: ": 0,
+    "^door memo x shadow: ": 0
+   }
+  },
+  {
+   "id": "bp-dmx2s-venueclock-2-ea",
+   "note": "[Steam m1124d copy, Apex + bridge] [est 6 min] DoorMemoX fix 2 forced repro 2/2 (docs/585 §9): repro doormemox-venue-clock on Baseline-BP: The Prosper Room door 0x28590035C1469290 with 4 townies and the bouncer Becca Bijou, clock moved to 10 min before (paused) and 1 min after the venue open / close hour (5 crossings, venue_hours reads the hours and IsOpenVenue back), pet_adopt (HouseholdSimChanged trigger), one vbowner churn round (P5c park + destroy) before the last crossing. DoorMemoXCheckEvery=1. Pass: as the vbowner jobs plus a doorgen: memo skips line (names the skipped door types: expect DoorSingleGender, I-608-3) and door memo x writer hooks: HouseholdSimChanged >= 1. PetPool.UpdateSimDescriptionId / Copy stay 0 by design: they run only at world load (CharacterImportOnGameLoad) and in the world-builder FixupPetPools command. Hour-crossing evidence: each venue_hours after step (clock paused between the pair, no day wrap) must report flipped true (pair_open_before vs open_now, both in the repro jsonl); a crossing without a flip or pet_adopt with no pet FAILs as a hollow repro. pet_adopt: asked pool, any adoption pool, else STRESS direct create (EA pool factory); the row names its path. rerun1-1125: pet_adopt mustMatch regex escaped (was a JS SyntaxError, the step never checked).",
+   "asi": "game-copy/eam1124d2/ts3native.asi",
+   "iniBase": "game-copy/eam1124d2/ts3native.ini",
+   "fixesPackage": "game-copy/eam1124d2/ts3fixes.package",
+   "pinReason": "EA laptop eam1124d2 (final EA RC, test/ea-m1124d2 8df446a2): asi 0.36.305-eam1124d2, ini/ts3fixes game-copy/eam1124d2; agent ts3agent.package.idlenow1125 5b83cc785e97 (= Steam m1124d-idlenow1125, build-agent.ts of e1794960 sources, deterministic). [Steam] RC set m1124d (merge/m1124d e711f266f): asi 6c0a0087d744 (0.36.305-m1124d), ini 0a7cccaceef8, ts3fixes 4f55ae3d01d8, agent 18852232f1d7 (agentPackage) [previous] EA laptop: EA build 0.36.305-dmx2b-1124 = test/ea-m1124c + bugfix/doormemox-mismatch2-1124 (fix 416adf7a + writer-hook counters) (portable MSVC ea-build.bat), ini = eam1124c EA rc ini (byte-identical to eam1124b2), ts3fixes from the fix branch built against EA 1.69 refs; ts3agent from the fix branch (venue_hours lot / jump)",
+   "releaseDefaults": true,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "minCounters": 1,
+   "shadowCheck": false,
+   "scriptErrorsMax": 0,
+   "noiseCheck": false,
+   "save": "Baseline-BP",
+   "timeoutMin": 21,
+   "reuseSession": {
+    "maxJobs": 10
+   },
+   "ini": {
+    "Crash.Log": 1,
+    "CrashForensics.Light": 1,
+    "RouteSnap.DoorMemoX": 3,
+    "RouteSnap.DoorMemoXMs": 250,
+    "EaCrashFixes.VbFreeDelayMs": 2000,
+    "EaCrashFixes.VbOwnerDelay": 1,
+    "RouteSnap.DoorMemoXCheckEvery": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 22352,
+     "minutes": 6,
+     "noSamplers": true,
+     "fixesOn": "doorgen,deadrefsweep,deadrefcadence,easpreadlots,easpreadpets,easpreaddecay,errortrapspread,overwatchchain,stuckcheckasync,watchdog,replanspread,wildflowertask,disposespread",
+     "repro": "doormemox-venue-clock",
+     "noProf": true
+    }
+   },
+   "logRequire": {
+    "^ts3native 0\\.36\\.305-eam1124d2 ": 1,
+    "^OK   door memo x: DoorMemoX=3 \\(answers from other jobs, ts3fixes doorgen inputs in the generation": 1,
+    "^door memo x: ts3fixes doorgen armed \\(DoorMemoX=3 inputs tracked\\)": 1,
+    "^door memo x: test: every 1\\. valid row asked live and compared": 1,
+    "^door memo x mode 3: armed 1, .* shadow [1-9]\\d* mismatch 0,": 1,
+    "^door memo x misses: .*resort; live, not kept\\) [1-9]": 1,
+    "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged \\d+, PetPool\\.UpdateSimDescriptionId \\d+, PetPool\\.Copy \\d+": 1,
+    "^ts3fixes: doorgen: memo skips ": 1,
+    "^door memo x writer hooks: CommonDoor\\.HouseholdSimChanged [1-9]": 1,
+    "^release: 0.36.305-eam1124d2 EA$": 1,
+    "^host build: EA app 1.69.47": 1
+   },
+   "logForbid": {
+    "^FAIL door memo x: ": 0,
+    "^door memo x shadow: ": 0
+   }
+  }
+ ]
+}

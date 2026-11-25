@@ -3,6 +3,7 @@
 // so a job proves the mechanism ran (and stayed under its cap) from counters, not from timing.
 //   node tools/harness/fixes-require.ts    self-check
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 // "@name" reads the /native after value instead of after - before (nativeRequire): for values set once at install/startup
 export const RULE = /^(@?[A-Za-z0-9_.]+)(>=|<=|==|>|<)(-?\d+)$/;
@@ -94,13 +95,47 @@ export async function nativeWindowStep(s: { cmd: string; args?: any }, native: (
 
 // Repro step "mustMatch": "<regex>": the step's answer (result text, or JSON when not a string) must match, else the step FAILs
 // (2026-11-15 bp-unseen-tp-goal PASSed hollow: trap "N/A", mark "no trapped NPC", cleanup "moved 0" were only logged)
-export function mustMatchFail(s: { cmd: string; mustMatch?: string }, r: { ok?: boolean; result?: unknown }): string | null {
+// "hollow": "<text>" next to mustMatch names the case that never happened: "hollow repro: <text>; ..." (profile-world FAIL line)
+export function mustMatchFail(s: { cmd: string; mustMatch?: string; hollow?: string }, r: { ok?: boolean; result?: unknown }): string | null {
   if (!s.mustMatch || !r?.ok) return null;
   const text = typeof r.result === 'string' ? r.result : JSON.stringify(r.result);
-  return new RegExp(s.mustMatch).test(text) ? null : `repro step ${s.cmd} answer does not match /${s.mustMatch}/: ${String(text).slice(0, 300)}`;
+  return new RegExp(s.mustMatch).test(text) ? null : `${s.hollow ? `hollow repro: ${s.hollow}; ` : ''}repro step ${s.cmd} answer does not match /${s.mustMatch}/: ${String(text).slice(0, 300)}`;
+}
+
+// repros.json regex lint (2026-11-24 bp-dmx2s-venueclock-1 FAILed twice on an unescaped mustMatch /"adopted":[{/): every
+// mustMatch (any depth, loop steps too) must compile; an entry's optional regexCases { "<mustMatch>": { match, noMatch } }
+// (real answer lines, as queue regexCases) must name one of its mustMatch regexes and hold
+export function reproRegexErrors(entries: any[]): string[] {
+  const errs: string[] = [];
+  for (const e of entries) {
+    const res = new Set<string>();
+    const walk = (o: any): void => {
+      if (Array.isArray(o)) return o.forEach(walk);
+      if (!o || typeof o !== 'object') return;
+      if (typeof o.mustMatch === 'string') {
+        try { new RegExp(o.mustMatch); res.add(o.mustMatch); } catch (x) { errs.push(`${e.id}: ${o.cmd ?? 'step'} mustMatch: ${(x as Error).message}`); }
+      }
+      for (const [k, v] of Object.entries(o)) if (k !== 'regexCases') walk(v);
+    };
+    walk(e);
+    for (const [re, c] of Object.entries<any>(e.regexCases ?? {})) {
+      if (!res.has(re)) { errs.push(`${e.id}: regexCases /${re}/ is no mustMatch of this entry`); continue; }
+      if (!c?.match?.length || !c?.noMatch?.length) { errs.push(`${e.id}: regexCases /${re}/ needs match and noMatch lists of >= 1 line`); continue; }
+      const r = new RegExp(re);
+      for (const l of c.match) if (!r.test(l)) errs.push(`${e.id}: regexCases /${re}/ does not match: ${l}`);
+      for (const l of c.noMatch) if (r.test(l)) errs.push(`${e.id}: regexCases /${re}/ matches a noMatch line: ${l}`);
+    }
+  }
+  return errs;
 }
 
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(/^\//, '')}`) {
+  // every repros.json regex compiles and its regexCases hold; the 2026-11-24 unescaped key is caught
+  assert.deepEqual(reproRegexErrors(JSON.parse(readFileSync(new URL('./repros.json', import.meta.url), 'utf8'))), []);
+  assert.match(reproRegexErrors([{ id: 'x', steps: [{ cmd: 'pet_adopt', mustMatch: '"adopted":[{' }] }])[0] ?? '', /^x: pet_adopt mustMatch: Invalid regular expression/);
+  assert.match(reproRegexErrors([{ id: 'x', steps: [{ loop: { steps: [{ cmd: 'c', mustMatch: '(' }] } }] }])[0] ?? '', /^x: c mustMatch: /);
+  assert.match(reproRegexErrors([{ id: 'x', regexCases: { a: { match: ['a'], noMatch: ['b'] } }, steps: [] }])[0] ?? '', /is no mustMatch/);
+  assert.match(reproRegexErrors([{ id: 'x', regexCases: { a: { match: ['b'], noMatch: ['c'] } }, steps: [{ mustMatch: 'a' }] }])[0] ?? '', /does not match: b/);
   assert.deepEqual(checkRequire('a>=1,b<5000', { a: 2, b: 4999 }), []);
   assert.deepEqual(checkRequire('a>=1,b<5000', { a: 0, b: 5000 }), ['a=0 (want >=1)', 'b=5000 (want <5000)']);
   assert.deepEqual(checkRequire('c==0', {}), ['c missing']);
@@ -170,6 +205,13 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(
   assert.equal(mm(lsd, 'lineswitch check (switch on, lineswitchhh off): ...; verdict: FIXED; lineswitch: switched 0; off: would 0; kept 1; plans 0; errors 0; members found=True'), null);
   assert.match(mm(lsd, 'lineswitch: switched 1; off: would 0; kept 1; plans 1; errors 0') ?? '', /does not match/);
   assert.equal(mm('x', { a: 'x' }), null);  // object answers match against their JSON
-  assert.equal(mustMatchFail({ cmd: 'c', mustMatch: 'x' }, { ok: false }), null);  // a failed step is the optional/failed rule's job
+  assert.equal(mustMatchFail({ cmd: 'c', mustMatch: 'x' }, { ok: false }), null);
+  // hollow names the case (2026-11-24 bp-dmx2-venueclock-1: pet_adopt adopted [] and venue_hours crossings never flipped)
+  const hol = mustMatchFail({ cmd: 'pet_adopt', mustMatch: '"adopted":\\[\\{', hollow: 'no adoptable pet' }, { ok: true, result: { adopted: [], skipped: ['AdoptDog pool empty'] } });
+  assert.match(hol ?? '', /^hollow repro: no adoptable pet; repro step pet_adopt answer does not match/);
+  assert.equal(mustMatchFail({ cmd: 'pet_adopt', mustMatch: '"adopted":\\[\\{', hollow: 'no adoptable pet' }, { ok: true, result: { adopted: [{ pet: 'Rex', path: 'pool AdoptCat' }] } }), null);
+  const vh = (result: unknown) => mustMatchFail({ cmd: 'venue_hours', mustMatch: '"flipped":true', hollow: 'venue hour crossed without an open-state flip' }, { ok: true, result });
+  assert.equal(vh({ pair_role: 'after', pair_open_before: false, flipped: true, open_now: true }), null);
+  assert.match(vh({ pair_role: 'after', pair_open_before: true, flipped: false, open_now: true, advanced_min: 0 }) ?? '', /^hollow repro: venue hour crossed without an open-state flip; /);  // a failed step is the optional/failed rule's job
   console.log('fixes-require selftest: PASS');
 }

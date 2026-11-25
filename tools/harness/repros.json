@@ -1183,10 +1183,29 @@
       {
         "cmd": "test_env",
         "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "weather": "sunny",
+          "weather_hours": 12,
           "hour": 10
         },
         "waitS": 3,
-        "note": "2026-11-10: clock to 10:00 first. In release-verify-1111 he was stranded at 3:41 AM, the game queued GoHome and StuckWatchdog.Check (60 sim-minutes, GoHome) reset him home before the idle case (CheckIdle) could fire"
+        "note": "2026-11-10: clock to 10:00 first. In release-verify-1111 he was stranded at 3:41 AM, the game queued GoHome and StuckWatchdog.Check (60 sim-minutes, GoHome) reset him home before the idle case (CheckIdle) could fire v7 2026-11-25: mode fixed (spring, sunny 12 h), then poll until the weather reads Sunny: in release-verify-rc1119-doors-m1124d (2117) the realistic snow -> sun request had not ended the snow ~6 s later and he stood in posture HoldingUmbrella at the strand (CheckIdle judges only Posture == Standing, RouteFixes.cs); rain in a spring save had no guard at all.",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            }
+          ],
+          "everyS": 3,
+          "maxS": 90,
+          "hollow": "the weather never turned Sunny (an umbrella posture blocks the idle check)"
+        }
       },
       {
         "cmd": "place_sim",
@@ -1216,36 +1235,34 @@
         "note": "v4 2026-11-10: game running (the profile unpaused it), so a sitting Sim stands up and anything queued ends before the strand. v3 paused across sim_strand: sim_where then read standing=false at the strand spot in both runs, and CheckIdle only judges a standing Sim (TownieUnseen also needs standing), so he was never judged there; no pause again (1111b, the one PASS, had none)"
       },
       {
-        "cmd": "sim_strand",
+        "cmd": "strand_box",
         "args": {
           "sim": "Wogan Hemlock",
           "lot": "East Tradewinds Shipping Co.",
-          "tries": 400
+          "tries": 200
         },
-        "note": "v6: lot named (the default s.LotCurrent is the lot he is on, which picked East Tradewinds in the passes by chance). samples the lot for a spot failing the game's routability check and stands him there; keep the camera away (unseen townie = 60 sim-minute rule, else one sim-day). tries 400 (default 40): wdasync-fix3-1110 failed setup with 'no unroutable spot in 40 samples' (one route plan per sample, a one-off setup hitch)"
-      },
-      {
-        "cmd": "cancel_interactions",
-        "args": {
-          "sim": "Wogan Hemlock"
-        },
-        "waitS": 1,
-        "note": "v4: right after the strand, as 1111b (this cancel caught a queued Go Home there)"
-      },
-      {
-        "cmd": "cancel_interactions",
-        "args": {
-          "sim": "Wogan Hemlock"
-        },
-        "waitS": 1,
-        "note": "v4: two more within ~2 s (~15 sim-minutes at Triple): 1110c queued Go Home just after the first cancel"
-      },
-      {
-        "cmd": "cancel_interactions",
-        "args": {
-          "sim": "Wogan Hemlock"
-        },
-        "waitS": 1
+        "timeoutS": 30,
+        "note": "v8 2026-11-25 (TEST-ONLY STRESS setup): a room he cannot walk out of. strand_box puts 8 EA counters on the tiles around an open tile of East Tradewinds Shipping Co., checks the game now judges the centre unroutable (Sim.IsPointInLotSafelyRoutable false) while it stays a standing spot, and stands him there. v7 (m1124d-repro-fixes-rerun1-1125) held the open-ground unroutable spot at setup but he was 13.6 m off it 30 s later with no verdict line for him at all; rc1119 2117 had an autonomous Move Away (target Terrain) queued at the strand: EA pushed him off before the 60 sim-minute idle rule. strand_box_end (cleanup) removes the counters. Then poll sim_strand {hold: true} every 1 s until he held the spot 2 polls in a row (re-strands him otherwise, 60 s cap).",
+        "until": {
+          "cmd": "sim_strand",
+          "args": {
+            "sim": "Wogan Hemlock",
+            "hold": true
+          },
+          "all": [
+            {
+              "path": "held",
+              "equals": true
+            },
+            {
+              "path": "streak",
+              "atLeast": 2
+            }
+          ],
+          "everyS": 1,
+          "maxS": 60,
+          "hollow": "Wogan never held the boxed strand spot (moved, routing, queued or not standing on every poll)"
+        }
       },
       {
         "cmd": "sim_where",
@@ -1255,8 +1272,42 @@
           "notRouting": true,
           "requireStanding": true
         },
-        "waitS": 30,
-        "note": "v5 2026-11-12: requireStanding (bp-wdasync-stuck-repro-1111 failed 3x with standing:false after sim_strand, so CheckIdle never judged him; sim_strand now forces standing) and waitS 30 here (the old waitS on the next step ran after it, so both checks ran in the same second). v4: FAILS SETUP when he is > 1 m from the strand spot or routing, ~3 s after the strand (before the 60 sim-minutes, ~8 s at Triple). No later held check: the fix itself moves him once it judges the spot, and v3's 12 cancels over 6 real min spanned ~45 sim-hours (inferred from 7.6 sim-min/s) (the sim-day rules then reset him and he ended at home, 560 m away)"
+        "waitS": 0,
+        "note": "v8: setup check (within 1 m, not routing, standing) right after the hold poll. v5 2026-11-12: requireStanding (bp-wdasync-stuck-repro-1111 failed 3x with standing:false after sim_strand, so CheckIdle never judged him; sim_strand now forces standing) and waitS 30 here (the old waitS on the next step ran after it, so both checks ran in the same second). v4: FAILS SETUP when he is > 1 m from the strand spot or routing, ~3 s after the strand (before the 60 sim-minutes, ~8 s at Triple). No later held check: the fix itself moves him once it judges the spot, and v3's 12 cancels over 6 real min spanned ~45 sim-hours (inferred from 7.6 sim-min/s) (the sim-day rules then reset him and he ended at home, 560 m away)"
+      },
+      {
+        "cmd": "watchdog_idle_now",
+        "args": {
+          "sim": "Wogan Hemlock"
+        },
+        "note": "v9 2026-11-25 TEST-ONLY (Rodney: forced idle check): sim clock +1 h while he is still on the boxed spot, so the next StuckWatchdog pass runs CheckIdle (queue, A1 / sync verdict, Act) unchanged with only the 60 sim-minute idle timer skipped; the timer itself is NOT covered by this repro. v8 (wdasync-stuck-rerun2-1125, 3/3) lost him 1-5 s after the strand: interaction Go Home, routing, 50-61 m off, HoldingUmbrella in 2 of 3; who moved him (from the logs): EA Go Home (no ts3fixes watchdog / go-home-shortcut moved line for him in any ts3native.log; try 1 has one unseen-fallback plan mark for his route, ufplan kind 0 203 ms marked Wogan Hemlock own task); how he left the counter ring is not shown."
+      },
+      {
+        "cmd": "sim_strand",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "hold": true,
+          "watch": true
+        },
+        "note": "v9: after watchdog_idle_now: observe only, poll every 1 s until watchdog_idle_unroutable rose since the strand (judged); off the spot (> 1 m) before that FAILs (left_unjudged). 60 s cap (the next watchdog pass is ~10 sim-minutes, about 1 s at Triple). v8 was: the idle window. Observe only (no put-back): poll every 1 s until watchdog_idle_unroutable rose since the strand (judged: the watchdog logged his verdict and acted); off the spot (> 1 m) before that FAILs (left_unjudged). 60 sim-minutes unseen is ~8 s at Triple; 240 s cap covers the seen one sim-day rule.",
+        "until": {
+          "cmd": "sim_strand",
+          "args": {
+            "sim": "Wogan Hemlock",
+            "hold": true,
+            "watch": true
+          },
+          "all": [
+            {
+              "path": "judged",
+              "equals": true
+            }
+          ],
+          "everyS": 1,
+          "maxS": 60,
+          "failOn": "left_unjudged",
+          "hollow": "the watchdog never judged Wogan after the forced idle check (no watchdog_idle_unroutable rise in 60 s)"
+        }
       },
       {
         "cmd": "sim_where",
@@ -1273,7 +1324,7 @@
       "min": 1,
       "minutes": 6
     },
-    "expect": "(setup: Wogan is within 1 m of the strand spot and not routing ~3 s after it; queue jobs require a 'Wogan Hemlock (A1|sync) False' verdict line. True verdicts for him are normal: at load, from his home spot, and after the fix moved him) within ~70 sim-minutes recent/moved show 'Wogan Hemlock -> watchdog reset (idle on unroutable spot)' and he stands on a routable spot of the lot (or at its front door); watchdog_idle_verdicts >= 1, safespot_checks rises by at most one per pass for him; with --set watchdogidle=false he stays put (counter flat)",
+    "expect": "v9: as v8, with the 60 sim-minute idle timer skipped by watchdog_idle_now (TEST-ONLY clock +1 h; the timer is not covered). v8: strand_box encloses him (8 counters), the hold poll holds 2 polls, sim_where passes, then within the idle window watchdog_idle_unroutable rises with him still within 1 m until then (a \"Wogan Hemlock A1 False\" or \"sync False\" verdict line), and the fix moves him; cleanup removes the counters. (setup: Wogan is within 1 m of the strand spot and not routing ~3 s after it; queue jobs require a 'Wogan Hemlock (A1|sync) False' verdict line. True verdicts for him are normal: at load, from his home spot, and after the fix moved him) within ~70 sim-minutes recent/moved show 'Wogan Hemlock -> watchdog reset (idle on unroutable spot)' and he stands on a routable spot of the lot (or at its front door); watchdog_idle_verdicts >= 1, safespot_checks rises by at most one per pass for him; with --set watchdogidle=false he stays put (counter flat)",
     "area": [
       389.4,
       1360.1
@@ -1282,6 +1333,9 @@
       "watchdogidle"
     ],
     "cleanup": [
+      {
+        "cmd": "strand_box_end"
+      },
       {
         "cmd": "autonomy",
         "args": {
@@ -113720,7 +113774,17 @@
     "bug": "DoorMemoX=3 (docs/585 §9): door 0x28590035C1469290 (The Prosper Room, rooms 25 -> 22) answered 1 for the bouncer Becca Bijou 25 ms after another job kept 2 (eam1124c bp-vbowner-correct-1, and the same Sim / door in §8); inferred cause a door rule that reads the clock (DoorSingleGender: Lot.IsOpenVenue()), no writer to bump",
     "fix": "bugfix/doormemox-mismatch2-1124 (416adf7a): native keeps a row only for an unlocked answer ts3fixes vouched for in that ask (op 36 hi 3, DoorGenMemoNote); own door rules, special portals, non-ordinary Sims, resort lots answered live (ts3native_doorgen.unnoted)",
     "save": "Baseline-BP",
-    "note": "Repro rules (docs/TESTING.md): forced, no waiting. The Prosper Room (lot 0x28590035BEC1DF80): venue_hours reads its hours (Lot.GetHoursOfOperation: Bartending extended hours or the venue's MetaAutonomy tuning, data, not in the decompiled code) and moves the clock (SimClock.TicksAdvanced) to 3 min before the open / close hour; 4 townies teleported next to door 0x28590035C1469290 and Becca Bijou (when instantiated) sent through it and across the club; then the clock 1 min past the hour (open_now flips, read back) and the same Sims sent again at once. 5 boundary crossings (open, close, open, close, open). pet_adopt (2 dogs into a townie home) triggers the writer hook CommonDoor.HouseholdSimChanged; one vbowner churn round (place 25 objects, delete them in buy mode: the P5c park + destroy) before the last crossing. PetPool.UpdateSimDescriptionId / Copy run only at world load (CharacterImportOnGameLoad) and in the world-builder command FixupPetPools: not reachable in a session. Read: venue_hours replies (open_before != open_now on each +1 step), doorgen: memo skips line naming the door type, door memo x writer hooks line, shadow > 0 mismatch 0.",
+    "regexCases": {
+      "\"adopted\":\\[\\{": {
+        "match": [
+          "{\"adopted\":[{\"instantiated\":true,\"ownerLockDoor\":\"0x28590035C1469290\",\"path\":\"pool AdoptDog\"}],\"skipped\":[],\"locked_doors\":[\"0x28590035C1469290\"]}"
+        ],
+        "noMatch": [
+          "{\"adopted\":[],\"skipped\":[\"no adoptable pet: adoption pools empty and AdoptDogCreator.CreatePet made none\"],\"locked_doors\":[]}"
+        ]
+      }
+    },
+    "note": "Repro rules (docs/TESTING.md): forced, no waiting. The Prosper Room (lot 0x28590035BEC1DF80): venue_hours reads its hours (Lot.GetHoursOfOperation: Bartending extended hours or the venue's MetaAutonomy tuning, data, not in the decompiled code) and moves the clock (SimClock.TicksAdvanced) to 3 min before the open / close hour; 4 townies teleported next to door 0x28590035C1469290 and Becca Bijou (when instantiated) sent through it and across the club; clock 10 min before the hour (room for the door asks before it), paused, then 1 min past the hour (never a day wrap), unpaused, the same Sims sent again. Each after step must report flipped true (its open_now against the before step's; mustMatch, else FAIL: hollow repro). 5 boundary crossings (open, close, open, close, open). pet_adopt (2 dogs into a townie home) triggers the writer hook CommonDoor.HouseholdSimChanged; one vbowner churn round (place 25 objects, delete them in buy mode: the P5c park + destroy) before the last crossing. PetPool.UpdateSimDescriptionId / Copy run only at world load (CharacterImportOnGameLoad) and in the world-builder command FixupPetPools: not reachable in a session. Read: venue_hours after replies (pair_open_before, open_now, flipped true), doorgen: memo skips line naming the door type, door memo x writer hooks line, shadow > 0 mismatch 0.",
     "steps": [
       {
         "cmd": "spawn_sims",
@@ -113771,14 +113835,22 @@
         "note": "townies (NPC scope) next to door 0x28590035C1469290"
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1,
+        "note": "normal speed for the crossing (the vbowner round leaves it on ultra): ~1 game min per real s"
+      },
+      {
         "cmd": "venue_hours",
         "args": {
           "lot": "2907355265278009216",
           "jump": "open",
-          "offsetMin": -3
+          "offsetMin": -10
         },
         "waitS": 1,
-        "note": "clock to 3 min before The Prosper Room's open hour (Lot.GetHoursOfOperation); reply open_now = the state before"
+        "note": "clock to 10 min before The Prosper Room's open hour (Lot.GetHoursOfOperation): room for the ~5 game min of door asks before the boundary; this step records the before state (pair_role before)"
       },
       {
         "cmd": "go_here",
@@ -113803,7 +113875,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -113822,11 +113894,20 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 4,
         "note": "door asks before the boundary: rows kept from these (if vouched) are the old hour's",
         "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 1,
+        "pausesClock": true,
+        "note": "paused between the before and after steps: the clock moves only by the jump"
       },
       {
         "cmd": "venue_hours",
@@ -113836,7 +113917,18 @@
           "offsetMin": 1
         },
         "waitS": 0,
-        "note": "clock 4 min on, 1 min past the open hour: open_now flips (Lot.IsOpenVenue reads the clock, nothing written)"
+        "note": "paused: clock to 1 min past the open hour, never a day wrap (already past: stays); flipped = before step's open state != this one's, both logged",
+        "mustMatch": "\"flipped\":true",
+        "hollow": "venue hour crossed without an open-state flip"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 0,
+        "pausesClock": false,
+        "note": "unpaused for the door asks after the boundary"
       },
       {
         "cmd": "go_here",
@@ -113861,7 +113953,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -113880,7 +113972,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 6,
         "note": "door asks right after the boundary, within DoorMemoXMs of the rows above where routes overlap",
@@ -113901,14 +113993,22 @@
         "note": "townies (NPC scope) next to door 0x28590035C1469290"
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1,
+        "note": "normal speed for the crossing (the vbowner round leaves it on ultra): ~1 game min per real s"
+      },
+      {
         "cmd": "venue_hours",
         "args": {
           "lot": "2907355265278009216",
           "jump": "close",
-          "offsetMin": -3
+          "offsetMin": -10
         },
         "waitS": 1,
-        "note": "clock to 3 min before The Prosper Room's close hour (Lot.GetHoursOfOperation); reply open_now = the state before"
+        "note": "clock to 10 min before The Prosper Room's close hour (Lot.GetHoursOfOperation): room for the ~5 game min of door asks before the boundary; this step records the before state (pair_role before)"
       },
       {
         "cmd": "go_here",
@@ -113933,7 +114033,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -113952,11 +114052,20 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 4,
         "note": "door asks before the boundary: rows kept from these (if vouched) are the old hour's",
         "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 1,
+        "pausesClock": true,
+        "note": "paused between the before and after steps: the clock moves only by the jump"
       },
       {
         "cmd": "venue_hours",
@@ -113966,7 +114075,18 @@
           "offsetMin": 1
         },
         "waitS": 0,
-        "note": "clock 4 min on, 1 min past the close hour: open_now flips (Lot.IsOpenVenue reads the clock, nothing written)"
+        "note": "paused: clock to 1 min past the close hour, never a day wrap (already past: stays); flipped = before step's open state != this one's, both logged",
+        "mustMatch": "\"flipped\":true",
+        "hollow": "venue hour crossed without an open-state flip"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 0,
+        "pausesClock": false,
+        "note": "unpaused for the door asks after the boundary"
       },
       {
         "cmd": "go_here",
@@ -113991,7 +114111,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114010,7 +114130,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 6,
         "note": "door asks right after the boundary, within DoorMemoXMs of the rows above where routes overlap",
@@ -114031,14 +114151,22 @@
         "note": "townies (NPC scope) next to door 0x28590035C1469290"
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1,
+        "note": "normal speed for the crossing (the vbowner round leaves it on ultra): ~1 game min per real s"
+      },
+      {
         "cmd": "venue_hours",
         "args": {
           "lot": "2907355265278009216",
           "jump": "open",
-          "offsetMin": -3
+          "offsetMin": -10
         },
         "waitS": 1,
-        "note": "clock to 3 min before The Prosper Room's open hour (Lot.GetHoursOfOperation); reply open_now = the state before"
+        "note": "clock to 10 min before The Prosper Room's open hour (Lot.GetHoursOfOperation): room for the ~5 game min of door asks before the boundary; this step records the before state (pair_role before)"
       },
       {
         "cmd": "go_here",
@@ -114063,7 +114191,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114082,11 +114210,20 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 4,
         "note": "door asks before the boundary: rows kept from these (if vouched) are the old hour's",
         "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 1,
+        "pausesClock": true,
+        "note": "paused between the before and after steps: the clock moves only by the jump"
       },
       {
         "cmd": "venue_hours",
@@ -114096,7 +114233,18 @@
           "offsetMin": 1
         },
         "waitS": 0,
-        "note": "clock 4 min on, 1 min past the open hour: open_now flips (Lot.IsOpenVenue reads the clock, nothing written)"
+        "note": "paused: clock to 1 min past the open hour, never a day wrap (already past: stays); flipped = before step's open state != this one's, both logged",
+        "mustMatch": "\"flipped\":true",
+        "hollow": "venue hour crossed without an open-state flip"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 0,
+        "pausesClock": false,
+        "note": "unpaused for the door asks after the boundary"
       },
       {
         "cmd": "go_here",
@@ -114121,7 +114269,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114140,7 +114288,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 6,
         "note": "door asks right after the boundary, within DoorMemoXMs of the rows above where routes overlap",
@@ -114161,14 +114309,22 @@
         "note": "townies (NPC scope) next to door 0x28590035C1469290"
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1,
+        "note": "normal speed for the crossing (the vbowner round leaves it on ultra): ~1 game min per real s"
+      },
+      {
         "cmd": "venue_hours",
         "args": {
           "lot": "2907355265278009216",
           "jump": "close",
-          "offsetMin": -3
+          "offsetMin": -10
         },
         "waitS": 1,
-        "note": "clock to 3 min before The Prosper Room's close hour (Lot.GetHoursOfOperation); reply open_now = the state before"
+        "note": "clock to 10 min before The Prosper Room's close hour (Lot.GetHoursOfOperation): room for the ~5 game min of door asks before the boundary; this step records the before state (pair_role before)"
       },
       {
         "cmd": "go_here",
@@ -114193,7 +114349,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114212,11 +114368,20 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 4,
         "note": "door asks before the boundary: rows kept from these (if vouched) are the old hour's",
         "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 1,
+        "pausesClock": true,
+        "note": "paused between the before and after steps: the clock moves only by the jump"
       },
       {
         "cmd": "venue_hours",
@@ -114226,7 +114391,18 @@
           "offsetMin": 1
         },
         "waitS": 0,
-        "note": "clock 4 min on, 1 min past the close hour: open_now flips (Lot.IsOpenVenue reads the clock, nothing written)"
+        "note": "paused: clock to 1 min past the close hour, never a day wrap (already past: stays); flipped = before step's open state != this one's, both logged",
+        "mustMatch": "\"flipped\":true",
+        "hollow": "venue hour crossed without an open-state flip"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 0,
+        "pausesClock": false,
+        "note": "unpaused for the door asks after the boundary"
       },
       {
         "cmd": "go_here",
@@ -114251,7 +114427,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114270,7 +114446,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 6,
         "note": "door asks right after the boundary, within DoorMemoXMs of the rows above where routes overlap",
@@ -114284,7 +114460,9 @@
           "ownerLockDoor": true
         },
         "waitS": 5,
-        "note": "writer hook trigger, story-progression stand-in (a player adopts by phone): Household.Add on a townie home lot raises HouseholdSimsChanged, CommonDoor.HouseholdSimChanged runs for that lot's doors (counter writers[0])"
+        "note": "writer hook trigger, a stand-in for phone adoption (story-progression adoption): ownerLockDoor locks a door of the home first, then Household.Add raises HouseholdSimsChanged and CommonDoor.HouseholdSimChanged runs (counter writers[0]). Asked pool empty: any adoption pool; all empty: STRESS direct create by EA's pool factory (AdoptDogCreator / AdoptCatCreator.CreatePet); each row names its path",
+        "mustMatch": "\"adopted\":\\[\\{",
+        "hollow": "no adoptable pet"
       },
       {
         "cmd": "set_speed",
@@ -114370,14 +114548,22 @@
         "note": "townies (NPC scope) next to door 0x28590035C1469290"
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1,
+        "note": "normal speed for the crossing (the vbowner round leaves it on ultra): ~1 game min per real s"
+      },
+      {
         "cmd": "venue_hours",
         "args": {
           "lot": "2907355265278009216",
           "jump": "open",
-          "offsetMin": -3
+          "offsetMin": -10
         },
         "waitS": 1,
-        "note": "clock to 3 min before The Prosper Room's open hour (Lot.GetHoursOfOperation); reply open_now = the state before"
+        "note": "clock to 10 min before The Prosper Room's open hour (Lot.GetHoursOfOperation): room for the ~5 game min of door asks before the boundary; this step records the before state (pair_role before)"
       },
       {
         "cmd": "go_here",
@@ -114402,7 +114588,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114421,11 +114607,20 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 4,
         "note": "door asks before the boundary: rows kept from these (if vouched) are the old hour's",
         "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 1,
+        "pausesClock": true,
+        "note": "paused between the before and after steps: the clock moves only by the jump"
       },
       {
         "cmd": "venue_hours",
@@ -114435,7 +114630,18 @@
           "offsetMin": 1
         },
         "waitS": 0,
-        "note": "clock 4 min on, 1 min past the open hour: open_now flips (Lot.IsOpenVenue reads the clock, nothing written)"
+        "note": "paused: clock to 1 min past the open hour, never a day wrap (already past: stays); flipped = before step's open state != this one's, both logged",
+        "mustMatch": "\"flipped\":true",
+        "hollow": "venue hour crossed without an open-state flip"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 0,
+        "pausesClock": false,
+        "note": "unpaused for the door asks after the boundary"
       },
       {
         "cmd": "go_here",
@@ -114460,7 +114666,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:2",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 0,
         "note": "across the club: lot centre",
@@ -114479,7 +114685,7 @@
         "cmd": "go_here",
         "args": {
           "sim": "picked:4",
-          "target": "@obj:2907355265278009216"
+          "target": "lot:2907355265278009216"
         },
         "waitS": 6,
         "note": "door asks right after the boundary, within DoorMemoXMs of the rows above where routes overlap",
@@ -126158,23 +126364,5 @@
       }
     ],
     "expect": "no crash; final step passes (state done, rows >= 1); \"isweep done <pack> state done\" in ts3native.log; script errors from EA interactions are findings (scriptErrorsReport), a Ts3Fixes / Ts3Agent frame FAILs"
-  },
-  {
-    "id": "ea-packs-readback",
-    "bug": "EA app laptop: a launch path that skips Sims3Launcher LoadOption.ini (or a different exe) can start the game with fewer packs (2026-11-02 base-game-only); a pack-dependent test then runs hollow",
-    "fix": "none (harness check): the game's own GameUtils.sProductFlags must list the same 20 products as the Sims3Launcher.exe swap runs (EA laptop 2026-11-24 14:3x UTC, GetProductFlags 2093055 = 0x1FEFFF = LoadOption selectedflags 001fefff)",
-    "save": "any",
-    "note": "reads the product flags the running game loaded",
-    "expect": "the full EA laptop product list (20 entries)",
-    "steps": [
-      {
-        "cmd": "reflect_get",
-        "args": {
-          "path": "Sims3.SimIFace.GameUtils.sProductFlags"
-        },
-        "note": "installed products as the game sees them",
-        "mustMatch": "^BaseGame, EP1, SP1, EP2, SP2, EP3, SP3, EP4, SP4, EP5, SP5, EP6, SP7, EP7, EP8, SP8, EP9, EP10, SP9, EP11$"
-      }
-    ]
   }
 ]
