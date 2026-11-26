@@ -479,6 +479,30 @@ namespace Ts3Fixes
         [Tunable] public static bool kUnstuckHousehold = false;  // unstuckhh: unstuck for household and selected Sims and pets (stands alone)
         [Tunable] public static bool kUnstuckLog = false;  // unstucklog: one ts3native.log line per act
         [Tunable] public static bool kCrowdPort = true;  // crowdport (docs/686 §19): a Sim the player does not control at a crowded elevator or rabbit hole door (kCrowdPortMin Sims there, or kCrowdPortWait sim-minutes behind another Sim) skips the queue: the game's elevator teleport skip at once, set on the rabbit hole's enter slot; NPCs waiting to leave a rabbit hole or station go together. Horses, riders, carriers and toddlers keep the game's wait
+        [Tunable] public static bool kElevSkip = false;  // elevskip (docs/686 §33): an unseen NPC the elevator doors refused (car in use, line) is set at the doors of the floor its ride ends on (EA's exit spot, no fade) and the game replans, as after its own teleport skip
+        [Tunable] public static bool kElevSkipHousehold = false;  // elevskiphh: household and selected Sims and NPCs in view too, after kElevSkipHhWait sim-minutes, with EA's fade
+        [Tunable] public static bool kElevSkipHhUnseen = false;  // elevskiphhunseen: with elevskip + elevskiphh, a household Sim (not the selected Sim) off screen, with the far doors off screen and away from viewers, goes at once with no fade; explicit opt-in that lifts the household-never-unseen rule for elevator skips only
+        [Tunable] public static bool kCamSafe = false;  // camsafe (docs/690): every off-screen shortcut asks one camera-safe rule: predictive reach margin, recently-seen hold, camera-jump pause (CamSafe.cs); off = each fix's old test, unchanged
+        [Tunable] public static bool kCamSafeLog = false;  // camsafelog: with camsafe off, sample the camera and count what camsafe would say (counters 4880-4899), behaviour unchanged
+        [Tunable] public static bool kAlibiWalk = false;  // alibiwalk (docs/691, AlibiWalk.cs): a walk >= kAlibiWalkMinM of an NPC nobody sees, off the active lot, is cut to its tail (set at the start of the last kAlibiWalkTailM m of EA's plan, EA walks the rest); never household Sims
+        [Tunable] public static bool kAlibiWalkLog = false;  // alibiwalklog: count what alibiwalk would cut (and long NPC walks by interaction), behaviour unchanged
+        [Tunable] public static float kAlibiWalkMinM = 60f;  // alibiwalk: shortest planned route (m) that is cut
+        [Tunable] public static float kAlibiWalkTailM = 10f;  // alibiwalk: metres of the route's last walking path the Sim still walks
+        [Tunable] public static float kCamSafeMarginPct = 25f;  // camsafe: the camera reach (largest of the last kCamSafeHoldS s) grown by this many percent (screen-border margin)
+        [Tunable] public static float kCamSafeLeadS = 2f;  // camsafe: plus how far the camera travels in this many seconds at its smoothed speed (prediction)
+        [Tunable] public static float kCamSafeSpeedMax = 150f;  // camsafe: speed cap, m/s (a jump is handled by the jump pause, not the speed)
+        [Tunable] public static float kCamSafeSpeedTauMs = 1000f;  // camsafe: smoothed speed decay time constant, real ms (rises at once, falls with this)
+        [Tunable] public static float kCamSafeHoldS = 5f;  // camsafe: recently-seen hold, real seconds: an object seen on screen, or a spot near the camera path, within this still counts as seen
+        [Tunable] public static float kCamSafeJumpM = 25f;  // camsafe: a camera target, eye or reach change above this between two samples is a jump (portrait click, lot jump, map view)
+        [Tunable] public static float kCamSafeJumpHoldS = 3f;  // camsafe: after a jump, everything counts as seen for this many real seconds
+        [Tunable] public static float kCamSafeAuditS = 3f;  // camsafe / camsafelog: an unseen verdict's Sim on screen within this many real seconds counts as seen soon (late-seen audit)
+        [Tunable] public static float kElevSkipHhWait = 1f;  // elevskiphh: sim-minutes at the doors before a Sim in view goes through (0-15)
+        [Tunable] public static float kElevSkipRepeatMin = 5f;  // elevskip: a Sim set through an elevator less than this many sim-minutes ago keeps the game's wait
+        [Tunable] public static bool kElevTripLog = false;  // elevtriplog: one ts3native.log line per car launch, per Sim set through and per parked-car boarding (either switch state)
+        [Tunable] public static bool kElevParked = false;  // elevparked (docs/686 §34): an NPC boarding at closed doors where the column's car last stopped gets the doors opened at once (EA's OpenElevatorDoors) instead of the 7 sim-minute call
+        [Tunable] public static bool kElevParkedHousehold = false;  // elevparkedhh: elevparked for household and selected Sims too
+        [Tunable] public static bool kPoolShare = false;  // poolshare (docs/686 §35): a pool ladder lane held from the other end is given to the swimmer too (sharelanes' search); the two climb at once
+        [Tunable] public static bool kPoolShareHousehold = false;  // poolsharehh: poolshare for household and selected Sims too
         [Tunable] public static bool kCrowdPortHousehold = false;  // crowdporthh: crowdport for household and selected Sims too
         [Tunable] public static bool kCrowdPortLog = false;  // crowdportlog: one ts3native.log line per act
         [Tunable] public static int kCrowdPortMin = 3;  // crowdport: Sims waiting for or using the portal, this one included, that make a crowd (2 at least)

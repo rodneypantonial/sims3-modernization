@@ -577,6 +577,8 @@ namespace Ts3Fixes
             ApplyObjShare();           // docs/686 §14 (ObjShare.cs): rhshare / servingshare and their household switches, linewaitlog, off by default (counts either way); the line hook is ApplyShareLanes's
             ApplyShowerShare();        // docs/686 §15 (ShowerShare.cs): showertogether / showerpee and their household switches, off by default (counts either way); the line hook is ApplyShareLanes's
             ApplySmcSetActor();        // SmcSetActor.cs: StateMachineClient.SetActor for servingshare (docs/686 §14), a one-int test while nothing is armed
+            ApplyElevSkip();           // docs/686 §33 (ElevSkip.cs): elevskip / elevskiphh / elevskiphhunseen, elevtriplog, off by default (counts either way); swaps ElevatorDoorsPortalComponent.TryTeleportSkip and ElevatorPortalComponent.OnPortalStart, the line step is in CrowdPort.cs CpLineHook
+            ApplyElevParked();         // docs/686 §34 (ElevParked.cs): elevparked / elevparkedhh, off by default (counts either way); swaps ElevatorDoorsPortalComponent.OnApproachingPortalObject
             ApplyCrowdPort();          // docs/686 §19 (CrowdPort.cs): crowdport / crowdporthh, off by default; its line and enter-slot steps are in ApplyShareLanes's and ApplyObjShare's hooks
             ApplyPetStartleSkip();     // docs/656 §8.1 (PetStartleSkip.cs), off by default
             ApplyPetArrivePoint();     // docs/656 §4.1 (PetArrivePoint.cs), off by default
@@ -1732,7 +1734,19 @@ namespace Ts3Fixes
         // switched) / plans to candidates / errors. 4610-4614 are left to the pending npcloops PR (post/npcloops-1123).        // [4660-4669] left to pending PRs (hotpaths 4660-4661, spotwaitattr up to 4665).
         // [4670-4679] reactoverlay (ReactOverlay.cs, docs/686 §26): overlaid now / from the queue / would, off / queued by EA / dropped stale /
         // would drop, off / queued that ran / their summed ms / max ms / errors.
-        const int kCounterSlots = 4680;
+        // [4700-4710] elevskip / elevtriplog (ElevSkip.cs, docs/686 §33): set through, unseen NPCs / with fade / would, off / NPC in view kept /
+        // household exempt / repeat kept / no exit spot / errors / car launches / riders at launch / one-rider launches.
+        // [4721] elevskiphhunseen (ElevSkip.cs, docs/686 §33): set through, household, unseen.
+        // [4711-4715] elevparked (ElevParked.cs, docs/686 §34): doors opened at once / would, off / household exempt / car stops seen / errors.
+        // [4716-4720] poolshare (PoolShare.cs + ShareLanes.cs, docs/686 §35): pool ladder refusals / held from the other end / shared /
+        // would, off / household exempt.
+        // [4880-4899] camsafe / camsafelog (CamSafe.cs, docs/690): TownieUnseen asks / old unseen / camsafe unseen / old unseen
+        // but camsafe seen, of which jump / hold / margin; spot vetoes; object holds; jumps; snaps; CsDecide calls / unseen;
+        // watched verdicts / on screen soon after unseen / after a camsafe veto; speed max m/s; reach max m; samples; errors.
+        // 4722-4879 left to other branches.
+        // [4920-4939] alibiwalk / alibiwalklog (AlibiWalk.cs, docs/691): NPC routes followed / long / refused by path kind, scope,
+        // seen, portal end, little to cut, active lot; would cut / cut / undone / undo failed; metres skipped / tails / long; errors.
+        const int kCounterSlots = 4940;
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
@@ -2243,6 +2257,18 @@ namespace Ts3Fixes
                 case "showerpee": return Instantiator.kShowerPee;  // ShowerShare.cs (docs/686 §15): an NPC that has to pee with no usable toilet on the lot takes a shower that refills its bladder, off
                 case "showerpeehh": return Instantiator.kShowerPeeHousehold;  // ShowerShare.cs: the same for household and selected Sims, off
                 case "showersharelog": return Instantiator.kShowerShareLog;  // ShowerShare.cs: one line per showertogether / showerpee act, off
+                case "elevskip": return Instantiator.kElevSkip;  // ElevSkip.cs (docs/686 §33): an unseen NPC the elevator doors refused is set at the doors its ride ends at, and the game replans, off
+                case "elevskiphh": return Instantiator.kElevSkipHousehold;  // ElevSkip.cs (docs/686 §33): household and selected Sims and NPCs in view too, after kElevSkipHhWait sim-minutes, with EA's fade, off
+                case "camsafe": return Instantiator.kCamSafe;  // CamSafe.cs (docs/690): every off-screen shortcut asks the camera-safe rule (predictive margin, recently-seen hold, camera-jump pause), off
+                case "camsafelog": return Instantiator.kCamSafeLog;  // CamSafe.cs: sample the camera and count what camsafe would say with camsafe off (the A/B off arm), off
+                case "alibiwalk": return Instantiator.kAlibiWalk;  // AlibiWalk.cs (docs/691): an unseen NPC's long walk off the active lot cut to its tail, off
+                case "alibiwalklog": return Instantiator.kAlibiWalkLog;  // AlibiWalk.cs: count what alibiwalk would cut, off
+                case "elevskiphhunseen": return Instantiator.kElevSkipHhUnseen;  // ElevSkip.cs (docs/686 §33): with elevskip + elevskiphh, unseen household Sims (not the selected Sim) go at once with no fade; explicit opt-in lifting the household-never-unseen rule for elevator skips only, off
+                case "elevtriplog": return Instantiator.kElevTripLog;  // ElevSkip.cs (docs/686 §33): one line per car launch (riders, wait in the car), per Sim set through and per parked-car boarding, off
+                case "elevparked": return Instantiator.kElevParked;  // ElevParked.cs (docs/686 §34): an NPC boarding at closed doors where the column's car stands gets the doors opened at once instead of EA's 7 sim-minute call, off
+                case "elevparkedhh": return Instantiator.kElevParkedHousehold;  // ElevParked.cs (docs/686 §34): household and selected Sims too, off
+                case "poolshare": return Instantiator.kPoolShare;  // PoolShare.cs (docs/686 §35): a pool ladder lane held from the other end is shared (sharelanes' search), NPCs, off
+                case "poolsharehh": return Instantiator.kPoolShareHousehold;  // PoolShare.cs (docs/686 §35): household and selected Sims too, off
                 case "crowdport": return Instantiator.kCrowdPort;  // CrowdPort.cs (docs/686 §19): an NPC at a crowded elevator, rabbit hole door or station skips the queue by the game's own teleport paths; NPC exits leave together, off
                 case "crowdporthh": return Instantiator.kCrowdPortHousehold;  // CrowdPort.cs: the same for household and selected Sims, off
                 case "crowdportlog": return Instantiator.kCrowdPortLog;  // CrowdPort.cs (docs/686 §19): one line per act, off
@@ -3110,16 +3136,18 @@ namespace Ts3Fixes
         static bool FarCompute(float x, float y, float z)
         {
             float dx = x - sCamTarget.x, dy = y - sCamTarget.y, dz = z - sCamTarget.z;
-            if (dx * dx + dy * dy + dz * dz < sReach2) return false;
+            float m2 = dx * dx + dy * dy + dz * dz;
+            if (m2 < sOldReach2) return false;
             dx = x - sCamPos.x; dy = y - sCamPos.y; dz = z - sCamPos.z;
-            if (dx * dx + dy * dy + dz * dz < sReach2) return false;
+            float p2 = dx * dx + dy * dy + dz * dz;
+            if (p2 < sOldReach2) return false;
             const float kMin2 = kShortcutMinDistance * kShortcutMinDistance;
             for (int i = 0; i < sViewerCount; i++)
             {
                 dx = x - sViewers[i].x; dy = y - sViewers[i].y; dz = z - sViewers[i].z;
                 if (dx * dx + dy * dy + dz * dz < kMin2) return false;
             }
-            return true;
+            return CsFarSpot(Math.Min(m2, p2));  // camsafe (CamSafe.cs): the camera-safe reach, or only counted (camsafelog)
         }
         static readonly UcPosCache sFarCache = new UcPosCache();
 
@@ -3145,6 +3173,7 @@ namespace Ts3Fixes
             sCamPos = CameraController.GetPosition();
             sReach = Math.Max(kShortcutMinDistance, 2f * Math.Abs(sCamPos.y - sCamTarget.y));
             sReach2 = sReach * sReach;
+            CsRefresh();  // camsafe (CamSafe.cs, docs/690): the camera sample; with camsafe on, sReach2 grows to its safe reach
             sViewerCount = 0;
             if (Household.ActiveHousehold == null) return;
             foreach (Sims3.Gameplay.Actors.Sim s in Household.ActiveHousehold.AllActors)
@@ -3638,10 +3667,9 @@ namespace Ts3Fixes
             // docs/267 F2: Late Night hidden rooms too (allowHidden), same EA lookup as the tomb-only one
             if (Sims3.Gameplay.Controllers.TombRoomManager.IsObjectInATombOrHiddenRoom(sim, !hiddenOk)) return false;
             if (ShortcutOn("unseenhouseboatview")) { int hv = UfHbvTownie(sim); if (hv >= 0) return hv == 1; }  // docs/202 §3.10: a Sim on a foreign houseboat is judged where its boat shows
-            int b = UtbBits(sim);  // docs/227 §6 central table
-            if (b >= 0) return sUtbCheck ? UtbCompare(UtbUnseen(b), !UcOnScreen(sim) && FarFromViewers(sim.Position)) : UtbUnseen(b);
-            if (UcOnScreen(sim)) return false;
-            return FarFromViewers(sim.Position);
+            // docs/227 §6 central table (b >= 0), else on screen / FarFromViewers; camsafe (CamSafe.cs, docs/690) judges both
+            // rules there and returns the one in force (camsafe off: the old test, unchanged)
+            return CsTownieCamera(sim, UtbBits(sim));
         }
 
         static void ShortcutLog(string line)
