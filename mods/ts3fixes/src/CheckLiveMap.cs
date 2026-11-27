@@ -173,6 +173,7 @@ namespace Ts3Fixes
                 case "eventcrowdring": return EpJoin(EpLive(typeof(CeremonySpotHook), 1), EpLive(typeof(EventCrowdRingHook), 1));
                 case "eventrouteretry": return EpJoin(EpJoin(EpLive(typeof(CeremonySpotHook), 1), EpLive(typeof(EventCrowdRingHook), 1)), EpLive(typeof(EventRouteRetryHook), 1));
                 case "facialidleweight": return EpLive(typeof(BFiHook), 1, "sFiSim", sFiSim, null);
+                case "facilityplanlog": return EpJoin(EpLive(typeof(FfHaveHook), 1, "sFfThing", sFfThing, null), EpLive(typeof(FfLeftHook), 0, "sFfChosen", sFfChosen, null));
                 case "failrepeat": return EpLive(typeof(RouteBackoffHook), 4);
                 case "failreplan": return EpLive(typeof(RouteOptionsHook), 2);
                 case "failreplanboat": return EpLive(typeof(RouteBackoffHook), 4);
@@ -198,6 +199,9 @@ namespace Ts3Fixes
                 case "flowersinuse": return EpLive(typeof(FlowersInUseHook), 1);
                 case "foodtraygrill": return EpLive(typeof(B12FtgHook), 1);
                 case "freshclothingresume": return EpLive(typeof(BFcHook), 1, "sFcMap", sFcMap, null);
+                case "fridgeff": return EpJoin(EpLive(typeof(FfHaveHook), 1, "sFfThing", sFfThing, null), EpLive(typeof(FfLeftHook), 0, "sFfChosen", sFfChosen, null));
+                case "fridgefflog": return EpJoin(EpLive(typeof(FfHaveHook), 1, "sFfThing", sFfThing, null), EpLive(typeof(FfLeftHook), 0, "sFfChosen", sFfChosen, null));
+                case "fridgeffunseen": return EpJoin(EpLive(typeof(FfHaveHook), 1, "sFfThing", sFfThing, null), EpLive(typeof(FfLeftHook), 0, "sFfChosen", sFfChosen, null));
                 case "fridgetestnull": return EpLive(typeof(BFtHook), 1);
                 case "frolicexit": return EpLive(typeof(B12FeHook), 1, "sFeSustained", sFeSustained, typeof(long));
                 case "frontstageowner": return EpLive(typeof(FrontStageOwnerHook), 1);
@@ -368,6 +372,7 @@ namespace Ts3Fixes
                 case "preferredservice": return EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpLive(typeof(BoatParkGoneHook), 1), EpLive(typeof(BookHandPutDownHook), 1)), EpLive(typeof(BookHandQueueHook), 1, "sBhActor", sBhActor, null)), EpLive(typeof(BribeHook), 1, "sBribeTable", sBribeTable, null)), EpLive(typeof(CarryHook), 1)), EpLive(typeof(ConvTurnHook), 1)), EpLive(typeof(FireworksFizzleHook), 0)), EpLive(typeof(GraduationAttendHook), 1)), EpLive(typeof(GraduationCityHallHook), 1)), EpLive(typeof(OutfitClearHook), 2)), EpLive(typeof(PreferredServiceHook), 1, "sPrefNpc", sPrefNpc, null)), EpLive(typeof(SwAbuseHook), 1)), EpLive(typeof(SwAdoptHook), 1)), EpLive(typeof(SwPetAdoptHook), 1)), EpLive(typeof(SwPutUpHook), 1)), EpLive(typeof(ThrowHook), 3)), EpLive(typeof(TopicHook), 4));
                 case "preplancb": return EpLive(typeof(RouteBackoffHook), 4);
                 case "privacyothers": return EpLive(typeof(B12PoHook), 1);
+                case "privacyroom": return EpLive(typeof(PrivacyRoomHook), 1);
                 case "privateeyecase": return EpJoin(EpJoin(EpJoin(EpJoin(EpJoin(EpLive(typeof(PeBreakHook), 0, "sPeDoor", sPeDoor, null), EpLive(typeof(PeGarbageHook), 0, "sPeGarbageOk", sPeGarbageOk, typeof(bool))), EpLive(typeof(PeMailboxHook), 0)), EpLive(typeof(PeMailHook), 0)), EpLive(typeof(PeSnoopHook), 0)), EpLive(typeof(PeStakeoutHook), 0, "sPeResult", sPeResult, null));
                 case "professorterm": return EpLive(typeof(ProfessorTermHook), 1);
                 case "promcarpool": return EpLive(typeof(PromCarpoolHook), 0, "sPcCarpool", sPcCarpool, null);

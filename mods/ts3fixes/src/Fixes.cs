@@ -410,6 +410,7 @@ namespace Ts3Fixes
             ApplyFireplaceHerb();   // docs/611 §3 (LotCallbacks80.cs)
             ApplyRummageBcast();   // docs/611 §4 (LotCallbacks80.cs)
             ApplyStairWaitEnd();   // docs/612 §2 (StairDup82.cs)
+            ApplyPrivacyRoom();   // PrivacyRoom.cs
             ApplyCompatPrecedence();   // docs/328 §7 (CompatResolve.cs): our cleanupvfx / lifeguardquit / stairwaitend on mod overrides that skip the game's method
             ApplySimDisposeLink();   // docs/612 §3 (StairDup82.cs)
             ApplyRhExitUnseen();   // docs/613 §2 (StuckJobs83.cs)
@@ -572,6 +573,9 @@ namespace Ts3Fixes
             ApplyPetRelax();           // docs/686 §11 (PetRelax.cs): petrelax / petrelaxhh, off by default (counts either way); after ApplyShareLanes and ApplyClipWait
             ApplySocialReach();        // docs/686 §17 (SocialReach.cs): socialreach / socialreachhh, off by default (counts either way); its DoRoute step is in ApplyBlockedUse's hook, as unstuck's (§18, Unstuck.cs)
             ApplyWooHooSnap();         // docs/686 §20 (WooHooSnap.cs): woohoosnap / woohoosnaphh, pairsnap / pairsnaphh, off by default; their steps are in ApplyBlockedUse's, ApplySocialReach's and ApplyShowerShare's hooks
+            ApplyFacilityPlan();       // docs/686 §36 (FacilityPlan.cs): facilityplan / facilityquick / facilitychain and their household switches, off by default (counts either way); swaps GameObject.GetInUseAutonomyMultiplier, InteractionInstance.Begin/EndCommodityUpdates; its wait step is in ApplyLineSwitch's hook
+            ApplyNextPlan();           // docs/686 §38 (NextPlan.cs): nextplan / nextplanhh / nextplanlog, off by default (counts either way); swaps Sim.LoopIdle (after queuewake), GameObject.GetInUseAutonomyMultiplier, InteractionInstance.OnAddedToQueue / OnRemovedFromQueue, Autonomy.RunAutonomy(bool) (stacked)
+            ApplyFridgeFf();           // docs/686 §36.11 (FridgeFf.cs): fridgeff / fridgeffunseen, off; swaps Fridge_Have.Run, Fridge_EatLeftovers.Run
             ApplyLineSwitch();         // docs/686 §25 (LineSwitch.cs): lineswitch / lineswitchhh, off by default (counts either way); swaps SimQueue.WaitForExitReasonOnSim, the line hook is ApplyShareLanes's
             ApplyReachUse();           // docs/686 §12 (ReachUse.cs): reachuse / reachusehh, off by default (counts either way); the DoRoute hook is ApplyBlockedUse's
             ApplyObjShare();           // docs/686 §14 (ObjShare.cs): rhshare / servingshare and their household switches, linewaitlog, off by default (counts either way); the line hook is ApplyShareLanes's
@@ -1732,7 +1736,18 @@ namespace Ts3Fixes
         // switched) / plans to candidates / errors. 4610-4614 are left to the pending npcloops PR (post/npcloops-1123).        // [4660-4669] left to pending PRs (hotpaths 4660-4661, spotwaitattr up to 4665).
         // [4670-4679] reactoverlay (ReactOverlay.cs, docs/686 §26): overlaid now / from the queue / would, off / queued by EA / dropped stale /
         // would drop, off / queued that ran / their summed ms / max ms / errors.
-        const int kCounterSlots = 4680;
+        // [4680-4739] other pending branches (linestale, standwaitsocial, stairflow, the elevator block) and spare.
+        // [4740-4779] facility planner (FacilityPlan.cs, docs/686 §36): switched / would switch / something else first / would / kept EA
+        // (urgent, nothing better) / exempt / picks lowered / picks all late / picks would / uses timed / errors / came back after a defer /
+        // facilityquick ended / would / exempt / facilitychain chained / would / exempt / wait checks / quick ends for privacy waiters /
+        // showerpeeplan fills (ShowerShare.cs) / showerpeeplan would / showerdirty after shower-pee / partner shower offers / bladder
+        // failures seen / line wait sim-min x10 / facility waits / toilet line to a shower (showerpeeplan) / showerdirty shared /
+        // showerdirty would; [4770-4776] fridgeff (FridgeFf.cs, §36.11): food taken at once / leftovers taken at once / would, off /
+        // seen, EA's line / selected Sim exempt / errors / busy starts; 4777-4779 spare.
+        // [4940-4959] nextplan (NextPlan.cs, docs/686 §38; reserved by hand 2026-11-26): passes / would / queued / nothing / delay
+        // skipped / kept delay / NPC budget / claims / claimed scored down / would / same target claimed / in use / expired / errors /
+        // picks measured / dropped by a higher-priority add / lines / searches timed / other skips / household autonomous acts done.
+        const int kCounterSlots = 4960;
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
@@ -2347,6 +2362,11 @@ namespace Ts3Fixes
                 case "fireplaceherb": return Instantiator.kFireplaceHerb;  // docs/611 §3 (LotCallbacks80.cs), EA bug fix, off
                 case "rummagebcast": return Instantiator.kRummageBcast;  // docs/611 §4 (LotCallbacks80.cs), EA bug fix, off
                 case "stairwaitend": return Instantiator.kStairWaitEnd;  // docs/612 §2 (StairDup82.cs), EA bug fix, off
+                case "privacyroom": return Instantiator.kPrivacyRoom;  // PrivacyRoom.cs, EA bug fix, off
+                case "bathroomwait": return Instantiator.kBathroomWait;  // BathroomWait.cs, off
+                case "fridgeline": return Instantiator.kFridgeLine;  // FridgeBusy.cs, NPCs, off
+                case "fridgelinehh": return Instantiator.kFridgeLineHousehold;  // FridgeBusy.cs, household and selected Sims, off
+                case "fridgelinefill": return Instantiator.kFridgeLineFill;  // FridgeBusy.cs, wash hands while the line is full, off
                 case "simdisposelink": return Instantiator.kSimDisposeLink;  // docs/612 §3 (StairDup82.cs), EA bug fix, off
                 case "rhexitunseen": return Instantiator.kRhExitUnseen;  // docs/613 §2 (StuckJobs83.cs), EA bug fix, off
                 case "routefailprobe": return Instantiator.kRouteFailProbe;  // docs/627 §2 (RhEntry627.cs), log attribution fix, off
@@ -2672,6 +2692,22 @@ namespace Ts3Fixes
                 case "lineswitch": return Instantiator.kLineSwitch;  // LineSwitch.cs (docs/686 §25): a Sim waiting in a toilet, sink, shower or bath line takes a free twin object of the lot after 2 sim-min, NPCs, off
                 case "lineswitchhh": return Instantiator.kLineSwitchHh;  // LineSwitch.cs (docs/686 §25): household and selected Sims too (their own autonomous actions only), off
                 case "lineswitchlog": return Instantiator.kLineSwitchLog;  // LineSwitch.cs (docs/686 §25): one line per case, off
+                case "nextplan": return Instantiator.kNextPlan;  // NextPlan.cs (docs/686 §38): a Sim whose queue ran empty runs EA's autonomy pass at once (NPCs, high LOD, per-tick budget), off
+                case "nextplanhh": return Instantiator.kNextPlanHh;  // NextPlan.cs: household and selected Sims too (the active Sim keeps EA's delay), off
+                case "nextplanlog": return Instantiator.kNextPlanLog;  // NextPlan.cs: one line per pass (capped), off
+                case "facilityplan": return Instantiator.kFacilityPlan;  // FacilityPlan.cs (docs/686 §36): NPCs pick and wait for the toilet, shower, bath or sink that frees soonest, or do something else first, off
+                case "facilityplanhh": return Instantiator.kFacilityPlanHh;  // FacilityPlan.cs (docs/686 §36): household and selected Sims too, off
+                case "facilityplanlog": return Instantiator.kFacilityPlanLog;  // FacilityPlan.cs (docs/686 §36): one line per case, off
+                case "facilityquick": return Instantiator.kFacilityQuick;  // FacilityPlan.cs (docs/686 §36.5): an NPC's shower, bath or toilet use ends at 85 % for an urgent waiter, off
+                case "facilityquickhh": return Instantiator.kFacilityQuickHh;  // FacilityPlan.cs: household and selected users too, off
+                case "facilitychain": return Instantiator.kFacilityChain;  // FacilityPlan.cs (docs/686 §36.4): toilet and shower or bath in one visit, NPCs, off
+                case "facilitychainhh": return Instantiator.kFacilityChainHh;  // FacilityPlan.cs: household and selected Sims too, off
+                case "showerpeeplan": return Instantiator.kShowerPeePlan;  // ShowerShare.cs (docs/686 §36.6): a shower fills the bladder of an NPC that has to pee soon, toilets or not, off
+                case "showerpeeplanhh": return Instantiator.kShowerPeePlanHh;  // ShowerShare.cs: household and selected Sims too, off
+                case "showerdirty": return Instantiator.kShowerDirty;  // ShowerShare.cs (docs/686 §36.6): shower-pee and shared showers leave Hygiene at 88 % / 90 %, off  // LineSwitch.cs (docs/686 §25): one line per case, off
+                case "fridgeff": return Instantiator.kFridgeFf;  // FridgeFf.cs (docs/686 §36.11): an unseen NPC at a busy fridge takes its food at once, off
+                case "fridgeffunseen": return Instantiator.kFridgeFfUnseen;  // FridgeFf.cs: the same for unseen household Sims (not the selected Sim), the player's opt-in, off
+                case "fridgefflog": return Instantiator.kFridgeFfLog;  // FridgeFf.cs: one line per fast grab
                 case "pairsnaplog": return Instantiator.kPairSnapLog;  // WooHooSnap.cs (docs/686 §20): one line per act, off
                 case "birthroute": return Instantiator.kBirthRoute;
                 case "putdownplace": return Instantiator.kPutDownPlace;
