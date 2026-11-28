@@ -59,7 +59,7 @@ export const worst = (ls: Label[]): Label => LABELS[Math.max(0, ...ls.map(l => L
 // game mode a step leaves the game in (the agent's mode commands), and steps sent in a mode their row does not allow
 const NEXT: Record<string, (a: any) => string> = {
   build_mode: a => a?.on === false ? 'Live' : 'Build', buy_open: () => 'Buy', buy_close: () => 'Live', cas_open: () => 'CAS',
-  cas_close: () => 'Live', enter_live_mode: () => 'Live', travel_vacation: () => 'Travel', travel_university: () => 'Travel',
+  cas_close: () => 'Live', cas_accept: () => 'Live', enter_live_mode: () => 'Live', travel_vacation: () => 'Travel', travel_university: () => 'Travel',
   travel_future: () => 'Travel', travel_home: () => 'Live', fresh_world: () => 'Live', load_save: () => 'Live', main_menu: () => 'MainMenu',
   // start-of-game paths (StartPathHandlers.cs): the family picker is the map view
   load_world: a => (a?.state === 'PlayFlow' ? 'Map' : a?.state === 'EditTown' ? 'EditTown' : 'Live'), enter_play_flow: () => 'Map',
@@ -74,7 +74,7 @@ export function modeViolations(steps: { cmd: string; args?: any }[], t = table()
     const ok = !r || r.states.includes('Any') || r.states.includes(mode) || (mode === 'Travel' && r.states.includes('Live'));
     if (!ok) out.push(`step ${i} ${s.cmd} in ${mode} (valid: ${r!.states.join('/')})`);
     if (s.cmd === 'picker_cas' || s.cmd === 'cas_open') casBack = s.cmd === 'picker_cas' ? 'Map' : 'Live';
-    if (s.cmd === 'cas_close') mode = casBack;
+    if (s.cmd === 'cas_close' || s.cmd === 'cas_accept') mode = casBack;
     else if (NEXT[s.cmd]) mode = NEXT[s.cmd](s.args);
   }
   return out;

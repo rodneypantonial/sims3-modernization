@@ -6,7 +6,7 @@
 //   node tools/harness/game-alive.ts --self-check
 // A hang (heartbeat frozen, or a stall guard's "nothing moved" with the game and probe up) is captured before the FAIL line,
 // so the game is still alive for it: captureHang below (docs/172 §6).
-// Long blocking steps (docs/67 crash Q): while the last ts3agent mem mark in ts3native.log is an open -ph-import/-ph-place/
+// Long blocking steps (docs/67 crash Q): while a save is open (save: start #N, no end yet) or the last ts3agent mem mark in ts3native.log is an open -ph-import/-ph-place/
 // -ph-bulldoze (no later mark), a frozen heartbeat is excused while the game progresses (ts3native.log size, probe /memory
 // commit MB, TS3W.exe working set); 2 GUARD_MS windows without progress, or PHASE_GRACE_MS in all, fail (graceStep).
 import { execFile, execFileSync } from 'node:child_process';
@@ -42,8 +42,12 @@ function lastTriage(): string {
   } catch (e) { return `crash-ledger triage failed: ${String(e).split('\n')[0]}`; }
 }
 
-// the open long step: last mem mark tag in a ts3native.log tail when it is -ph-import/-ph-place/-ph-bulldoze, else null (pure)
+// the open long step: a save (last "save: start #N" with no "save: end #N" after it: WN2 4096 world saves ran 70-83 s,
+// past the 60 s heartbeat limit, and the watchdog killed finished saves, atlas-poc-gate-wn2-1128), or the last mem mark tag
+// in a ts3native.log tail when it is -ph-import/-ph-place/-ph-bulldoze, else null (pure)
 export function openPhase(logTail: string): string | null {
+  const save = [...logTail.matchAll(/^save: start #(\d+)/gm)].at(-1);
+  if (save && !new RegExp(`^save: end #${save[1]} `, 'm').test(logTail.slice(save.index))) return `save #${save[1]}`;
   const last = [...logTail.matchAll(/ mark ev=([A-Za-z0-9_-]+)/g)].at(-1)?.[1];
   return last && /-ph-(import|place|bulldoze)$/.test(last) ? last : null;
 }
@@ -471,6 +475,11 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
   assert.equal(openPhase(tail('etcc-ph-place', 'etcc-ph-placed')), null, 'placed closes the step');
   assert.equal(openPhase(tail('etcc-ph-bulldoze', 'etcc-empty')), null, 'any later mark closes it');
   assert.equal(openPhase(''), null);
+  assert.equal(openPhase('save: start #1, traveling\nsave: > write (package) (+0 ms)\n'), 'save #1', 'open save');
+  assert.equal(openPhase('save: start #1, x\nsave: end #1 result 0 after 69750 ms\n'), null, 'save end closes it');
+  assert.equal(openPhase('save: start #1, x\nsave: end #1 result 0 after 9 ms\nsave: start #2, x\n'), 'save #2', 'next save open');
+  assert.equal(openPhase('save: start #1, x\nsave: end #1 result 0 after 9 ms\n' + tail('etcc-ph-place')), 'etcc-ph-place', 'closed save, open mark');
+  assert.equal(openPhase('save: start #1, x\r\nsave: end #1 result 0 after 9 ms\r\n'), null, 'CRLF log');
   const gs: GraceState = { since: null, mark: null, movedAt: 0 };
   assert.deepEqual(graceStep(gs, { now: 0, phase: null, mark: 'a' }), { excused: false, why: '' }, 'no open step: heartbeat verdict stands');
   assert.equal(graceStep(gs, { now: 60000, phase: 'etcc-ph-place', mark: 'a' }).excused, true);
