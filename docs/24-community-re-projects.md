@@ -640,3 +640,18 @@ Checked for existing fixes of the 376 Dalexlol switches; nothing reused, no code
 | 498 | 583390 | https://modthesims.info/d/583390/no-bad-photos.html | No Bad Photos | kbalt | 24th Sep 2016 at 6:23am | Overrides > Tuning Mods | 1 file(s) |
 | 499 | 507965 | https://modthesims.info/d/507965/tagged-plants-v1-3-4th-may-2014.html | Tagged Plants - v1.3 (4th May 2014) | douglasveiga | updated 5th May 2014 at 6:16am | Script & Core Mods > Pure Scripting Mods | 4 file(s) |
 | 500 | 638475 | https://modthesims.info/d/638475/world-loading-screen-overhaul-v2-0.html | World Loading Screen Overhaul v2.0 | gamefreak130 | 24th Feb 2020 at 7:20am | Script & Core Mods > Pure Scripting Mods | 1 file(s) |
+
+## Added 2026-11-28 (route graph tiles and baked routes; Atlas docs/064 §7)
+
+Prior art for sparse route tiles and HPA*-style baked routes on the stitched 4096 m world (route lock holds, docs/367).
+Read and cite only, no code taken:
+- Recast/Detour, https://github.com/recastnavigation/recastnavigation (license: zlib): tiled navmesh, run-time `addTile` / `removeTile`, `DetourTileCache`. Reference for tile design; embed only if cheaper in 32-bit memory. Verified.
+- HPA*, Botea, Müller, Schaeffer 2004, https://papersdb.cs.ualberta.ca/~papersdb/view_publication.php?pub_id=585 (paper): clusters, entrances, abstract graph. Unverified (PDF 404).
+- `hierarchical_pathfinding`, https://github.com/mich101mich/hierarchical_pathfinding (license: MIT): HPA* on grids. Verified.
+- Jump Point Search, Harabor and Grastien 2011, https://ojs.aaai.org/index.php/AAAI/article/view/7994 (paper): grid pruning; poor fit for EA's waypoint graph [inferred]. Unverified.
+- Factorio FFF-317, https://factorio.com/blog/post/fff-317 (blog): abstract chunk-component graph as the A* heuristic. Model for our baked routes. Verified.
+- RimWorld regions, https://ludeon.com/blog/2013/07/reachability-at-last (blog): region check skips doomed A*. Verified.
+- Sturtevant, Dragon Age: Origins sector abstraction, https://www.cs.du.edu/~sturtevant/papers/sturtevant2010comparison.html (paper). Verified.
+- Emerson, flow field tiles (Supreme Commander 2), http://www.gameaipro.com/GameAIPro/GameAIPro_Chapter23_Crowd_Pathfinding_and_Steering_Using_Flow_Field_Tiles.pdf (book chapter). Verified.
+- Cities: Skylines II traffic diary, https://colossalorder.fi/?p=1597 (blog): multicore pathfinding; the original game's thread split is unverified.
+- OpenTS3: no public source found; news only. Unverified.

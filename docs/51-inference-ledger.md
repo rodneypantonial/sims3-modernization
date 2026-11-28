@@ -7970,6 +7970,11 @@ Exception to the probe's read-only rule, allowed by Rodney 2026-11-26 for the At
 |---|---|---|---|---|---|---|---|
 | I-628-1 | 67 §47 | The window behind the stale trigger hooks (`0x5166B754`) is the scene window, freed in the world teardown before `App_Shutdown` while its hooks stayed registered | hook priorities in the dump match the scene window's (`userTools` 1) [inferred]; the faulting chain and the freed, reused block [verified, dump + disassembly] | the docs/67 §47 detector on the next hit, or the exit-crash-1127 queues | detector names the scene window and its destroy before `0x7F10B0` | another window or a hook added by a mod | open |
 
+## 950. Atlas rebase slidecheck EIP 0 at [PagedLots] Probe=0 (2026-11-27; queue `atlas-rebase-terrain-slide-1127`, rerun `atlas-p1guard-rerun-1127`, not run)
+
+| Id | Doc | Claim | Evidence so far | Test | Pass | Fail | Status |
+|---|---|---|---|---|---|---|---|
+| I-950-1 | Atlas docs/031 §12 | The EIP 0 crash ~10 s after `reflect_call Atlas.Rebase.Start("rebase slidecheck 256 0")` (both r8-check jobs, TerrainSlide=1 and 0) is Mono's interpreter calling a missing internal call: the frame under EIP 0 is a per-signature native-call stub (`push ebp; mov ebp,esp; mov edx,[ebp+8]; call edx; mov ecx,[ebp+0xC]; mov [ecx],eax; leave; ret`, read from the minidump at `0x60080000`) entered from `0xE526C4` (inside the IC call `0xE52630`), with the function pointer `[ebp+8]` = 0; the only internal call on that path from an unregistered group is P1's `Native.Version()` in `Rebase.SlideRefusal` (`AtlasNative.Groups` said p1 false, atlas.log "paged lots: off (Probe=0)") | dump bytes [verified]; stub semantics and the P1 call [inferred from source, docs/031 §12 pattern: first call throws, later calls jump to 0]; lotseam passed with Probe=1 | rerun of both jobs with the Has(kP1) guard (boundless-atlas 13fb99f; the same audit guarded Predict.Plan born calls and made build-mod refuse unguarded calls) | no crash, 3 "paging off ... p1 group not registered" lines per job | crash again at EIP 0 | open |
 ## 636. boatroutenull: GetOutOfBoat on a boat with no RoutingComponent (2026-11-27, BoatRouteNull.cs; queue boatroutenull-ip-1127, not run)
 
 | Id | Doc | Claim | Evidence so far | Test | Pass | Fail | Status |

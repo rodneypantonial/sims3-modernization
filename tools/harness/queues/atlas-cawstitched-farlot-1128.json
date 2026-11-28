@@ -1,0 +1,443 @@
+{
+  "note": "11-28 ts3agent lot-target fix + far lot proof of concept. 11-28: Atlas 4096 m RC: first game load of the stitched world with its 461 whole lots (Atlas docs/063 §12) on main20n, P1 off; household move-in and routing past 2048 m. One job; holdOnFail.",
+  "agentPackage": "game-copy/ts3agent.package.lot-target-1128g",
+  "stopQueueOnFail": false,
+  "regexCases": {
+    "^physics root: 4096 -> 8192 m at 0x00FEFBCC, read back 0x46000000, \\[World8192\\] PhysicsRoot=1$": {
+      "match": [
+        "physics root: 4096 -> 8192 m at 0x00FEFBCC, read back 0x46000000, [World8192] PhysicsRoot=1"
+      ],
+      "noMatch": [
+        "physics root: off (PhysicsRootM=0), 0x00FEFBCC holds 4096",
+        "physics root: 4096 -> 8192 m at 0x00FEFBCC, read back 0x45800000 (READ-BACK DIFFERS), [World8192] PhysicsRoot=1",
+        "physics root: SKIP address not mapped (PhysicsRootM=8192)"
+      ]
+    },
+    "^w8192 self-check: PASS \\(\\d+ checks, 0 failed\\)$": {
+      "match": [
+        "w8192 self-check: PASS (210 checks, 0 failed)"
+      ],
+      "noMatch": [
+        "w8192 self-check: FAIL (163 checks, 2 failed)",
+        "w8192: SKIP self-check failed; Routing=1 and PaintIndex=1 not installed",
+        "p1 self-check: PASS (28 checks, 0 failed), page format version 1, header 64 bytes"
+      ]
+    },
+    "^w8192 Routing R[1-7] 0x00[0-9A-F]{6}: installed \\(\\d bytes, expected bytes matched, read back ok\\)$": {
+      "match": [
+        "w8192 Routing R1 0x0063DC60: installed (5 bytes, expected bytes matched, read back ok)",
+        "w8192 Routing R7 0x0082A1D4: installed (6 bytes, expected bytes matched, read back ok)"
+      ],
+      "noMatch": [
+        "w8192 Routing R1 0x0063DC60: skipped (bytes differ; found E9 12 34 56 78)",
+        "w8192 Routing R2 0x00654E83: skipped (another Routing site differs, the switch is all-or-nothing)",
+        "w8192 Routing R3 0x00655514: FAILED (read-back differs)",
+        "w8192 PaintIndex header bound 0x00C21A85: installed (6 bytes, expected bytes matched, read back ok)"
+      ]
+    },
+    "^w8192 Routing R7 0x0082A1D4: skipped \\(ts3native\\.ini \\[EaCrashFixes\\] PortalFlagRefs=1 owns ": {
+      "match": [
+        "w8192 Routing R7 0x0082A1D4: skipped (ts3native.ini [EaCrashFixes] PortalFlagRefs=1 owns 0x0082A1CF..0x0082A1D9; its stub keeps the 14-bit decode)"
+      ],
+      "noMatch": [
+        "w8192 Routing R7 0x0082A1D4: installed (6 bytes, expected bytes matched, read back ok)",
+        "w8192 Routing R7 0x0082A1D4: skipped (a jump is already at 0x0082A1CF (another module owns the site))"
+      ]
+    },
+    "^w8192 Routing: 6 of 7 sites installed$": {
+      "match": [
+        "w8192 Routing: 6 of 7 sites installed"
+      ],
+      "noMatch": [
+        "w8192 Routing: 7 of 7 sites installed",
+        "w8192 Routing: 0 of 7 sites installed (not installed)",
+        "w8192 Routing: 4 of 7 sites installed (PARTIAL)",
+        "w8192 Routing: off (Routing=0)"
+      ]
+    },
+    "^w8192 PaintIndex .* 0x00C2[0-9A-F]{4}: installed \\(\\d+ bytes, expected bytes matched, read back ok\\)$": {
+      "match": [
+        "w8192 PaintIndex reader 1 index 0x00C23BD4: installed (15 bytes, expected bytes matched, read back ok)",
+        "w8192 PaintIndex saver flag write 2 0x00C22905: installed (5 bytes, expected bytes matched, read back ok)"
+      ],
+      "noMatch": [
+        "w8192 PaintIndex reader 2 index 0x00C23F4A: skipped (bytes differ; found 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90)",
+        "w8192 PaintIndex saver 1 tag 0x00C22A9B: FAILED (VirtualProtect failed)",
+        "w8192 Routing R1 0x0063DC60: installed (5 bytes, expected bytes matched, read back ok)"
+      ]
+    },
+    "^w8192 PaintIndex: 7 of 7 sites installed$": {
+      "match": [
+        "w8192 PaintIndex: 7 of 7 sites installed"
+      ],
+      "noMatch": [
+        "w8192 PaintIndex: 0 of 7 sites installed (not installed)",
+        "w8192 PaintIndex: 3 of 7 sites installed (PARTIAL)",
+        "w8192 PaintIndex: off (PaintIndex=0)"
+      ]
+    },
+    "^scene quadtree: root 8192 x \\d+ x 8192 m, depth 8$": {
+      "match": [
+        "scene quadtree: root 8192 x 1024 x 8192 m, depth 8"
+      ],
+      "noMatch": [
+        "scene quadtree: root 4096 x 1024 x 4096 m, depth 7",
+        "scene quadtree: SKIP scene manager has no quadtree"
+      ]
+    },
+    "^scene box: default 2048 m depth 6 -> 8192 m depth 8 ": {
+      "match": [
+        "scene box: default 2048 m depth 6 -> 8192 m depth 8 at 0x00EC9D23 / 0x00EC9D49, read back ok (an ini SceneQuadTree line still wins)"
+      ],
+      "noMatch": [
+        "scene box: default 2048 m depth 6 -> 4096 m depth 7 at 0x00EC9D23 / 0x00EC9D49, read back ok (an ini SceneQuadTree line still wins)",
+        "scene box: SKIP scene manager already made: app init ran before this install (held by [PagedLots] Oop=1?) (SceneQuadTreeM=8192, SceneQuadTreeDepth=0)",
+        "scene box: off (SceneQuadTreeM=0)",
+        "scene quadtree: root 2048 x 1024 x 2048 m, depth 6"
+      ]
+    },
+    "^config probe: \\[Config\\] SceneQuadTree ": {
+      "match": [
+        "config probe: [Config] SceneQuadTree missing; Default.ini key InstalledWorldsSubdirName missing; Sims3.ini key Stroller_MinimumPathLength \"5\"; local ini C:\\Game\\Bin\\Default.local.ini",
+        "config probe: [Config] SceneQuadTree \"4096,512,7\"; Default.ini key InstalledWorldsSubdirName \"InstalledWorlds\"; Sims3.ini key Stroller_MinimumPathLength \"5\"; local ini ?"
+      ],
+      "noMatch": [
+        "config probe: SKIP not the expected game image",
+        "scene quadtree: root 2048 x 1024 x 2048 m, depth 6",
+        "scene box: off (SceneQuadTreeM=0)"
+      ]
+    },
+    "^config probe: SceneQuadTree source (?!not one of these ini files|none )": {
+      "match": [
+        "config probe: SceneQuadTree source C:\\Game\\Bin\\Default.ini [Config] (value match); files: C:\\Game\\Bin\\Default.ini [Config]=\"4096,512,7\" | C:\\Docs\\Default.local.ini not found | C:\\Game\\Bin\\Sims3.ini no key | C:\\Docs\\Sims3.local.ini not found"
+      ],
+      "noMatch": [
+        "config probe: SceneQuadTree source not one of these ini files (no [Config] value matches \"8192,512,7\": command line, or a patch?); files: C:\\Game\\Bin\\Default.ini [Config]=\"4096,512,7\"",
+        "config probe: SceneQuadTree source none (the registry has no [Config] SceneQuadTree); files: C:\\Game\\Bin\\Default.ini no key",
+        "config probe: [Config] SceneQuadTree \"4096,512,7\"; Default.ini key InstalledWorldsSubdirName \"InstalledWorlds\"; Sims3.ini key Stroller_MinimumPathLength \"5\"; local ini ?"
+      ]
+    },
+    "^atlas:rebase on \\(Enable=1, SliceMs=8, FallbackMs=200, Verbose=0\\), version 13, shape 92/92, 11 internal calls registered$": {
+      "match": [
+        "atlas:rebase on (Enable=1, SliceMs=8, FallbackMs=200, Verbose=0), version 13, shape 92/92, 11 internal calls registered"
+      ],
+      "noMatch": [
+        "atlas:rebase on (Enable=1, SliceMs=8, FallbackMs=200, Verbose=0), version 6, shape 92/92, 9 internal calls registered",
+        "atlas:rebase on (Enable=1, SliceMs=8, FallbackMs=200, Verbose=0), version 7, shape 92/92, 9 internal calls registered",
+        "atlas:rebase on (Enable=1, SliceMs=8, FallbackMs=200, Verbose=0), version 12, shape 92/92, 11 internal calls registered"
+      ]
+    },
+    "^w8192 routing: fallback": {
+      "match": [
+        "w8192 routing: fallback to the stored 14 bits: portal reference 0x1A004123 at (0, 0), graph 256 x 256 chunks",
+        "w8192 routing: fallback to the stored 14 bits: portal reference 0x00000064 at (100, 9000), graph 256 x 256 chunks, no world manager"
+      ],
+      "noMatch": [
+        "w8192 counters: routing graph 256 x 256 chunks, rebuilt 40 (above 16383: 22), fallback 0; paint wide tiles read 0 (largest index 0), read fails 0, tags written v3 0 v4 0, wide tiles written 0; wide maps kept at v3: small graph 0, player save 0",
+        "w8192 Routing R2 0x00654E83: installed (6 bytes, expected bytes matched, read back ok)"
+      ]
+    },
+    "FAILED": {
+      "match": [
+        "w8192 Routing R2 0x00654E83: FAILED (VirtualProtect failed)",
+        "w8192 Routing R1 0x0063DC60: rollback FAILED"
+      ],
+      "noMatch": [
+        "w8192 Routing: 0 of 7 sites installed (not installed, rolled back after a failed write)",
+        "w8192 self-check: PASS (210 checks, 0 failed)"
+      ]
+    },
+    "\\(PARTIAL\\)": {
+      "match": [
+        "w8192 Routing: 5 of 7 sites installed (PARTIAL)",
+        "w8192 PaintIndex: 3 of 7 sites installed (PARTIAL)"
+      ],
+      "noMatch": [
+        "w8192 Routing: 6 of 7 sites installed",
+        "w8192 PaintIndex: 0 of 7 sites installed (not installed)"
+      ]
+    },
+    "self-check: FAIL": {
+      "match": [
+        "w8192 self-check: FAIL (210 checks, 2 failed)",
+        "w8192 self-check: FAIL stub keeps xmm0-7, the x87 stack, its control word and MXCSR"
+      ],
+      "noMatch": [
+        "w8192 self-check: PASS (210 checks, 0 failed)",
+        "w8192: SKIP self-check failed; Routing=1 and PaintIndex=1 not installed"
+      ]
+    },
+    "READ-BACK DIFFERS": {
+      "match": [
+        "physics root: 4096 -> 8192 m at 0x00FEFBCC, read back 0x45800000 (READ-BACK DIFFERS), [World8192] PhysicsRoot=1"
+      ],
+      "noMatch": [
+        "physics root: 4096 -> 8192 m at 0x00FEFBCC, read back 0x46000000, [World8192] PhysicsRoot=1",
+        "w8192 Routing R2 0x00654E83: FAILED (read-back differs)"
+      ]
+    },
+    "^w8192: SKIP": {
+      "match": [
+        "w8192: SKIP not TS3W.exe Steam 1.67 (link stamp 0x5A1B2C3D, image size 0x00E60000); Routing=1 and PaintIndex=1 not installed, EA 1.69 is not mapped",
+        "w8192: SKIP self-check failed; Routing=1 and PaintIndex=1 not installed"
+      ],
+      "noMatch": [
+        "w8192 Routing R7 0x0082A1D4: skipped (a jump is already at 0x0082A1CF (another module owns the site))",
+        "scene quadtree: SKIP not the expected game image"
+      ]
+    },
+    "^atlas:rebase sea local: .* off": {
+      "match": [
+        "atlas:rebase sea local: SeaLocal=1 but surface writer: mov word [esp+0x26], 4 (w) differs: off",
+        "atlas:rebase sea local: SeaLocal=1 but the patch was not written (protection): off"
+      ],
+      "noMatch": [
+        "atlas:rebase sea local: SeaLocal=1, 0xB60A11 and 0xB60B33 patched (pond and sea vertices at * 1, w = 1: range [-32768.5, 32767.5) m)"
+      ]
+    },
+    "^atlas:rebase (FAULT|ERROR|DAMAGED) ": {
+      "match": [
+        "atlas:rebase FAULT in pass O"
+      ],
+      "noMatch": [
+        "atlas:rebase gate out: 1.00 ms, frames 2, slices 1"
+      ]
+    },
+    "^atlas:rebase (SKIP|off) ": {
+      "match": [
+        "atlas:rebase SKIP shape 0x66CE10",
+        "atlas:rebase off (Enable=0)"
+      ],
+      "noMatch": [
+        "atlas:rebase on (Enable=1, SliceMs=8, FallbackMs=200, Verbose=0), version 4, shape 77/77, 9 internal calls registered"
+      ]
+    },
+    "^atlas:rebase sea (window|range): ": {
+      "match": [
+        "atlas:rebase sea window: SeaWindow=1, sites 4/4",
+        "atlas:rebase sea range: SeaRange=1, 0xC0DD43 patched (sea tiles clamped to [-8192, 8191] m after EA's layout)"
+      ],
+      "noMatch": [
+        "atlas:rebase sea local: SeaLocal=1, 0xB60A11 and 0xB60B33 patched (pond and sea vertices at * 1, w = 1: range [-32768.5, 32767.5) m)"
+      ]
+    },
+    "^atlas:rebase sea local: ": {
+      "match": [
+        "atlas:rebase sea local: SeaLocal=1, 0xB60A11 and 0xB60B33 patched (pond and sea vertices at * 1, w = 1: range [-32768.5, 32767.5) m)"
+      ],
+      "noMatch": [
+        "atlas:rebase sea range: SeaRange=1, 0xC0DD43 patched (sea tiles clamped to [-8192, 8191] m after EA's layout)"
+      ]
+    },
+    "^ts3native 0\\.36\\.306-m1126b ": {
+      "match": [
+        "ts3native 0.36.306-m1126b 2026-11-26 10:00:00"
+      ],
+      "noMatch": [
+        "ts3native 0.36.305-m1124d 2026-11-24 13:40:00",
+        "ts3native 0.36.306-m1126 2026-11-26 10:00:00"
+      ]
+    },
+    "^OK   ea fix: PortalFlagRefs ": {
+      "match": [
+        "OK   ea fix: PortalFlagRefs (docs/67 §30.5): lot portal blocked-flag writes through pairs outside R are skipped (0x0082A1CF, 0x0082B6B1)"
+      ],
+      "noMatch": [
+        "SKIP ea fix: PortalFlagRefs: bytes at 0x0082A1CF / 0x0082B6B1 differ (another mod or a probe build owns them): not installed",
+        "OK   ea fix: WorldAStarRefs (docs/67 §30): world A* neighbours outside the routing graph are skipped (0x00676F2A)"
+      ]
+    },
+    "^atlas:rebase sea local: SeaLocal=1, 0xB60A11 and 0xB60B33 patched": {
+      "match": [
+        "atlas:rebase sea local: SeaLocal=1, 0xB60A11 and 0xB60B33 patched (pond and sea vertices at * 1, w = 1: range [-32768.5, 32767.5) m)"
+      ],
+      "noMatch": [
+        "atlas:rebase sea local: SeaLocal=1 but surface writer: movss xmm0, [0xFB2F6C] (x/z scale 4.0) differs: off",
+        "atlas:rebase sea range: SeaRange=1, 0xC0DD43 patched (sea tiles clamped to [-8192, 8191] m after EA's layout)"
+      ]
+    },
+    "^atlas: world script load: .* threw": {
+      "match": [
+        "atlas: world script load: rebase boot threw NullReferenceException: Object reference not set to an instance of an object"
+      ],
+      "noMatch": [
+        "atlas: world script load: rebase boot ok"
+      ]
+    },
+    "^atlas 0\\.3\\.21 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=4 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": {
+      "match": [
+        "atlas 0.3.21 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=4 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 09:48:44, TS3W.exe link stamp 0x52DEC247"
+      ],
+      "noMatch": [
+        "atlas 0.3.15 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=6 oop=3 seed=1 born=2 tiles=1 paint=1 heights=1 built Nov 27 2026 06:41:54, TS3W.exe link stamp 0x52DEC247",
+        "atlas 0.3.16 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=6 oop=3 seed=1 born=2 tiles=1 paint=1 heights=1 built Nov 27 2026 09:48:44, TS3W.exe link stamp 0x52DEC247",
+        "atlas 0.3.16 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=9 oop=3 seed=1 born=2 tiles=1 paint=1 heights=1 built Nov 27 2026 09:48:44, rundll32.exe link stamp 0xB91766EA",
+        "atlas 0.3.9 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 oop=1 seed=1 built Nov 26 2026 13:07:33, TS3W.exe link stamp 0x52DEC247",
+        "atlas 0.3.16 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=9 oop=3 seed=1 born=2 tiles=1 paint=1 heights=1 built Nov 27 2026 09:48:44, TS3W.exe link stamp 0x52DEC247",
+        "atlas 0.3.20-pre p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=12 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 09:48:44, rundll32.exe link stamp 0xB91766EA",
+        "atlas 0.3.18 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=12 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 09:48:44, TS3W.exe link stamp 0x52DEC247",
+        "atlas 0.3.20-pre p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=12 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 09:48:44, TS3W.exe link stamp 0x52DEC247",
+        "atlas 0.3.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 09:48:44, rundll32.exe link stamp 0xB91766EA",
+        "atlas 0.3.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 09:48:44, TS3W.exe link stamp 0x52DEC247"
+      ]
+    },
+    "tuning: broken script mod AtlasMod": {
+      "match": [
+        "ts3fixes: tuning: broken script mod AtlasMod: GetTypes failed, missing assembly Sims3StoreBuilder; skipped, other mods tuned"
+      ],
+      "noMatch": [
+        "ts3fixes: tuning: broken script mod icarusallsorts.WOBakeWithAnyIngredient: GetTypes failed, missing assembly icarusallsorts.CookWithAnyIngredient; skipped"
+      ]
+    },
+    "^atlas:rebase P3: .*, off: shape\\)": {
+      "match": [
+        "atlas:rebase P3: load hook 0xC6CF80 on; G map sites 3/5 (GridKeys=1, off: shape); R-7 key sites 7/7 match (CellKeys=1); InferredSlots=0"
+      ],
+      "noMatch": [
+        "atlas:rebase P3: load hook 0xC6CF80 on; G map sites 5/5 (GridKeys=1); R-7 key sites 7/7 match (CellKeys=1); InferredSlots=0"
+      ]
+    },
+    "^physics root: off \\(PhysicsRootM=0\\), 0x00FEFBCC holds 4096$": {
+      "match": [
+        "physics root: off (PhysicsRootM=0), 0x00FEFBCC holds 4096"
+      ],
+      "noMatch": [
+        "physics root: 4096 -> 8192 m at 0x00FEFBCC, read back 0x46000000",
+        "physics root: SKIP address not mapped (PhysicsRootM=8192)"
+      ]
+    },
+    "^physics root: 4096 -> 8192 m at 0x00FEFBCC, read back 0x46000000$": {
+      "match": [
+        "physics root: 4096 -> 8192 m at 0x00FEFBCC, read back 0x46000000"
+      ],
+      "noMatch": [
+        "physics root: off (PhysicsRootM=0), 0x00FEFBCC holds 4096",
+        "physics root: SKIP not the expected game image (reader 0x00000000, value 0, PhysicsRootM=8192)",
+        "physics root: 4096 -> 8192 m at 0x00FEFBCC, read back 0x45800000"
+      ]
+    },
+    "^scene quadtree: root 2048 x \\d+ x 2048 m, depth 6$": {
+      "match": [
+        "scene quadtree: root 2048 x 1024 x 2048 m, depth 6"
+      ],
+      "noMatch": [
+        "scene quadtree: root 4096 x 1024 x 4096 m, depth 7",
+        "scene quadtree: SKIP scene manager not made in 300 s",
+        "scene quadtree: root 2048 x 1024 x 2048 m, depth 7"
+      ]
+    },
+    "^scene quadtree: root 4096 x \\d+ x 4096 m, depth 7$": {
+      "match": [
+        "scene quadtree: root 4096 x 1024 x 4096 m, depth 7"
+      ],
+      "noMatch": [
+        "scene quadtree: root 2048 x 1024 x 2048 m, depth 6",
+        "scene quadtree: SKIP not the expected game image",
+        "scene quadtree: root 4096 x 1024 x 2048 m, depth 7"
+      ]
+    },
+    "^atlas 0\\.3\\.16 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=9 oop=\\d+ seed=\\d+ born=\\d+ tiles=\\d+ paint=\\d+ heights=\\d+ built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": {
+      "match": [
+        "atlas 0.3.16 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=9 oop=3 seed=1 born=2 tiles=1 paint=1 heights=1 built Nov 27 2026 09:48:44, TS3W.exe link stamp 0x52DEC247"
+      ],
+      "noMatch": [
+        "atlas 0.3.15 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=6 oop=3 seed=1 born=2 tiles=1 paint=1 heights=1 built Nov 27 2026 06:41:54, TS3W.exe link stamp 0x52DEC247",
+        "atlas 0.3.16 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=6 oop=3 seed=1 born=2 tiles=1 paint=1 heights=1 built Nov 27 2026 09:48:44, TS3W.exe link stamp 0x52DEC247",
+        "atlas 0.3.16 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=9 oop=3 seed=1 born=2 tiles=1 paint=1 heights=1 built Nov 27 2026 09:48:44, rundll32.exe link stamp 0xB91766EA",
+        "atlas 0.3.9 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 oop=1 seed=1 built Nov 26 2026 13:07:33, TS3W.exe link stamp 0x52DEC247"
+      ]
+    },
+    "^scene box: default 2048 m depth 6 -> 4096 m depth 7 ": {
+      "match": [
+        "scene box: default 2048 m depth 6 -> 4096 m depth 7 at 0x00EC9D23 / 0x00EC9D49, read back ok (an ini SceneQuadTree line still wins)"
+      ],
+      "noMatch": [
+        "scene box: default 2048 m depth 6 -> 8192 m depth 8 at 0x00EC9D23 / 0x00EC9D49, read back ok (an ini SceneQuadTree line still wins)",
+        "scene box: SKIP scene manager already made: app init ran before this install (held by [PagedLots] Oop=1?) (SceneQuadTreeM=4096, SceneQuadTreeDepth=0)",
+        "scene box: off (SceneQuadTreeM=0)",
+        "scene quadtree: root 2048 x 1024 x 2048 m, depth 6"
+      ]
+    },
+    "^atlas:script pkg=611eb58c ": {
+      "match": [
+        "atlas:script pkg=611eb58c (script half loadA-4)"
+      ],
+      "noMatch": [
+        "atlas:script pkg=273b675c (script half loadA-4)",
+        "atlas:script pkg=8cda3053 (script half loadA-4)"
+      ]
+    }
+  },
+  "jobs": [
+    {
+      "id": "atlas-cawstitched-farlot-verify-1128",
+      "note": "[est 35 min] [est 20 min] Atlas 4096 m RC world (G-008) with its 461 whole lots (Atlas docs/063 §12): source lot ids, buildings, objects and imposters carried by world-stitch.ts step 8, registered in the layer header lot index (tools/world-lots-inject.ts), then one CAW open, RebuildRoutingData and save (AtlasCawStitchedWR_4096.world, lot routing back for 182 lots), lot routing 0x046A7235 dropped. Same pins and switches as atlas-4096-a-load-save (main20n, [PagedLots] Probe=0). Load to live mode, make_household on 0x6C11001FE4606BD0 (x 2949, z 1221, past 2048 m), switch_household, route plans onto that lot and onto a Setra lot in the origin quadrant, four far poses, no save. Household rule: a test household made in this world; nothing here changes an existing Sim. Then: lot: routes, buy/sell, build_layout, CAS hair accept, 5 min play, save, reload.",
+      "asi": "game-copy/ts3native.asi.m1126b",
+      "iniBase": "game-copy/ts3native.ini.m1126b",
+      "fixesPackage": "game-copy/ts3fixes.package.m1126b",
+      "pinReason": "Pinned 2026-11-27 to atlas-main20n (boundless-atlas main 4dc6d22: rings page-in icall guards, fail-closed save gates, reader stand-down over 2048 m): game-copy/atlas-main20n-1127/atlas.asi (sha256 aa50842e4f1e7e31647344848f4f565c7ee75e6cf9fabbc6dd862bf6caa9f601, 0.3.21), oop game-copy/atlas-main20n-1127/atlas-oop.dll, script half game-copy/mod-sets/atlas-main20n-1127 (pkg=611eb58c); master set m1126b as atlas-4096-a-load-save.",
+      "save": "menu",
+      "noiseCheck": false,
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45,
+      "defaultIni": {
+        "Config.SceneQuadTree": "4096,512,7"
+      },
+      "extraAsi": {
+        "asi": "game-copy/atlas-main20n-1127/atlas.asi",
+        "sha256": "aa50842e4f1e7e31647344848f4f565c7ee75e6cf9fabbc6dd862bf6caa9f601",
+        "ini": {
+          "WorldSize.PhysicsRootM": 0,
+          "WorldSize.SceneQuadTreeM": 4096,
+          "Diag.ConfigProbe": 1,
+          "PagedLots.Probe": 0,
+          "Rebase.Enable": 1,
+          "Rebase.SliceMs": 8,
+          "Rebase.FallbackMs": 200,
+          "Rebase.Verbose": 0,
+          "Rebase.SeaWindow": 0,
+          "Rebase.SeaRange": 0,
+          "Rebase.SeaLocal": 0
+        },
+        "logRequire": {
+          "^config probe: SceneQuadTree source (?!not one of these ini files|none )": 1,
+          "^atlas:rebase on \\(Enable=1, SliceMs=8, FallbackMs=200, Verbose=0\\), version 13, shape 92/92, 11 internal calls registered$": 1,
+          "^atlas 0\\.3\\.21 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=4 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
+          "^physics root: off \\(PhysicsRootM=0\\), 0x00FEFBCC holds 4096$": 1,
+          "^scene quadtree: root 4096 x \\d+ x 4096 m, depth 7$": 1,
+          "^scene box: default 2048 m depth 6 -> 4096 m depth 7 ": 1,
+          "^atlas:script pkg=611eb58c ": 1
+        },
+        "logForbid": {
+          "FAILED": 0,
+          "\\(PARTIAL\\)": 0,
+          "self-check: FAIL": 0,
+          "READ-BACK DIFFERS": 0,
+          "^atlas:rebase (FAULT|ERROR|DAMAGED) ": 0,
+          "^atlas:rebase (SKIP|off) ": 0,
+          "^atlas: world script load: .* threw": 0,
+          "^atlas:rebase P3: .*, off: shape\\)": 0,
+          "^atlas:rebase sea (window|range|local): ": 0
+        }
+      },
+      "run": {
+        "repro": "atlas-cawstitched-farlot-cas2-1128"
+      },
+      "logRequire": {
+        "^ts3native 0\\.36\\.306-m1126b ": 1,
+        "^OK   ea fix: PortalFlagRefs ": 1
+      },
+      "logForbid": {
+        "tuning: broken script mod AtlasMod": 0
+      },
+      "ini": {
+        "IlPatch.Enabled": 1,
+        "IlPatch.ilp_tuneisolate": 1
+      },
+      "modSet": "game-copy/mod-sets/atlas-main20n-1127"
+    }
+  ]
+}

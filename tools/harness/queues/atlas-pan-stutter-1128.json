@@ -1,0 +1,126 @@
+{
+ "note": "RUN ORDER: control first (cheap), then stitched. Machine must be idle: node tools/harness/track.ts status. Atlas jobs need game-copy/atlas-main/atlas.asi (sha in the job). RERUN 1128b: world view = the game's map view (map_view step, camera_line keepOffset), [LotStream] counters on (Enabled, Log, Thumb).",
+ "agentPackage": "game-copy/ts3agent.package.pan1128b",
+ "stopQueueOnFail": true,
+ "regexCases": {
+  "^ts3native 0\\.36\\.307-m1126c ": {
+   "match": [
+    "ts3native 0.36.307-m1126c 2026-11-26 10:00:00"
+   ],
+   "noMatch": [
+    "ts3native 0.36.306-m1126b 2026-11-26 07:55:29",
+    "ts3native 0.36.305-m1124d 2026-11-24 13:40:00",
+    "ts3native 0.36.306-m1126 2026-11-26 10:00:00"
+   ]
+  },
+  "^atlas 0\\.3\\.\\d+ p1=\\d+ loadA=\\d+ w8192=\\d+ rings=\\d+ fz=\\d+ rebase=\\d+ built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": {
+   "match": [
+    "atlas 0.3.6 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 built Nov 26 2026 13:07:33, TS3W.exe link stamp 0x52DEC247"
+   ],
+   "noMatch": [
+    "atlas 0.3.6 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 built Nov 26 2026 13:07:33, rundll32.exe link stamp 0xB91766EA",
+    "atlas 0.2.2-p0 built Nov 26 2026 15:30:00, TS3W.exe link stamp 0x52DEC247"
+   ]
+  },
+  "^physics root: off \\(PhysicsRootM=0\\), 0x00FEFBCC holds 4096$": {
+   "match": [
+    "physics root: off (PhysicsRootM=0), 0x00FEFBCC holds 4096"
+   ],
+   "noMatch": [
+    "physics root: 4096 -> 8192 m at 0x00FEFBCC, read back 0x46000000",
+    "physics root: SKIP address not mapped (PhysicsRootM=8192)"
+   ]
+  },
+  "^scene quadtree: root 4096 x \\d+ x 4096 m, depth 7$": {
+   "match": [
+    "scene quadtree: root 4096 x 1024 x 4096 m, depth 7"
+   ],
+   "noMatch": [
+    "scene quadtree: root 2048 x 1024 x 2048 m, depth 6",
+    "scene quadtree: SKIP not the expected game image",
+    "scene quadtree: root 4096 x 1024 x 2048 m, depth 7"
+   ]
+  }
+ },
+ "jobs": [
+  {
+   "id": "pan-sv-control",
+   "note": "CONTROL vanilla Sunset Valley. Rodney 2026-11-28 (docs/367): scripted no-mouse world-view pan (camera_line, 200 m/s, 600 m height, 60 s). No Sim touched. Pass: PASS: camera sweep: 3 segments; scriptErrorsMax 0; read <tag>-camsweep.json (p50/p99/p99.9/max frame, >25/50/100 ms, Apex-rule hitches) and the camera_line status stats (dt / step per set, set-read gap). Needs a quiet machine for absolute numbers.",
+   "asi": "game-copy/ts3native.asi.m1126c",
+   "iniBase": "game-copy/ts3native.ini.m1126c",
+   "fixesPackage": "game-copy/ts3fixes.package.m1126c",
+   "pinReason": "[est 12 min] pan-stutter measurement; asi/ini/ts3fixes as atlas-p0-caw-1126-m1126c, agent = ts3agent.package.pan1128b (camera_line).",
+   "save": "menu",
+   "noiseCheck": false,
+   "scriptErrorsMax": 0,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "timeoutMin": 20,
+   "run": {
+    "profile": {
+     "minutes": 4,
+     "seed": 12345,
+     "repro": "atlas-pan-line-sv",
+     "loadWorld": "Sunset Valley.world",
+     "noSamplers": true
+    }
+   },
+   "logRequire": {
+    "^ts3native 0\\.36\\.307-m1126c ": 1
+   },
+   "ini": {
+    "LotStream.Enabled": 1,
+    "LotStream.Log": 1,
+    "LotStream.Thumb": 1
+   }
+  },
+  {
+   "id": "pan-stitched-wn-4096",
+   "note": "STITCHED world AtlasCawStitchedWN_4096. PREP: `node tools/world-gen.ts install game-copy/worlds/p0/AtlasCawStitchedWN_4096.world` (and --uninstall after). Rodney 2026-11-28 (docs/367): scripted no-mouse world-view pan (camera_line, 200 m/s, 600 m height, 60 s). No Sim touched. Pass: PASS: camera sweep: 3 segments; scriptErrorsMax 0; read <tag>-camsweep.json (p50/p99/p99.9/max frame, >25/50/100 ms, Apex-rule hitches) and the camera_line status stats (dt / step per set, set-read gap). Needs a quiet machine for absolute numbers.",
+   "asi": "game-copy/ts3native.asi.m1126c",
+   "iniBase": "game-copy/ts3native.ini.m1126c",
+   "fixesPackage": "game-copy/ts3fixes.package.m1126c",
+   "pinReason": "[est 12 min] pan-stutter measurement; asi/ini/ts3fixes as atlas-p0-caw-1126-m1126c, agent = ts3agent.package.pan1128b (camera_line).",
+   "save": "menu",
+   "noiseCheck": false,
+   "scriptErrorsMax": 0,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "timeoutMin": 20,
+   "defaultIni": {
+    "Config.SceneQuadTree": "4096,512,7"
+   },
+   "extraAsi": {
+    "asi": "game-copy/atlas-main/atlas.asi",
+    "sha256": "6ca42a08f72982a71d7a38079df350c614fb512249490810b8b7789f553b3354",
+    "ini": {
+     "WorldSize.PhysicsRootM": 0
+    },
+    "logRequire": {
+     "^atlas 0\\.3\\.\\d+ p1=\\d+ loadA=\\d+ w8192=\\d+ rings=\\d+ fz=\\d+ rebase=\\d+ built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
+     "^physics root: off \\(PhysicsRootM=0\\), 0x00FEFBCC holds 4096$": 1,
+     "^scene quadtree: root 4096 x \\d+ x 4096 m, depth 7$": 1
+    }
+   },
+   "run": {
+    "profile": {
+     "minutes": 4,
+     "seed": 12345,
+     "repro": "atlas-pan-line-4096",
+     "loadWorld": "AtlasCawStitchedWN_4096.world",
+     "noSamplers": true
+    }
+   },
+   "logRequire": {
+    "^ts3native 0\\.36\\.307-m1126c ": 1
+   },
+   "ini": {
+    "LotStream.Enabled": 1,
+    "LotStream.Log": 1,
+    "LotStream.Thumb": 1
+   }
+  }
+ ]
+}
