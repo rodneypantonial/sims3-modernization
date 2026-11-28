@@ -2841,3 +2841,6 @@ Budget per usage window (PLAN.md "Action plan"): lanes G + M 30%, lane H 50%, of
 | 2026-11-27 | 08:57 | 5h -, 7d 37% | G | atlas-8192-load-strip-8192 | |
 | 2026-11-27 | 09:03 | 5h -, 7d 38% | G | atlas-8192-load-thing-8192 | |
 | 2026-11-27 | 09:03 | 5h -, 7d 38% | G | atlas-8192-load-strip-8192 | |
+| 2026-11-28 | 10:22 | 5h -, 7d 74% | G | atlas-cawstitched-farlot-verify-1128 | |
+| 2026-11-28 | 11:04 | 5h -, 7d 74% | G | atlas-cawstitched-render-1128 | |
+| 2026-11-28 | 11:13 | 5h -, 7d 74% | G | atlas-cawstitched-render2-1128 | |

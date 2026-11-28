@@ -1,24 +1,8 @@
 {
- "note": "atlas-main20 repin (2026-11-27): Atlas main 0.3.20 (boundless-atlas 440b469), asi 7c972767, oop plugin 6afc79b5, script half atlas-main20b-1127 (7ed0c75, pkg=8cda3053). atlas-main18 repin (2026-11-27): Atlas main 0.3.19 (boundless-atlas 91f004e), asi d09ee22f, oop plugin 08f6bb06, script half atlas-main18-1127. atlas-ctor-rules-1126: Boundless Atlas docs/035 §10, constructor census levels of our own script stream reader ([PagedLots] CtorRules=1..5), five arms on Sunset Valley, all OwnReader=2 (compare against EA's read) with TestHarness=1 and LoaderA=1. Level 1 (today's default) first: its failure stops the queue. Build under test: Atlas main b2992a5 (0.3.12, feature/ctor-census-1126 769fbbe merged), game-copy/atlas-main7/atlas.asi sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7, package sha256 cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f. DRY-RUN ONLY so far. NOT RUNNABLE ON MASTER YET: the job key extraAsi comes with branch feature/atlas-p0-load-1126. Since 2026-11-27 (docs/031 §14): the reader calls are internal-call group 9; the repro waits for the p1 and reader flags (AtlasNative.Groups).",
+ "note": "atlas-main20l repin (2026-11-27): boundless-atlas 4b03bc4, asi 9005da21, script half atlas-main20l-1127 (pkg=74e6f8d9). atlas-main20l repin (2026-11-27): boundless-atlas 4b03bc4, asi 9005da21, script half atlas-main20l-1127 (pkg=74e6f8d9). atlas-main20k repin (2026-11-27): boundless-atlas b6251aa, asi 8a797610, script half atlas-main20k-1127 (pkg=fbfb9c46). atlas-main20j repin (2026-11-27): boundless-atlas 184c776 (P1 + rebase world-tree lot walk, TT empty guard), asi 67e214a2, script half unchanged (pkg=6ca205e2). atlas-main20g repin (2026-11-27): asi cd9f39ae (boundless-atlas f04f484: P1 io set alignment, config probe folder), oop ca9f1ff3, script half atlas-main20e-1127 (pkg=6ca205e2). atlas-main20e repin (2026-11-27): boundless-atlas 5a7dfb2 (gridkeys shape fix), asi 7b52e2c7, script half atlas-main20e-1127 (pkg=6ca205e2). atlas-main20d script half (2026-11-27): game-copy/mod-sets/atlas-main20d-1127 (boundless-atlas 58e0535, pkg=6ca205e2, [assembly: Tunable]) on the main20c asi. atlas-main20c repin (2026-11-27): Atlas main 0.3.21 (boundless-atlas d240e1f), asi 0943acb6, oop plugin 6afc79b5, script half atlas-main20c-1127 (pkg=273b675c). atlas-main20 repin (2026-11-27): Atlas main 0.3.20 (boundless-atlas 440b469), asi 7c972767, oop plugin 6afc79b5, script half atlas-main20b-1127 (7ed0c75, pkg=8cda3053). atlas-main18 repin (2026-11-27): Atlas main 0.3.19 (boundless-atlas 91f004e), asi d09ee22f, oop plugin 08f6bb06, script half atlas-main18-1127. atlas-ctor-rules-1126: Boundless Atlas docs/035 §10, constructor census levels of our own script stream reader ([PagedLots] CtorRules=1..5), five arms on Sunset Valley, all OwnReader=2 (compare against EA's read) with TestHarness=1 and LoaderA=1. Level 1 (today's default) first: its failure stops the queue. Build under test: Atlas main b2992a5 (0.3.12, feature/ctor-census-1126 769fbbe merged), game-copy/atlas-main7/atlas.asi sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7, package sha256 cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f. DRY-RUN ONLY so far. NOT RUNNABLE ON MASTER YET: the job key extraAsi comes with branch feature/atlas-p0-load-1126. Since 2026-11-27 (docs/031 §14): the reader calls are internal-call group 9; the repro waits for the p1 and reader flags (AtlasNative.Groups).",
  "agentPackage": "game-copy/ts3agent.package.m1126",
  "stopQueueOnFail": false,
  "regexCases": {
-  "^atlas 0\\.3\\.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": {
-   "match": [
-    "atlas 0.3.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247"
-   ],
-   "noMatch": [
-    "atlas 0.3.11 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 oop=1 seed=1 born=2 built Nov 26 2026 23:44:43, TS3W.exe link stamp 0x52DEC247",
-    "atlas 0.3.120 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 oop=1 seed=1 born=2 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247",
-    "atlas 0.3.8 p1=2 loadA=4 w8192=1 rings=1 fz=1 rebase=1 oop=1 seed=1 built Nov 26 2026 14:00:00, TS3W.exe link stamp 0x52DEC247",
-    "atlas 0.3.12 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 oop=1 seed=1 born=2 built Nov 27 2026 00:13:40, rundll32.exe link stamp 0xB91766EA",
-    "atlas 0.3.12 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 oop=1 seed=1 born=2 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247",
-    "atlas 0.3.20-pre p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=12 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, rundll32.exe link stamp 0xB91766EA",
-    "atlas 0.3.18 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=12 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247",
-    "atlas 0.3.20-pre p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=12 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247",
-    "atlas 0.3.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, rundll32.exe link stamp 0xB91766EA"
-   ]
-  },
   "^paged lots: probe on \\(Probe=1, FarM=250\\), 25 internal calls registered, ": {
    "match": [
     "paged lots: probe on (Probe=1, FarM=250), 25 internal calls registered, command file atlas-cmd.txt next to the asi"
@@ -446,6 +430,65 @@
     "paged lots: LotRect=2 (docs/058 G-666: distance to the lot rectangle)",
     "paged lots: probe on (Probe=1, FarM=250), 25 internal calls registered, ProbeVerbose=0"
    ]
+  },
+  "^atlas: world script load: .* threw": {
+   "match": [
+    "atlas: world script load: rebase boot threw NullReferenceException: Object reference not set to an instance of an object"
+   ],
+   "noMatch": [
+    "atlas: world script load: rebase boot ok"
+   ]
+  },
+  "^atlas 0\\.3\\.21 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=4 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": {
+   "match": [
+    "atlas 0.3.21 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=4 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247"
+   ],
+   "noMatch": [
+    "atlas 0.3.11 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 oop=1 seed=1 born=2 built Nov 26 2026 23:44:43, TS3W.exe link stamp 0x52DEC247",
+    "atlas 0.3.120 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 oop=1 seed=1 born=2 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247",
+    "atlas 0.3.8 p1=2 loadA=4 w8192=1 rings=1 fz=1 rebase=1 oop=1 seed=1 built Nov 26 2026 14:00:00, TS3W.exe link stamp 0x52DEC247",
+    "atlas 0.3.12 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 oop=1 seed=1 born=2 built Nov 27 2026 00:13:40, rundll32.exe link stamp 0xB91766EA",
+    "atlas 0.3.12 p1=2 loadA=4 w8192=1 rings=2 fz=1 rebase=2 oop=1 seed=1 born=2 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247",
+    "atlas 0.3.20-pre p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=12 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, rundll32.exe link stamp 0xB91766EA",
+    "atlas 0.3.18 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=12 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247",
+    "atlas 0.3.20-pre p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=12 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247",
+    "atlas 0.3.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, rundll32.exe link stamp 0xB91766EA",
+    "atlas 0.3.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built Nov 27 2026 00:13:40, TS3W.exe link stamp 0x52DEC247"
+   ]
+  },
+  "^atlas:script init failed: ": {
+   "match": [
+    "atlas:script init failed: Instantiator threw TypeInitializationException"
+   ],
+   "noMatch": [
+    "atlas:script pkg=6ca205e2 (script half loadA-4)",
+    "atlas:ready 3 early lines written late (said before the log call was registered)"
+   ]
+  },
+  "tuning: broken script mod AtlasMod": {
+   "match": [
+    "ts3fixes: tuning: broken script mod AtlasMod: GetTypes failed, missing assembly Sims3StoreBuilder; skipped, other mods tuned"
+   ],
+   "noMatch": [
+    "ts3fixes: tuning: broken script mod icarusallsorts.WOBakeWithAnyIngredient: GetTypes failed, missing assembly icarusallsorts.CookWithAnyIngredient; skipped"
+   ]
+  },
+  "^atlas:rebase P3: .*, off: shape\\)": {
+   "match": [
+    "atlas:rebase P3: load hook 0xC6CF80 on; G map sites 3/5 (GridKeys=1, off: shape); R-7 key sites 7/7 match (CellKeys=1); InferredSlots=0"
+   ],
+   "noMatch": [
+    "atlas:rebase P3: load hook 0xC6CF80 on; G map sites 5/5 (GridKeys=1); R-7 key sites 7/7 match (CellKeys=1); InferredSlots=0"
+   ]
+  },
+  "^atlas:script pkg=ddc1c4ce ": {
+   "match": [
+    "atlas:script pkg=ddc1c4ce (script half loadA-4)"
+   ],
+   "noMatch": [
+    "atlas:script pkg=273b675c (script half loadA-4)",
+    "atlas:script pkg=8cda3053 (script half loadA-4)"
+   ]
   }
  },
  "jobs": [
@@ -455,16 +498,16 @@
    "asi": "game-copy/ts3native.asi.m1126b",
    "iniBase": "game-copy/ts3native.ini.m1126b",
    "fixesPackage": "game-copy/ts3fixes.package.m1126b",
-   "pinReason": "Repinned 2026-11-27 to Atlas main 0.3.20 (boundless-atlas 440b469, docs/031 §16.8.1: rebase 13, P1 25 internal calls, houseboat native 2): game-copy/atlas-main20-1127/atlas.asi (sha256 7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f), oop plugin game-copy/atlas-main20-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062), script half game-copy/mod-sets/atlas-main20b-1127 (Atlas main 7ed0c75, houseboat StartWatch fallback fix: atlas.package sha256 330e6971a8d77267f61f8a1e61356442c50cda6e475682b3ab1c50da2f1685eb, pkg=8cda3053). Before: Repinned 2026-11-27 to Atlas main 0.3.19 (boundless-atlas 91f004e: 0.3.18 91e12c0 plus the config probe fix, docs/052 §3.1): game-copy/atlas-main18d-1127/atlas.asi (sha256 48cc2eb9eb4a53f8c913f6e1614cc12d9b39d43a19148bd171b4a312d9c76b86), oop plugin game-copy/atlas-main18b-1127/atlas-oop.dll (sha256 08f6bb06d8250e7f2acd31c7e29674d8a9e11d77a49565b39226df2b5083d7e5), script half game-copy/mod-sets/atlas-main18-1127 (atlas.package sha256 770dd71098564d8271f5f8834489a176a7643f1f2efc3387631a2a5734795ae6). Before: Repinned 2026-11-27 to the merged Atlas main build (boundless-atlas main b2992a5: merges f3d9348 of feature/stream-reader-1126 b840469 and b2992a5 of feature/ctor-census-1126 769fbbe; atlas 0.3.12, docs/031 §14): game-copy/atlas-main7/atlas.asi (sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7) and game-copy/mod-sets/atlas-main7 (atlas.package cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f). OwnReader, LoadAState, ScriptStream and ClassInited are internal-call group 9 reader; every other feature switch off",
+   "pinReason": "Repinned 2026-11-27 to atlas-main20l (boundless-atlas main 4b03bc4 = b6251aa + bugfix/p1-seed-reflection-1127 bb8dcbf: P1 seed uses swap-safe delegate calls, no MethodInfo.Invoke on ts3fixes swap targets): game-copy/atlas-main20m-1127/atlas.asi (sha256 7424dce790eab843293bbb70d8a4f25ab07129f08c5fb28c9b527de80aa483bb, 0.3.21), oop game-copy/atlas-main20m-1127/atlas-oop.dll, script half game-copy/mod-sets/atlas-main20l-1127 (atlas.package sha256 a864ed23, pkg=74e6f8d9). Repinned 2026-11-27 to atlas-main20k (boundless-atlas main b6251aa = 184c776 + bugfix/rebase-p1-guard-1127 13fb99f (slidecheck asks Has(kP1), icall guard audit) + bugfix/atlas-log-one-writer-1127 ef7435c (one atlas.log writer)): game-copy/atlas-main20k-1127/atlas.asi (sha256 8a797610f0323c48da625fbb0689873018cf77ca5aba35399aefe105deb1ec91, 0.3.21), script half game-copy/mod-sets/atlas-main20k-1127 (pkg=fbfb9c46). Repinned 2026-11-27 to atlas-main20j (boundless-atlas main 184c776 = be865d0 + bugfix/p1-lot-lookup-1127 8101c3c (one world-tree lot walk for P1 and the rebase lot footprint, worldlots.h) + bugfix/tt-empty-guard-1127 2b4786b): game-copy/atlas-main20j-1127/atlas.asi (sha256 67e214a2c3dbf21286847ec0f721167bbd98765814c5f8e3713ff3ac7374b297, still 0.3.21), oop game-copy/atlas-main20j-1127/atlas-oop.dll (a64615d1), script half unchanged (atlas-main20e-1127 set, pkg=6ca205e2). Repinned 2026-11-27 to atlas-main20g (boundless-atlas main f04f484 = 1314264 + bugfix/p1-inspect-ioset-1127 728198b (P1 io set buffers 16-byte aligned, the movaps fault at 0x00936EF1) + bugfix/config-probe-ini-dir-1127 c72ae70 (config probe reads Default.ini from EA's config folder)): game-copy/atlas-main20g-1127/atlas.asi (sha256 cd9f39ae761bbf8b07487b3b5afe64edc9441a0b1b9fd1805f151b45c6e0fd82, still 0.3.21), oop plugin game-copy/atlas-main20g-1127/atlas-oop.dll (sha256 ca9f1ff3e59854a73f3c7d79ed4a093db83901c186b093c8959335e5ae1f8ee7, same page core 0x8185382E), script half atlas-main20e-1127 (pkg=6ca205e2, script unchanged). Repinned 2026-11-27 to atlas-main20e (boundless-atlas main 5a7dfb2 = 58e0535 + bugfix/gridkeys-shape-1127 f431eb2: kShapeGrid shoreline rows at 0x66F8E2 / 0x66F8F0, G map sites 5/5 on Steam): game-copy/atlas-main20e-1127/atlas.asi (sha256 7b52e2c7f09fbdce1966c14d83072ef6ee92f9abfc0ecad5f6315e5dfccf827f, still 0.3.21), oop plugin game-copy/atlas-main20e-1127/atlas-oop.dll (6afc79b5, unchanged), script half game-copy/mod-sets/atlas-main20e-1127 (same atlas.package as main20d, pkg=6ca205e2). GridKeys=1 jobs require G map sites 5/5; every job forbids \"off: shape\". Script half repinned 2026-11-27 to game-copy/mod-sets/atlas-main20d-1127 (boundless-atlas 58e0535: AtlasMod gets [assembly: Tunable], so the game runs its tuning and the Instantiator constructor; atlas.package sha256 886052ac42edd9abee3bf01bbb1fca2185eea252ceb958ce2cab97ad56167a6c, pkg=6ca205e2), asi and oop plugin as main20c; [IlPatch] ilp_tuneisolate=1 pinned so a failed Atlas GetTypes cannot kill other mods' tuning. Repinned 2026-11-27 to Atlas main 0.3.21 (boundless-atlas d240e1f, docs/031 §16.9.1: D6 gate fix, guarded script boots, early lines, Groups stage/early, oop=4): game-copy/atlas-main20c-1127/atlas.asi (sha256 0943acb6e723c9ff1c3305c39ece47086a154357aab31d74cc0b77c660198798), oop plugin game-copy/atlas-main20c-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062, unchanged), script half game-copy/mod-sets/atlas-main20c-1127 (atlas.package sha256 dcbe7bb1536e744370f601824f079e0fe570f7b16772d78ef906aa6b25e17630, pkg=273b675c). Before: Repinned 2026-11-27 to Atlas main 0.3.20 (boundless-atlas 440b469, docs/031 §16.8.1: rebase 13, P1 25 internal calls, houseboat native 2): game-copy/atlas-main20-1127/atlas.asi (sha256 7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f), oop plugin game-copy/atlas-main20-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062), script half game-copy/mod-sets/atlas-main20b-1127 (Atlas main 7ed0c75, houseboat StartWatch fallback fix: atlas.package sha256 330e6971a8d77267f61f8a1e61356442c50cda6e475682b3ab1c50da2f1685eb, pkg=8cda3053). Before: Repinned 2026-11-27 to Atlas main 0.3.19 (boundless-atlas 91f004e: 0.3.18 91e12c0 plus the config probe fix, docs/052 §3.1): game-copy/atlas-main18d-1127/atlas.asi (sha256 48cc2eb9eb4a53f8c913f6e1614cc12d9b39d43a19148bd171b4a312d9c76b86), oop plugin game-copy/atlas-main18b-1127/atlas-oop.dll (sha256 08f6bb06d8250e7f2acd31c7e29674d8a9e11d77a49565b39226df2b5083d7e5), script half game-copy/mod-sets/atlas-main18-1127 (atlas.package sha256 770dd71098564d8271f5f8834489a176a7643f1f2efc3387631a2a5734795ae6). Before: Repinned 2026-11-27 to the merged Atlas main build (boundless-atlas main b2992a5: merges f3d9348 of feature/stream-reader-1126 b840469 and b2992a5 of feature/ctor-census-1126 769fbbe; atlas 0.3.12, docs/031 §14): game-copy/atlas-main7/atlas.asi (sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7) and game-copy/mod-sets/atlas-main7 (atlas.package cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f). OwnReader, LoadAState, ScriptStream and ClassInited are internal-call group 9 reader; every other feature switch off",
    "save": "Baseline-SV",
-   "modSet": "game-copy/mod-sets/atlas-main20b-1127",
+   "modSet": "game-copy/mod-sets/atlas-main20m-1127",
    "rewind": false,
    "noiseCheck": false,
    "scriptErrorsMax": 0,
    "timeoutMin": 90,
    "extraAsi": {
-    "asi": "game-copy/atlas-main20-1127/atlas.asi",
-    "sha256": "7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f",
+    "asi": "game-copy/atlas-main20m-1127/atlas.asi",
+    "sha256": "7424dce790eab843293bbb70d8a4f25ab07129f08c5fb28c9b527de80aa483bb",
     "ini": {
      "WorldSize.PhysicsRootM": 0,
      "PagedLots.Probe": 1,
@@ -479,7 +522,6 @@
      "PagedLots.CtorRules": 1
     },
     "logRequire": {
-     "^atlas 0\\.3\\.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
      "^paged lots: probe on \\(Probe=1, FarM=250\\), 25 internal calls registered, ": 1,
      "^p1 self-check: PASS \\(\\d+ checks, 0 failed\\), page format version 1, header 64 bytes$": 1,
      "^atlas:loadA self-check PASS \\(\\d+ checks, 0 failed\\)$": 1,
@@ -500,7 +542,9 @@
      "^atlas:reader summary lot=0x[0-9A-F]{16} run: our graph, loadA 0, .*, census unsafe \\d+ of \\d+ \\(ctor rules 1, initializers ran \\d+, not yet \\d+, unknown \\d+, native faults \\d+\\), worst tick ": 6,
      "^atlas:reader compare-result lot=0x[0-9A-F]{16} \\d+ records, 0 differ: PASS$": 6,
      "^atlas:icalls reader: 4 registered \\d+ ms after start of wait \\(domain 0x[0-9A-F]{8}\\), group 9 flag set$": 1,
-     "^paged lots: LotRect=[01] \\(docs/058 G-666: distance to the lot rectangle\\)$": 1
+     "^paged lots: LotRect=[01] \\(docs/058 G-666: distance to the lot rectangle\\)$": 1,
+     "^atlas 0\\.3\\.21 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=4 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
+     "^atlas:script pkg=ddc1c4ce ": 1
     },
     "logForbid": {
      "^atlas:loadA dispatch-ea ": 0,
@@ -514,7 +558,10 @@
      "^atlas:reader (fallback|late-fallback|refused|dropped) ": 0,
      "^atlas:reader compare-result .*: FAIL$": 0,
      "^atlas:reader start lot=0x0{16} self-check FAIL": 0,
-     "^atlas:icalls \\S+ SKIP ": 0
+     "^atlas:icalls \\S+ SKIP ": 0,
+     "^atlas: world script load: .* threw": 0,
+     "^atlas:script init failed: ": 0,
+     "^atlas:rebase P3: .*, off: shape\\)": 0
     }
    },
    "run": {
@@ -523,6 +570,13 @@
    "stopQueueOnFail": true,
    "logRequire": {
     "^ts3native 0\\.36\\.306-m1126b ": 1
+   },
+   "logForbid": {
+    "tuning: broken script mod AtlasMod": 0
+   },
+   "ini": {
+    "IlPatch.Enabled": 1,
+    "IlPatch.ilp_tuneisolate": 1
    }
   },
   {
@@ -531,16 +585,16 @@
    "asi": "game-copy/ts3native.asi.m1126b",
    "iniBase": "game-copy/ts3native.ini.m1126b",
    "fixesPackage": "game-copy/ts3fixes.package.m1126b",
-   "pinReason": "Repinned 2026-11-27 to Atlas main 0.3.20 (boundless-atlas 440b469, docs/031 §16.8.1: rebase 13, P1 25 internal calls, houseboat native 2): game-copy/atlas-main20-1127/atlas.asi (sha256 7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f), oop plugin game-copy/atlas-main20-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062), script half game-copy/mod-sets/atlas-main20b-1127 (Atlas main 7ed0c75, houseboat StartWatch fallback fix: atlas.package sha256 330e6971a8d77267f61f8a1e61356442c50cda6e475682b3ab1c50da2f1685eb, pkg=8cda3053). Before: Repinned 2026-11-27 to Atlas main 0.3.19 (boundless-atlas 91f004e: 0.3.18 91e12c0 plus the config probe fix, docs/052 §3.1): game-copy/atlas-main18d-1127/atlas.asi (sha256 48cc2eb9eb4a53f8c913f6e1614cc12d9b39d43a19148bd171b4a312d9c76b86), oop plugin game-copy/atlas-main18b-1127/atlas-oop.dll (sha256 08f6bb06d8250e7f2acd31c7e29674d8a9e11d77a49565b39226df2b5083d7e5), script half game-copy/mod-sets/atlas-main18-1127 (atlas.package sha256 770dd71098564d8271f5f8834489a176a7643f1f2efc3387631a2a5734795ae6). Before: Repinned 2026-11-27 to the merged Atlas main build (boundless-atlas main b2992a5: merges f3d9348 of feature/stream-reader-1126 b840469 and b2992a5 of feature/ctor-census-1126 769fbbe; atlas 0.3.12, docs/031 §14): game-copy/atlas-main7/atlas.asi (sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7) and game-copy/mod-sets/atlas-main7 (atlas.package cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f). OwnReader, LoadAState, ScriptStream and ClassInited are internal-call group 9 reader; every other feature switch off",
+   "pinReason": "Repinned 2026-11-27 to atlas-main20l (boundless-atlas main 4b03bc4 = b6251aa + bugfix/p1-seed-reflection-1127 bb8dcbf: P1 seed uses swap-safe delegate calls, no MethodInfo.Invoke on ts3fixes swap targets): game-copy/atlas-main20m-1127/atlas.asi (sha256 7424dce790eab843293bbb70d8a4f25ab07129f08c5fb28c9b527de80aa483bb, 0.3.21), oop game-copy/atlas-main20m-1127/atlas-oop.dll, script half game-copy/mod-sets/atlas-main20l-1127 (atlas.package sha256 a864ed23, pkg=74e6f8d9). Repinned 2026-11-27 to atlas-main20k (boundless-atlas main b6251aa = 184c776 + bugfix/rebase-p1-guard-1127 13fb99f (slidecheck asks Has(kP1), icall guard audit) + bugfix/atlas-log-one-writer-1127 ef7435c (one atlas.log writer)): game-copy/atlas-main20k-1127/atlas.asi (sha256 8a797610f0323c48da625fbb0689873018cf77ca5aba35399aefe105deb1ec91, 0.3.21), script half game-copy/mod-sets/atlas-main20k-1127 (pkg=fbfb9c46). Repinned 2026-11-27 to atlas-main20j (boundless-atlas main 184c776 = be865d0 + bugfix/p1-lot-lookup-1127 8101c3c (one world-tree lot walk for P1 and the rebase lot footprint, worldlots.h) + bugfix/tt-empty-guard-1127 2b4786b): game-copy/atlas-main20j-1127/atlas.asi (sha256 67e214a2c3dbf21286847ec0f721167bbd98765814c5f8e3713ff3ac7374b297, still 0.3.21), oop game-copy/atlas-main20j-1127/atlas-oop.dll (a64615d1), script half unchanged (atlas-main20e-1127 set, pkg=6ca205e2). Repinned 2026-11-27 to atlas-main20g (boundless-atlas main f04f484 = 1314264 + bugfix/p1-inspect-ioset-1127 728198b (P1 io set buffers 16-byte aligned, the movaps fault at 0x00936EF1) + bugfix/config-probe-ini-dir-1127 c72ae70 (config probe reads Default.ini from EA's config folder)): game-copy/atlas-main20g-1127/atlas.asi (sha256 cd9f39ae761bbf8b07487b3b5afe64edc9441a0b1b9fd1805f151b45c6e0fd82, still 0.3.21), oop plugin game-copy/atlas-main20g-1127/atlas-oop.dll (sha256 ca9f1ff3e59854a73f3c7d79ed4a093db83901c186b093c8959335e5ae1f8ee7, same page core 0x8185382E), script half atlas-main20e-1127 (pkg=6ca205e2, script unchanged). Repinned 2026-11-27 to atlas-main20e (boundless-atlas main 5a7dfb2 = 58e0535 + bugfix/gridkeys-shape-1127 f431eb2: kShapeGrid shoreline rows at 0x66F8E2 / 0x66F8F0, G map sites 5/5 on Steam): game-copy/atlas-main20e-1127/atlas.asi (sha256 7b52e2c7f09fbdce1966c14d83072ef6ee92f9abfc0ecad5f6315e5dfccf827f, still 0.3.21), oop plugin game-copy/atlas-main20e-1127/atlas-oop.dll (6afc79b5, unchanged), script half game-copy/mod-sets/atlas-main20e-1127 (same atlas.package as main20d, pkg=6ca205e2). GridKeys=1 jobs require G map sites 5/5; every job forbids \"off: shape\". Script half repinned 2026-11-27 to game-copy/mod-sets/atlas-main20d-1127 (boundless-atlas 58e0535: AtlasMod gets [assembly: Tunable], so the game runs its tuning and the Instantiator constructor; atlas.package sha256 886052ac42edd9abee3bf01bbb1fca2185eea252ceb958ce2cab97ad56167a6c, pkg=6ca205e2), asi and oop plugin as main20c; [IlPatch] ilp_tuneisolate=1 pinned so a failed Atlas GetTypes cannot kill other mods' tuning. Repinned 2026-11-27 to Atlas main 0.3.21 (boundless-atlas d240e1f, docs/031 §16.9.1: D6 gate fix, guarded script boots, early lines, Groups stage/early, oop=4): game-copy/atlas-main20c-1127/atlas.asi (sha256 0943acb6e723c9ff1c3305c39ece47086a154357aab31d74cc0b77c660198798), oop plugin game-copy/atlas-main20c-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062, unchanged), script half game-copy/mod-sets/atlas-main20c-1127 (atlas.package sha256 dcbe7bb1536e744370f601824f079e0fe570f7b16772d78ef906aa6b25e17630, pkg=273b675c). Before: Repinned 2026-11-27 to Atlas main 0.3.20 (boundless-atlas 440b469, docs/031 §16.8.1: rebase 13, P1 25 internal calls, houseboat native 2): game-copy/atlas-main20-1127/atlas.asi (sha256 7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f), oop plugin game-copy/atlas-main20-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062), script half game-copy/mod-sets/atlas-main20b-1127 (Atlas main 7ed0c75, houseboat StartWatch fallback fix: atlas.package sha256 330e6971a8d77267f61f8a1e61356442c50cda6e475682b3ab1c50da2f1685eb, pkg=8cda3053). Before: Repinned 2026-11-27 to Atlas main 0.3.19 (boundless-atlas 91f004e: 0.3.18 91e12c0 plus the config probe fix, docs/052 §3.1): game-copy/atlas-main18d-1127/atlas.asi (sha256 48cc2eb9eb4a53f8c913f6e1614cc12d9b39d43a19148bd171b4a312d9c76b86), oop plugin game-copy/atlas-main18b-1127/atlas-oop.dll (sha256 08f6bb06d8250e7f2acd31c7e29674d8a9e11d77a49565b39226df2b5083d7e5), script half game-copy/mod-sets/atlas-main18-1127 (atlas.package sha256 770dd71098564d8271f5f8834489a176a7643f1f2efc3387631a2a5734795ae6). Before: Repinned 2026-11-27 to the merged Atlas main build (boundless-atlas main b2992a5: merges f3d9348 of feature/stream-reader-1126 b840469 and b2992a5 of feature/ctor-census-1126 769fbbe; atlas 0.3.12, docs/031 §14): game-copy/atlas-main7/atlas.asi (sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7) and game-copy/mod-sets/atlas-main7 (atlas.package cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f). OwnReader, LoadAState, ScriptStream and ClassInited are internal-call group 9 reader; every other feature switch off",
    "save": "Baseline-SV",
-   "modSet": "game-copy/mod-sets/atlas-main20b-1127",
+   "modSet": "game-copy/mod-sets/atlas-main20m-1127",
    "rewind": false,
    "noiseCheck": false,
    "scriptErrorsMax": 0,
    "timeoutMin": 90,
    "extraAsi": {
-    "asi": "game-copy/atlas-main20-1127/atlas.asi",
-    "sha256": "7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f",
+    "asi": "game-copy/atlas-main20m-1127/atlas.asi",
+    "sha256": "7424dce790eab843293bbb70d8a4f25ab07129f08c5fb28c9b527de80aa483bb",
     "ini": {
      "WorldSize.PhysicsRootM": 0,
      "PagedLots.Probe": 1,
@@ -555,7 +609,6 @@
      "PagedLots.CtorRules": 2
     },
     "logRequire": {
-     "^atlas 0\\.3\\.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
      "^paged lots: probe on \\(Probe=1, FarM=250\\), 25 internal calls registered, ": 1,
      "^p1 self-check: PASS \\(\\d+ checks, 0 failed\\), page format version 1, header 64 bytes$": 1,
      "^atlas:loadA self-check PASS \\(\\d+ checks, 0 failed\\)$": 1,
@@ -576,7 +629,9 @@
      "^atlas:reader summary lot=0x[0-9A-F]{16} run: our graph, loadA 0, .*, census unsafe \\d+ of \\d+ \\(ctor rules 2, initializers ran \\d+, not yet \\d+, unknown \\d+, native faults \\d+\\), worst tick ": 6,
      "^atlas:reader compare-result lot=0x[0-9A-F]{16} \\d+ records, 0 differ: PASS$": 6,
      "^atlas:icalls reader: 4 registered \\d+ ms after start of wait \\(domain 0x[0-9A-F]{8}\\), group 9 flag set$": 1,
-     "^paged lots: LotRect=[01] \\(docs/058 G-666: distance to the lot rectangle\\)$": 1
+     "^paged lots: LotRect=[01] \\(docs/058 G-666: distance to the lot rectangle\\)$": 1,
+     "^atlas 0\\.3\\.21 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=4 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
+     "^atlas:script pkg=ddc1c4ce ": 1
     },
     "logForbid": {
      "^atlas:loadA dispatch-ea ": 0,
@@ -590,7 +645,10 @@
      "^atlas:reader (fallback|late-fallback|refused|dropped) ": 0,
      "^atlas:reader compare-result .*: FAIL$": 0,
      "^atlas:reader start lot=0x0{16} self-check FAIL": 0,
-     "^atlas:icalls \\S+ SKIP ": 0
+     "^atlas:icalls \\S+ SKIP ": 0,
+     "^atlas: world script load: .* threw": 0,
+     "^atlas:script init failed: ": 0,
+     "^atlas:rebase P3: .*, off: shape\\)": 0
     }
    },
    "run": {
@@ -598,6 +656,13 @@
    },
    "logRequire": {
     "^ts3native 0\\.36\\.306-m1126b ": 1
+   },
+   "logForbid": {
+    "tuning: broken script mod AtlasMod": 0
+   },
+   "ini": {
+    "IlPatch.Enabled": 1,
+    "IlPatch.ilp_tuneisolate": 1
    }
   },
   {
@@ -606,16 +671,16 @@
    "asi": "game-copy/ts3native.asi.m1126b",
    "iniBase": "game-copy/ts3native.ini.m1126b",
    "fixesPackage": "game-copy/ts3fixes.package.m1126b",
-   "pinReason": "Repinned 2026-11-27 to Atlas main 0.3.20 (boundless-atlas 440b469, docs/031 §16.8.1: rebase 13, P1 25 internal calls, houseboat native 2): game-copy/atlas-main20-1127/atlas.asi (sha256 7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f), oop plugin game-copy/atlas-main20-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062), script half game-copy/mod-sets/atlas-main20b-1127 (Atlas main 7ed0c75, houseboat StartWatch fallback fix: atlas.package sha256 330e6971a8d77267f61f8a1e61356442c50cda6e475682b3ab1c50da2f1685eb, pkg=8cda3053). Before: Repinned 2026-11-27 to Atlas main 0.3.19 (boundless-atlas 91f004e: 0.3.18 91e12c0 plus the config probe fix, docs/052 §3.1): game-copy/atlas-main18d-1127/atlas.asi (sha256 48cc2eb9eb4a53f8c913f6e1614cc12d9b39d43a19148bd171b4a312d9c76b86), oop plugin game-copy/atlas-main18b-1127/atlas-oop.dll (sha256 08f6bb06d8250e7f2acd31c7e29674d8a9e11d77a49565b39226df2b5083d7e5), script half game-copy/mod-sets/atlas-main18-1127 (atlas.package sha256 770dd71098564d8271f5f8834489a176a7643f1f2efc3387631a2a5734795ae6). Before: Repinned 2026-11-27 to the merged Atlas main build (boundless-atlas main b2992a5: merges f3d9348 of feature/stream-reader-1126 b840469 and b2992a5 of feature/ctor-census-1126 769fbbe; atlas 0.3.12, docs/031 §14): game-copy/atlas-main7/atlas.asi (sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7) and game-copy/mod-sets/atlas-main7 (atlas.package cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f). OwnReader, LoadAState, ScriptStream and ClassInited are internal-call group 9 reader; every other feature switch off",
+   "pinReason": "Repinned 2026-11-27 to atlas-main20l (boundless-atlas main 4b03bc4 = b6251aa + bugfix/p1-seed-reflection-1127 bb8dcbf: P1 seed uses swap-safe delegate calls, no MethodInfo.Invoke on ts3fixes swap targets): game-copy/atlas-main20m-1127/atlas.asi (sha256 7424dce790eab843293bbb70d8a4f25ab07129f08c5fb28c9b527de80aa483bb, 0.3.21), oop game-copy/atlas-main20m-1127/atlas-oop.dll, script half game-copy/mod-sets/atlas-main20l-1127 (atlas.package sha256 a864ed23, pkg=74e6f8d9). Repinned 2026-11-27 to atlas-main20k (boundless-atlas main b6251aa = 184c776 + bugfix/rebase-p1-guard-1127 13fb99f (slidecheck asks Has(kP1), icall guard audit) + bugfix/atlas-log-one-writer-1127 ef7435c (one atlas.log writer)): game-copy/atlas-main20k-1127/atlas.asi (sha256 8a797610f0323c48da625fbb0689873018cf77ca5aba35399aefe105deb1ec91, 0.3.21), script half game-copy/mod-sets/atlas-main20k-1127 (pkg=fbfb9c46). Repinned 2026-11-27 to atlas-main20j (boundless-atlas main 184c776 = be865d0 + bugfix/p1-lot-lookup-1127 8101c3c (one world-tree lot walk for P1 and the rebase lot footprint, worldlots.h) + bugfix/tt-empty-guard-1127 2b4786b): game-copy/atlas-main20j-1127/atlas.asi (sha256 67e214a2c3dbf21286847ec0f721167bbd98765814c5f8e3713ff3ac7374b297, still 0.3.21), oop game-copy/atlas-main20j-1127/atlas-oop.dll (a64615d1), script half unchanged (atlas-main20e-1127 set, pkg=6ca205e2). Repinned 2026-11-27 to atlas-main20g (boundless-atlas main f04f484 = 1314264 + bugfix/p1-inspect-ioset-1127 728198b (P1 io set buffers 16-byte aligned, the movaps fault at 0x00936EF1) + bugfix/config-probe-ini-dir-1127 c72ae70 (config probe reads Default.ini from EA's config folder)): game-copy/atlas-main20g-1127/atlas.asi (sha256 cd9f39ae761bbf8b07487b3b5afe64edc9441a0b1b9fd1805f151b45c6e0fd82, still 0.3.21), oop plugin game-copy/atlas-main20g-1127/atlas-oop.dll (sha256 ca9f1ff3e59854a73f3c7d79ed4a093db83901c186b093c8959335e5ae1f8ee7, same page core 0x8185382E), script half atlas-main20e-1127 (pkg=6ca205e2, script unchanged). Repinned 2026-11-27 to atlas-main20e (boundless-atlas main 5a7dfb2 = 58e0535 + bugfix/gridkeys-shape-1127 f431eb2: kShapeGrid shoreline rows at 0x66F8E2 / 0x66F8F0, G map sites 5/5 on Steam): game-copy/atlas-main20e-1127/atlas.asi (sha256 7b52e2c7f09fbdce1966c14d83072ef6ee92f9abfc0ecad5f6315e5dfccf827f, still 0.3.21), oop plugin game-copy/atlas-main20e-1127/atlas-oop.dll (6afc79b5, unchanged), script half game-copy/mod-sets/atlas-main20e-1127 (same atlas.package as main20d, pkg=6ca205e2). GridKeys=1 jobs require G map sites 5/5; every job forbids \"off: shape\". Script half repinned 2026-11-27 to game-copy/mod-sets/atlas-main20d-1127 (boundless-atlas 58e0535: AtlasMod gets [assembly: Tunable], so the game runs its tuning and the Instantiator constructor; atlas.package sha256 886052ac42edd9abee3bf01bbb1fca2185eea252ceb958ce2cab97ad56167a6c, pkg=6ca205e2), asi and oop plugin as main20c; [IlPatch] ilp_tuneisolate=1 pinned so a failed Atlas GetTypes cannot kill other mods' tuning. Repinned 2026-11-27 to Atlas main 0.3.21 (boundless-atlas d240e1f, docs/031 §16.9.1: D6 gate fix, guarded script boots, early lines, Groups stage/early, oop=4): game-copy/atlas-main20c-1127/atlas.asi (sha256 0943acb6e723c9ff1c3305c39ece47086a154357aab31d74cc0b77c660198798), oop plugin game-copy/atlas-main20c-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062, unchanged), script half game-copy/mod-sets/atlas-main20c-1127 (atlas.package sha256 dcbe7bb1536e744370f601824f079e0fe570f7b16772d78ef906aa6b25e17630, pkg=273b675c). Before: Repinned 2026-11-27 to Atlas main 0.3.20 (boundless-atlas 440b469, docs/031 §16.8.1: rebase 13, P1 25 internal calls, houseboat native 2): game-copy/atlas-main20-1127/atlas.asi (sha256 7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f), oop plugin game-copy/atlas-main20-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062), script half game-copy/mod-sets/atlas-main20b-1127 (Atlas main 7ed0c75, houseboat StartWatch fallback fix: atlas.package sha256 330e6971a8d77267f61f8a1e61356442c50cda6e475682b3ab1c50da2f1685eb, pkg=8cda3053). Before: Repinned 2026-11-27 to Atlas main 0.3.19 (boundless-atlas 91f004e: 0.3.18 91e12c0 plus the config probe fix, docs/052 §3.1): game-copy/atlas-main18d-1127/atlas.asi (sha256 48cc2eb9eb4a53f8c913f6e1614cc12d9b39d43a19148bd171b4a312d9c76b86), oop plugin game-copy/atlas-main18b-1127/atlas-oop.dll (sha256 08f6bb06d8250e7f2acd31c7e29674d8a9e11d77a49565b39226df2b5083d7e5), script half game-copy/mod-sets/atlas-main18-1127 (atlas.package sha256 770dd71098564d8271f5f8834489a176a7643f1f2efc3387631a2a5734795ae6). Before: Repinned 2026-11-27 to the merged Atlas main build (boundless-atlas main b2992a5: merges f3d9348 of feature/stream-reader-1126 b840469 and b2992a5 of feature/ctor-census-1126 769fbbe; atlas 0.3.12, docs/031 §14): game-copy/atlas-main7/atlas.asi (sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7) and game-copy/mod-sets/atlas-main7 (atlas.package cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f). OwnReader, LoadAState, ScriptStream and ClassInited are internal-call group 9 reader; every other feature switch off",
    "save": "Baseline-SV",
-   "modSet": "game-copy/mod-sets/atlas-main20b-1127",
+   "modSet": "game-copy/mod-sets/atlas-main20m-1127",
    "rewind": false,
    "noiseCheck": false,
    "scriptErrorsMax": 0,
    "timeoutMin": 90,
    "extraAsi": {
-    "asi": "game-copy/atlas-main20-1127/atlas.asi",
-    "sha256": "7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f",
+    "asi": "game-copy/atlas-main20m-1127/atlas.asi",
+    "sha256": "7424dce790eab843293bbb70d8a4f25ab07129f08c5fb28c9b527de80aa483bb",
     "ini": {
      "WorldSize.PhysicsRootM": 0,
      "PagedLots.Probe": 1,
@@ -630,7 +695,6 @@
      "PagedLots.CtorRules": 3
     },
     "logRequire": {
-     "^atlas 0\\.3\\.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
      "^paged lots: probe on \\(Probe=1, FarM=250\\), 25 internal calls registered, ": 1,
      "^p1 self-check: PASS \\(\\d+ checks, 0 failed\\), page format version 1, header 64 bytes$": 1,
      "^atlas:loadA self-check PASS \\(\\d+ checks, 0 failed\\)$": 1,
@@ -651,7 +715,9 @@
      "^atlas:reader summary lot=0x[0-9A-F]{16} run: our graph, loadA 0, .*, census unsafe \\d+ of \\d+ \\(ctor rules 3, initializers ran \\d+, not yet \\d+, unknown \\d+, native faults \\d+\\), worst tick ": 6,
      "^atlas:reader compare-result lot=0x[0-9A-F]{16} \\d+ records, 0 differ: PASS$": 6,
      "^atlas:icalls reader: 4 registered \\d+ ms after start of wait \\(domain 0x[0-9A-F]{8}\\), group 9 flag set$": 1,
-     "^paged lots: LotRect=[01] \\(docs/058 G-666: distance to the lot rectangle\\)$": 1
+     "^paged lots: LotRect=[01] \\(docs/058 G-666: distance to the lot rectangle\\)$": 1,
+     "^atlas 0\\.3\\.21 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=4 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
+     "^atlas:script pkg=ddc1c4ce ": 1
     },
     "logForbid": {
      "^atlas:loadA dispatch-ea ": 0,
@@ -665,7 +731,10 @@
      "^atlas:reader (fallback|late-fallback|refused|dropped) ": 0,
      "^atlas:reader compare-result .*: FAIL$": 0,
      "^atlas:reader start lot=0x0{16} self-check FAIL": 0,
-     "^atlas:icalls \\S+ SKIP ": 0
+     "^atlas:icalls \\S+ SKIP ": 0,
+     "^atlas: world script load: .* threw": 0,
+     "^atlas:script init failed: ": 0,
+     "^atlas:rebase P3: .*, off: shape\\)": 0
     }
    },
    "run": {
@@ -673,6 +742,13 @@
    },
    "logRequire": {
     "^ts3native 0\\.36\\.306-m1126b ": 1
+   },
+   "logForbid": {
+    "tuning: broken script mod AtlasMod": 0
+   },
+   "ini": {
+    "IlPatch.Enabled": 1,
+    "IlPatch.ilp_tuneisolate": 1
    }
   },
   {
@@ -681,16 +757,16 @@
    "asi": "game-copy/ts3native.asi.m1126b",
    "iniBase": "game-copy/ts3native.ini.m1126b",
    "fixesPackage": "game-copy/ts3fixes.package.m1126b",
-   "pinReason": "Repinned 2026-11-27 to Atlas main 0.3.20 (boundless-atlas 440b469, docs/031 §16.8.1: rebase 13, P1 25 internal calls, houseboat native 2): game-copy/atlas-main20-1127/atlas.asi (sha256 7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f), oop plugin game-copy/atlas-main20-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062), script half game-copy/mod-sets/atlas-main20b-1127 (Atlas main 7ed0c75, houseboat StartWatch fallback fix: atlas.package sha256 330e6971a8d77267f61f8a1e61356442c50cda6e475682b3ab1c50da2f1685eb, pkg=8cda3053). Before: Repinned 2026-11-27 to Atlas main 0.3.19 (boundless-atlas 91f004e: 0.3.18 91e12c0 plus the config probe fix, docs/052 §3.1): game-copy/atlas-main18d-1127/atlas.asi (sha256 48cc2eb9eb4a53f8c913f6e1614cc12d9b39d43a19148bd171b4a312d9c76b86), oop plugin game-copy/atlas-main18b-1127/atlas-oop.dll (sha256 08f6bb06d8250e7f2acd31c7e29674d8a9e11d77a49565b39226df2b5083d7e5), script half game-copy/mod-sets/atlas-main18-1127 (atlas.package sha256 770dd71098564d8271f5f8834489a176a7643f1f2efc3387631a2a5734795ae6). Before: Repinned 2026-11-27 to the merged Atlas main build (boundless-atlas main b2992a5: merges f3d9348 of feature/stream-reader-1126 b840469 and b2992a5 of feature/ctor-census-1126 769fbbe; atlas 0.3.12, docs/031 §14): game-copy/atlas-main7/atlas.asi (sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7) and game-copy/mod-sets/atlas-main7 (atlas.package cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f). OwnReader, LoadAState, ScriptStream and ClassInited are internal-call group 9 reader; every other feature switch off",
+   "pinReason": "Repinned 2026-11-27 to atlas-main20l (boundless-atlas main 4b03bc4 = b6251aa + bugfix/p1-seed-reflection-1127 bb8dcbf: P1 seed uses swap-safe delegate calls, no MethodInfo.Invoke on ts3fixes swap targets): game-copy/atlas-main20m-1127/atlas.asi (sha256 7424dce790eab843293bbb70d8a4f25ab07129f08c5fb28c9b527de80aa483bb, 0.3.21), oop game-copy/atlas-main20m-1127/atlas-oop.dll, script half game-copy/mod-sets/atlas-main20l-1127 (atlas.package sha256 a864ed23, pkg=74e6f8d9). Repinned 2026-11-27 to atlas-main20k (boundless-atlas main b6251aa = 184c776 + bugfix/rebase-p1-guard-1127 13fb99f (slidecheck asks Has(kP1), icall guard audit) + bugfix/atlas-log-one-writer-1127 ef7435c (one atlas.log writer)): game-copy/atlas-main20k-1127/atlas.asi (sha256 8a797610f0323c48da625fbb0689873018cf77ca5aba35399aefe105deb1ec91, 0.3.21), script half game-copy/mod-sets/atlas-main20k-1127 (pkg=fbfb9c46). Repinned 2026-11-27 to atlas-main20j (boundless-atlas main 184c776 = be865d0 + bugfix/p1-lot-lookup-1127 8101c3c (one world-tree lot walk for P1 and the rebase lot footprint, worldlots.h) + bugfix/tt-empty-guard-1127 2b4786b): game-copy/atlas-main20j-1127/atlas.asi (sha256 67e214a2c3dbf21286847ec0f721167bbd98765814c5f8e3713ff3ac7374b297, still 0.3.21), oop game-copy/atlas-main20j-1127/atlas-oop.dll (a64615d1), script half unchanged (atlas-main20e-1127 set, pkg=6ca205e2). Repinned 2026-11-27 to atlas-main20g (boundless-atlas main f04f484 = 1314264 + bugfix/p1-inspect-ioset-1127 728198b (P1 io set buffers 16-byte aligned, the movaps fault at 0x00936EF1) + bugfix/config-probe-ini-dir-1127 c72ae70 (config probe reads Default.ini from EA's config folder)): game-copy/atlas-main20g-1127/atlas.asi (sha256 cd9f39ae761bbf8b07487b3b5afe64edc9441a0b1b9fd1805f151b45c6e0fd82, still 0.3.21), oop plugin game-copy/atlas-main20g-1127/atlas-oop.dll (sha256 ca9f1ff3e59854a73f3c7d79ed4a093db83901c186b093c8959335e5ae1f8ee7, same page core 0x8185382E), script half atlas-main20e-1127 (pkg=6ca205e2, script unchanged). Repinned 2026-11-27 to atlas-main20e (boundless-atlas main 5a7dfb2 = 58e0535 + bugfix/gridkeys-shape-1127 f431eb2: kShapeGrid shoreline rows at 0x66F8E2 / 0x66F8F0, G map sites 5/5 on Steam): game-copy/atlas-main20e-1127/atlas.asi (sha256 7b52e2c7f09fbdce1966c14d83072ef6ee92f9abfc0ecad5f6315e5dfccf827f, still 0.3.21), oop plugin game-copy/atlas-main20e-1127/atlas-oop.dll (6afc79b5, unchanged), script half game-copy/mod-sets/atlas-main20e-1127 (same atlas.package as main20d, pkg=6ca205e2). GridKeys=1 jobs require G map sites 5/5; every job forbids \"off: shape\". Script half repinned 2026-11-27 to game-copy/mod-sets/atlas-main20d-1127 (boundless-atlas 58e0535: AtlasMod gets [assembly: Tunable], so the game runs its tuning and the Instantiator constructor; atlas.package sha256 886052ac42edd9abee3bf01bbb1fca2185eea252ceb958ce2cab97ad56167a6c, pkg=6ca205e2), asi and oop plugin as main20c; [IlPatch] ilp_tuneisolate=1 pinned so a failed Atlas GetTypes cannot kill other mods' tuning. Repinned 2026-11-27 to Atlas main 0.3.21 (boundless-atlas d240e1f, docs/031 §16.9.1: D6 gate fix, guarded script boots, early lines, Groups stage/early, oop=4): game-copy/atlas-main20c-1127/atlas.asi (sha256 0943acb6e723c9ff1c3305c39ece47086a154357aab31d74cc0b77c660198798), oop plugin game-copy/atlas-main20c-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062, unchanged), script half game-copy/mod-sets/atlas-main20c-1127 (atlas.package sha256 dcbe7bb1536e744370f601824f079e0fe570f7b16772d78ef906aa6b25e17630, pkg=273b675c). Before: Repinned 2026-11-27 to Atlas main 0.3.20 (boundless-atlas 440b469, docs/031 §16.8.1: rebase 13, P1 25 internal calls, houseboat native 2): game-copy/atlas-main20-1127/atlas.asi (sha256 7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f), oop plugin game-copy/atlas-main20-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062), script half game-copy/mod-sets/atlas-main20b-1127 (Atlas main 7ed0c75, houseboat StartWatch fallback fix: atlas.package sha256 330e6971a8d77267f61f8a1e61356442c50cda6e475682b3ab1c50da2f1685eb, pkg=8cda3053). Before: Repinned 2026-11-27 to Atlas main 0.3.19 (boundless-atlas 91f004e: 0.3.18 91e12c0 plus the config probe fix, docs/052 §3.1): game-copy/atlas-main18d-1127/atlas.asi (sha256 48cc2eb9eb4a53f8c913f6e1614cc12d9b39d43a19148bd171b4a312d9c76b86), oop plugin game-copy/atlas-main18b-1127/atlas-oop.dll (sha256 08f6bb06d8250e7f2acd31c7e29674d8a9e11d77a49565b39226df2b5083d7e5), script half game-copy/mod-sets/atlas-main18-1127 (atlas.package sha256 770dd71098564d8271f5f8834489a176a7643f1f2efc3387631a2a5734795ae6). Before: Repinned 2026-11-27 to the merged Atlas main build (boundless-atlas main b2992a5: merges f3d9348 of feature/stream-reader-1126 b840469 and b2992a5 of feature/ctor-census-1126 769fbbe; atlas 0.3.12, docs/031 §14): game-copy/atlas-main7/atlas.asi (sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7) and game-copy/mod-sets/atlas-main7 (atlas.package cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f). OwnReader, LoadAState, ScriptStream and ClassInited are internal-call group 9 reader; every other feature switch off",
    "save": "Baseline-SV",
-   "modSet": "game-copy/mod-sets/atlas-main20b-1127",
+   "modSet": "game-copy/mod-sets/atlas-main20m-1127",
    "rewind": false,
    "noiseCheck": false,
    "scriptErrorsMax": 0,
    "timeoutMin": 90,
    "extraAsi": {
-    "asi": "game-copy/atlas-main20-1127/atlas.asi",
-    "sha256": "7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f",
+    "asi": "game-copy/atlas-main20m-1127/atlas.asi",
+    "sha256": "7424dce790eab843293bbb70d8a4f25ab07129f08c5fb28c9b527de80aa483bb",
     "ini": {
      "WorldSize.PhysicsRootM": 0,
      "PagedLots.Probe": 1,
@@ -705,7 +781,6 @@
      "PagedLots.CtorRules": 4
     },
     "logRequire": {
-     "^atlas 0\\.3\\.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
      "^paged lots: probe on \\(Probe=1, FarM=250\\), 25 internal calls registered, ": 1,
      "^p1 self-check: PASS \\(\\d+ checks, 0 failed\\), page format version 1, header 64 bytes$": 1,
      "^atlas:loadA self-check PASS \\(\\d+ checks, 0 failed\\)$": 1,
@@ -726,7 +801,9 @@
      "^atlas:reader summary lot=0x[0-9A-F]{16} run: our graph, loadA 0, .*, census unsafe \\d+ of \\d+ \\(ctor rules 4, initializers ran \\d+, not yet \\d+, unknown \\d+, native faults \\d+\\), worst tick ": 6,
      "^atlas:reader compare-result lot=0x[0-9A-F]{16} \\d+ records, 0 differ: PASS$": 6,
      "^atlas:icalls reader: 4 registered \\d+ ms after start of wait \\(domain 0x[0-9A-F]{8}\\), group 9 flag set$": 1,
-     "^paged lots: LotRect=[01] \\(docs/058 G-666: distance to the lot rectangle\\)$": 1
+     "^paged lots: LotRect=[01] \\(docs/058 G-666: distance to the lot rectangle\\)$": 1,
+     "^atlas 0\\.3\\.21 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=4 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
+     "^atlas:script pkg=ddc1c4ce ": 1
     },
     "logForbid": {
      "^atlas:loadA dispatch-ea ": 0,
@@ -740,7 +817,10 @@
      "^atlas:reader (fallback|late-fallback|refused|dropped) ": 0,
      "^atlas:reader compare-result .*: FAIL$": 0,
      "^atlas:reader start lot=0x0{16} self-check FAIL": 0,
-     "^atlas:icalls \\S+ SKIP ": 0
+     "^atlas:icalls \\S+ SKIP ": 0,
+     "^atlas: world script load: .* threw": 0,
+     "^atlas:script init failed: ": 0,
+     "^atlas:rebase P3: .*, off: shape\\)": 0
     }
    },
    "run": {
@@ -748,6 +828,13 @@
    },
    "logRequire": {
     "^ts3native 0\\.36\\.306-m1126b ": 1
+   },
+   "logForbid": {
+    "tuning: broken script mod AtlasMod": 0
+   },
+   "ini": {
+    "IlPatch.Enabled": 1,
+    "IlPatch.ilp_tuneisolate": 1
    }
   },
   {
@@ -756,16 +843,16 @@
    "asi": "game-copy/ts3native.asi.m1126b",
    "iniBase": "game-copy/ts3native.ini.m1126b",
    "fixesPackage": "game-copy/ts3fixes.package.m1126b",
-   "pinReason": "Repinned 2026-11-27 to Atlas main 0.3.20 (boundless-atlas 440b469, docs/031 §16.8.1: rebase 13, P1 25 internal calls, houseboat native 2): game-copy/atlas-main20-1127/atlas.asi (sha256 7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f), oop plugin game-copy/atlas-main20-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062), script half game-copy/mod-sets/atlas-main20b-1127 (Atlas main 7ed0c75, houseboat StartWatch fallback fix: atlas.package sha256 330e6971a8d77267f61f8a1e61356442c50cda6e475682b3ab1c50da2f1685eb, pkg=8cda3053). Before: Repinned 2026-11-27 to Atlas main 0.3.19 (boundless-atlas 91f004e: 0.3.18 91e12c0 plus the config probe fix, docs/052 §3.1): game-copy/atlas-main18d-1127/atlas.asi (sha256 48cc2eb9eb4a53f8c913f6e1614cc12d9b39d43a19148bd171b4a312d9c76b86), oop plugin game-copy/atlas-main18b-1127/atlas-oop.dll (sha256 08f6bb06d8250e7f2acd31c7e29674d8a9e11d77a49565b39226df2b5083d7e5), script half game-copy/mod-sets/atlas-main18-1127 (atlas.package sha256 770dd71098564d8271f5f8834489a176a7643f1f2efc3387631a2a5734795ae6). Before: Repinned 2026-11-27 to the merged Atlas main build (boundless-atlas main b2992a5: merges f3d9348 of feature/stream-reader-1126 b840469 and b2992a5 of feature/ctor-census-1126 769fbbe; atlas 0.3.12, docs/031 §14): game-copy/atlas-main7/atlas.asi (sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7) and game-copy/mod-sets/atlas-main7 (atlas.package cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f). OwnReader, LoadAState, ScriptStream and ClassInited are internal-call group 9 reader; every other feature switch off",
+   "pinReason": "Repinned 2026-11-27 to atlas-main20l (boundless-atlas main 4b03bc4 = b6251aa + bugfix/p1-seed-reflection-1127 bb8dcbf: P1 seed uses swap-safe delegate calls, no MethodInfo.Invoke on ts3fixes swap targets): game-copy/atlas-main20m-1127/atlas.asi (sha256 7424dce790eab843293bbb70d8a4f25ab07129f08c5fb28c9b527de80aa483bb, 0.3.21), oop game-copy/atlas-main20m-1127/atlas-oop.dll, script half game-copy/mod-sets/atlas-main20l-1127 (atlas.package sha256 a864ed23, pkg=74e6f8d9). Repinned 2026-11-27 to atlas-main20k (boundless-atlas main b6251aa = 184c776 + bugfix/rebase-p1-guard-1127 13fb99f (slidecheck asks Has(kP1), icall guard audit) + bugfix/atlas-log-one-writer-1127 ef7435c (one atlas.log writer)): game-copy/atlas-main20k-1127/atlas.asi (sha256 8a797610f0323c48da625fbb0689873018cf77ca5aba35399aefe105deb1ec91, 0.3.21), script half game-copy/mod-sets/atlas-main20k-1127 (pkg=fbfb9c46). Repinned 2026-11-27 to atlas-main20j (boundless-atlas main 184c776 = be865d0 + bugfix/p1-lot-lookup-1127 8101c3c (one world-tree lot walk for P1 and the rebase lot footprint, worldlots.h) + bugfix/tt-empty-guard-1127 2b4786b): game-copy/atlas-main20j-1127/atlas.asi (sha256 67e214a2c3dbf21286847ec0f721167bbd98765814c5f8e3713ff3ac7374b297, still 0.3.21), oop game-copy/atlas-main20j-1127/atlas-oop.dll (a64615d1), script half unchanged (atlas-main20e-1127 set, pkg=6ca205e2). Repinned 2026-11-27 to atlas-main20g (boundless-atlas main f04f484 = 1314264 + bugfix/p1-inspect-ioset-1127 728198b (P1 io set buffers 16-byte aligned, the movaps fault at 0x00936EF1) + bugfix/config-probe-ini-dir-1127 c72ae70 (config probe reads Default.ini from EA's config folder)): game-copy/atlas-main20g-1127/atlas.asi (sha256 cd9f39ae761bbf8b07487b3b5afe64edc9441a0b1b9fd1805f151b45c6e0fd82, still 0.3.21), oop plugin game-copy/atlas-main20g-1127/atlas-oop.dll (sha256 ca9f1ff3e59854a73f3c7d79ed4a093db83901c186b093c8959335e5ae1f8ee7, same page core 0x8185382E), script half atlas-main20e-1127 (pkg=6ca205e2, script unchanged). Repinned 2026-11-27 to atlas-main20e (boundless-atlas main 5a7dfb2 = 58e0535 + bugfix/gridkeys-shape-1127 f431eb2: kShapeGrid shoreline rows at 0x66F8E2 / 0x66F8F0, G map sites 5/5 on Steam): game-copy/atlas-main20e-1127/atlas.asi (sha256 7b52e2c7f09fbdce1966c14d83072ef6ee92f9abfc0ecad5f6315e5dfccf827f, still 0.3.21), oop plugin game-copy/atlas-main20e-1127/atlas-oop.dll (6afc79b5, unchanged), script half game-copy/mod-sets/atlas-main20e-1127 (same atlas.package as main20d, pkg=6ca205e2). GridKeys=1 jobs require G map sites 5/5; every job forbids \"off: shape\". Script half repinned 2026-11-27 to game-copy/mod-sets/atlas-main20d-1127 (boundless-atlas 58e0535: AtlasMod gets [assembly: Tunable], so the game runs its tuning and the Instantiator constructor; atlas.package sha256 886052ac42edd9abee3bf01bbb1fca2185eea252ceb958ce2cab97ad56167a6c, pkg=6ca205e2), asi and oop plugin as main20c; [IlPatch] ilp_tuneisolate=1 pinned so a failed Atlas GetTypes cannot kill other mods' tuning. Repinned 2026-11-27 to Atlas main 0.3.21 (boundless-atlas d240e1f, docs/031 §16.9.1: D6 gate fix, guarded script boots, early lines, Groups stage/early, oop=4): game-copy/atlas-main20c-1127/atlas.asi (sha256 0943acb6e723c9ff1c3305c39ece47086a154357aab31d74cc0b77c660198798), oop plugin game-copy/atlas-main20c-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062, unchanged), script half game-copy/mod-sets/atlas-main20c-1127 (atlas.package sha256 dcbe7bb1536e744370f601824f079e0fe570f7b16772d78ef906aa6b25e17630, pkg=273b675c). Before: Repinned 2026-11-27 to Atlas main 0.3.20 (boundless-atlas 440b469, docs/031 §16.8.1: rebase 13, P1 25 internal calls, houseboat native 2): game-copy/atlas-main20-1127/atlas.asi (sha256 7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f), oop plugin game-copy/atlas-main20-1127/atlas-oop.dll (sha256 6afc79b5a60a2919907a73f6343d0bffd26b675dbfa622202e4c604f323e4062), script half game-copy/mod-sets/atlas-main20b-1127 (Atlas main 7ed0c75, houseboat StartWatch fallback fix: atlas.package sha256 330e6971a8d77267f61f8a1e61356442c50cda6e475682b3ab1c50da2f1685eb, pkg=8cda3053). Before: Repinned 2026-11-27 to Atlas main 0.3.19 (boundless-atlas 91f004e: 0.3.18 91e12c0 plus the config probe fix, docs/052 §3.1): game-copy/atlas-main18d-1127/atlas.asi (sha256 48cc2eb9eb4a53f8c913f6e1614cc12d9b39d43a19148bd171b4a312d9c76b86), oop plugin game-copy/atlas-main18b-1127/atlas-oop.dll (sha256 08f6bb06d8250e7f2acd31c7e29674d8a9e11d77a49565b39226df2b5083d7e5), script half game-copy/mod-sets/atlas-main18-1127 (atlas.package sha256 770dd71098564d8271f5f8834489a176a7643f1f2efc3387631a2a5734795ae6). Before: Repinned 2026-11-27 to the merged Atlas main build (boundless-atlas main b2992a5: merges f3d9348 of feature/stream-reader-1126 b840469 and b2992a5 of feature/ctor-census-1126 769fbbe; atlas 0.3.12, docs/031 §14): game-copy/atlas-main7/atlas.asi (sha256 048d509e8d29e3b6177d304571cb35e329f9bb030f9bcfa2525298a406d258d7) and game-copy/mod-sets/atlas-main7 (atlas.package cfbca58626d34aeb9ce631e94b0d0dfcf75700c39175c5558677c57ac653852f). OwnReader, LoadAState, ScriptStream and ClassInited are internal-call group 9 reader; every other feature switch off",
    "save": "Baseline-SV",
-   "modSet": "game-copy/mod-sets/atlas-main20b-1127",
+   "modSet": "game-copy/mod-sets/atlas-main20m-1127",
    "rewind": false,
    "noiseCheck": false,
    "scriptErrorsMax": 0,
    "timeoutMin": 90,
    "extraAsi": {
-    "asi": "game-copy/atlas-main20-1127/atlas.asi",
-    "sha256": "7c972767b427ff84869df3386a59c7b61a68fa96e83f8765d5de1c7039b6f41f",
+    "asi": "game-copy/atlas-main20m-1127/atlas.asi",
+    "sha256": "7424dce790eab843293bbb70d8a4f25ab07129f08c5fb28c9b527de80aa483bb",
     "ini": {
      "WorldSize.PhysicsRootM": 0,
      "PagedLots.Probe": 1,
@@ -780,7 +867,6 @@
      "PagedLots.CtorRules": 5
     },
     "logRequire": {
-     "^atlas 0\\.3\\.20 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=3 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
      "^paged lots: probe on \\(Probe=1, FarM=250\\), 25 internal calls registered, ": 1,
      "^p1 self-check: PASS \\(\\d+ checks, 0 failed\\), page format version 1, header 64 bytes$": 1,
      "^atlas:loadA self-check PASS \\(\\d+ checks, 0 failed\\)$": 1,
@@ -801,7 +887,9 @@
      "^atlas:reader summary lot=0x[0-9A-F]{16} run: our graph, loadA 0, .*, census unsafe \\d+ of \\d+ \\(ctor rules 5, initializers ran \\d+, not yet \\d+, unknown \\d+, native faults 0\\), worst tick ": 6,
      "^atlas:reader compare-result lot=0x[0-9A-F]{16} \\d+ records, 0 differ: PASS$": 6,
      "^atlas:icalls reader: 4 registered \\d+ ms after start of wait \\(domain 0x[0-9A-F]{8}\\), group 9 flag set$": 1,
-     "^paged lots: LotRect=[01] \\(docs/058 G-666: distance to the lot rectangle\\)$": 1
+     "^paged lots: LotRect=[01] \\(docs/058 G-666: distance to the lot rectangle\\)$": 1,
+     "^atlas 0\\.3\\.21 p1=2 loadA=4 w8192=1 rings=2 fz=3 rebase=13 oop=4 seed=2 born=4 tiles=1 paint=1 heights=1 fd=2 lr=1 built .*, TS3W\\.exe link stamp 0x[0-9A-F]{8}$": 1,
+     "^atlas:script pkg=ddc1c4ce ": 1
     },
     "logForbid": {
      "^atlas:loadA dispatch-ea ": 0,
@@ -815,7 +903,10 @@
      "^atlas:reader (fallback|late-fallback|refused|dropped) ": 0,
      "^atlas:reader compare-result .*: FAIL$": 0,
      "^atlas:reader start lot=0x0{16} self-check FAIL": 0,
-     "^atlas:icalls \\S+ SKIP ": 0
+     "^atlas:icalls \\S+ SKIP ": 0,
+     "^atlas: world script load: .* threw": 0,
+     "^atlas:script init failed: ": 0,
+     "^atlas:rebase P3: .*, off: shape\\)": 0
     }
    },
    "run": {
@@ -823,6 +914,13 @@
    },
    "logRequire": {
     "^ts3native 0\\.36\\.306-m1126b ": 1
+   },
+   "logForbid": {
+    "tuning: broken script mod AtlasMod": 0
+   },
+   "ini": {
+    "IlPatch.Enabled": 1,
+    "IlPatch.ilp_tuneisolate": 1
    }
   }
  ]

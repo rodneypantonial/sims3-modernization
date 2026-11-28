@@ -97,7 +97,7 @@ import { BIN, GAME_EXE } from './game-exe.ts';
 import { report as camSweepReport, segmentsOf, table as camSweepTable, verdict as camSweepVerdict } from './camera-sweep-report.ts';
 import { homedir } from 'node:os';
 
-const { values } = parseArgs({ options: { svcsplit: { type: 'boolean' }, tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, fixedwork: { type: 'string' }, 'ab-on-first': { type: 'boolean' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'vres-dry': { type: 'string' }, 'no-samplers': { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'quit-jobs': { type: 'boolean' }, 'no-env-guard': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, 'no-frames': { type: 'boolean' }, 'camera-pan': { type: 'boolean' }, 'prof-opts': { type: 'string' }, travel: { type: 'string' }, 'load-world': { type: 'string' }, 'fixes-require': { type: 'string' }, 'frame-lead': { type: 'string' }, 'hitch-tasks': { type: 'string' }, 'since-load': { type: 'string' }, 'frames-shared': { type: 'string' }, 'rewind-next': { type: 'boolean' }, 'loop-rule': { type: 'string' }, story: { type: 'string' } } });
+const { values } = parseArgs({ options: { svcsplit: { type: 'boolean' }, tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, fixedwork: { type: 'string' }, 'ab-on-first': { type: 'boolean' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, 'routelock-diag': { type: 'boolean' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'vres-dry': { type: 'string' }, 'no-samplers': { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'quit-jobs': { type: 'boolean' }, 'no-env-guard': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, 'no-frames': { type: 'boolean' }, 'camera-pan': { type: 'boolean' }, 'prof-opts': { type: 'string' }, travel: { type: 'string' }, 'load-world': { type: 'string' }, 'fixes-require': { type: 'string' }, 'frame-lead': { type: 'string' }, 'hitch-tasks': { type: 'string' }, 'since-load': { type: 'string' }, 'frames-shared': { type: 'string' }, 'rewind-next': { type: 'boolean' }, 'loop-rule': { type: 'string' }, story: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
 const profOpts = values['prof-opts'] ? JSON.parse(values['prof-opts']) : {}; // fail before the game is touched on bad JSON
 if (values['vres-dry'] !== undefined && !/^[1-9]\d*$/.test(values['vres-dry'])) throw new Error('--vres-dry must be a positive integer');
@@ -304,6 +304,8 @@ const clockGuard = (async () => {
 })();
 const boats0 = (await ag('houseboats')).result ?? []; // empty outside Isla Paradiso
 if (values.taskstall) console.log(`${stamp()} taskstall: ${JSON.stringify(await get(`taskstall?start=1&ms=${Number(values.taskstall)}`))}`);
+// --routelock-diag (docs/367 §1e): the probe's routing-lock hold / wait per thread (sim vs route worker) for the whole window, <tag>-routelock.json
+if (values['routelock-diag']) console.log(`${stamp()} routelock: ${JSON.stringify(await get('routelock?start=1'))}`);
 
 const prof = values.watchstalk || values['no-prof'] ? null : spawn('python', ['-m', 'frida_tools.repl', '-n', GAME_EXE, '-l', join(ROOT, 'tools', 'frida', 'stutter-profile.js'),
   '-P', JSON.stringify({ ...profOpts, out: `${pre}-${secs}`.replace(/\\/g, '/'), hitchMs: 50, ...((reproLoop || untilN) && { stopFile: stopFlag.replace(/\\/g, '/') }) }), '-q', '-t', String(secs)], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -678,6 +680,7 @@ console.log(`${stamp()} ${summarize(`${pre}-machine.jsonl`).line}`);
 rng.simMinutes.end = (await ag('time')).result?.minutes_total ?? null;
 if (rng.seed !== null) rng.restored = (await ag('seed_rng')).result?.restored ?? false;
 writeFileSync(`${pre}-rng.json`, JSON.stringify(rng, null, 1));
+if (values['routelock-diag']) { try { const r = await get('routelock?stop=1'); writeFileSync(`${pre}-routelock.json`, JSON.stringify(r, null, 1)); const t = r.threads ?? {}; console.log(`${stamp()} routelock: ${JSON.stringify(Object.entries(t).map(([k, v]: any) => ({ tid: k, sim: v.sim, acquires: v.acquires, waitMs: v.waitMs, maxWaitMs: v.maxWaitMs, holdMs: v.holdMs, maxHoldMs: v.maxHoldMs })))}; plans ${JSON.stringify(r.plans)}`); } catch (e) { console.log(`${stamp()} routelock stop failed: ${e.message}`); } }
 if (values.taskstall) { try { const r = await get('taskstall?stop=1&n=0'); console.log(`${stamp()} taskstall: ${JSON.stringify(r.counts ?? r)}`); } catch (e) { console.log(`${stamp()} taskstall stop failed: ${e.message}`); } }
 if (abNames.length) await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i: slices.length, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
 if (abNames.length) await ag('patches').then(r => appendFileSync(`${pre}-ab-fixes.jsonl`, JSON.stringify({ i: slices.length, s: (Date.now() - t0) / 1000, c: numericFields(r.result),
@@ -692,7 +695,7 @@ if (reproEntry.stepsRequire) { // repro step answers (fixes-require.ts stepTally
   console.log(`${stamp()} ${fails.length ? `FAIL: repro steps: ${fails.join('; ')}` : `PASS: repro steps ${reproEntry.stepsRequire}`}`);
   if (fails.length) process.exitCode = 1;
 }
-if (reproSteps.some(s => s.cmd === 'camera_sweep')) { // camera sweep split per segment (camera-sweep-report.ts, docs/280)
+if (reproSteps.some(s => s.cmd === 'camera_sweep' || s.cmd === 'camera_line')) { // camera sweep split per segment (camera-sweep-report.ts, docs/280)
   // Apex's frame profiler timeline (Developer build + queue apexProfiler): taken when written during this window
   const apexTl = join(process.env.TS3_USER ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3'), 'Apex Radiance', 'ApexRadiance_FrameTimeline.csv');
   const tl = existsSync(apexTl) && statSync(apexTl).mtimeMs >= t0 ? `${pre}-ApexRadiance_FrameTimeline.csv` : undefined;
@@ -702,7 +705,7 @@ if (reproSteps.some(s => s.cmd === 'camera_sweep')) { // camera sweep split per 
     const rows = camSweepReport(segs, readFileSync(`${pre}-${secs}-frames.csv`, 'utf8'), tl ? readFileSync(tl, 'utf8') : undefined);
     writeFileSync(`${pre}-camsweep.json`, JSON.stringify({ from, segs, rows, apexTimeline: tl ?? null }, null, 1));
     console.log(camSweepTable(rows));
-    const fails = camSweepVerdict(segs, from, rows);
+    const fails = camSweepVerdict(segs, from, rows, reproSteps.some(s => s.cmd === 'camera_line') ? 3 : 8);
     console.log(`${stamp()} ${fails.length ? `FAIL: camera sweep: ${fails.join('; ')}` : `PASS: camera sweep: ${segs.length} segments${tl ? ', Apex timeline split' : ', no Apex timeline (profiler off or public build)'}`}`);
     if (fails.length) process.exitCode = 1;
   } catch (e) { console.log(`${stamp()} FAIL: camera sweep report: ${(e as Error).message}`); process.exitCode = 1; }

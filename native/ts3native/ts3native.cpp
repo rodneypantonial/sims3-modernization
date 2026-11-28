@@ -18,7 +18,8 @@
 #ifdef TS3N_RFTEST
 #define TS3NATIVE_VERSION "0.36.189-rftest1"  // docs/89 §18: repro ops 30-34, never a release
 #else
-#define TS3NATIVE_VERSION "0.36.307-exithooks1"  // bugfix/exit-hook-uaf-1127 (docs/67 §47): m1126c + [Fixes] ExitStaleHooks / ExitHookDiag (TriggerService teardown, exit crash)
+#define TS3NATIVE_VERSION "0.36.307-m1128"  // master set m1128 (merge/poc-1128): exithooks1 + Atlas 4096 PoC merge (ts3agent lot targets, camera_line); native source otherwise unchanged
+// was "0.36.307-exithooks1"  // bugfix/exit-hook-uaf-1127 (docs/67 section 47)
 // was "0.36.307-m1126c"  // master set m1126c (release/merge-window-1126): m1126b + simhc1 (IsSimThread, MainHeap, counters v227, PortalFlagRefs large graphs); ts3fixes adds simdescindex (OnSimThread), simresetalarms, farsim shadow, farlight/farhold, non-Sim lot push delta, all off
 // was "0.36.306-simhc1"  // feature/native-simthread-heapcores-1126 (docs/362): m1126b + AutShadowNative IsSimThread / MainHeap internal calls, ts3native_mainheap export, [MemDiag] MainHeap (default 0), counters v227 mhc*
 // was "0.36.306-m1126b"  // master set m1126b: m1126 + [Crash] HeapCallDump split off (default 0; HeapCall stays 1, log only, Rodney OK 2026-11-26), dump request copies the exception record + context; ts3fixes: viewerridehooks ride set cleared when off and on quit

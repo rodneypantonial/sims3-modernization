@@ -22,7 +22,7 @@ export function segmentsOf(reproJsonl: string): { segs: Seg[]; from: 'status' | 
   for (const l of reproJsonl.split(/\r?\n/)) {
     if (!l.trim()) continue;
     let o: any; try { o = JSON.parse(l); } catch { continue; }
-    if (o.cmd !== 'camera_sweep') continue;
+    if (o.cmd !== 'camera_sweep' && o.cmd !== 'camera_line') continue;
     const res = o.r?.result ?? o.r;
     if (Array.isArray(res?.segments) && res.segments.some((s: any) => s.epochMs1 !== undefined))
       status = res.segments.filter((s: any) => s.epochMs1 !== undefined).map((s: any) => ({ name: s.name, epochMs0: s.epochMs0, epochMs1: s.epochMs1, tickMs0: s.tickMs0, tickMs1: s.tickMs1, distEnd: s.distEnd, cut: !!s.cut }));

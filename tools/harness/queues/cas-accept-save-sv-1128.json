@@ -1,0 +1,31 @@
+{
+  "note": "cas-accept-save-sv-1128: CAS accept then save/reload on Baseline-BP (vanilla), not Atlas. Run: node tools/harness/queue.ts tools/harness/queues/cas-accept-save-sv-1128.json --no-smoke",
+  "stopQueueOnFail": true,
+  "rewind": "auto",
+  "jobs": [
+    {
+      "id": "bp-cas-accept-save",
+      "note": "[est 10 min] CAS accept, save, reload, hair read-back.",
+      "asi": "game-copy/ts3native.asi.m1121b",
+      "iniBase": "game-copy/ts3native.ini.m1121b",
+      "fixesPackage": "game-copy/ts3fixes.package.m1121b",
+      "save": "Baseline-BP",
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "minCounters": 1,
+      "scriptErrorsMax": 0,
+      "noiseCheck": false,
+      "timeoutMin": 30,
+      "run": {
+        "profile": {
+          "minutes": 8,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "cas-accept-save-sv-1128"
+        }
+      }
+    }
+  ],
+  "agentPackage": "game-copy/ts3agent.package.lot-target-1128i"
+}
