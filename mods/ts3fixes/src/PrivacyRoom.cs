@@ -10,15 +10,16 @@ namespace Ts3Fixes
     // returns true for OtherSims too, and the situation's first intruder check (about a sim-minute in) adds every other Sim
     // on the lot to OtherSims. PrivacySituation.OnAllowedInRoomCheck then lets all of them "into" the room, so autonomy picks
     // the toilet or sink in there; but OnPortalPathPlan still locks the door for their autonomous routes
-    // (!OtherSimCanIgnorePrivacy), so the Sim walks to the door and the route fails. That failure blocks the object for every
-    // Sim for 30 sim-minutes (GameObject.UpdateBlockTime) and a household Sim then idles 5 sim-minutes (idlegap). With the
+    // (!OtherSimCanIgnorePrivacy), so the Sim walks to the door and the route fails. That failure marks the object blocked for every
+    // Sim (GameObject.UpdateBlockTime: autonomous tests skip it for 1 sim-minute, then its score climbs back over 30,
+    // docs/04a) and a household Sim then idles 5 sim-minutes (idlegap). With the
     // switch on, only participants count as in the situation: the same answer EA gives in the first minute, before
     // OtherSims fills, and the same rule the door applies. The shower, toilet, bathtub and WooHoo situations do not
     // override the method, so this one hook covers them. User-directed routes are not affected (the door lets them through).
     public static partial class Fixes
     {
         static bool sPrOn;
-        static int sPrPoll, sPrChanged;
+        static int sPrPoll, sPrChanged, sPrSeenOff;
         const int kPrLogMax = 200;
 
         static void ApplyPrivacyRoom()
@@ -44,7 +45,14 @@ namespace Ts3Fixes
                     GenericPrivacySituation g = (GenericPrivacySituation)(object)this;
                     if (g.Participants.Contains(actor)) return true;
                     if (!g.OtherSims.Contains(actor)) return false;
-                    if (!PrOn()) return true;  // EA's answer
+                    if (!PrOn())
+                    {
+                        // switch off: the same answers, logged as EA's, so an off run shows the case the fix would change
+                        if (sPrSeenOff < kPrLogMax)
+                            DiagLine("privacyroom: off: " + actor.FullName + " let into " + g.GetType().Name + " (" + (g.Participants.Count > 0 && g.Participants[0] != null ? g.Participants[0].FullName : "?")
+                                + ") by EA, seen " + (++sPrSeenOff));
+                        return true;  // EA's answer
+                    }
                     // the first kPrLogMax answers that differ from EA's: shows the fix firing and for which rooms
                     if (sPrChanged < kPrLogMax)
                         DiagLine("privacyroom: " + actor.FullName + " kept out of " + g.GetType().Name + " (" + (g.Participants.Count > 0 && g.Participants[0] != null ? g.Participants[0].FullName : "?")
