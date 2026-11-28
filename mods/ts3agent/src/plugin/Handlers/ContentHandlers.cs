@@ -36,6 +36,7 @@ namespace Ts3Agent
             Dispatcher.Register("camera", CameraView);
             Dispatcher.Register("camera_pan", CameraPan);
             Dispatcher.Register("camera_sweep", CameraSweep);
+            Dispatcher.Register("camera_line", CameraLine);
             Dispatcher.Register("camera_to_tagged", CameraToTagged);
         }
 
@@ -452,8 +453,11 @@ namespace Ts3Agent
             }
             if (a.Has("lot"))
             {
-                Vector3 c = LotViewPoint(FindLotByName(a.Str("lot")));
-                CameraController.SetPositionAndTarget(new Vector3(c.x, c.y + 30f, c.z - 30f), c);
+                string ln = a.Str("lot");
+                Lot vl = ln.StartsWith("lot:") ? FindLot(ln.Substring(4)) : FindLotByName(ln);  // lot:<id> too (a stitched world has no lot names to rely on)
+                Vector3 c = LotViewPoint(vl);
+                CameraController.SetPositionAndTarget(new Vector3(c.x, c.y + (float)a.Double("up", 30), c.z - (float)a.Double("back", 30)), c);  // up/back: metres up and behind (default 30/30)
+                r["lot"] = vl.Name; r["lot_centre"] = Pos(c);
             }
             else if (a.Has("pos") || a.Has("target"))
                 CameraController.SetPositionAndTarget(

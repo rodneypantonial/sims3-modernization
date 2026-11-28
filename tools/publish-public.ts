@@ -99,7 +99,7 @@ export function secretScan(diff: string): string[] {
 export function publicStrip(clone: string): string[] {
   const p = join(clone, 'tools/public-strip.json');
   if (!existsSync(p)) return [];
-  const s = JSON.parse(readFileSync(p, 'utf8')) as { remove: string[]; banned: string; edits: { file: string; replace: [string, string][] }[] };
+  const s = JSON.parse(readFileSync(p, 'utf8')) as { remove: string[]; removeMatch?: string[]; banned: string; edits: { file: string; replace: [string, string][] }[] };
   for (const e of s.edits) {
     const f = join(clone, e.file);
     let t = readFileSync(f, 'latin1');
@@ -111,6 +111,12 @@ export function publicStrip(clone: string): string[] {
     writeFileSync(f, t, 'latin1');
   }
   for (const r of s.remove) rmSync(join(clone, r), { recursive: true, force: true });
+  // removeMatch: regexes on repo-relative paths (/); every match goes; a rule that matches nothing throws
+  for (const re of s.removeMatch ?? []) {
+    const rx = new RegExp(re), hit = walk(clone).filter(f => rx.test(relative(clone, f).replaceAll('\\', '/')));
+    if (!hit.length) throw new Error(`public-strip: removeMatch /${re}/ matched nothing`);
+    for (const f of hit) rmSync(f, { force: true });
+  }
   const banned = new RegExp(s.banned), left = walk(clone).filter(f => banned.test(readFileSync(f, 'latin1'))).map(f => relative(clone, f));
   if (left.length) throw new Error(`public-strip: banned text left in:\n${left.join('\n')}`);
   return s.edits.map(e => e.file);
@@ -409,6 +415,11 @@ function selfCheck(): void {
       assert.deepEqual(publicStrip(d), ['a.ts'], 'edited files');
       assert.equal(readFileSync(join(d, 'a.ts'), 'utf8'), 'keep\n', 'hook line gone');
       assert.ok(!existsSync(join(d, 'b.ts')) && !existsSync(join(d, 'tools/public-strip.json')), 'files removed');
+      put({ ...cfg, remove: ['tools/public-strip.json'], banned: 'zzz', removeMatch: ['^b[.]ts$'], edits: [] });
+      publicStrip(d);
+      assert.ok(!existsSync(join(d, 'b.ts')), 'removeMatch removed');
+      put({ ...cfg, removeMatch: ['^nomatch$'], edits: [] });
+      assert.throws(() => publicStrip(d), /removeMatch .* matched nothing/, 'stale removeMatch refused');
       put({ ...cfg, edits: [{ file: 'a.ts', replace: [['^gone', '']] }] });
       assert.throws(() => publicStrip(d), /matched nothing/, 'stale rule refused');
       put({ ...cfg, edits: [] });

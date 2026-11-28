@@ -7849,48 +7849,6 @@ m1124g tags (diag set m1124g = m1124e + these, 2026-11-25, docs/260 §9.1; log o
 | I-631-28 | 361 §2.4 holes | One-shot hour-of-day timers are found by callback method from a closed list of 13 sites and moved by whole days with their tied dates; the static School lists are dropped as a vanilla save would | V-631-18, V-631-20 | FZ-2: log held one-shot timers whose callback is not on the list | none | an unlisted callback | inferred |
 | I-631-29 | 361 §2.4 holes | NRaas StoryProgression refuses a held, selectable active-household Sim except in active-target scenarios; Overwatch `StuckCheck`/`ResetCheck` leave it alone; `CleanupAging` re-adds it to the aging list at load | NRaas source read (behaviour only) | FZ-2 compat job with the mods | no change on the held Sim | a change: stand down while the scenario is on | inferred |
 
-## 633. Boundless Atlas claims, cross-ref (2026-11-26, Atlas docs/017, 020, 021, 022, 023, 026; only claims about `TS3W.exe` addresses or EA behaviour)
-
-The Atlas repo (Boundless Atlas, private) keeps its own claim ids. This section lists the ones that bear on `TS3W.exe` or EA script behaviour, so a grep of docs/51 finds them. Text, checks and fail rules stay in the Atlas doc named in the row; the tag is the Atlas tag. Atlas claims about our own code (generators, plugin host, Apex wrapper, docs/025, I-026-3..5, V-026-13/14) are left out. Atlas docs/021 §11 corrections are already applied as notes on I-575-5 and I-629-7. Nothing here is run by this section; re-check an address in the exe before code depends on it.
-
-| Atlas ids | Atlas doc | Topic | Tag |
-|---|---|---|---|
-| V-017-1, V-017-4 | docs/017 §7 | WTXT-sized cell pointer table `0xC2C0D0`, runs only when the id grids cannot load | verified |
-| V-017-5, V-017-6 | docs/017 §7 | lot-monitor / scene-readiness waiters and the 60 s deadline | verified (who services the list: unread) |
-| I-017-1, I-017-2, I-017-5 | docs/017 §7 | packed CAW save loads as new game; 0x06DC847E payload accepted; uniform instance loads a grown thin world | inferred (jobs `atlas-p0-*`) |
-| I-017-3, I-017-4 | docs/017 §7 | empty-world stall cause; scene quadtree pointer chain of the Atlas ASI | inferred |
-| V-020-1 .. V-020-6 | docs/020 §10 | stream context, package create/commit, resource key table, per-lot save writer, `lot+0x75`, `Lot_FinishLoad` lock, `ret` forms of probe-called functions | verified (static, Capstone) |
-| I-020-1 .. I-020-4 | docs/020 §10 | page-out/page-in completeness, own stream context, dropped handle entries | inferred (first job) |
-| C-021-1, C-021-6, C-021-7 | docs/021 §12 | imposter show path, EA frees imposters only on rebuild/teardown, a live save does not re-render | verified (`0xAD9F80`, `0xAD9C00`, `0xAD9730`, `0xADAB00`) |
-| C-021-8, C-021-10, C-021-11 | docs/021 §12 | sky fog write, map view zoom stop, camera target clamp | verified (static) |
-| C-021-2, C-021-3, C-021-5, C-021-9, C-021-12 | docs/021 §12 | page-out leaves imposter objects, trees in scene, in-process imposter bytes, Apex fog, `cam+0x6D4/+0x6D8` | inferred |
-| V-022-1 .. V-022-5, V-022-8 .. V-022-12 | docs/022 §13 | EA travel save/return script order, former travellers' household, aging flag, instantiation, empty traveller list, buffs on export | verified (script) |
-| V-022-20 .. V-022-26 | docs/022 §13 | alarms as absolute tick deadlines, `Autonomy.Update` pump, aging alarms, relationship decay, weekly bill, catch-up, world-load household keep | verified (script) |
-| V-022-47 .. V-022-51 | docs/022 §13 | `GetActorsOfType`, alarm timer record, key-0 listeners, static field-trip lists, unsaved update stamp | verified (script) |
-| V-022-27 .. V-022-46 | docs/022 §13 | scene model writer `0x6FCF50`, lot-moved path `0xAB8CF0`, transform store, render message `0x958430`, lot index `0xC68680`, physics `0x6871C0`, camera `0x73D410`, routing quadtree and footprints, ponds, roads, floor manager `0xAA5270`, `0x705B70`, yielded task cells | verified (RB-1, RB-2); V-022-45 corrects docs/48 |
-| V-022-13, V-022-14, V-022-15 | docs/022 §13 | avoidance field reset `0x85D994`, lot routing entry `0x630CF0`, rig pose root `0x940430` | verified (RB-1) |
-| V-022-52, V-022-53 | docs/022 §13 | pause-flag callers `0x594300` / `0x594330` use bits 1, 2, 4; direct sim-thread calls `0x84170F`, `0xC65AFE` | verified (Capstone) |
-| I-022-1 | docs/022 §13 | home `.nhd` holds the travellers' Sim objects | verified in script order |
-| I-022-2, I-022-3 | docs/022 §13 | travel save with one member left; far-Sim park freeze | corrected / narrowed by F0 / F0b |
-| I-022-16 | docs/022 §13 | world lot routing quadtree in world space | verified (RB-2) |
-| I-022-10, I-022-11, I-022-22 | docs/022 §13 | merge of a kept member, Sim parked in another household, fetch as travel import | inferred (RG-3) |
-| I-022-20, I-022-21, I-022-23 | docs/022 §13 | release rule R, release before native save, stored times on the held Sim | inferred (FZ-2); I-022-23 closed statically |
-| I-022-4 .. I-022-9, I-022-15, I-022-24 .. I-022-27 | docs/022 §13 | seams, world switch threading, position holders, slide stall, managed pass, task stacks, sync wait `0x7D98C0`, scene hierarchy, parented effects, saved state for missing lots | inferred (RB-*); I-022-9 open |
-| I-022-28 .. I-022-34 | docs/022 §13 | held-Sim guards in household walks and listener dispatch, hour-of-day timers, NRaas StoryProgression, vacated-half test, group L stores, height readers | inferred (FZ-2, §8.1) |
-| V-023-1 .. V-023-8 | docs/023 §9 | script stream read `0x94FF00`, host method table, bind `0xD7EC50`, `PostLoad` path, script stopwatch, create loop `0xC70320`, lot vtable `+0x30`, `0x939B60` resource call | verified (Capstone); V-023-4 corrected by §9.8.2, replaced by V-023-14 |
-| V-023-9 .. V-023-16 | docs/023 §9 | stream handle cache, `SetValueInternal 0xE7B320`, reflection hash `0xEAC75B`, pending node `0xD80BC0`, `PostLoad` in `0xD7FE80`, Footprint load, `0xAB2910` | verified |
-| I-023-4 | docs/023 §9 | bound objects reach `PostLoad` through the pending list and `host+0x1708` | verified path (§9.8.2) |
-| I-023-1 .. I-023-3, I-023-5 .. I-023-12 | docs/023 | ms per lot, off-thread share, staged order, private reader on the second script thread, parking, page-in piece size | inferred |
-| V-026-1 .. V-026-12 | docs/026 | 14 patch-site byte patterns vs Steam 1.67, routing masks, paint tile index `0xC23BD4` / `0xC23F4A`, paint reader versions, `0x5FE380` / `0x4DDA90`, header check callers, site graphs, read-fail exits | verified (height at `+4` inferred in V-026-11) |
-| I-026-1, I-026-2 | docs/026 | routing world global and world manager origin; saver's third byte | inferred (job 2, gap 4) |
-| I-026-6, I-026-7 | docs/026 | game accepts grown paint data; portal reader runs with lots but no Sim | inferred (job 4) |
-| V-031-1 | boundless-atlas docs/031 §12 | atlas 0.3.6 smoke-on crash: the P1 boot thread (`atlas.asi+0x1CF0`) still sleeps in its domain wait at the EIP 0 crash ~105 s after start | verified (crash dump thread list, `NtDelayExecution`) |
-| V-031-2 | boundless-atlas docs/031 §12 | script domain = `[[0x11EE514]+0xACC]`: H+8 is the Mono interface (`[0x11D4BBC]` = H+8 at `0xD7F37E`), `MonoScriptHost_Init 0xD7E560` (this = H+8) writes the domain to `this+0xAC4` at `0xD7E616`; nothing writes H+0xAC4 | verified (capstone, Steam 1.67) |
-| V-031-3 | boundless-atlas docs/031 §12 | first call of an unregistered internal call throws `MissingMethodException`, the second jumps to address 0 | inferred (Probe=0 runs survived one call; the 0.3.6 run crashed on the second) |
-| I-045-1 .. I-045-5, I-045-8, I-045-10, I-045-13, I-045-16 | boundless-atlas docs/045 §8.3 | far description store class (b) sites: blood-relative root bits, load-back append order, wedding / chef / wish read order, `AllHabitableShellLots` without world lots, set-of-one draw odds, daycare interleave, facets stay right while stored, store order | inferred |
-| I-045-6, I-045-7, I-045-9, I-045-15 | boundless-atlas docs/045 §8.3 | `ChooseBossFromSet` / `AddNCoworkersToLocation` / `ChooseCoworkerFromSet` call order, AddSim / AddServoBot constructors read `Household.sHouseholdList` only for their pick, daycare add return, `Lot.VirtualMoveIn` always grows the slot count | verified (script decompile, not run) |
-| I-045-11, I-045-12, I-045-14 | boundless-atlas docs/045 §8.3 | no swapped body yields (deeper callees inferred); none of the 36 swaps compiled before boot (open: `hooks n/m`); `Demographics.Collect` near-exact in the last float bits (accepted) | mixed: inferred / open / accepted |
-
 ## 632. `IsSimThread` and the main-heap core reader (2026-11-26, docs/362; Capstone disassembly of Steam 1.67, host selftest, nothing run in game)
 
 | Id | Doc | Claim | Based on | Check | Pass | Fail | Verdict |
@@ -7946,23 +7904,6 @@ The Atlas repo (Boundless Atlas, private) keeps its own claim ids. This section 
 | I-627-6 | 358 §2 | Parking a lot through the test entry without a model only delays that lot's alarms until release | docs/346 §1 late-repeat rule [verified there]; the queue itself is never touched by Hook A [verified, our code] | farhold-farobj-correct-1126 `bp-farhold-live` | 0 script errors, lot back in the set count 0 | errors from an alarm that assumed its period | open |
 | I-627-7 | 358 §3, §6 | Zombie time owed by FarLight lots at a save is small enough to leave unpaid until `FarSave` exists | owed rows live in memory only (no mod data in saves); the time-out is a cooldown, so the error is a dance that can restart late by the owed minutes after a reload [inferred] | none planned before `FarSave` (docs/353) | - | a report tied to it: then pay every owed row from the save hook | open |
 | I-627-8 | 358 §3 | Resetting `mTimeSinceLastSimulate` to 0 at go-near (docs/350 L6) delays a broadcaster's next pulse by at most its one-minute period | `ReactionBroadcaster.Simulate` pulses when the accumulator passes 1 minute [verified, decompiled] | visit repro live, natural jobs | no script error, reactions seen on the visited lot | a broadcaster whose first pulse matters within that minute | open |
-
-## 635. ts3probe TEST-ONLY squeeze exception and Atlas HS-1 sites (2026-11-26, Atlas docs/040 §8; queue `atlas-hs1-terrain-1126`, NOT RUN)
-
-Exception to the probe's read-only rule, allowed by Rodney 2026-11-26 for the Atlas HS-1 stress job only.
-
-- **What:** `tools/probe/agent.js` `squeeze(targetMB)` reserves (`MEM_RESERVE`, `PAGE_NOACCESS`, no commit) the low part of every free region larger than the target, so the largest free block ends near the target. Nothing of the game is written or hooked.
-- **Gate:** `ts3probe.py` refuses `/squeeze` unless started with `serve --test-squeeze`; queue.ts passes that flag only for a job with `probeTestSqueeze: true` (parse check + self-check case). Each call is logged as a `test-squeeze` event (events.jsonl, probe log).
-- **Undo:** `/unsqueeze` (the last T1b step); the agent's `dispose()` releases on script unload (probe exit or kill, detach, `fridadetach`, reload); game exit frees the reservations with the process.
-
-| Id | Claim | Based on | Tag |
-|---|---|---|---|
-| S-635-1 | A reserve-only squeeze reproduces the HS-1 condition (largest free block too small) without using RAM | Windows VA semantics; the HS-1 blocks are single `VirtualAlloc` regions from `0x4E512A` (Atlas V-040-5) | inferred, T1b |
-| S-635-2 | Frida calls `dispose()` when the probe process is killed while the game lives, so no squeeze survives its probe | Frida script unload on session detach | inferred, first T1b run (probe log `unsqueeze` / largest free after a detach) |
-| V-040-1, V-040-2 | Optimizer copy alloc `0xC884A5` without null check; both height maps from `0xAA86FB`, null-checked, freed at `0xAA87ED` | Atlas docs/040 §2 | verified (Capstone) |
-| V-040-3 .. V-040-5 | copy frees `0xC87C3F` / `0xC88437`; linear readers `0xC885BD`, `0xC8880A`; large-block path `0x4E50F0` / `0x4E512A` | Atlas docs/040 §2 | verified |
-| I-040-1 | A failed optimizer allocation crashes in `0xC88330` | no null check | inferred, T1b |
-| V-hs1-WM | `[0x11ECBC4]` is the world object `0xC63840` works on (`0x787040` loads it into `ecx`) | Capstone | verified |
 
 ## 949. Exit crash in UI/TriggerService teardown (2026-11-27, docs/67 §47; static, queues exit-crash-1127-stock / -fork, not run)
 

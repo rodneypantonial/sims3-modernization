@@ -308,6 +308,7 @@ import { MARKER } from '../publish-public.ts';
 import { clickLines, dumpHungGame, GUARD_MS, logTail, type ModeSnap, modeExit, modeSnap, noSafeButton, PKG_ABBA, pkgAbba } from './game-alive.ts';
 import { defaultBranch } from '../default-branch.ts';
 import { ATLAS_KIT_INI, selfCheck as atlasKitSelfCheck } from '../release/atlas-kit.ts';
+import { checkAtlasSet, install as atlasSetInstall, planLine as atlasSetPlan, selfCheck as atlasSetSelfCheck, setWorld, stage as atlasSetStage, stagedWorldPath, type AtlasSet } from './atlas-set.ts';
 import { BLOCKED as EXTRA_BLOCKED, extraAsiInstall, extraIni, extraLog, extraMarker, extraOwned, extraPending, extraSweep, strayAsi, INI_BAK, iniBackupRestore, iniBackupWrite, iniLine, selfCheck as extraAsiSelfCheck } from './extra-asi.ts';
 import { BIN, configBin, s3mmFiles, EA_LAUNCHER, EA_URI, GAME_EXE, gameRunning, isSteamGame, killLeftovers, LAUNCH, logUntrackedGame, MACHINE, machineTag, relaunched, seenPids } from './game-exe.ts';
 import { checkCfg as checkFailFast, describe as describeFailFast, routingGuard, type FailFast } from './routing-failfast.ts';
@@ -411,9 +412,9 @@ const SRC_VERSION_RE = /#define TS3NATIVE_VERSION "(\d+\.\d+\.\d+(?!\d|-rftest)[
 // machine column / jsonl field only off the main machine: main-machine results stay byte-identical (docs/TESTING.md)
 function machineCols(tag: string) { return tag ? { head: ' machine |', sep: '---|', cell: (m: string) => ` ${m} |` } : { head: '', sep: '', cell: (_m: string) => '' }; }
 function machineField(tag: string): { machineTag?: string } { return tag ? { machineTag: tag } : {}; }
-type Job = { id: string; note?: string; asi: string; extraAsi?: { asi: string; ini?: Record<string, string | number>; logRequire?: Record<string, number>; logForbid?: Record<string, number>; sha256?: string }; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
+type Job = { id: string; note?: string; asi: string; atlasSet?: AtlasSet; extraAsi?: { asi: string; ini?: Record<string, string | number>; logRequire?: Record<string, number>; logForbid?: Record<string, number>; sha256?: string }; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
   save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; modSet?: string; run: { repro?: string; saveReload?: string[]; script?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
-    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; fixedwork?: number | boolean; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; quitJobs?: boolean; envGuard?: boolean; travel?: string; loadWorld?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string }; rewindGames?: { n: number; profile: { minutes: number; seed?: number; fixesOn?: string; fixesOff?: string }; ab?: string } }; gameArgs?: string[]; launch?: 'direct' | 'menu'; defaultIni?: Record<string, string | number | boolean>; optionsIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; apexProfiler?: boolean; apexToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; d3d9Dll?: string; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; apexLogRequire?: Record<string, number>; apexLogForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; report?: string[]; stopQueueOnFail?: boolean; crashHunt?: boolean; scriptErrorsMax?: number; scriptErrorsAllow?: string[]; scriptErrorsReport?: string[]; scriptErrorsReportBefore?: string; timeoutMin?: number; pin?: false | PinOpts;
+    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; fixedwork?: number | boolean; abOnFirst?: boolean; slice?: number; taskstall?: number; routelockDiag?: boolean; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; quitJobs?: boolean; envGuard?: boolean; travel?: string; loadWorld?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string }; rewindGames?: { n: number; profile: { minutes: number; seed?: number; fixesOn?: string; fixesOff?: string }; ab?: string } }; gameArgs?: string[]; launch?: 'direct' | 'menu'; defaultIni?: Record<string, string | number | boolean>; optionsIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; apexProfiler?: boolean; apexToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; d3d9Dll?: string; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; apexLogRequire?: Record<string, number>; apexLogForbid?: Record<string, number>; routingFailFast?: FailFast; earlyGates?: EarlyGate[]; report?: string[]; stopQueueOnFail?: boolean; crashHunt?: boolean; scriptErrorsMax?: number; scriptErrorsAllow?: string[]; scriptErrorsReport?: string[]; scriptErrorsReportBefore?: string; timeoutMin?: number; pin?: false | PinOpts;
   saveMatrix?: { fixes?: 'all' | 'shipped' }; regexCases?: Record<string, { match: string[]; noMatch: string[] }>; fixesBuild?: string; fixesPackage?: string; iniBase?: string; dogfood?: boolean; pinReason?: string; rerunOf?: string; retryOf?: string; kcOf?: string; expectHang?: string; shadowCheck?: boolean; quitsGame?: boolean; skipIfMissing?: boolean; ourMods?: false; rewind?: false; rewindRequire?: 'snapshot' | 'rewind'; checkAt?: 'end' | Record<string, 'end'>; expectFail?: boolean; agentPackage?: string; probeTestSqueeze?: true };
 
 function checkRegexCases(cases: Record<string, { match?: unknown; noMatch?: unknown }>, res: string[], at: string, requireAll = true) {
@@ -439,7 +440,7 @@ function versionPinMiss(j: { asi?: string; logRequire?: Record<string, number> }
 }
 
 // every top-level job key queue.ts reads (Job type plus the optional extras); anything else is a typo or a profile key at the wrong level
-const JOB_KEYS = new Set(['id', 'dogfood', 'quitsGame', 'note', 'expectHang', 'asi', 'ini', 'defaultIni', 'optionsIni', 's3ppIni', 's3ssToml', 'apexProfiler', 'apexToml', 'dxvkConf', 'd3d9Dll', 'gameArgs', 'launch', 'fixes', 'fixesBuild', 'fixesPackage', 'iniBase', 'scriptErrorsAllow', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'modSet', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'apexLogRequire', 'apexLogForbid', 'regexCases', 'noiseCheck', 'earlyGates', 'report', 'routingFailFast', 'scriptErrorsMax', 'scriptErrorsReport', 'scriptErrorsReportBefore', 'stopQueueOnFail', 'crashHunt', 'reuseSession', 'rewind', 'releaseDefaults', 'skipIfMissing', 'ourMods', 'agentArm', 'rewindRequire', 'checkAt', 'expectFail', 'agentPackage', 'extraAsi', 'probeTestSqueeze']);
+const JOB_KEYS = new Set(['id', 'atlasSet', 'dogfood', 'quitsGame', 'note', 'expectHang', 'asi', 'ini', 'defaultIni', 'optionsIni', 's3ppIni', 's3ssToml', 'apexProfiler', 'apexToml', 'dxvkConf', 'd3d9Dll', 'gameArgs', 'launch', 'fixes', 'fixesBuild', 'fixesPackage', 'iniBase', 'scriptErrorsAllow', 'fixesRequire', 'save', 'content', 'ccSet', 'ccLots', 'modSet', 'callSites', 'run', 'saveMatrix', 'pin', 'pinReason', 'rerunOf', 'shadowCheck', 'timeoutMin', 'minCounters', 'nativeRequire', 'logRequire', 'logForbid', 'apexLogRequire', 'apexLogForbid', 'regexCases', 'noiseCheck', 'earlyGates', 'report', 'routingFailFast', 'scriptErrorsMax', 'scriptErrorsReport', 'scriptErrorsReportBefore', 'stopQueueOnFail', 'crashHunt', 'reuseSession', 'rewind', 'releaseDefaults', 'skipIfMissing', 'ourMods', 'agentArm', 'rewindRequire', 'checkAt', 'expectFail', 'agentPackage', 'extraAsi', 'probeTestSqueeze']);
 // ---- vanilla mode (docs/236): what a job may not ask for without ts3native/ts3fixes, and the checks the row names as N/A
 // results md cell: at most `max` chars, cut at an item boundary (", " / "; " / "<br>") and marked, never inside a number
 // (docs/277 §1: the cut at 400 turned aut_l0_pairn_hh 397 / 3163 into "3" / "316"; full values stay in the jsonl row)
@@ -724,6 +725,7 @@ export function parseQueue(json: unknown): Job[] {
     if (j.ccSet !== undefined && !(ccDir(j.ccSet) || (Array.isArray(j.ccSet) && j.ccSet.length && j.ccSet.every(ccDir) && new Set(j.ccSet.map(x => basename(x))).size === j.ccSet.length))) throw new Error(`${at}: ccSet must be "game-copy/cc-synth/<set>" (a tools/cc-gen.ts output dir) or a list of distinct ones`);
     if (j.ccLots !== undefined && !ccDir(j.ccLots)) throw new Error(`${at}: ccLots must be "game-copy/cc-synth/<dir>" (a tools/cc-lot-gen.ts output dir)`);
     if (j.modSet !== undefined && !(typeof j.modSet === 'string' && MOD_SET_RE.test(j.modSet))) throw new Error(`${at}: modSet must be "game-copy/mod-sets/<set>" (a tools/mod-set.ts output dir)`);
+    if (j.atlasSet !== undefined) checkAtlasSet(j.atlasSet, at);
     if (j.content !== undefined && !Object.hasOwn(CONTENT, j.content)) throw new Error(`${at}: content must be one of ${Object.keys(CONTENT).join(', ')}`);
     if (j.pin === undefined && !Array.isArray(json) && (json as any).pin !== undefined) j.pin = (json as any).pin; // queue-level default
     if (j.pin !== undefined && j.pin !== false && typeof j.pin !== 'object') throw new Error(`${at}: pin must be false or { cpus?, priority?, others? }`);
@@ -1858,6 +1860,7 @@ if (values['self-check']) {
     assert.equal(xj({ asi: 'x/atlas.asi' })[0].extraAsi!.ini, undefined, 'test jobs keep their own ini');
     assert.equal(xj({ asi: 'x/other.asi' }, { releaseDefaults: true })[0].extraAsi!.ini, undefined, 'only Atlas gets the kit switch');
     atlasKitSelfCheck();
+    atlasSetSelfCheck();
     extraAsiSelfCheck(); // install, refusals, marker, sweep, Default.ini backup and read-back in a temp dir
     assert.throws(() => xj({ asi: 'x/atlas.asi', logRequire: { [re]: 1 } }, { regexCases: {} }), /no case for/);
     assert.equal(xj({ asi: 'x/atlas.asi', logRequire: { [re]: 1 } }, { regexCases: { [re]: { match: [line], noMatch: [off] } } }).length, 1);
@@ -2509,6 +2512,9 @@ if (values['self-check']) {
     writeFileSync(join(st, 'manifest.json'), JSON.stringify({ queue: 'q', modSet: 'game-copy/mod-sets/x', files: ['atlas.package'] })); assert.equal(setInUse('game-copy/mod-sets/x', st), 1, 'set in use by a running job');
     assert.equal(setInUse('game-copy/mod-sets/y', st), 0, 'another set'); rmSync(st, { recursive: true }); }
   for (const bad of ['../x', 'game-copy/cc-synth/a', 'game-copy/mod-sets/a/b', ['game-copy/mod-sets/a']]) assert.throws(() => parseQueue([{ id: 'm', asi: 'x', save: 'S', modSet: bad, run: { soak: { minutes: 1 } } }]), /modSet must be/);
+  { const as = { world: 'game-copy/worlds/p0/B.world', sha256: 'a'.repeat(64), set: 'PondSet', sea: 5, stage: 'game-copy/worlds/p0/sets/PondSet' };
+    assert.deepEqual(parseQueue([{ id: 'a', asi: 'x', save: 'S', atlasSet: as, run: { soak: { minutes: 1 } } }])[0].atlasSet, as, 'atlasSet parses');
+    assert.throws(() => parseQueue([{ id: 'a', asi: 'x', save: 'S', atlasSet: { ...as, set: 'a_b' }, run: { soak: { minutes: 1 } } }]), /atlasSet.set/); }
   assert.equal(parseQueue([{ id: 'm', asi: 'x', save: 'S', modSet: 'game-copy/mod-sets/many-mods-s', run: { soak: { minutes: 1 } } }])[0].modSet, 'game-copy/mod-sets/many-mods-s');
   const mset = join(tmp, 'game-copy', 'mod-sets', 'mm'), mdir = join(tmp, 'Mods3', 'Packages', 'mod-set');
   mkdirSync(mset, { recursive: true }); for (const f of ['NRaas_StoryProgression.package', 'Buzz_MoarInteractions.package', 'set.json']) writeFileSync(join(mset, f), f);
@@ -2855,7 +2861,7 @@ const rewindTag = (j: Job, k: number, arm: string) => subTag(profileTag(j), `g${
 // p: the job's profile, or for one repro of profile.repros that merged with the item (docs/170 §1); extra: session flags
 const profileArgs = (j: Job, p: any = j.run.profile!, tag = profileTag(j), extra: string[] = []): string[] => [H('profile-world.ts'), '--tag', tag, '--minutes', String(p.minutes), ...(p.seed !== undefined ? ['--seed', String(p.seed)] : []),
       ...(p.repro ? ['--repro', p.repro] : []), ...(p.loopRule ? ['--loop-rule', JSON.stringify(p.loopRule)] : []),...(p.mainstack ? ['--mainstack', String(p.mainstack)] : []),
-      ...(p.ab ? ['--ab', p.ab, '--slice', String(p.slice ?? 2), ...(p.abOnFirst ? ['--ab-on-first'] : []), ...(p.fixedwork ? ['--fixedwork', String(p.fixedwork === true ? 8 : p.fixedwork)] : [])] : []), ...(p.untilCompares ? ['--until-compares', String(p.untilCompares)] : []), ...(p.fixesOff ? ['--fixes-off', p.fixesOff] : []), ...(p.fixesOn ? ['--fixes-on', p.fixesOn] : []), ...(p.taskstall ? ['--taskstall', String(p.taskstall)] : []),
+      ...(p.ab ? ['--ab', p.ab, '--slice', String(p.slice ?? 2), ...(p.abOnFirst ? ['--ab-on-first'] : []), ...(p.fixedwork ? ['--fixedwork', String(p.fixedwork === true ? 8 : p.fixedwork)] : [])] : []), ...(p.untilCompares ? ['--until-compares', String(p.untilCompares)] : []), ...(p.fixesOff ? ['--fixes-off', p.fixesOff] : []), ...(p.fixesOn ? ['--fixes-on', p.fixesOn] : []), ...(p.taskstall ? ['--taskstall', String(p.taskstall)] : []), ...(p.routelockDiag ? ['--routelock-diag'] : []),
       ...(p.inroom ? ['--inroom'] : []), ...(p.watchstalk ? ['--watchstalk'] : []), ...(p.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(p.livereads2 ? ['--livereads2'] : []), ...(p.f4b ? ['--f4b'] : []), ...(p.vres ? ['--vres'] : []), ...(p.vresDry ? ['--vres-dry', String(p.vresDry)] : []), ...(p.noSamplers ? ['--no-samplers'] : []), ...(p.noFrames ? ['--no-frames'] : []), ...(p.svcSplit ? ['--svcsplit'] : []), ...(p.cameraPan ? ['--camera-pan'] : []), ...(p.profOpts ? ['--prof-opts', JSON.stringify(p.profOpts)] : []), ...(p.quitJobs ? ['--quit-jobs'] : []), ...(p.noEnv ? ['--no-env'] : []), ...(p.envGuard === false ? ['--no-env-guard'] : []), ...(p.story ? ['--story', JSON.stringify(p.story)] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) || p.noProf ? ['--no-prof'] : []), ...(p.travel ? ['--travel', p.travel] : []), ...(p.loadWorld ? ['--load-world', p.loadWorld] : []), ...(p.fixesRequire ? ['--fixes-require', p.fixesRequire] : []), ...(p.frameLead ? ['--frame-lead', JSON.stringify(p.frameLead)] : []), ...(p.hitchTasks ? ['--hitch-tasks', JSON.stringify(p.hitchTasks)] : []), ...extra];
 const runArgs = (j: Job): string[] | null =>
   j.run.script ? [H(j.run.script[0]), ...j.run.script.slice(1)] : j.run.repro ? [H('repro.ts'), 'run', j.run.repro, '--no-load'] : j.run.saveReload ? [H('save-reload.ts'), ...j.run.saveReload, '--port', values.port!] : j.run.matrix ? [H('save-matrix.ts'), ...j.run.matrix, ...(j.saveMatrix?.fixes ? ['--fixes', j.saveMatrix.fixes] : [])]
@@ -2923,7 +2929,7 @@ for (const j of jobs) {
     try { if (loopOfId(it.id)) checkLoop(loopOfId(it.id)); } catch (e: any) { console.error(`${j.id}: repro ${it.id}: ${e.message}`); process.exit(2); }
   }
   if (!saveOf(j)) { console.error(`${j.id}: no save`); process.exit(2); }
-  const noWorld = [j.run.repro, j.run.profile?.repro, ...(itemsOf(j) ?? []).map(it => it.id)].flatMap(id => id ? missingWorlds(REPROS.find(r => r.id === id)?.steps, f => worldInstalled(f, USER, dirname(dirname(BIN)))) : []);
+  const noWorld = [j.run.repro, j.run.profile?.repro, ...(itemsOf(j) ?? []).map(it => it.id)].flatMap(id => id ? missingWorlds(REPROS.find(r => r.id === id)?.steps, f => worldInstalled(f, USER, dirname(dirname(BIN))) || (!!j.atlasSet && f === setWorld(j.atlasSet) && existsSync(stagedWorldPath(j.atlasSet)))) : []);
   if (noWorld.length) { console.error(`${j.id}: world not installed: ${[...new Set(noWorld)].join(', ')} not in ${join(USER, 'InstalledWorlds')} nor the game's GameData worlds (node tools/world-gen.ts install game-copy/worlds/...)`); process.exit(2); }
   const pinMiss = versionPinMiss(j, BUILDS as { name: string; version?: string }[]);
   if (pinMiss) { console.error(`${j.id}: ${pinMiss}`); process.exit(2); }
@@ -3000,6 +3006,7 @@ if (values['dry-run']) {
       const n = ccSetReady(j.ccSet) ? ccPlan(j.ccSet).files.length : 0;
       console.log(`  0 ccSet ${[j.ccSet].flat().join(' + ')}: ${n ? `game closed, manifest, move ${n} packages to ${CC_DIR}; cache-clear; back to the set + cache-clear after the job` : '** MISSING or empty: make it with tools/cc-gen.ts; the job refuses before touching the game **'}`);
     }
+    if (j.atlasSet) console.log(`  0 ${atlasSetPlan(j.atlasSet, USER)}`);
     if (j.modSet) {
       const inUse = ccSetReady(j.modSet) ? 0 : setInUse(j.modSet);
       const files = ccSetReady(j.modSet) ? ccPlan(j.modSet).files : [], clash = modClash(join(USER, 'Mods', 'Packages'), files, MOD_DIR);
@@ -3818,6 +3825,14 @@ for (const [n, j] of jobs.entries()) {
       const files = installLots(join(ROOT, j.ccLots));
       row.ccLots = j.ccLots; row.ccLotsCopied = files.length;
       log(`${j.id}: ccLots ${j.ccLots}: ${files.length} lots copied to ${LIBRARY}`);
+    }
+    if (j.atlasSet && !values['dry-run']) { // atlas-set.ts: stage (offline, once) and install the generated set, game closed
+      await closeGame();
+      if (gameRunning()) throw new Error(`atlasSet: ${GAME_EXE} still running, nothing installed`);
+      for (const l of atlasSetStage(j.atlasSet)) log(`${j.id}: ${l}`);
+      const p = atlasSetInstall(j.atlasSet, USER);
+      row.atlasSet = { set: j.atlasSet.set, copied: p.copy.length, same: p.same.length };
+      log(`${j.id}: atlasSet ${j.atlasSet.set}: ${p.copy.length} files installed, ${p.same.length} already there`);
     }
     const r0 = await node([H('cycle.ts'), '--restart'], logFile, noGameDeadline(deadline));
     if (r0.code !== 0) throw new Error(`cycle.ts --restart exit ${r0.code}`);
